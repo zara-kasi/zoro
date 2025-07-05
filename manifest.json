@@ -1,0 +1,13 @@
+{
+  "id": "anilist-integration",
+  "name": "AniList Integration",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Embed your AniList anime and manga data directly in your notes",
+  "author": "Your Name",
+  "authorUrl": "https://github.com/yourusername",
+  "fundingUrl": "https://github.com/sponsors/yourusername",
+  "isDesktopOnly": false,
+  "main": "main. Js",       // ← tells Obsidian which JS file to run
+  "css": "styles. Css"      // ← tells Obsidian to load your CSS automatically
+}

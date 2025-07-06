@@ -653,6 +653,7 @@ class AniListPlugin extends Plugin {
       // Create details div
       const detailsDiv = document.createElement('div');
       detailsDiv.className = 'media-details';
+      
       // Format
     if (media.format) {
       const formatSpan = document.createElement('span');

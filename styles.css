@@ -108,11 +108,6 @@
   letter-spacing: 0.5px;
 }
 
-/* Hide the “Current” badge */
-.anilist-card .status-current,
-.anilist-single-card .status-current {
-  display: none;
-}
 
 /* Badge colors */
 .status-current   { background: var(--color-green);  color: white; }

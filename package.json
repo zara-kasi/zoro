@@ -15,7 +15,7 @@
         "anime",
         "manga"
     ],
-    "author": "Your Name",
+    "author": "zara-kasi",
     "license": "MIT",
     "devDependencies": {
         "@types/node": "^16.11.6",

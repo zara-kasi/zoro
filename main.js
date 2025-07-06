@@ -409,7 +409,106 @@ class AniListPlugin extends Plugin {
     }
     
     mediaInfoDiv.appendChild(detailsDiv);
-    
+   // 1) In your onload(), register the new global‐search block:
+this.registerMarkdownCodeBlockProcessor(
+  'anilist-search',
+  this.processGlobalSearchCodeBlock.bind(this)
+);
+
+// 2) Add this new handler (anywhere inside class AniListPlugin):
+async processGlobalSearchCodeBlock(source, el, ctx) {
+  const container = document.createElement('div');
+  container.className = 'anilist-global-container';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'Search all shows…';
+  input.className = 'anilist-global-search';
+  container.appendChild(input);
+
+  const results = document.createElement('div');
+  results.className = 'anilist-global-results';
+  container.appendChild(results);
+
+  input.addEventListener('input', async (e) => {
+    const term = e.target.value.trim();
+    if (term.length < 3) return;
+    const cfg = { type: 'search', searchTerm: term };
+    const mediaList = await this.fetchAniListData(cfg);
+    results.empty();
+    // normalize into same shape as list‐entries:
+    const entries = mediaList.map(m => ({
+      media: m,
+      status: m.status || '-',
+      score: m.averageScore || 0,
+      progress: m.episodes || m.chapters || 0
+    }));
+    this.renderCardLayout(results, entries);
+  });
+
+  el.appendChild(container);
+}
+
+// 3) In fetchAniListData(), add a new branch for “search”:
+case 'search':
+  query     = this.getSearchMediaQuery();
+  variables = { search: config.searchTerm, type: 'ANIME' };
+  break;
+
+// 4) Add this GraphQL query method:
+getSearchMediaQuery() {
+  return `
+    query ($search: String, $type: MediaType) {
+      Page(page: 1, perPage: 20) {
+        media(search: $search, type: $type) {
+          id
+          title { romaji english }
+          coverImage { medium }
+          format
+          episodes
+          chapters
+          genres
+          averageScore
+          status
+        }
+      }
+    }
+  `;
+}
+
+// 5) Tweak your personal‐list renderer to include its own search bar.
+//   In renderMediaList(), before creating listContainer:
+const localInput = document.createElement('input');
+localInput.type = 'text';
+localInput.placeholder = 'Filter My List…';
+localInput.className = 'anilist-local-search';
+el.appendChild(localInput);
+
+// then hook it up just like you did for the global one:
+localInput.addEventListener('input', e => {
+  const term = e.target.value.toLowerCase();
+  const filtered = entries.filter(en => {
+    const t = en.media.title.english || en.media.title.romaji;
+    return t.toLowerCase().includes(term);
+  });
+  renderList(filtered);
+});
+
+// 6) Everywhere you build the “details” span (both card‐ and table‐layouts),
+//    insert this right before the status badge:
+const fmt = document.createElement('span');
+fmt.className = 'format';
+fmt.textContent = m.format;      // e.g. TV, Movie, ONA, etc.
+details.appendChild(fmt);
+
+// 7) In your table header (renderTableLayout), add a “Format” column:
+//    ['Title','Format','Status', …]
+
+// That’s it!  These additions give you:
+// - A totally separate “```anilist-search```” block for global AniList searches
+// - Your existing list block retains its own “filter my list” bar
+// - Every card/table row now shows the media.format (TV, Movie, ONA, …)
+  
     // Create genres div
     if (this.settings.showGenres) {
       const genresDiv = document.createElement('div');

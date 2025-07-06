@@ -24,9 +24,6 @@ class AniListPlugin extends Plugin {
     
     // Add plugin settings
     this.addSettingTab(new AniListSettingTab(this.app, this));
-    
-    // Add CSS for responsive card grid
-    this.addCardGridStyles();
   }
 
   async loadSettings() {
@@ -35,100 +32,12 @@ class AniListPlugin extends Plugin {
       showCoverImages: true,
       showRatings: true,
       showProgress: true,
-      showGenres: true,
-      cardsPerRow: 2 // New setting for cards per row
+      showGenres: true
     }, await this.loadData());
   }
 
   async saveSettings() {
     await this.saveData(this.settings);
-  }
-
-  addCardGridStyles() {
-    const style = document.createElement('style');
-    style.textContent = `
-      .anilist-grid-controls {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-bottom: 15px;
-        padding: 10px;
-        background: var(--background-secondary);
-        border-radius: 6px;
-        border: 1px solid var(--background-modifier-border);
-      }
-      
-      .anilist-grid-controls label {
-        font-weight: 500;
-        color: var(--text-normal);
-      }
-      
-      .anilist-grid-controls input[type="range"] {
-        flex: 1;
-        max-width: 200px;
-      }
-      
-      .anilist-grid-controls .cards-count {
-        font-weight: 600;
-        color: var(--text-accent);
-        min-width: 20px;
-        text-align: center;
-      }
-      
-      .anilist-grid {
-        display: grid;
-        gap: 15px;
-        grid-template-columns: repeat(var(--cards-per-row, 2), 1fr);
-        width: 100%;
-      }
-      
-      .anilist-search-grid {
-        display: grid;
-        gap: 15px;
-        grid-template-columns: repeat(var(--cards-per-row, 2), 1fr);
-        width: 100%;
-      }
-      
-      .anilist-card, .anilist-search-card {
-        min-width: 0; /* Prevent overflow */
-        width: 100%;
-        box-sizing: border-box;
-      }
-      
-      .media-cover {
-        width: 100%;
-        height: auto;
-        max-width: 100%;
-        object-fit: cover;
-      }
-      
-      .media-info {
-        padding: 10px;
-        word-wrap: break-word;
-        overflow-wrap: break-word;
-      }
-      
-      .anilist-title-link {
-        display: block;
-        text-overflow: ellipsis;
-        overflow: hidden;
-        white-space: nowrap;
-        width: 100%;
-      }
-      
-      @media (max-width: 768px) {
-        .anilist-grid, .anilist-search-grid {
-          grid-template-columns: repeat(min(var(--cards-per-row, 2), 2), 1fr);
-        }
-      }
-      
-      @media (max-width: 480px) {
-        .anilist-grid, .anilist-search-grid {
-          grid-template-columns: 1fr;
-        }
-      }
-    `;
-    document.head.appendChild(style);
   }
 
   async processAniListCodeBlock(source, el, ctx) {
@@ -167,7 +76,6 @@ class AniListPlugin extends Plugin {
     
     config.listType = config.listType || 'CURRENT';
     config.layout = config.layout || this.settings.defaultLayout;
-    config.cardsPerRow = config.cardsPerRow || this.settings.cardsPerRow;
     
     return config;
   }
@@ -186,7 +94,6 @@ class AniListPlugin extends Plugin {
     // Default to ANIME if no mediaType specified
     config.mediaType = config.mediaType || 'ANIME';
     config.layout = config.layout || this.settings.defaultLayout;
-    config.cardsPerRow = config.cardsPerRow || this.settings.cardsPerRow;
     
     return config;
   }
@@ -221,8 +128,7 @@ class AniListPlugin extends Plugin {
     
     const config = {
       username: parts[0],
-      layout: 'card',
-      cardsPerRow: this.settings.cardsPerRow
+      layout: 'card'
     };
     
     if (parts[1] === 'stats') {
@@ -463,49 +369,8 @@ class AniListPlugin extends Plugin {
   }
 
   // Helper function to generate AniList URL
-getAniListUrl(mediaId, mediaType = 'ANIME') {
-  const type = mediaType.toLowerCase() === 'manga' ? 'manga' : 'anime';
-  return `https://anilist.co/${type}/${mediaId}`;
-}
-
-  createGridControls(container, config) {
-    const controlsDiv = document.createElement('div');
-    controlsDiv.className = 'anilist-grid-controls';
-    
-    const label = document.createElement('label');
-    label.textContent = 'Cards per row:';
-    
-    const slider = document.createElement('input');
-    slider.type = 'range';
-    slider.min = '1';
-    slider.max = '4';
-    slider.value = config.cardsPerRow || this.settings.cardsPerRow;
-    slider.className = 'cards-per-row-slider';
-    
-    const countDisplay = document.createElement('span');
-    countDisplay.className = 'cards-count';
-    countDisplay.textContent = slider.value;
-    
-    // Update grid and count display when slider changes
-    slider.addEventListener('input', (e) => {
-      const value = e.target.value;
-      countDisplay.textContent = value;
-      
-      // Update CSS custom property for grid columns
-      const grids = container.querySelectorAll('.anilist-grid, .anilist-search-grid');
-      grids.forEach(grid => {
-        grid.style.setProperty('--cards-per-row', value);
-      });
-      
-      // Update config for this instance
-      config.cardsPerRow = parseInt(value);
-    });
-    
-    controlsDiv.appendChild(label);
-    controlsDiv.appendChild(slider);
-    controlsDiv.appendChild(countDisplay);
-    
-    return controlsDiv;
+  getAniListUrl(mediaId) {
+    return `https://anilist.co/anime/${mediaId}`;
   }
 
   renderSearchInterface(el, config) {
@@ -528,12 +393,6 @@ getAniListUrl(mediaId, mediaType = 'ANIME') {
     searchDiv.appendChild(searchInput);
     searchDiv.appendChild(searchButton);
     el.appendChild(searchDiv);
-    
-    // Add grid controls (only for card layout)
-    if (config.layout === 'card') {
-      const controls = this.createGridControls(el, config);
-      el.appendChild(controls);
-    }
     
     // Create results container
     const resultsDiv = document.createElement('div');
@@ -593,7 +452,6 @@ getAniListUrl(mediaId, mediaType = 'ANIME') {
     
     const gridDiv = document.createElement('div');
     gridDiv.className = 'anilist-search-grid';
-    gridDiv.style.setProperty('--cards-per-row', config.cardsPerRow || this.settings.cardsPerRow);
     
     media.forEach(item => {
       const title = item.title.english || item.title.romaji;
@@ -615,7 +473,7 @@ getAniListUrl(mediaId, mediaType = 'ANIME') {
       // Create clickable title
       const titleElement = document.createElement('h4');
       const titleLink = document.createElement('a');
-      titleLink.href = this.getAniListUrl(item.id, item.type || config.mediaType);
+      titleLink.href = this.getAniListUrl(item.id);
       titleLink.target = '_blank';
       titleLink.rel = 'noopener noreferrer';
       titleLink.className = 'anilist-title-link';
@@ -681,12 +539,6 @@ getAniListUrl(mediaId, mediaType = 'ANIME') {
       this.renderSingleMedia(el, data.MediaList, config);
     } else {
       const entries = data.MediaListCollection.lists.flatMap(list => list.entries);
-      // Add grid controls for card layout
-      if (config.layout === 'card') {
-        const controls = this.createGridControls(el, config);
-        el.appendChild(controls);
-      }
-      
       if (config.layout === 'table') {
         this.renderTableLayout(el, entries);
       } else {
@@ -694,7 +546,8 @@ getAniListUrl(mediaId, mediaType = 'ANIME') {
       }
     }
   }
-renderUserStats(el, user) {
+
+  renderUserStats(el, user) {
     const statsHtml = `
       <div class="anilist-user-stats">
         <div class="user-header">
@@ -768,7 +621,7 @@ renderUserStats(el, user) {
     // Create clickable title
     const titleElement = document.createElement('h3');
     const titleLink = document.createElement('a');
-    titleLink.href = this.getAniListUrl(item.id, item.type || config.mediaType);
+    titleLink.href = this.getAniListUrl(media.id);
     titleLink.target = '_blank';
     titleLink.rel = 'noopener noreferrer';
     titleLink.className = 'anilist-title-link';
@@ -811,7 +664,6 @@ renderUserStats(el, user) {
     }
     
     mediaInfoDiv.appendChild(detailsDiv);
-    
     // Create genres div
     if (this.settings.showGenres) {
       const genresDiv = document.createElement('div');
@@ -832,7 +684,6 @@ renderUserStats(el, user) {
   renderMediaList(el, entries, config) {
     const gridDiv = document.createElement('div');
     gridDiv.className = 'anilist-grid';
-    gridDiv.style.setProperty('--cards-per-row', config.cardsPerRow || this.settings.cardsPerRow);
     
     entries.forEach(entry => {
       const media = entry.media;
@@ -852,10 +703,10 @@ renderUserStats(el, user) {
       const mediaInfoDiv = document.createElement('div');
       mediaInfoDiv.className = 'media-info';
       
-// Create clickable title
+      // Create clickable title
       const titleElement = document.createElement('h4');
       const titleLink = document.createElement('a');
-      titleLink.href = this.getAniListUrl(item.id, item.type || config.mediaType);
+      titleLink.href = this.getAniListUrl(media.id);
       titleLink.target = '_blank';
       titleLink.rel = 'noopener noreferrer';
       titleLink.className = 'anilist-title-link';
@@ -963,7 +814,7 @@ renderUserStats(el, user) {
       // Title cell with clickable link
       const titleCell = document.createElement('td');
       const titleLink = document.createElement('a');
-      titleLink.href = this.getAniListUrl(item.id, item.type || config.mediaType);
+      titleLink.href = this.getAniListUrl(media.id);
       titleLink.target = '_blank';
       titleLink.rel = 'noopener noreferrer';
       titleLink.className = 'anilist-title-link';
@@ -1021,7 +872,6 @@ renderUserStats(el, user) {
   }
 }
 
-// MISSING CLASS - This is what was causing the error!
 class AniListSettingTab extends PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
@@ -1044,23 +894,6 @@ class AniListSettingTab extends PluginSettingTab {
         .onChange(async (value) => {
           this.plugin.settings.defaultLayout = value;
           await this.plugin.saveSettings();
-        }));
-    
-    new Setting(containerEl)
-      .setName('Cards Per Row')
-      .setDesc('Number of cards to display per row in card layout (1-4)')
-      .addSlider(slider => slider
-        .setLimits(1, 4, 1)
-        .setValue(this.plugin.settings.cardsPerRow)
-        .setDynamicTooltip()
-        .onChange(async (value) => {
-          this.plugin.settings.cardsPerRow = value;
-          await this.plugin.saveSettings();
-          
-          // Update existing grids in real-time
-          document.querySelectorAll('.anilist-grid, .anilist-search-grid').forEach(grid => {
-            grid.style.setProperty('--cards-per-row', value);
-          });
         }));
     
     new Setting(containerEl)

@@ -931,6 +931,17 @@ class AniListSettingTab extends PluginSettingTab {
           this.plugin.settings.showGenres = value;
           await this.plugin.saveSettings();
         }));
+    new Setting(containerEl)
+  .setName('Grid Columns')
+  .setDesc('Number of columns in card grid layout')
+  .addSlider(slider => slider
+    .setLimits(1, 6, 1)
+    .setValue(this.plugin.settings.gridColumns)
+    .setDynamicTooltip()
+    .onChange(async (value) => {
+      this.plugin.settings.gridColumns = value;
+      await this.plugin.saveSettings();
+    }));
   }
 }
 

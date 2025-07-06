@@ -1,4 +1,4 @@
-const { Plugin, MarkdownRenderer, Component } = require ('obsidian');
+const { Plugin, PluginSettingTab, Setting } = require('obsidian');
 
 class AniListPlugin extends Plugin {
   constructor() {
@@ -10,6 +10,9 @@ class AniListPlugin extends Plugin {
   async onload() {
     console.log('Loading AniList Plugin');
     
+    // Load settings first
+    await this.loadSettings();
+    
     // Register code block processor
     this.registerMarkdownCodeBlockProcessor('anilist', this.processAniListCodeBlock.bind(this));
     
@@ -18,9 +21,6 @@ class AniListPlugin extends Plugin {
     
     // Add plugin settings
     this.addSettingTab(new AniListSettingTab(this.app, this));
-    
-    // Load settings
-    await this.loadSettings();
   }
 
   async loadSettings() {
@@ -308,17 +308,41 @@ class AniListPlugin extends Plugin {
         <div class="stats-grid">
           <div class="stat-section">
             <h4>Anime</h4>
-            <div class="stat-item">Count: ${user.statistics.anime.count}</div>
-            <div class="stat-item">Episodes: ${user.statistics.anime.episodesWatched}</div>
-            <div class="stat-item">Minutes: ${user.statistics.anime.minutesWatched.toLocaleString()}</div>
-            <div class="stat-item">Mean Score: ${user.statistics.anime.meanScore}</div>
+            <div class="stat-item">
+              <span>Count:</span>
+              <span>${user.statistics.anime.count}</span>
+            </div>
+            <div class="stat-item">
+              <span>Episodes:</span>
+              <span>${user.statistics.anime.episodesWatched}</span>
+            </div>
+            <div class="stat-item">
+              <span>Minutes:</span>
+              <span>${user.statistics.anime.minutesWatched.toLocaleString()}</span>
+            </div>
+            <div class="stat-item">
+              <span>Mean Score:</span>
+              <span>${user.statistics.anime.meanScore}</span>
+            </div>
           </div>
           <div class="stat-section">
             <h4>Manga</h4>
-            <div class="stat-item">Count: ${user.statistics.manga.count}</div>
-            <div class="stat-item">Chapters: ${user.statistics.manga.chaptersRead}</div>
-            <div class="stat-item">Volumes: ${user.statistics.manga.volumesRead}</div>
-            <div class="stat-item">Mean Score: ${user.statistics.manga.meanScore}</div>
+            <div class="stat-item">
+              <span>Count:</span>
+              <span>${user.statistics.manga.count}</span>
+            </div>
+            <div class="stat-item">
+              <span>Chapters:</span>
+              <span>${user.statistics.manga.chaptersRead}</span>
+            </div>
+            <div class="stat-item">
+              <span>Volumes:</span>
+              <span>${user.statistics.manga.volumesRead}</span>
+            </div>
+            <div class="stat-item">
+              <span>Mean Score:</span>
+              <span>${user.statistics.manga.meanScore}</span>
+            </div>
           </div>
         </div>
       </div>

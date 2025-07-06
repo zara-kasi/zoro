@@ -16,6 +16,9 @@ class AniListPlugin extends Plugin {
     // Register code block processor
     this.registerMarkdownCodeBlockProcessor('anilist', this.processAniListCodeBlock.bind(this));
     
+    // Register new search code block processors
+    this.registerMarkdownCodeBlockProcessor('anilist-search', this.processAniListSearchCodeBlock.bind(this));
+    
     // Register inline link processor
     this.registerMarkdownPostProcessor(this.processInlineLinks.bind(this));
     
@@ -47,6 +50,15 @@ class AniListPlugin extends Plugin {
     }
   }
 
+  async processAniListSearchCodeBlock(source, el, ctx) {
+    try {
+      const config = this.parseSearchCodeBlockConfig(source);
+      this.renderSearchInterface(el, config);
+    } catch (error) {
+      this.renderError(el, error.message);
+    }
+  }
+
   parseCodeBlockConfig(source) {
     const config = {};
     const lines = source.split('\n').filter(line => line.trim());
@@ -63,6 +75,24 @@ class AniListPlugin extends Plugin {
     }
     
     config.listType = config.listType || 'CURRENT';
+    config.layout = config.layout || this.settings.defaultLayout;
+    
+    return config;
+  }
+
+  parseSearchCodeBlockConfig(source) {
+    const config = { type: 'search' };
+    const lines = source.split('\n').filter(line => line.trim());
+    
+    for (const line of lines) {
+      const [key, value] = line.split(':').map(s => s.trim());
+      if (key && value) {
+        config[key] = value;
+      }
+    }
+    
+    // Default to ANIME if no mediaType specified
+    config.mediaType = config.mediaType || 'ANIME';
     config.layout = config.layout || this.settings.defaultLayout;
     
     return config;
@@ -134,6 +164,14 @@ class AniListPlugin extends Plugin {
         mediaId: parseInt(config.mediaId),
         type: config.mediaType
       };
+    } else if (config.type === 'search') {
+      query = this.getSearchMediaQuery();
+      variables = { 
+        search: config.search,
+        type: config.mediaType,
+        page: config.page || 1,
+        perPage: config.perPage || 20
+      };
     } else {
       query = this.getMediaListQuery();
       variables = { 
@@ -193,6 +231,7 @@ class AniListPlugin extends Plugin {
                 episodes
                 chapters
                 genres
+                format
                 averageScore
                 status
                 startDate {
@@ -235,6 +274,7 @@ class AniListPlugin extends Plugin {
             episodes
             chapters
             genres
+            format
             averageScore
             status
             startDate {
@@ -284,9 +324,209 @@ class AniListPlugin extends Plugin {
     `;
   }
 
+  getSearchMediaQuery() {
+    return `
+      query ($search: String, $type: MediaType, $page: Int, $perPage: Int) {
+        Page(page: $page, perPage: $perPage) {
+          pageInfo {
+            total
+            currentPage
+            lastPage
+            hasNextPage
+            perPage
+          }
+          media(search: $search, type: $type) {
+            id
+            title {
+              romaji
+              english
+              native
+            }
+            coverImage {
+              large
+              medium
+            }
+            episodes
+            chapters
+            genres
+            format
+            averageScore
+            status
+            startDate {
+              year
+              month
+              day
+            }
+            endDate {
+              year
+              month
+              day
+            }
+          }
+        }
+      }
+    `;
+  }
+
   // Helper function to generate AniList URL
   getAniListUrl(mediaId) {
     return `https://anilist.co/anime/${mediaId}`;
+  }
+
+  renderSearchInterface(el, config) {
+    el.empty();
+    el.className = 'anilist-search-container';
+    
+    // Create search input
+    const searchDiv = document.createElement('div');
+    searchDiv.className = 'anilist-search-input-container';
+    
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'anilist-search-input';
+    searchInput.placeholder = config.mediaType === 'ANIME' ? 'Search anime...' : 'Search manga...';
+    
+    const searchButton = document.createElement('button');
+    searchButton.className = 'anilist-search-button';
+    searchButton.textContent = 'Search';
+    
+    searchDiv.appendChild(searchInput);
+    searchDiv.appendChild(searchButton);
+    el.appendChild(searchDiv);
+    
+    // Create results container
+    const resultsDiv = document.createElement('div');
+    resultsDiv.className = 'anilist-search-results';
+    el.appendChild(resultsDiv);
+    
+    // Add event listeners
+    let searchTimeout;
+    
+    const performSearch = async () => {
+      const searchTerm = searchInput.value.trim();
+      
+      if (searchTerm.length < 3) {
+        resultsDiv.innerHTML = '<div class="anilist-search-message">Type at least 3 characters to search...</div>';
+        return;
+      }
+      
+      try {
+        resultsDiv.innerHTML = '<div class="anilist-search-loading">Searching...</div>';
+        
+        const searchConfig = {
+          ...config,
+          search: searchTerm,
+          page: 1,
+          perPage: 20
+        };
+        
+        const data = await this.fetchAniListData(searchConfig);
+        this.renderSearchResults(resultsDiv, data.Page.media, config);
+        
+      } catch (error) {
+        this.renderError(resultsDiv, error.message);
+      }
+    };
+    
+    searchInput.addEventListener('input', () => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(performSearch, 300);
+    });
+    
+    searchButton.addEventListener('click', performSearch);
+    
+    searchInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        performSearch();
+      }
+    });
+  }
+
+  renderSearchResults(el, media, config) {
+    el.empty();
+    
+    if (media.length === 0) {
+      el.innerHTML = '<div class="anilist-search-message">No results found.</div>';
+      return;
+    }
+    
+    const gridDiv = document.createElement('div');
+    gridDiv.className = 'anilist-search-grid';
+    
+    media.forEach(item => {
+      const title = item.title.english || item.title.romaji;
+      
+      const cardDiv = document.createElement('div');
+      cardDiv.className = 'anilist-search-card';
+      
+      if (this.settings.showCoverImages) {
+        const img = document.createElement('img');
+        img.src = item.coverImage.medium;
+        img.alt = title;
+        img.className = 'media-cover';
+        cardDiv.appendChild(img);
+      }
+      
+      const mediaInfoDiv = document.createElement('div');
+      mediaInfoDiv.className = 'media-info';
+      
+      // Create clickable title
+      const titleElement = document.createElement('h4');
+      const titleLink = document.createElement('a');
+      titleLink.href = this.getAniListUrl(item.id);
+      titleLink.target = '_blank';
+      titleLink.rel = 'noopener noreferrer';
+      titleLink.className = 'anilist-title-link';
+      titleLink.textContent = title;
+      titleElement.appendChild(titleLink);
+      mediaInfoDiv.appendChild(titleElement);
+      
+      // Create details div
+      const detailsDiv = document.createElement('div');
+      detailsDiv.className = 'media-details';
+      
+      // Format badge
+      if (item.format) {
+        const formatBadge = document.createElement('span');
+        formatBadge.className = 'format-badge';
+        formatBadge.textContent = item.format;
+        detailsDiv.appendChild(formatBadge);
+      }
+      
+      // Status badge
+      const statusBadge = document.createElement('span');
+      statusBadge.className = `status-badge status-${item.status.toLowerCase()}`;
+      statusBadge.textContent = item.status;
+      detailsDiv.appendChild(statusBadge);
+      
+      // Average score
+      if (this.settings.showRatings && item.averageScore) {
+        const scoreSpan = document.createElement('span');
+        scoreSpan.className = 'score';
+        scoreSpan.textContent = `★ ${item.averageScore}`;
+        detailsDiv.appendChild(scoreSpan);
+      }
+      
+      mediaInfoDiv.appendChild(detailsDiv);
+      
+      // Create genres div
+      if (this.settings.showGenres) {
+        const genresDiv = document.createElement('div');
+        genresDiv.className = 'genres';
+        item.genres.slice(0, 3).forEach(genre => {
+          const genreTag = document.createElement('span');
+          genreTag.className = 'genre-tag';
+          genreTag.textContent = genre;
+          genresDiv.appendChild(genreTag);
+        });
+        mediaInfoDiv.appendChild(genresDiv);
+      }
+      
+      cardDiv.appendChild(mediaInfoDiv);
+      gridDiv.appendChild(cardDiv);
+    });
+    
+    el.appendChild(gridDiv);
   }
 
   renderAniListData(el, data, config) {
@@ -388,89 +628,13 @@ class AniListPlugin extends Plugin {
     // Create details div
     const detailsDiv = document.createElement('div');
     detailsDiv.className = 'media-details';
-    
-    const statusBadge = document.createElement('span');
-    statusBadge.className = `status-badge status-${mediaList.status.toLowerCase()}`;
-    statusBadge.textContent = mediaList.status;
-    detailsDiv.appendChild(statusBadge);
-    
-    if (this.settings.showProgress) {
-      const progressSpan = document.createElement('span');
-      progressSpan.className = 'progress';
-      progressSpan.textContent = `${mediaList.progress}/${media.episodes || media.chapters || '?'}`;
-      detailsDiv.appendChild(progressSpan);
-    }
-    
-    if (this.settings.showRatings && mediaList.score) {
-      const scoreSpan = document.createElement('span');
-      scoreSpan.className = 'score';
-      scoreSpan.textContent = `★ ${mediaList.score}`;
-      detailsDiv.appendChild(scoreSpan);
-    }
-    
-    mediaInfoDiv.appendChild(detailsDiv);
-    
-    // Create genres div
-    if (this.settings.showGenres) {
-      const genresDiv = document.createElement('div');
-      genresDiv.className = 'genres';
-      media.genres.slice(0, 3).forEach(genre => {
-        const genreTag = document.createElement('span');
-        genreTag.className = 'genre-tag';
-        genreTag.textContent = genre;
-        genresDiv.appendChild(genreTag);
-      });
-      mediaInfoDiv.appendChild(genresDiv);
-    }
-    
-    cardDiv.appendChild(mediaInfoDiv);
-    el.appendChild(cardDiv);
-  }
-
-  renderMediaList(el, entries, config) {
-    if (config.layout === 'table') {
-      this.renderTableLayout(el, entries);
-    } else {
-      this.renderCardLayout(el, entries);
-    }
-  }
-
-  renderCardLayout(el, entries) {
-    const gridDiv = document.createElement('div');
-    gridDiv.className = 'anilist-cards-grid';
-    
-    entries.forEach(entry => {
-      const media = entry.media;
-      const title = media.title.english || media.title.romaji;
-      
-      const cardDiv = document.createElement('div');
-      cardDiv.className = 'anilist-card';
-      
-      if (this.settings.showCoverImages) {
-        const img = document.createElement('img');
-        img.src = media.coverImage.medium;
-        img.alt = title;
-        img.className = 'media-cover';
-        cardDiv.appendChild(img);
+    // Format badge
+      if (media.format) {
+        const formatBadge = document.createElement('span');
+        formatBadge.className = 'format-badge';
+        formatBadge.textContent = media.format;
+        detailsDiv.appendChild(formatBadge);
       }
-      
-      const mediaInfoDiv = document.createElement('div');
-      mediaInfoDiv.className = 'media-info';
-      
-      // Create clickable title
-      const titleElement = document.createElement('h4');
-      const titleLink = document.createElement('a');
-      titleLink.href = this.getAniListUrl(media.id);
-      titleLink.target = '_blank';
-      titleLink.rel = 'noopener noreferrer';
-      titleLink.className = 'anilist-title-link';
-      titleLink.textContent = title;
-      titleElement.appendChild(titleLink);
-      mediaInfoDiv.appendChild(titleElement);
-      
-      // Create details div
-      const detailsDiv = document.createElement('div');
-      detailsDiv.className = 'media-details';
       
       const statusBadge = document.createElement('span');
       statusBadge.className = `status-badge status-${entry.status.toLowerCase()}`;
@@ -525,6 +689,10 @@ class AniListPlugin extends Plugin {
     titleHeader.textContent = 'Title';
     headerRow.appendChild(titleHeader);
     
+    const formatHeader = document.createElement('th');
+    formatHeader.textContent = 'Format';
+    headerRow.appendChild(formatHeader);
+    
     const statusHeader = document.createElement('th');
     statusHeader.textContent = 'Status';
     headerRow.appendChild(statusHeader);
@@ -563,6 +731,18 @@ class AniListPlugin extends Plugin {
       titleLink.textContent = title;
       titleCell.appendChild(titleLink);
       row.appendChild(titleCell);
+      
+      // Format cell
+      const formatCell = document.createElement('td');
+      if (media.format) {
+        const formatBadge = document.createElement('span');
+        formatBadge.className = 'format-badge';
+        formatBadge.textContent = media.format;
+        formatCell.appendChild(formatBadge);
+      } else {
+        formatCell.textContent = '-';
+      }
+      row.appendChild(formatCell);
       
       // Status cell
       const statusCell = document.createElement('td');
@@ -669,3 +849,6 @@ class AniListSettingTab extends PluginSettingTab {
 }
 
 module.exports = AniListPlugin;
+    
+    
+      

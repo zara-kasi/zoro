@@ -680,6 +680,7 @@ class AniListPlugin extends Plugin {
   renderMediaList(el, entries, config) {
     const gridDiv = document.createElement('div');
     gridDiv.className = 'anilist-cards-grid';
+    gridDiv.style.setProperty('--anilist-grid-columns', this.settings.gridColumns);
     
     entries.forEach(entry => {
       const media = entry.media;

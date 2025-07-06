@@ -32,7 +32,8 @@ class AniListPlugin extends Plugin {
       showCoverImages: true,
       showRatings: true,
       showProgress: true,
-      showGenres: true
+      showGenres: false,
+      gridColumns: 3
     }, await this.loadData());
   }
 

@@ -21,7 +21,7 @@
 .anilist-cards-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.5rem;
+  gap: 1rem;
   margin: 1rem 0;
   padding: 0;
   list-style: none; /* remove any bullets/icons */
@@ -70,10 +70,6 @@
   gap: 0.5rem;
 }
 
-.anilist-card {
-  width: 50px;
-  height: 150px;      /* if you want to fix the overall height, too */
-}
 
 /* Title styling – clamp to one line with ellipsis */
 .anilist-card h4,

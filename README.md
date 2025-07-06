@@ -32,7 +32,7 @@ Embed your AniList anime and manga data directly in your Obsidian notes, similar
 2. Enter your AniList username in the "Default Username" field
 3. Configure your display preferences
 4. Start using the plugin in your notes!
-
+## [comprehensive guide on how to use all its features:](Guide.md)
 
 ## Advanced Features
 

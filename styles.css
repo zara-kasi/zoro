@@ -71,8 +71,8 @@
 }
 
 .anilist-card {
-  width: 200px;
-  height: 300px;      /* if you want to fix the overall height, too */
+  width: 50px;
+  height: 150px;      /* if you want to fix the overall height, too */
 }
 
 /* Title styling – clamp to one line with ellipsis */

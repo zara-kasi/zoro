@@ -3,7 +3,7 @@
 /* ─── Container Styles ─── */
 .anilist-container {
   margin: 1rem 0;
-  padding: 0 1rem;             /* ← horizontal padding off the screen edge */
+  padding: 0 0.5rem;             /* ← horizontal padding off the screen edge */
   font-family: var(--font-interface);
 }
 
@@ -102,10 +102,10 @@
 .status-badge {
   padding: 0.1rem 0.4rem;
   border-radius: 12px;
-  font-size: 0.2rem;
+  font-size: 0.1rem;
   font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.1px;
 }
 
 

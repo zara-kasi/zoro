@@ -218,7 +218,7 @@ type: stats
 - [Plan to Watch](anilist:YourUsername/planning)
 - [On Hold](anilist:YourUsername/paused)
 - [Dropped](anilist:YourUsername/dropped)
-```
+
 
 ---
 

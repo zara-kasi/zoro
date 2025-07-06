@@ -615,7 +615,7 @@ getAniListUrl(mediaId, mediaType = 'ANIME') {
       // Create clickable title
       const titleElement = document.createElement('h4');
       const titleLink = document.createElement('a');
-      titleLink.href = this.getAniListUrl(item.id);
+      titleLink.href = this.getAniListUrl(item.id, item.type || config.mediaType);
       titleLink.target = '_blank';
       titleLink.rel = 'noopener noreferrer';
       titleLink.className = 'anilist-title-link';
@@ -768,7 +768,7 @@ renderUserStats(el, user) {
     // Create clickable title
     const titleElement = document.createElement('h3');
     const titleLink = document.createElement('a');
-    titleLink.href = this.getAniListUrl(media.id);
+    titleLink.href = this.getAniListUrl(item.id, item.type || config.mediaType);
     titleLink.target = '_blank';
     titleLink.rel = 'noopener noreferrer';
     titleLink.className = 'anilist-title-link';
@@ -855,7 +855,7 @@ renderUserStats(el, user) {
 // Create clickable title
       const titleElement = document.createElement('h4');
       const titleLink = document.createElement('a');
-      titleLink.href = this.getAniListUrl(media.id);
+      titleLink.href = this.getAniListUrl(item.id, item.type || config.mediaType);
       titleLink.target = '_blank';
       titleLink.rel = 'noopener noreferrer';
       titleLink.className = 'anilist-title-link';
@@ -963,7 +963,7 @@ renderUserStats(el, user) {
       // Title cell with clickable link
       const titleCell = document.createElement('td');
       const titleLink = document.createElement('a');
-      titleLink.href = this.getAniListUrl(media.id);
+      titleLink.href = this.getAniListUrl(item.id, item.type || config.mediaType);
       titleLink.target = '_blank';
       titleLink.rel = 'noopener noreferrer';
       titleLink.className = 'anilist-title-link';

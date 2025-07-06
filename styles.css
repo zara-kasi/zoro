@@ -1,321 +1,115 @@
-/* styles. Css */
-
-/* Container Styles */
-.anilist-container {
-  margin: 1rem 0;
-  font-family: var(--font-interface);
-}
-
-/* Error Styles */
-.anilist-error {
-  color: var(--text-error);
-  background: var(--background-modifier-error);
-  padding: 1rem;
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-  margin: 1rem 0;
-}
-
-/* Card Layout Styles */
+/* Container: two-column grid like your screenshot */
 .anilist-cards-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 1rem;
+  display: grid !important;
+  grid-template-columns: repeat(auto-fill, minmax(45%, 1fr));
+  gap: 0.8rem !important;
   margin: 1rem 0;
 }
 
-/* Mobile responsiveness */
-@media (max-width: 768px) {
-  .anilist-cards-grid {
-    grid-template-columns: 1fr;
-    gap: 0.8rem;
-  }
+/* Card base: image as background, rounded & shadowed */
+.anilist-single-card {
+  position: relative !important;
+  overflow: hidden !important;
+  border-radius: 12px !important;
+  height: 180px !important;
+  background-size: cover !important;
+  background-position: center !important;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3) !important;
+  transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+  display: block !important;
+  margin: 0 !important;
 }
 
-.anilist-card, .anilist-single-card {
-  background: var(--background-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 1rem;
-  display: flex;
-  gap: 1rem;
-  transition: box-shadow 0.2s ease;
+/* Hover effect */
+.anilist-single-card:hover {
+  transform: scale(1.03) !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4) !important;
 }
 
-.anilist-card:hover, .anilist-single-card:hover {
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+/* Remove inner flex layout */
+.anilist-single-card .media-cover,
+.anilist-single-card .media-info {
+  display: none !important;
 }
 
-.anilist-card .media-cover, .anilist-single-card .media-cover {
-  width: 80px;
-  height: 120px;
-  object-fit: cover;
-  border-radius: 4px;
-  flex-shrink: 0;
-}
-
-.anilist-card .media-info, .anilist-single-card .media-info {
-  flex: 1;
+/* Overlay container at bottom */
+.anilist-single-card .overlay {
+  position: absolute !important;
+  bottom: 0;
+  width: 100%;
+  padding: 0.8rem 1rem !important;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.75), transparent) !important;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-}
-
-.anilist-card h4, .anilist-single-card h3 {
-  margin: 0;
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: var(--text-normal);
-  line-height: 1.3;
-}
-
-.anilist-single-card h3 {
-  font-size: 1.2rem;
-}
-
-.media-details {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  flex-wrap: wrap;
-}
-
-/* Status Badge Styles */
-.status-badge {
-  padding: 0.2rem 0.6rem;
-  border-radius: 12px;
-  font-size: 0.8rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.status-current {
-  background: var(--color-green);
-  color: white;
-}
-
-.status-completed {
-  background: var(--color-blue);
-  color: white;
-}
-
-.status-paused {
-  background: var(--color-yellow);
-  color: var(--text-normal);
-}
-
-.status-dropped {
-  background: var(--color-red);
-  color: white;
-}
-
-.status-planning {
-  background: var(--color-purple);
-  color: white;
-}
-
-.status-repeating {
-  background: var(--color-cyan);
-  color: white;
-}
-
-/* Progress and Score Styles */
-.progress, .score {
-  padding: 0.2rem 0.4rem;
-  background: var(--background-modifier-border);
-  border-radius: 4px;
-  font-size: 0.85rem;
-  font-weight: 500;
-}
-
-.score {
-  color: var(--color-orange);
-}
-
-/* Genre Tags */
-.genres {
-  display: flex;
   gap: 0.3rem;
-  flex-wrap: wrap;
-  margin-top: 0.5rem;
 }
 
-.genre-tag {
-  background: var(--background-modifier-hover);
-  color: var(--text-muted);
+/* Title styling */
+.anilist-single-card .overlay .title {
+  font-size: 1rem !important;
+  font-weight: 600 !important;
+  color: #fff !important;
+  line-height: 1.2 !important;
+}
+
+/* Subtitle (“Anime”/“Manga”) */
+.anilist-single-card .overlay .subtitle {
+  font-size: 0.8rem !important;
+  font-weight: 400 !important;
+  color: #d4b16e !important; /* soft gold */
+}
+
+/* Badges container: status, progress, score */
+.anilist-single-card .overlay .badges {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+/* Individual badge */
+.anilist-single-card .overlay .badge {
   padding: 0.2rem 0.5rem;
   border-radius: 10px;
   font-size: 0.75rem;
   font-weight: 500;
+  text-transform: uppercase;
 }
 
-/* Table Layout Styles */
-.anilist-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin: 1rem 0;
-  background: var(--background-secondary);
-  border-radius: 8px;
-  overflow: hidden;
-}
+/* Status badge colors */
+.anilist-single-card .overlay .badge.status-current    { background: #4caf50; color: #fff; }
+.anilist-single-card .overlay .badge.status-completed  { background: #2196f3; color: #fff; }
+.anilist-single-card .overlay .badge.status-planning   { background: #9c27b0; color: #fff; }
+.anilist-single-card .overlay .badge.status-dropped    { background: #f44336; color: #fff; }
+.anilist-single-card .overlay .badge.status-paused     { background: #ffeb3b; color: #000; }
 
-.anilist-table th {
-  background: var(--background-modifier-hover);
-  color: var(--text-normal);
-  padding: 1rem;
-  text-align: left;
-  font-weight: 600;
-  border-bottom: 1px solid var(--border-color);
-}
+/* Progress & score badges */
+.anilist-single-card .overlay .badge.progress { background: rgba(0,0,0,0.6); color: #fff; }
+.anilist-single-card .overlay .badge.score    { background: #ff9800; color: #fff; }
 
-.anilist-table td {
-  padding: 0.8rem 1rem;
-  border-bottom: 1px solid var(--border-color);
-  color: var(--text-normal);
-}
-
-.anilist-table tr:hover {
-  background: var(--background-modifier-hover);
-}
-
-/* User Stats Styles */
-.anilist-user-stats {
-  background: var(--background-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 1.5rem;
-  margin: 1rem 0;
-}
-
-.user-header {
+/* Genre tags at very bottom */
+.anilist-single-card .overlay .genres {
   display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--border-color);
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  margin-top: auto;
 }
 
-.user-avatar {
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  object-fit: cover;
+.anilist-single-card .overlay .genre-tag {
+  background: rgba(255,255,255,0.2) !important;
+  color: #fff !important;
+  padding: 0.2rem 0.5rem !important;
+  border-radius: 999px !important;
+  font-size: 0.7rem !important;
+  font-weight: 500 !important;
 }
 
-.user-header h3 {
-  margin: 0;
-  font-size: 1.5rem;
-  font-weight: 600;
-  color: var(--text-normal);
-}
-
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1.5rem;
-}
-
-.stat-section {
-  background: var(--background-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 1rem;
-}
-
-.stat-section h4 {
-  margin: 0 0 0.8rem 0;
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: var(--text-normal);
-  text-align: center;
-}
-
-.stat-item {
-  display: flex;
-  justify-content: space-between;
-  padding: 0.4rem 0;
-  border-bottom: 1px solid var(--border-color);
-  color: var(--text-muted);
-  font-size: 0.9rem;
-}
-
-.stat-item:last-child {
-  border-bottom: none;
-}
-
-/* Inline Container */
-.anilist-inline-container {
-  display: inline-block;
-  margin: 0.5rem 0;
-}
-
-/* Mobile-specific adjustments */
+/* Mobile tweak: ensure two-column even on narrow screens */
 @media (max-width: 480px) {
-  .anilist-card, .anilist-single-card {
-    flex-direction: column;
-    text-align: center;
+  .anilist-cards-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.5rem;
   }
-  
-  .anilist-card .media-cover, .anilist-single-card .media-cover {
-    width: 100px;
-    height: 150px;
-    align-self: center;
-  }
-  
-  .media-details {
-    justify-content: center;
-  }
-  
-  .anilist-table {
-    font-size: 0.85rem;
-  }
-  
-  .anilist-table th, .anilist-table td {
-    padding: 0.6rem 0.8rem;
-  }
-  
-  .stats-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* Dark mode adjustments */
-.theme-dark .anilist-card, 
-.theme-dark .anilist-single-card,
-.theme-dark .anilist-user-stats {
-  background: var(--background-secondary);
-  border-color: var(--border-color);
-}
-
-.theme-dark .anilist-table {
-  background: var(--background-secondary);
-}
-
-/* Animation for loading states */
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-.anilist-container > * {
-  animation: fadeIn 0.3s ease;
-}
-
-/* Responsive text scaling */
-@media (max-width: 600px) {
-  .anilist-card h4, .anilist-single-card h3 {
-    font-size: 1rem;
-  }
-  
-  .user-header h3 {
-    font-size: 1.3rem;
-  }
+  .anilist-single-card { height: 160px; }
+  .anilist-single-card .overlay { padding: 0.6rem 0.8rem; }
 }

@@ -289,12 +289,6 @@ class AniListPlugin extends Plugin {
     return `https://anilist.co/anime/${mediaId}`;
   }
 
-  // Helper function to create clickable title
-  createClickableTitle(title, mediaId, tagName = 'h4') {
-    const url = this.getAniListUrl(mediaId);
-    return `<${tagName}><a href="${url}" target="_blank" rel="noopener noreferrer" class="anilist-title-link">${title}</a></${tagName}>`;
-  }
-
   renderAniListData(el, data, config) {
     el.empty();
     el.className = 'anilist-container';
@@ -366,22 +360,71 @@ class AniListPlugin extends Plugin {
     const media = mediaList.media;
     const title = media.title.english || media.title.romaji;
     
-    const cardHtml = `
-      <div class="anilist-single-card">
-        ${this.settings.showCoverImages ? `<img src="${media.coverImage.medium}" alt="${title}" class="media-cover">` : ''}
-        <div class="media-info">
-          ${this.createClickableTitle(title, media.id, 'h3')}
-          <div class="media-details">
-            <span class="status-badge status-${mediaList.status.toLowerCase()}">${mediaList.status}</span>
-            ${this.settings.showProgress ? `<span class="progress">${mediaList.progress}/${media.episodes || media.chapters || '?'}</span>` : ''}
-            ${this.settings.showRatings && mediaList.score ? `<span class="score">★ ${mediaList.score}</span>` : ''}
-          </div>
-          ${this.settings.showGenres ? `<div class="genres">${media.genres.slice(0, 3).map(g => `<span class="genre-tag">${g}</span>`).join('')}</div>` : ''}
-        </div>
-      </div>
-    `;
+    const cardDiv = document.createElement('div');
+    cardDiv.className = 'anilist-single-card';
     
-    el.innerHTML = cardHtml;
+    if (this.settings.showCoverImages) {
+      const img = document.createElement('img');
+      img.src = media.coverImage.medium;
+      img.alt = title;
+      img.className = 'media-cover';
+      cardDiv.appendChild(img);
+    }
+    
+    const mediaInfoDiv = document.createElement('div');
+    mediaInfoDiv.className = 'media-info';
+    
+    // Create clickable title
+    const titleElement = document.createElement('h3');
+    const titleLink = document.createElement('a');
+    titleLink.href = this.getAniListUrl(media.id);
+    titleLink.target = '_blank';
+    titleLink.rel = 'noopener noreferrer';
+    titleLink.className = 'anilist-title-link';
+    titleLink.textContent = title;
+    titleElement.appendChild(titleLink);
+    mediaInfoDiv.appendChild(titleElement);
+    
+    // Create details div
+    const detailsDiv = document.createElement('div');
+    detailsDiv.className = 'media-details';
+    
+    const statusBadge = document.createElement('span');
+    statusBadge.className = `status-badge status-${mediaList.status.toLowerCase()}`;
+    statusBadge.textContent = mediaList.status;
+    detailsDiv.appendChild(statusBadge);
+    
+    if (this.settings.showProgress) {
+      const progressSpan = document.createElement('span');
+      progressSpan.className = 'progress';
+      progressSpan.textContent = `${mediaList.progress}/${media.episodes || media.chapters || '?'}`;
+      detailsDiv.appendChild(progressSpan);
+    }
+    
+    if (this.settings.showRatings && mediaList.score) {
+      const scoreSpan = document.createElement('span');
+      scoreSpan.className = 'score';
+      scoreSpan.textContent = `★ ${mediaList.score}`;
+      detailsDiv.appendChild(scoreSpan);
+    }
+    
+    mediaInfoDiv.appendChild(detailsDiv);
+    
+    // Create genres div
+    if (this.settings.showGenres) {
+      const genresDiv = document.createElement('div');
+      genresDiv.className = 'genres';
+      media.genres.slice(0, 3).forEach(genre => {
+        const genreTag = document.createElement('span');
+        genreTag.className = 'genre-tag';
+        genreTag.textContent = genre;
+        genresDiv.appendChild(genreTag);
+      });
+      mediaInfoDiv.appendChild(genresDiv);
+    }
+    
+    cardDiv.appendChild(mediaInfoDiv);
+    el.appendChild(cardDiv);
   }
 
   renderMediaList(el, entries, config) {
@@ -393,60 +436,161 @@ class AniListPlugin extends Plugin {
   }
 
   renderCardLayout(el, entries) {
-    const cardsHtml = entries.map(entry => {
+    const gridDiv = document.createElement('div');
+    gridDiv.className = 'anilist-cards-grid';
+    
+    entries.forEach(entry => {
       const media = entry.media;
       const title = media.title.english || media.title.romaji;
       
-      return `
-        <div class="anilist-card">
-          ${this.settings.showCoverImages ? `<img src="${media.coverImage.medium}" alt="${title}" class="media-cover">` : ''}
-          <div class="media-info">
-            ${this.createClickableTitle(title, media.id)}
-            <div class="media-details">
-              <span class="status-badge status-${entry.status.toLowerCase()}">${entry.status}</span>
-              ${this.settings.showProgress ? `<span class="progress">${entry.progress}/${media.episodes || media.chapters || '?'}</span>` : ''}
-              ${this.settings.showRatings && entry.score ? `<span class="score">★ ${entry.score}</span>` : ''}
-            </div>
-            ${this.settings.showGenres ? `<div class="genres">${media.genres.slice(0, 3).map(g => `<span class="genre-tag">${g}</span>`).join('')}</div>` : ''}
-          </div>
-        </div>
-      `;
-    }).join('');
+      const cardDiv = document.createElement('div');
+      cardDiv.className = 'anilist-card';
+      
+      if (this.settings.showCoverImages) {
+        const img = document.createElement('img');
+        img.src = media.coverImage.medium;
+        img.alt = title;
+        img.className = 'media-cover';
+        cardDiv.appendChild(img);
+      }
+      
+      const mediaInfoDiv = document.createElement('div');
+      mediaInfoDiv.className = 'media-info';
+      
+      // Create clickable title
+      const titleElement = document.createElement('h4');
+      const titleLink = document.createElement('a');
+      titleLink.href = this.getAniListUrl(media.id);
+      titleLink.target = '_blank';
+      titleLink.rel = 'noopener noreferrer';
+      titleLink.className = 'anilist-title-link';
+      titleLink.textContent = title;
+      titleElement.appendChild(titleLink);
+      mediaInfoDiv.appendChild(titleElement);
+      
+      // Create details div
+      const detailsDiv = document.createElement('div');
+      detailsDiv.className = 'media-details';
+      
+      const statusBadge = document.createElement('span');
+      statusBadge.className = `status-badge status-${entry.status.toLowerCase()}`;
+      statusBadge.textContent = entry.status;
+      detailsDiv.appendChild(statusBadge);
+      
+      if (this.settings.showProgress) {
+        const progressSpan = document.createElement('span');
+        progressSpan.className = 'progress';
+        progressSpan.textContent = `${entry.progress}/${media.episodes || media.chapters || '?'}`;
+        detailsDiv.appendChild(progressSpan);
+      }
+      
+      if (this.settings.showRatings && entry.score) {
+        const scoreSpan = document.createElement('span');
+        scoreSpan.className = 'score';
+        scoreSpan.textContent = `★ ${entry.score}`;
+        detailsDiv.appendChild(scoreSpan);
+      }
+      
+      mediaInfoDiv.appendChild(detailsDiv);
+      
+      // Create genres div
+      if (this.settings.showGenres) {
+        const genresDiv = document.createElement('div');
+        genresDiv.className = 'genres';
+        media.genres.slice(0, 3).forEach(genre => {
+          const genreTag = document.createElement('span');
+          genreTag.className = 'genre-tag';
+          genreTag.textContent = genre;
+          genresDiv.appendChild(genreTag);
+        });
+        mediaInfoDiv.appendChild(genresDiv);
+      }
+      
+      cardDiv.appendChild(mediaInfoDiv);
+      gridDiv.appendChild(cardDiv);
+    });
     
-    el.innerHTML = `<div class="anilist-cards-grid">${cardsHtml}</div>`;
+    el.appendChild(gridDiv);
   }
 
   renderTableLayout(el, entries) {
-    const tableHtml = `
-      <table class="anilist-table">
-        <thead>
-          <tr>
-            <th>Title</th>
-            <th>Status</th>
-            ${this.settings.showProgress ? '<th>Progress</th>' : ''}
-            ${this.settings.showRatings ? '<th>Score</th>' : ''}
-          </tr>
-        </thead>
-        <tbody>
-          ${entries.map(entry => {
-            const media = entry.media;
-            const title = media.title.english || media.title.romaji;
-            const url = this.getAniListUrl(media.id);
-            
-            return `
-              <tr>
-                <td><a href="${url}" target="_blank" rel="noopener noreferrer" class="anilist-title-link">${title}</a></td>
-                <td><span class="status-badge status-${entry.status.toLowerCase()}">${entry.status}</span></td>
-                ${this.settings.showProgress ? `<td>${entry.progress}/${media.episodes || media.chapters || '?'}</td>` : ''}
-                ${this.settings.showRatings ? `<td>${entry.score ? '★ ' + entry.score : '-'}</td>` : ''}
-              </tr>
-            `;
-          }).join('')}
-        </tbody>
-      </table>
-    `;
+    const table = document.createElement('table');
+    table.className = 'anilist-table';
     
-    el.innerHTML = tableHtml;
+    // Create header
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    
+    const titleHeader = document.createElement('th');
+    titleHeader.textContent = 'Title';
+    headerRow.appendChild(titleHeader);
+    
+    const statusHeader = document.createElement('th');
+    statusHeader.textContent = 'Status';
+    headerRow.appendChild(statusHeader);
+    
+    if (this.settings.showProgress) {
+      const progressHeader = document.createElement('th');
+      progressHeader.textContent = 'Progress';
+      headerRow.appendChild(progressHeader);
+    }
+    
+    if (this.settings.showRatings) {
+      const scoreHeader = document.createElement('th');
+      scoreHeader.textContent = 'Score';
+      headerRow.appendChild(scoreHeader);
+    }
+    
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+    
+    // Create body
+    const tbody = document.createElement('tbody');
+    
+    entries.forEach(entry => {
+      const media = entry.media;
+      const title = media.title.english || media.title.romaji;
+      
+      const row = document.createElement('tr');
+      
+      // Title cell with clickable link
+      const titleCell = document.createElement('td');
+      const titleLink = document.createElement('a');
+      titleLink.href = this.getAniListUrl(media.id);
+      titleLink.target = '_blank';
+      titleLink.rel = 'noopener noreferrer';
+      titleLink.className = 'anilist-title-link';
+      titleLink.textContent = title;
+      titleCell.appendChild(titleLink);
+      row.appendChild(titleCell);
+      
+      // Status cell
+      const statusCell = document.createElement('td');
+      const statusBadge = document.createElement('span');
+      statusBadge.className = `status-badge status-${entry.status.toLowerCase()}`;
+      statusBadge.textContent = entry.status;
+      statusCell.appendChild(statusBadge);
+      row.appendChild(statusCell);
+      
+      // Progress cell
+      if (this.settings.showProgress) {
+        const progressCell = document.createElement('td');
+        progressCell.textContent = `${entry.progress}/${media.episodes || media.chapters || '?'}`;
+        row.appendChild(progressCell);
+      }
+      
+      // Score cell
+      if (this.settings.showRatings) {
+        const scoreCell = document.createElement('td');
+        scoreCell.textContent = entry.score ? `★ ${entry.score}` : '-';
+        row.appendChild(scoreCell);
+      }
+      
+      tbody.appendChild(row);
+    });
+    
+    table.appendChild(tbody);
+    el.appendChild(table);
   }
 
   renderError(el, message) {

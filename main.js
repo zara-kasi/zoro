@@ -9,13 +9,17 @@ class AniListPlugin extends Plugin {
 
   async onload() {
     console.log('Loading AniList Plugin');
+    
+    // Load settings first
     await this.loadSettings();
-
-    // Register code block processors
+    
+    // Register code block processor
     this.registerMarkdownCodeBlockProcessor('anilist', this.processAniListCodeBlock.bind(this));
-    this.registerMarkdownCodeBlockProcessor('anilist-search', this.processGlobalSearchCodeBlock.bind(this));
+    
+    // Register inline link processor
     this.registerMarkdownPostProcessor(this.processInlineLinks.bind(this));
-
+    
+    // Add plugin settings
     this.addSettingTab(new AniListSettingTab(this.app, this));
   }
 
@@ -33,7 +37,6 @@ class AniListPlugin extends Plugin {
     await this.saveData(this.settings);
   }
 
-  // Code block for user lists
   async processAniListCodeBlock(source, el, ctx) {
     try {
       const config = this.parseCodeBlockConfig(source);
@@ -44,47 +47,40 @@ class AniListPlugin extends Plugin {
     }
   }
 
-  // New code block for global search
-  async processGlobalSearchCodeBlock(source, el, ctx) {
-    try {
-      const container = document.createElement('div');
-      container.className = 'anilist-global-container';
-
-      const input = document.createElement('input');
-      input.type = 'text';
-      input.placeholder = 'Search all shows...';
-      input.className = 'anilist-global-search';
-      container.appendChild(input);
-
-      const results = document.createElement('div');
-      results.className = 'anilist-global-results';
-      container.appendChild(results);
-
-      input.addEventListener('input', async e => {
-        const term = e.target.value.trim();
-        if (term.length < 3) return;
-        const cfg = { type: 'search', searchTerm: term };
-        const mediaList = await this.fetchAniListData(cfg);
-        results.empty();
-        this.renderCardLayout(results, mediaList.map(m => ({ media: m, status: m.status || '-', score: m.averageScore || 0, progress: m.episodes || m.chapters || 0 })));
-      });
-
-      el.appendChild(container);
-    } catch (error) {
-      this.renderError(el, error.message);
+  parseCodeBlockConfig(source) {
+    const config = {};
+    const lines = source.split('\n').filter(line => line.trim());
+    
+    for (const line of lines) {
+      const [key, value] = line.split(':').map(s => s.trim());
+      if (key && value) {
+        config[key] = value;
+      }
     }
+    
+    if (!config.username) {
+      throw new Error('Username is required');
+    }
+    
+    config.listType = config.listType || 'CURRENT';
+    config.layout = config.layout || this.settings.defaultLayout;
+    
+    return config;
   }
 
   async processInlineLinks(el, ctx) {
     const inlineLinks = el.querySelectorAll('a[href^="anilist:"]');
+    
     for (const link of inlineLinks) {
       const href = link.getAttribute('href');
       try {
         const config = this.parseInlineLink(href);
         const data = await this.fetchAniListData(config);
+        
         const container = document.createElement('div');
         container.className = 'anilist-inline-container';
         this.renderAniListData(container, data, config);
+        
         link.parentNode.replaceChild(container, link);
       } catch (error) {
         this.renderError(link, error.message);
@@ -92,206 +88,513 @@ class AniListPlugin extends Plugin {
     }
   }
 
-  parseCodeBlockConfig(source) {
-    const config = {};
-    const lines = source.split('\n').filter(line => line.trim());
-    for (const line of lines) {
-      const [key, value] = line.split(':').map(s => s.trim());
-      if (key && value) config[key] = value;
-    }
-    if (!config.username) throw new Error('Username is required');
-    config.type = 'list';
-    config.listType = config.listType || 'CURRENT';
-    config.layout = config.layout || this.settings.defaultLayout;
-    config.mediaType = config.mediaType || 'ANIME';
-    return config;
-  }
-
   parseInlineLink(href) {
+    // Parse: anilist:username/anime/123456 or anilist:username/stats
     const parts = href.replace('anilist:', '').split('/');
-    if (parts.length < 2) throw new Error('Invalid AniList link format');
-    const config = { username: parts[0], layout: 'card', mediaType: 'ANIME' };
+    
+    if (parts.length < 2) {
+      throw new Error('Invalid AniList link format');
+    }
+    
+    const config = {
+      username: parts[0],
+      layout: 'card'
+    };
+    
     if (parts[1] === 'stats') {
       config.type = 'stats';
-    } else if (['anime', 'manga'].includes(parts[1])) {
+    } else if (parts[1] === 'anime' || parts[1] === 'manga') {
       config.type = 'single';
       config.mediaType = parts[1].toUpperCase();
       config.mediaId = parts[2];
     } else {
-      config.type = 'list';
       config.listType = parts[1].toUpperCase();
     }
+    
     return config;
   }
 
   async fetchAniListData(config) {
-    const key = JSON.stringify(config);
-    const cached = this.cache.get(key);
-    if (cached && Date.now() - cached.timestamp < this.cacheTimeout) return cached.data;
-
-    let query, variables;
-    switch (config.type) {
-      case 'stats':
-        query = this.getUserStatsQuery();
-        variables = { username: config.username };
-        break;
-      case 'single':
-        query = this.getSingleMediaQuery();
-        variables = { username: config.username, mediaId: parseInt(config.mediaId), type: config.mediaType };
-        break;
-      case 'search':
-        query = this.getSearchMediaQuery();
-        variables = { search: config.searchTerm, type: 'ANIME' };
-        break;
-      default:
-        query = this.getMediaListQuery();
-        variables = { username: config.username, status: config.listType, type: config.mediaType };
+    const cacheKey = JSON.stringify(config);
+    const cached = this.cache.get(cacheKey);
+    
+    if (cached && Date.now() - cached.timestamp < this.cacheTimeout) {
+      return cached.data;
     }
-
-    const res = await fetch('https://graphql.anilist.co', {
+    
+    let query, variables;
+    
+    if (config.type === 'stats') {
+      query = this.getUserStatsQuery();
+      variables = { username: config.username };
+    } else if (config.type === 'single') {
+      query = this.getSingleMediaQuery();
+      variables = { 
+        username: config.username, 
+        mediaId: parseInt(config.mediaId),
+        type: config.mediaType
+      };
+    } else {
+      query = this.getMediaListQuery();
+      variables = { 
+        username: config.username, 
+        status: config.listType,
+        type: config.mediaType || 'ANIME'
+      };
+    }
+    
+    const response = await fetch('https://graphql.anilist.co', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify({ query, variables })
     });
-    if (!res.ok) throw new Error(`API Error: ${res.status}`);
-    const result = await res.json();
-    if (result.errors) throw new Error(result.errors[0].message);
-
-    const data = config.type === 'search' ? result.data.Page.media : result.data;
-    this.cache.set(key, { data, timestamp: Date.now() });
-    return data;
+    
+    if (!response.ok) {
+      throw new Error(`API Error: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    
+    if (result.errors) {
+      throw new Error(result.errors[0].message);
+    }
+    
+    this.cache.set(cacheKey, {
+      data: result.data,
+      timestamp: Date.now()
+    });
+    
+    return result.data;
   }
 
   getMediaListQuery() {
-    return `query ($username: String, $status: MediaListStatus, $type: MediaType) {
-      MediaListCollection(userName: $username, status: $status, type: $type) {
-        lists { entries { id status score progress media { id title { romaji english } coverImage { medium } format episodes chapters genres } } }
+    return `
+      query ($username: String, $status: MediaListStatus, $type: MediaType) {
+        MediaListCollection(userName: $username, status: $status, type: $type) {
+          lists {
+            entries {
+              id
+              status
+              score
+              progress
+              media {
+                id
+                title {
+                  romaji
+                  english
+                  native
+                }
+                coverImage {
+                  large
+                  medium
+                }
+                episodes
+                chapters
+                genres
+                averageScore
+                status
+                startDate {
+                  year
+                  month
+                  day
+                }
+                endDate {
+                  year
+                  month
+                  day
+                }
+              }
+            }
+          }
+        }
       }
-    }`;
+    `;
   }
 
   getSingleMediaQuery() {
-    return `query ($username: String, $mediaId: Int, $type: MediaType) {
-      MediaList(userName: $username, mediaId: $mediaId, type: $type) {
-        status score progress media { id title { romaji english } coverImage { medium } format episodes chapters genres }
+    return `
+      query ($username: String, $mediaId: Int, $type: MediaType) {
+        MediaList(userName: $username, mediaId: $mediaId, type: $type) {
+          id
+          status
+          score
+          progress
+          media {
+            id
+            title {
+              romaji
+              english
+              native
+            }
+            coverImage {
+              large
+              medium
+            }
+            episodes
+            chapters
+            genres
+            averageScore
+            status
+            startDate {
+              year
+              month
+              day
+            }
+            endDate {
+              year
+              month
+              day
+            }
+          }
+        }
       }
-    }`;
+    `;
   }
 
   getUserStatsQuery() {
-    return `query ($username: String) {
-      User(name: $username) { id name avatar { medium } statistics { anime { count minutesWatched meanScore } manga { count chaptersRead meanScore } } }
-    }`;
+    return `
+      query ($username: String) {
+        User(name: $username) {
+          id
+          name
+          avatar {
+            large
+            medium
+          }
+          statistics {
+            anime {
+              count
+              episodesWatched
+              minutesWatched
+              meanScore
+              standardDeviation
+            }
+            manga {
+              count
+              chaptersRead
+              volumesRead
+              meanScore
+              standardDeviation
+            }
+          }
+        }
+      }
+    `;
   }
 
-  getSearchMediaQuery() {
-    return `query ($search: String, $type: MediaType) {
-      Page(page: 1, perPage: 20) { media(search: $search, type: $type) { id title { romaji english } coverImage { medium } format episodes chapters genres averageScore status } }
-    }`;
+  // Helper function to generate AniList URL
+  getAniListUrl(mediaId) {
+    return `https://anilist.co/anime/${mediaId}`;
   }
 
   renderAniListData(el, data, config) {
     el.empty();
     el.className = 'anilist-container';
-    if (config.type === 'stats') this.renderUserStats(el, data.User);
-    else if (config.type === 'single') this.renderSingleMedia(el, data.MediaList || data);
-    else if (config.type === 'search') this.renderSearchResults(el, data);
-    else this.renderMediaList(el, data.MediaListCollection.lists.flatMap(l => l.entries), config);
+    
+    if (config.type === 'stats') {
+      this.renderUserStats(el, data.User);
+    } else if (config.type === 'single') {
+      this.renderSingleMedia(el, data.MediaList, config);
+    } else {
+      const entries = data.MediaListCollection.lists.flatMap(list => list.entries);
+      this.renderMediaList(el, entries, config);
+    }
   }
 
-  renderSearchResults(el, mediaList) {
-    const header = document.createElement('h3'); header.textContent = 'Search Results'; el.appendChild(header);
-    this.renderCardLayout(el, mediaList.map(m => ({ media: m, status: m.status || '-', score: m.averageScore || 0, progress: m.episodes || m.chapters || 0 })));
+  renderUserStats(el, user) {
+    const statsHtml = `
+      <div class="anilist-user-stats">
+        <div class="user-header">
+          <img src="${user.avatar.medium}" alt="${user.name}" class="user-avatar">
+          <h3>${user.name}</h3>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-section">
+            <h4>Anime</h4>
+            <div class="stat-item">
+              <span>Count:</span>
+              <span>${user.statistics.anime.count}</span>
+            </div>
+            <div class="stat-item">
+              <span>Episodes:</span>
+              <span>${user.statistics.anime.episodesWatched}</span>
+            </div>
+            <div class="stat-item">
+              <span>Minutes:</span>
+              <span>${user.statistics.anime.minutesWatched.toLocaleString()}</span>
+            </div>
+            <div class="stat-item">
+              <span>Mean Score:</span>
+              <span>${user.statistics.anime.meanScore}</span>
+            </div>
+          </div>
+          <div class="stat-section">
+            <h4>Manga</h4>
+            <div class="stat-item">
+              <span>Count:</span>
+              <span>${user.statistics.manga.count}</span>
+            </div>
+            <div class="stat-item">
+              <span>Chapters:</span>
+              <span>${user.statistics.manga.chaptersRead}</span>
+            </div>
+            <div class="stat-item">
+              <span>Volumes:</span>
+              <span>${user.statistics.manga.volumesRead}</span>
+            </div>
+            <div class="stat-item">
+              <span>Mean Score:</span>
+              <span>${user.statistics.manga.meanScore}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    el.innerHTML = statsHtml;
   }
 
-  renderAniListData(el, data, config) {}
+  renderSingleMedia(el, mediaList, config) {
+    const media = mediaList.media;
+    const title = media.title.english || media.title.romaji;
+    
+    const cardDiv = document.createElement('div');
+    cardDiv.className = 'anilist-single-card';
+    
+    if (this.settings.showCoverImages) {
+      const img = document.createElement('img');
+      img.src = media.coverImage.medium;
+      img.alt = title;
+      img.className = 'media-cover';
+      cardDiv.appendChild(img);
+    }
+    
+    const mediaInfoDiv = document.createElement('div');
+    mediaInfoDiv.className = 'media-info';
+    
+    // Create clickable title
+    const titleElement = document.createElement('h3');
+    const titleLink = document.createElement('a');
+    titleLink.href = this.getAniListUrl(media.id);
+    titleLink.target = '_blank';
+    titleLink.rel = 'noopener noreferrer';
+    titleLink.className = 'anilist-title-link';
+    titleLink.textContent = title;
+    titleElement.appendChild(titleLink);
+    mediaInfoDiv.appendChild(titleElement);
+    
+    // Create details div
+    const detailsDiv = document.createElement('div');
+    detailsDiv.className = 'media-details';
+    
+    const statusBadge = document.createElement('span');
+    statusBadge.className = `status-badge status-${mediaList.status.toLowerCase()}`;
+    statusBadge.textContent = mediaList.status;
+    detailsDiv.appendChild(statusBadge);
+    
+    if (this.settings.showProgress) {
+      const progressSpan = document.createElement('span');
+      progressSpan.className = 'progress';
+      progressSpan.textContent = `${mediaList.progress}/${media.episodes || media.chapters || '?'}`;
+      detailsDiv.appendChild(progressSpan);
+    }
+    
+    if (this.settings.showRatings && mediaList.score) {
+      const scoreSpan = document.createElement('span');
+      scoreSpan.className = 'score';
+      scoreSpan.textContent = `★ ${mediaList.score}`;
+      detailsDiv.appendChild(scoreSpan);
+    }
+    
+    mediaInfoDiv.appendChild(detailsDiv);
+    
+    // Create genres div
+    if (this.settings.showGenres) {
+      const genresDiv = document.createElement('div');
+      genresDiv.className = 'genres';
+      media.genres.slice(0, 3).forEach(genre => {
+        const genreTag = document.createElement('span');
+        genreTag.className = 'genre-tag';
+        genreTag.textContent = genre;
+        genresDiv.appendChild(genreTag);
+      });
+      mediaInfoDiv.appendChild(genresDiv);
+    }
+    
+    cardDiv.appendChild(mediaInfoDiv);
+    el.appendChild(cardDiv);
+  }
 
   renderMediaList(el, entries, config) {
-    const localInput = document.createElement('input');
-    localInput.type = 'text'; localInput.placeholder = 'Filter My List...'; localInput.className = 'anilist-local-search';
-    el.appendChild(localInput);
-
-    const listContainer = document.createElement('div'); listContainer.className = 'anilist-list'; el.appendChild(listContainer);
-
-    const renderList = items => {
-      listContainer.empty();
-      if (config.layout === 'table') this.renderTableLayout(listContainer, items);
-      else this.renderCardLayout(listContainer, items);
-    };
-
-    renderList(entries);
-    localInput.addEventListener('input', e => {
-      const term = e.target.value.toLowerCase();
-      const filtered = entries.filter(en => {
-        const t = en.media.title.english || en.media.title.romaji;
-        return t.toLowerCase().includes(term);
-      });
-      renderList(filtered);
-    });
-  }
-
-  renderSingleMedia(el, mediaList) {
-    const en = mediaList; const m = mediaList.media || mediaList;
-    const title = m.title.english || m.title.romaji;
-    const card = document.createElement('div'); card.className = 'anilist-single-card';
-    if (this.settings.showCoverImages) { const img = document.createElement('img'); img.src = m.coverImage.medium; img.alt = title; card.appendChild(img); }
-    const info = document.createElement('div'); info.className = 'media-info';
-    const h3 = document.createElement('h3'); const a = document.createElement('a'); a.href = this.getAniListUrl(m.id); a.target = '_blank'; a.rel = 'noopener'; a.textContent = title; h3.appendChild(a); info.appendChild(h3);
-    const details = document.createElement('div'); details.className = 'media-details';
-    const fmt = document.createElement('span'); fmt.className = 'format'; fmt.textContent = m.format; details.appendChild(fmt);
-    const badge = document.createElement('span'); badge.className = `status-badge status-${en.status.toLowerCase()}`; badge.textContent = en.status; details.appendChild(badge);
-    if (this.settings.showProgress) { const p = document.createElement('span'); p.className = 'progress'; p.textContent = `${en.progress}/${m.episodes||m.chapters||'?'}'; details.appendChild(p); }
-    if (this.settings.showRatings) { const s = document.createElement('span'); s.className = 'score'; s.textContent = `★ ${en.score}`; details.appendChild(s); }
-    info.appendChild(details);
-    if (this.settings.showGenres) { const gd = document.createElement('div'); gd.className = 'genres'; (m.genres||[]).slice(0,3).forEach(g => { const gt = document.createElement('span'); gt.textContent = g; gd.appendChild(gt); }); info.appendChild(gd); }
-    card.appendChild(info); el.appendChild(card);
+    if (config.layout === 'table') {
+      this.renderTableLayout(el, entries);
+    } else {
+      this.renderCardLayout(el, entries);
+    }
   }
 
   renderCardLayout(el, entries) {
-    const grid = document.createElement('div'); grid.className = 'anilist-cards-grid';
-    entries.forEach(en => {
-      const m = en.media;
-      const title = m.title.english || m.title.romaji;
-      const card = document.createElement('div'); card.className = 'anilist-card';
-      if (this.settings.showCoverImages) { const img = document.createElement('img'); img.src = m.coverImage.medium; img.alt = title; card.appendChild(img); }
-      const info = document.createElement('div'); info.className = 'media-info';
-      const h4 = document.createElement('h4'); const a = document.createElement('a'); a.href = this.getAniListUrl(m.id); a.target = '_blank'; a.rel = 'noopener'; a.textContent = title; h4.appendChild(a); info.appendChild(h4);
-      const details = document.createElement('div'); details.className = 'media-details';
-      const fmt = document.createElement('span'); fmt.className = 'format'; fmt.textContent = m.format; details.appendChild(fmt);
-      const badge = document.createElement('span'); badge.className = `status-badge status-${en.status.toLowerCase()}`; badge.textContent = en.status; details.appendChild(badge);
-      if (this.settings.showProgress) { const p = document.createElement('span'); p.className = 'progress'; p.textContent = `${en.progress}/${m.episodes||m.chapters||'?'}'; details.appendChild(p); }
-      if (this.settings.showRatings) { const s = document.createElement('span'); s.className = 'score'; s.textContent = `★ ${en.score}`; details.appendChild(s); }
-      info.appendChild(details);
-      if (this.settings.showGenres) { const gd = document.createElement('div'); gd.className = 'genres'; (m.genres||[]).slice(0,3).forEach(g => { const gt = document.createElement('span'); gt.textContent = g; gd.appendChild(gt); }); info.appendChild(gd); }
-      card.appendChild(info); grid.appendChild(card);
+    const gridDiv = document.createElement('div');
+    gridDiv.className = 'anilist-cards-grid';
+    
+    entries.forEach(entry => {
+      const media = entry.media;
+      const title = media.title.english || media.title.romaji;
+      
+      const cardDiv = document.createElement('div');
+      cardDiv.className = 'anilist-card';
+      
+      if (this.settings.showCoverImages) {
+        const img = document.createElement('img');
+        img.src = media.coverImage.medium;
+        img.alt = title;
+        img.className = 'media-cover';
+        cardDiv.appendChild(img);
+      }
+      
+      const mediaInfoDiv = document.createElement('div');
+      mediaInfoDiv.className = 'media-info';
+      
+      // Create clickable title
+      const titleElement = document.createElement('h4');
+      const titleLink = document.createElement('a');
+      titleLink.href = this.getAniListUrl(media.id);
+      titleLink.target = '_blank';
+      titleLink.rel = 'noopener noreferrer';
+      titleLink.className = 'anilist-title-link';
+      titleLink.textContent = title;
+      titleElement.appendChild(titleLink);
+      mediaInfoDiv.appendChild(titleElement);
+      
+      // Create details div
+      const detailsDiv = document.createElement('div');
+      detailsDiv.className = 'media-details';
+      
+      const statusBadge = document.createElement('span');
+      statusBadge.className = `status-badge status-${entry.status.toLowerCase()}`;
+      statusBadge.textContent = entry.status;
+      detailsDiv.appendChild(statusBadge);
+      
+      if (this.settings.showProgress) {
+        const progressSpan = document.createElement('span');
+        progressSpan.className = 'progress';
+        progressSpan.textContent = `${entry.progress}/${media.episodes || media.chapters || '?'}`;
+        detailsDiv.appendChild(progressSpan);
+      }
+      
+      if (this.settings.showRatings && entry.score) {
+        const scoreSpan = document.createElement('span');
+        scoreSpan.className = 'score';
+        scoreSpan.textContent = `★ ${entry.score}`;
+        detailsDiv.appendChild(scoreSpan);
+      }
+      
+      mediaInfoDiv.appendChild(detailsDiv);
+      
+      // Create genres div
+      if (this.settings.showGenres) {
+        const genresDiv = document.createElement('div');
+        genresDiv.className = 'genres';
+        media.genres.slice(0, 3).forEach(genre => {
+          const genreTag = document.createElement('span');
+          genreTag.className = 'genre-tag';
+          genreTag.textContent = genre;
+          genresDiv.appendChild(genreTag);
+        });
+        mediaInfoDiv.appendChild(genresDiv);
+      }
+      
+      cardDiv.appendChild(mediaInfoDiv);
+      gridDiv.appendChild(cardDiv);
     });
-    el.appendChild(grid);
+    
+    el.appendChild(gridDiv);
   }
 
   renderTableLayout(el, entries) {
     const table = document.createElement('table');
-    const thead = document.createElement('thead'); const header = document.createElement('tr');
-    ['Title','Format','Status', ...(this.settings.showProgress?['Progress']:[]), ...(this.settings.showRatings?['Score']:[])].forEach(txt => { const th = document.createElement('th'); th.textContent = txt; header.appendChild(th); });
-    thead.appendChild(header); table.appendChild(thead);
+    table.className = 'anilist-table';
+    
+    // Create header
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    
+    const titleHeader = document.createElement('th');
+    titleHeader.textContent = 'Title';
+    headerRow.appendChild(titleHeader);
+    
+    const statusHeader = document.createElement('th');
+    statusHeader.textContent = 'Status';
+    headerRow.appendChild(statusHeader);
+    
+    if (this.settings.showProgress) {
+      const progressHeader = document.createElement('th');
+      progressHeader.textContent = 'Progress';
+      headerRow.appendChild(progressHeader);
+    }
+    
+    if (this.settings.showRatings) {
+      const scoreHeader = document.createElement('th');
+      scoreHeader.textContent = 'Score';
+      headerRow.appendChild(scoreHeader);
+    }
+    
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+    
+    // Create body
     const tbody = document.createElement('tbody');
-    entries.forEach(en => {
-      const m = en.media; const row = document.createElement('tr');
-      const tdTitle = document.createElement('td'); const a = document.createElement('a'); a.href = this.getAniListUrl(m.id); a.target = '_blank'; a.rel = 'noopener'; a.textContent = m.title.english || m.title.romaji; tdTitle.appendChild(a); row.appendChild(tdTitle);
-      const tdFmt = document.createElement('td'); tdFmt.textContent = m.format; row.appendChild(tdFmt);
-      const tdStat = document.createElement('td'); const sb = document.createElement('span'); sb.className = `status-badge status-${en.status.toLowerCase()}`; sb.textContent = en.status; tdStat.appendChild(sb); row.appendChild(tdStat);
-      if (this.settings.showProgress) { const tdP = document.createElement('td'); tdP.textContent = `${en.progress}/${m.episodes||m.chapters||'?'}'; row.appendChild(tdP); }
-      if (this.settings.showRatings) { const tdS = document.createElement('td'); tdS.textContent = en.score?`★ ${en.score}`:'-'; row.appendChild(tdS); }
+    
+    entries.forEach(entry => {
+      const media = entry.media;
+      const title = media.title.english || media.title.romaji;
+      
+      const row = document.createElement('tr');
+      
+      // Title cell with clickable link
+      const titleCell = document.createElement('td');
+      const titleLink = document.createElement('a');
+      titleLink.href = this.getAniListUrl(media.id);
+      titleLink.target = '_blank';
+      titleLink.rel = 'noopener noreferrer';
+      titleLink.className = 'anilist-title-link';
+      titleLink.textContent = title;
+      titleCell.appendChild(titleLink);
+      row.appendChild(titleCell);
+      
+      // Status cell
+      const statusCell = document.createElement('td');
+      const statusBadge = document.createElement('span');
+      statusBadge.className = `status-badge status-${entry.status.toLowerCase()}`;
+      statusBadge.textContent = entry.status;
+      statusCell.appendChild(statusBadge);
+      row.appendChild(statusCell);
+      
+      // Progress cell
+      if (this.settings.showProgress) {
+        const progressCell = document.createElement('td');
+        progressCell.textContent = `${entry.progress}/${media.episodes || media.chapters || '?'}`;
+        row.appendChild(progressCell);
+      }
+      
+      // Score cell
+      if (this.settings.showRatings) {
+        const scoreCell = document.createElement('td');
+        scoreCell.textContent = entry.score ? `★ ${entry.score}` : '-';
+        row.appendChild(scoreCell);
+      }
+      
       tbody.appendChild(row);
     });
-    table.appendChild(tbody); el.appendChild(table);
+    
+    table.appendChild(tbody);
+    el.appendChild(table);
   }
 
   renderError(el, message) {
-    el.innerHTML = `<div class=\"anilist-error\">Error: ${message}</div>`;
-  }
-
-  getAniListUrl(id) {
-    return `https://anilist.co/anime/${id}`;
+    el.innerHTML = `<div class="anilist-error">Error: ${message}</div>`;
   }
 
   onunload() {
@@ -300,27 +603,69 @@ class AniListPlugin extends Plugin {
 }
 
 class AniListSettingTab extends PluginSettingTab {
-  constructor(app, plugin) { super(app, plugin); this.plugin = plugin; }
+  constructor(app, plugin) {
+    super(app, plugin);
+    this.plugin = plugin;
+  }
+
   display() {
-    const { containerEl } = this; containerEl.empty();
+    const { containerEl } = this;
+    containerEl.empty();
+    
     containerEl.createEl('h2', { text: 'AniList Integration Settings' });
-    new Setting(containerEl).setName('Default Layout').setDesc('Choose default layout').addDropdown(d =>
-      d.addOption('card', 'Card').addOption('table', 'Table').setValue(this.plugin.settings.defaultLayout).onChange(async v => { this.plugin.settings.defaultLayout = v; await this.plugin.saveSettings(); })
-    );
-    new Setting(containerEl).setName('Show Cover Images').addToggle(t =>
-      t.setValue(this.plugin.settings.showCoverImages).onChange(async v => { this.plugin.settings.showCoverImages = v; await this.plugin.saveSettings(); })
-    );
-    new Setting(containerEl).setName('Show Ratings').addToggle(t =>
-      t.setValue(this.plugin.settings.showRatings).onChange(async v => { this.plugin.settings.showRatings = v; await this.plugin.saveSettings(); })
-    );
-    new Setting(containerEl).setName('Show Progress').addToggle(t =>
-      t.setValue(this.plugin.settings.showProgress).onChange(async v => { this.plugin.settings.showProgress = v; await this.plugin.saveSettings(); })
-    );
-    new Setting(containerEl).setName('Show Genres').addToggle(t =>
-      t.setValue(this.plugin.settings.showGenres).onChange(async v => { this.plugin.settings.showGenres = v; await this.plugin.saveSettings(); })
-    );
+    
+    new Setting(containerEl)
+      .setName('Default Layout')
+      .setDesc('Choose the default layout for media lists')
+      .addDropdown(dropdown => dropdown
+        .addOption('card', 'Card Layout')
+        .addOption('table', 'Table Layout')
+        .setValue(this.plugin.settings.defaultLayout)
+        .onChange(async (value) => {
+          this.plugin.settings.defaultLayout = value;
+          await this.plugin.saveSettings();
+        }));
+    
+    new Setting(containerEl)
+      .setName('Show Cover Images')
+      .setDesc('Display cover images for anime/manga')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.showCoverImages)
+        .onChange(async (value) => {
+          this.plugin.settings.showCoverImages = value;
+          await this.plugin.saveSettings();
+        }));
+    
+    new Setting(containerEl)
+      .setName('Show Ratings')
+      .setDesc('Display user ratings/scores')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.showRatings)
+        .onChange(async (value) => {
+          this.plugin.settings.showRatings = value;
+          await this.plugin.saveSettings();
+        }));
+    
+    new Setting(containerEl)
+      .setName('Show Progress')
+      .setDesc('Display progress information')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.showProgress)
+        .onChange(async (value) => {
+          this.plugin.settings.showProgress = value;
+          await this.plugin.saveSettings();
+        }));
+    
+    new Setting(containerEl)
+      .setName('Show Genres')
+      .setDesc('Display genre tags')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.showGenres)
+        .onChange(async (value) => {
+          this.plugin.settings.showGenres = value;
+          await this.plugin.saveSettings();
+        }));
   }
 }
 
 module.exports = AniListPlugin;
-      

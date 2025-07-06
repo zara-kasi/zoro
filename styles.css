@@ -70,6 +70,11 @@
   gap: 0.5rem;
 }
 
+.anilist-card {
+  width: 200px;
+  height: 300px;      /* if you want to fix the overall height, too */
+}
+
 /* Title styling – clamp to one line with ellipsis */
 .anilist-card h4,
 .anilist-single-card h3 {

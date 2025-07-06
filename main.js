@@ -48,69 +48,6 @@ class AniListPlugin extends Plugin {
     }
   }
 
-  async processGlobalSearchCodeBlock(source, el, ctx) {
-    try {
-      const container = document.createElement('div');
-      container.className = 'anilist-global-container';
-
-      const input = document.createElement('input');
-      input.type = 'text';
-      input.placeholder = 'Search anime/manga...';
-      input.className = 'anilist-global-search';
-      container.appendChild(input);
-
-      const results = document.createElement('div');
-      results.className = 'anilist-global-results';
-      container.appendChild(results);
-
-      let searchTimeout;
-      input.addEventListener('input', async (e) => {
-        const term = e.target.value.trim();
-        
-        // Clear previous timeout
-        if (searchTimeout) {
-          clearTimeout(searchTimeout);
-        }
-        
-        if (term.length < 3) {
-          results.innerHTML = '';
-          return;
-        }
-        
-        // Debounce search
-        searchTimeout = setTimeout(async () => {
-          try {
-            results.innerHTML = '<div class="anilist-loading">Searching...</div>';
-            const config = { type: 'search', searchTerm: term };
-            const data = await this.fetchAniListData(config);
-            
-            results.innerHTML = '';
-            
-            if (data.Page.media.length === 0) {
-              results.innerHTML = '<div class="anilist-no-results">No results found</div>';
-              return;
-            }
-            
-            // Normalize into same shape as list entries
-            const entries = data.Page.media.map(m => ({
-              media: m,
-              status: m.status || 'NOT_YET_RELEASED',
-              score: m.averageScore || 0,
-              progress: 0
-            }));
-            
-            this.renderCardLayout(results, entries, true);
-          } catch (error) {
-            this.renderError(results, error.message);
-          }
-        }, 300);
-      });
-
-      el.appendChild(container);
-    } catch (error) {
-      this.renderError(el, error.message);
-    }
-  }
 
   parseCodeBlockConfig(source) {
     const config = {};

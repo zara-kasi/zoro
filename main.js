@@ -446,7 +446,7 @@ class AniListPlugin extends Plugin {
     }
     
     const gridDiv = document.createElement('div');
-    gridDiv.className = 'anilist-search-grid';
+    gridDiv.className = 'anilist-cards-grid';
     
     media.forEach(item => {
       const title = item.title.english || item.title.romaji;
@@ -678,7 +678,7 @@ class AniListPlugin extends Plugin {
 
   renderMediaList(el, entries, config) {
     const gridDiv = document.createElement('div');
-    gridDiv.className = 'anilist-grid';
+    gridDiv.className = 'anilist-cards-grid';
     
     entries.forEach(entry => {
       const media = entry.media;

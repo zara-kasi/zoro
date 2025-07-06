@@ -113,3 +113,33 @@
   .anilist-single-card { height: 160px; }
   .anilist-single-card .overlay { padding: 0.6rem 0.8rem; }
 }
+
+/* ─── override container to fill width with exactly 2 columns ─── */
+.anilist-cards-grid {
+  display: grid !important;
+  /* exactly two equal columns */
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  /* shrink gap to pack cards tightly */
+  gap: 0.3rem !important;
+  /* kill any extra container padding/margin */
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* ─── trim card margins & slightly reduce height ─── */
+.anilist-single-card {
+  margin: 0 !important;
+  /* tweak height to show more on-screen */
+  height: 150px !important;
+}
+
+/* ─── mobile tweak ─── */
+@media (max-width: 480px) {
+  .anilist-cards-grid {
+    gap: 0.2rem !important;
+  }
+  .anilist-single-card {
+    height: 140px !important;
+  }
+}
+

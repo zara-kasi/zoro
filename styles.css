@@ -143,3 +143,47 @@
   }
 }
 
+/* ─────── Grid container ─────── */
+.anilist-cards-grid {
+  display: grid !important;
+  grid-template-columns: repeat(2, 1fr) !important;  /* exactly 2 columns */
+  gap: 0.4rem !important;                             /* tight, even gap */
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+/* ─────── Card wrapper ─────── */
+.anilist-single-card {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+/* ─────── Thumbnail image ─────── */
+.anilist-single-card img {
+  flex-shrink: 0 !important;
+  width: 100% !important;
+  height: 140px !important;          /* fixed, identical height */
+  object-fit: cover !important;
+  border-radius: 8px !important;
+}
+
+/* ─────── Title below image ─────── */
+.anilist-single-card .card-title {
+  margin: 0.3rem 0 !important;
+  padding: 0 0.2rem !important;
+  font-size: 0.9rem !important;
+  line-height: 1.2 !important;
+  text-align: center !important;
+  color: var(--text-normal) !important;
+  
+  /* clamp at 2 lines so all cards stay the same height */
+  display: -webkit-box !important;
+  -webkit-box-orient: vertical !important;
+  -webkit-line-clamp: 2 !important;
+  overflow: hidden !important;
+}

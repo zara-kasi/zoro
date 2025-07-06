@@ -386,12 +386,8 @@ class AniListPlugin extends Plugin {
     searchInput.className = 'anilist-search-input';
     searchInput.placeholder = config.mediaType === 'ANIME' ? 'Search anime...' : 'Search manga...';
     
-    const searchButton = document.createElement('button');
-    searchButton.className = 'anilist-search-button';
-    searchButton.textContent = 'Search';
     
     searchDiv.appendChild(searchInput);
-    searchDiv.appendChild(searchButton);
     el.appendChild(searchDiv);
     
     // Create results container
@@ -433,7 +429,6 @@ class AniListPlugin extends Plugin {
       searchTimeout = setTimeout(performSearch, 300);
     });
     
-    searchButton.addEventListener('click', performSearch);
     
     searchInput.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') {

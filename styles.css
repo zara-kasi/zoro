@@ -93,7 +93,7 @@
 /* Media details: status, progress, score */
 .media-details {
   display: flex;
-  gap: 0.3rem;
+  gap: 0.2rem;
   align-items: center;
   flex-wrap: wrap;
 }

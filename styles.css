@@ -29,7 +29,7 @@
 
 @media (max-width: 480px) {
   .anilist-cards-grid {
-    gap: 0.3rem;
+    gap: 0.6rem;
   }
 }
 

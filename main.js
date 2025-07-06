@@ -448,6 +448,7 @@ class AniListPlugin extends Plugin {
     
     const gridDiv = document.createElement('div');
     gridDiv.className = 'anilist-cards-grid';
+    gridDiv.style.setProperty('--anilist-grid-columns', this.settings.gridColumns);
     
     media.forEach(item => {
       const title = item.title.english || item.title.romaji;

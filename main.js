@@ -463,9 +463,10 @@ class AniListPlugin extends Plugin {
   }
 
   // Helper function to generate AniList URL
-  getAniListUrl(mediaId) {
-    return `https://anilist.co/anime/${mediaId}`;
-  }
+getAniListUrl(mediaId, mediaType = 'ANIME') {
+  const type = mediaType.toLowerCase() === 'manga' ? 'manga' : 'anime';
+  return `https://anilist.co/${type}/${mediaId}`;
+}
 
   createGridControls(container, config) {
     const controlsDiv = document.createElement('div');

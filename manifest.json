@@ -1,0 +1,11 @@
+{
+  "id": "anilist-integration",
+  "name": "AniList Integration",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Integrate AniList anime/manga data into Obsidian with code blocks and inline links",
+  "author": "AniList Plugin Developer",
+  "authorUrl": "",
+  "fundingUrl": "",
+  "isDesktopOnly": false
+}

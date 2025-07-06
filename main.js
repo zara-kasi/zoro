@@ -828,10 +828,16 @@ class AniListPlugin extends Plugin {
     el.appendChild(cardDiv);
   }
 
-  renderMediaList(el, entries, config) {
+ renderMediaList(el, entries, config) {
+    const containerDiv = document.createElement('div');
+    containerDiv.className = 'anilist-media-container';
+    
+    // Add grid controls
+    const controlsDiv = this.createGridControls(containerDiv);
+    containerDiv.appendChild(controlsDiv);
+    
     const gridDiv = document.createElement('div');
-    gridDiv.className = 'anilist-grid';
-    gridDiv.style.setProperty('--cards-per-row', config.cardsPerRow || this.settings.cardsPerRow);
+    gridDiv.className = `anilist-grid anilist-grid-${this.settings.cardsPerRow}`;
     
     entries.forEach(entry => {
       const media = entry.media;
@@ -903,6 +909,7 @@ class AniListPlugin extends Plugin {
           const genreTag = document.createElement('span');
           genreTag.className = 'genre-tag';
           genreTag.textContent = genre;
+          genresDiv.appendChild(genreTag);
         });
         mediaInfoDiv.appendChild(genresDiv);
       }
@@ -911,7 +918,8 @@ class AniListPlugin extends Plugin {
       gridDiv.appendChild(cardDiv);
     });
     
-    el.appendChild(gridDiv);
+    containerDiv.appendChild(gridDiv);
+    el.appendChild(containerDiv);
   }
 
   renderTableLayout(el, entries) {
@@ -952,5 +960,154 @@ class AniListPlugin extends Plugin {
     // Create body
     const tbody = document.createElement('tbody');
     
-    entries.forEach
+    entries.forEach(entry => {
+      const media = entry.media;
+      const title = media.title.english || media.title.romaji;
       
+      const row = document.createElement('tr');
+      
+      // Title cell with clickable link
+      const titleCell = document.createElement('td');
+      const titleLink = document.createElement('a');
+      titleLink.href = this.getAniListUrl(media.id);
+      titleLink.target = '_blank';
+      titleLink.rel = 'noopener noreferrer';
+      titleLink.className = 'anilist-title-link';
+      titleLink.textContent = title;
+      titleCell.appendChild(titleLink);
+      row.appendChild(titleCell);
+      
+      // Format cell
+      const formatCell = document.createElement('td');
+      if (media.format) {
+        const formatBadge = document.createElement('span');
+        formatBadge.className = 'format-badge';
+        formatBadge.textContent = media.format;
+        formatCell.appendChild(formatBadge);
+      } else {
+        formatCell.textContent = '-';
+      }
+      row.appendChild(formatCell);
+      
+      // Status cell
+      const statusCell = document.createElement('td');
+      const statusBadge = document.createElement('span');
+      statusBadge.className = `status-badge status-${entry.status.toLowerCase()}`;
+      statusBadge.textContent = entry.status;
+      statusCell.appendChild(statusBadge);
+      row.appendChild(statusCell);
+      
+      // Progress cell
+      if (this.settings.showProgress) {
+        const progressCell = document.createElement('td');
+        progressCell.textContent = `${entry.progress}/${media.episodes || media.chapters || '?'}`;
+        row.appendChild(progressCell);
+      }
+      
+      // Score cell
+      if (this.settings.showRatings) {
+        const scoreCell = document.createElement('td');
+        scoreCell.textContent = entry.score ? `★ ${entry.score}` : '-';
+        row.appendChild(scoreCell);
+      }
+      
+      tbody.appendChild(row);
+    });
+    
+    table.appendChild(tbody);
+    el.appendChild(table);
+  }
+
+  renderError(el, message) {
+    el.innerHTML = `<div class="anilist-error">Error: ${message}</div>`;
+  }
+
+  onunload() {
+    console.log('Unloading AniList Plugin');
+  }
+}
+
+class AniListSettingTab extends PluginSettingTab {
+  constructor(app, plugin) {
+    super(app, plugin);
+    this.plugin = plugin;
+  }
+
+  display() {
+    const { containerEl } = this;
+    containerEl.empty();
+    
+    containerEl.createEl('h2', { text: 'AniList Integration Settings' });
+    
+    new Setting(containerEl)
+      .setName('Default Layout')
+      .setDesc('Choose the default layout for media lists')
+      .addDropdown(dropdown => dropdown
+        .addOption('card', 'Card Layout')
+        .addOption('table', 'Table Layout')
+        .setValue(this.plugin.settings.defaultLayout)
+        .onChange(async (value) => {
+          this.plugin.settings.defaultLayout = value;
+          await this.plugin.saveSettings();
+        }));
+    
+    new Setting(containerEl)
+      .setName('Cards Per Row')
+      .setDesc('Number of cards to display per row in card layout (1-4)')
+      .addSlider(slider => slider
+        .setLimits(1, 4, 1)
+        .setValue(this.plugin.settings.cardsPerRow)
+        .setDynamicTooltip()
+        .onChange(async (value) => {
+          this.plugin.settings.cardsPerRow = value;
+          await this.plugin.saveSettings();
+          
+          // Update existing grids
+          document.querySelectorAll('.anilist-grid').forEach(grid => {
+            grid.className = `anilist-grid anilist-grid-${value}`;
+          });
+        }));
+    
+    new Setting(containerEl)
+      .setName('Show Cover Images')
+      .setDesc('Display cover images for anime/manga')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.showCoverImages)
+        .onChange(async (value) => {
+          this.plugin.settings.showCoverImages = value;
+          await this.plugin.saveSettings();
+        }));
+    
+    new Setting(containerEl)
+      .setName('Show Ratings')
+      .setDesc('Display user ratings/scores')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.showRatings)
+        .onChange(async (value) => {
+          this.plugin.settings.showRatings = value;
+          await this.plugin.saveSettings();
+        }));
+    
+    new Setting(containerEl)
+      .setName('Show Progress')
+      .setDesc('Display progress information')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.showProgress)
+        .onChange(async (value) => {
+          this.plugin.settings.showProgress = value;
+          await this.plugin.saveSettings();
+        }));
+    
+    new Setting(containerEl)
+      .setName('Show Genres')
+      .setDesc('Display genre tags')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.showGenres)
+        .onChange(async (value) => {
+          this.plugin.settings.showGenres = value;
+          await this.plugin.saveSettings();
+        }));
+  }
+}
+
+module.exports = AniListPlugin;

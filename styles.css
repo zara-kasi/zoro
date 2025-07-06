@@ -1,3 +1,5 @@
+/* styles.css */
+
 /* ─── Container Styles ─── */
 .anilist-container {
   margin: 1rem 0;
@@ -15,25 +17,22 @@
 }
 
 /* ─── Card Layout Styles ─── */
-/* (Tight 2-column pack with 2:3 covers) */
+/* Tight 2‑column pack with 2:3 covers, no list icons, ellipsed titles, hide “Current” badge */
 .anilist-cards-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.5rem;
   margin: 1rem 0;
   padding: 0;
-  /* hide any default list bullets/icons */
-  list-style: none;
+  list-style: none; /* remove any bullets/icons */
 }
 
-/* Tighter gaps on very narrow screens */
 @media (max-width: 480px) {
   .anilist-cards-grid {
     gap: 0.3rem;
   }
 }
 
-/* Make each card a vertical stack */
 .anilist-card,
 .anilist-single-card {
   background: var(--background-secondary);
@@ -45,17 +44,15 @@
   transition: box-shadow 0.2s ease;
   margin: 0;
   padding: 0;
-  /* ensure no list‐style on individual items */
-  list-style: none;
+  list-style: none; /* remove any bullets/icons */
 }
 
-/* Hover shadow */
 .anilist-card:hover,
 .anilist-single-card:hover {
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 }
 
-/* Cover image on top, forced 2 : 3 ratio */
+/* Cover image on top, forced 2:3 ratio */
 .anilist-card .media-cover,
 .anilist-single-card .media-cover {
   width: 100%;
@@ -73,7 +70,7 @@
   gap: 0.5rem;
 }
 
-/* Title styling – single‐line ellipsis */
+/* Title styling – clamp to one line with ellipsis */
 .anilist-card h4,
 .anilist-single-card h3 {
   margin: 0;
@@ -81,8 +78,6 @@
   font-weight: 600;
   color: var(--text-normal);
   line-height: 1.3;
-
-  /* clamp to one line with “…” */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -93,7 +88,7 @@
   font-size: 1.2rem;
 }
 
-/* Media-details: status, progress, score */
+/* Media details: status, progress, score */
 .media-details {
   display: flex;
   gap: 0.5rem;
@@ -109,6 +104,12 @@
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+/* Hide the “Current” badge in card view */
+.anilist-card .status-current,
+.anilist-single-card .status-current {
+  display: none;
 }
 
 .status-current   { background: var(--color-green);  color: white; }
@@ -150,12 +151,55 @@
 }
 
 /* ─── Table Layout Styles (unchanged) ─── */
-/* …keep your table rules exactly as before… */
+.anilist-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1rem 0;
+  background: var(--background-secondary);
+  border-radius: 8px;
+  overflow: hidden;
+}
 
-/* ─── User Stats (unchanged) ─── */
-/* …keep your stats/grid rules exactly as before… */
+.anilist-table th {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+  padding: 1rem;
+  text-align: left;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border-color);
+}
 
-/* ─── Mobile-specific adjustments (only for non-card layouts) ─── */
+.anilist-table td {
+  padding: 0.8rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-normal);
+}
+
+.anilist-table tr:hover {
+  background: var(--background-modifier-hover);
+}
+
+/* ─── User Stats Styles (unchanged) ─── */
+.anilist-user-stats {
+  background: var(--background-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin: 1rem 0;
+}
+
+.user-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* rest of stats-grid, stat-section, etc. remains exactly as before */
+
+/* ─── Mobile-specific adjustments (unchanged) ─── */
 @media (max-width: 480px) {
   .anilist-card,
   .anilist-single-card {
@@ -164,15 +208,41 @@
 }
 
 /* ─── Dark mode (unchanged) ─── */
-/* …keep your dark-mode rules exactly as before… */
+.theme-dark .anilist-card,
+.theme-dark .anilist-single-card,
+.theme-dark .anilist-user-stats {
+  background: var(--background-secondary);
+  border-color: var(--border-color);
+}
 
-/* ─── Fade-in animation (unchanged) ─── */
-/* …keep your fadeIn rules exactly as before… */
+.theme-dark .anilist-table {
+  background: var(--background-secondary);
+}
+
+/* ─── Fade‑in animation (unchanged) ─── */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.anilist-container > * {
+  animation: fadeIn 0.3s ease;
+}
 
 /* ─── Responsive text scaling (unchanged) ─── */
 @media (max-width: 600px) {
   .anilist-card h4,
   .anilist-single-card h3 {
     font-size: 1rem;
+  }
+  
+  .user-header h3 {
+    font-size: 1.3rem;
   }
 }

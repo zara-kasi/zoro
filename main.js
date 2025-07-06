@@ -13,8 +13,9 @@ class AniListPlugin extends Plugin {
     // Load settings first
     await this.loadSettings();
     
-    // Register code block processor
+    // Register code block processors
     this.registerMarkdownCodeBlockProcessor('anilist', this.processAniListCodeBlock.bind(this));
+    this.registerMarkdownCodeBlockProcessor('anilist-search', this.processGlobalSearchCodeBlock.bind(this));
     
     // Register inline link processor
     this.registerMarkdownPostProcessor(this.processInlineLinks.bind(this));
@@ -47,6 +48,70 @@ class AniListPlugin extends Plugin {
     }
   }
 
+  async processGlobalSearchCodeBlock(source, el, ctx) {
+    try {
+      const container = document.createElement('div');
+      container.className = 'anilist-global-container';
+
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = 'Search anime/manga...';
+      input.className = 'anilist-global-search';
+      container.appendChild(input);
+
+      const results = document.createElement('div');
+      results.className = 'anilist-global-results';
+      container.appendChild(results);
+
+      let searchTimeout;
+      input.addEventListener('input', async (e) => {
+        const term = e.target.value.trim();
+        
+        // Clear previous timeout
+        if (searchTimeout) {
+          clearTimeout(searchTimeout);
+        }
+        
+        if (term.length < 3) {
+          results.innerHTML = '';
+          return;
+        }
+        
+        // Debounce search
+        searchTimeout = setTimeout(async () => {
+          try {
+            results.innerHTML = '<div class="anilist-loading">Searching...</div>';
+            const config = { type: 'search', searchTerm: term };
+            const data = await this.fetchAniListData(config);
+            
+            results.innerHTML = '';
+            
+            if (data.Page.media.length === 0) {
+              results.innerHTML = '<div class="anilist-no-results">No results found</div>';
+              return;
+            }
+            
+            // Normalize into same shape as list entries
+            const entries = data.Page.media.map(m => ({
+              media: m,
+              status: m.status || 'NOT_YET_RELEASED',
+              score: m.averageScore || 0,
+              progress: 0
+            }));
+            
+            this.renderCardLayout(results, entries, true);
+          } catch (error) {
+            this.renderError(results, error.message);
+          }
+        }, 300);
+      });
+
+      el.appendChild(container);
+    } catch (error) {
+      this.renderError(el, error.message);
+    }
+  }
+
   parseCodeBlockConfig(source) {
     const config = {};
     const lines = source.split('\n').filter(line => line.trim());
@@ -64,6 +129,7 @@ class AniListPlugin extends Plugin {
     
     config.listType = config.listType || 'CURRENT';
     config.layout = config.layout || this.settings.defaultLayout;
+    config.mediaType = config.mediaType || 'ANIME';
     
     return config;
   }
@@ -109,6 +175,7 @@ class AniListPlugin extends Plugin {
       config.mediaId = parts[2];
     } else {
       config.listType = parts[1].toUpperCase();
+      config.mediaType = 'ANIME'; // Default to anime
     }
     
     return config;
@@ -134,12 +201,18 @@ class AniListPlugin extends Plugin {
         mediaId: parseInt(config.mediaId),
         type: config.mediaType
       };
+    } else if (config.type === 'search') {
+      query = this.getSearchMediaQuery();
+      variables = { 
+        search: config.searchTerm, 
+        type: 'ANIME' // Can be modified to support both
+      };
     } else {
       query = this.getMediaListQuery();
       variables = { 
         username: config.username, 
         status: config.listType,
-        type: config.mediaType || 'ANIME'
+        type: config.mediaType
       };
     }
     
@@ -190,6 +263,7 @@ class AniListPlugin extends Plugin {
                   large
                   medium
                 }
+                format
                 episodes
                 chapters
                 genres
@@ -232,6 +306,7 @@ class AniListPlugin extends Plugin {
               large
               medium
             }
+            format
             episodes
             chapters
             genres
@@ -284,13 +359,42 @@ class AniListPlugin extends Plugin {
     `;
   }
 
+  getSearchMediaQuery() {
+    return `
+      query ($search: String, $type: MediaType) {
+        Page(page: 1, perPage: 20) {
+          media(search: $search, type: $type) {
+            id
+            title {
+              romaji
+              english
+              native
+            }
+            coverImage {
+              medium
+            }
+            format
+            episodes
+            chapters
+            genres
+            averageScore
+            status
+          }
+        }
+      }
+    `;
+  }
+
   // Helper function to generate AniList URL
-  getAniListUrl(mediaId) {
-    return `https://anilist.co/anime/${mediaId}`;
+  getAniListUrl(mediaId, type = 'anime') {
+    return `https://anilist.co/${type}/${mediaId}`;
   }
 
   renderAniListData(el, data, config) {
-    el.empty();
+    // Clear element properly
+    while (el.firstChild) {
+      el.removeChild(el.firstChild);
+    }
     el.className = 'anilist-container';
     
     if (config.type === 'stats') {
@@ -304,56 +408,95 @@ class AniListPlugin extends Plugin {
   }
 
   renderUserStats(el, user) {
-    const statsHtml = `
-      <div class="anilist-user-stats">
-        <div class="user-header">
-          <img src="${user.avatar.medium}" alt="${user.name}" class="user-avatar">
-          <h3>${user.name}</h3>
-        </div>
-        <div class="stats-grid">
-          <div class="stat-section">
-            <h4>Anime</h4>
-            <div class="stat-item">
-              <span>Count:</span>
-              <span>${user.statistics.anime.count}</span>
-            </div>
-            <div class="stat-item">
-              <span>Episodes:</span>
-              <span>${user.statistics.anime.episodesWatched}</span>
-            </div>
-            <div class="stat-item">
-              <span>Minutes:</span>
-              <span>${user.statistics.anime.minutesWatched.toLocaleString()}</span>
-            </div>
-            <div class="stat-item">
-              <span>Mean Score:</span>
-              <span>${user.statistics.anime.meanScore}</span>
-            </div>
-          </div>
-          <div class="stat-section">
-            <h4>Manga</h4>
-            <div class="stat-item">
-              <span>Count:</span>
-              <span>${user.statistics.manga.count}</span>
-            </div>
-            <div class="stat-item">
-              <span>Chapters:</span>
-              <span>${user.statistics.manga.chaptersRead}</span>
-            </div>
-            <div class="stat-item">
-              <span>Volumes:</span>
-              <span>${user.statistics.manga.volumesRead}</span>
-            </div>
-            <div class="stat-item">
-              <span>Mean Score:</span>
-              <span>${user.statistics.manga.meanScore}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    `;
+    const statsContainer = document.createElement('div');
+    statsContainer.className = 'anilist-user-stats';
     
-    el.innerHTML = statsHtml;
+    // User header
+    const userHeader = document.createElement('div');
+    userHeader.className = 'user-header';
+    
+    const avatar = document.createElement('img');
+    avatar.src = user.avatar.medium;
+    avatar.alt = user.name;
+    avatar.className = 'user-avatar';
+    userHeader.appendChild(avatar);
+    
+    const userName = document.createElement('h3');
+    userName.textContent = user.name;
+    userHeader.appendChild(userName);
+    
+    statsContainer.appendChild(userHeader);
+    
+    // Stats grid
+    const statsGrid = document.createElement('div');
+    statsGrid.className = 'stats-grid';
+    
+    // Anime stats
+    const animeSection = document.createElement('div');
+    animeSection.className = 'stat-section';
+    
+    const animeTitle = document.createElement('h4');
+    animeTitle.textContent = 'Anime';
+    animeSection.appendChild(animeTitle);
+    
+    const animeStats = [
+      { label: 'Count', value: user.statistics.anime.count },
+      { label: 'Episodes', value: user.statistics.anime.episodesWatched },
+      { label: 'Minutes', value: user.statistics.anime.minutesWatched?.toLocaleString() || 0 },
+      { label: 'Mean Score', value: user.statistics.anime.meanScore || 0 }
+    ];
+    
+    animeStats.forEach(stat => {
+      const statItem = document.createElement('div');
+      statItem.className = 'stat-item';
+      
+      const label = document.createElement('span');
+      label.textContent = stat.label + ':';
+      statItem.appendChild(label);
+      
+      const value = document.createElement('span');
+      value.textContent = stat.value;
+      statItem.appendChild(value);
+      
+      animeSection.appendChild(statItem);
+    });
+    
+    statsGrid.appendChild(animeSection);
+    
+    // Manga stats
+    const mangaSection = document.createElement('div');
+    mangaSection.className = 'stat-section';
+    
+    const mangaTitle = document.createElement('h4');
+    mangaTitle.textContent = 'Manga';
+    mangaSection.appendChild(mangaTitle);
+    
+    const mangaStats = [
+      { label: 'Count', value: user.statistics.manga.count },
+      { label: 'Chapters', value: user.statistics.manga.chaptersRead },
+      { label: 'Volumes', value: user.statistics.manga.volumesRead },
+      { label: 'Mean Score', value: user.statistics.manga.meanScore || 0 }
+    ];
+    
+    mangaStats.forEach(stat => {
+      const statItem = document.createElement('div');
+      statItem.className = 'stat-item';
+      
+      const label = document.createElement('span');
+      label.textContent = stat.label + ':';
+      statItem.appendChild(label);
+      
+      const value = document.createElement('span');
+      value.textContent = stat.value;
+      statItem.appendChild(value);
+      
+      mangaSection.appendChild(statItem);
+    });
+    
+    statsGrid.appendChild(mangaSection);
+    statsContainer.appendChild(statsGrid);
+    
+    el.appendChild(statsContainer);
   }
 
   renderSingleMedia(el, mediaList, config) {
@@ -377,7 +520,7 @@ class AniListPlugin extends Plugin {
     // Create clickable title
     const titleElement = document.createElement('h3');
     const titleLink = document.createElement('a');
-    titleLink.href = this.getAniListUrl(media.id);
+    titleLink.href = this.getAniListUrl(media.id, config.mediaType?.toLowerCase() || 'anime');
     titleLink.target = '_blank';
     titleLink.rel = 'noopener noreferrer';
     titleLink.className = 'anilist-title-link';
@@ -389,9 +532,17 @@ class AniListPlugin extends Plugin {
     const detailsDiv = document.createElement('div');
     detailsDiv.className = 'media-details';
     
+    // Format
+    if (media.format) {
+      const formatSpan = document.createElement('span');
+      formatSpan.className = 'format';
+      formatSpan.textContent = media.format;
+      detailsDiv.appendChild(formatSpan);
+    }
+    
     const statusBadge = document.createElement('span');
-    statusBadge.className = `status-badge status-${mediaList.status.toLowerCase()}`;
-    statusBadge.textContent = mediaList.status;
+    statusBadge.className = `status-badge status-${mediaList.status.toLowerCase().replace('_', '-')}`;
+    statusBadge.textContent = mediaList.status.replace('_', ' ');
     detailsDiv.appendChild(statusBadge);
     
     if (this.settings.showProgress) {
@@ -409,108 +560,9 @@ class AniListPlugin extends Plugin {
     }
     
     mediaInfoDiv.appendChild(detailsDiv);
-   // 1) In your onload(), register the new global‐search block:
-this.registerMarkdownCodeBlockProcessor(
-  'anilist-search',
-  this.processGlobalSearchCodeBlock.bind(this)
-);
-
-// 2) Add this new handler (anywhere inside class AniListPlugin):
-async processGlobalSearchCodeBlock(source, el, ctx) {
-  const container = document.createElement('div');
-  container.className = 'anilist-global-container';
-
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.placeholder = 'Search all shows…';
-  input.className = 'anilist-global-search';
-  container.appendChild(input);
-
-  const results = document.createElement('div');
-  results.className = 'anilist-global-results';
-  container.appendChild(results);
-
-  input.addEventListener('input', async (e) => {
-    const term = e.target.value.trim();
-    if (term.length < 3) return;
-    const cfg = { type: 'search', searchTerm: term };
-    const mediaList = await this.fetchAniListData(cfg);
-    results.empty();
-    // normalize into same shape as list‐entries:
-    const entries = mediaList.map(m => ({
-      media: m,
-      status: m.status || '-',
-      score: m.averageScore || 0,
-      progress: m.episodes || m.chapters || 0
-    }));
-    this.renderCardLayout(results, entries);
-  });
-
-  el.appendChild(container);
-}
-
-// 3) In fetchAniListData(), add a new branch for “search”:
-case 'search':
-  query     = this.getSearchMediaQuery();
-  variables = { search: config.searchTerm, type: 'ANIME' };
-  break;
-
-// 4) Add this GraphQL query method:
-getSearchMediaQuery() {
-  return `
-    query ($search: String, $type: MediaType) {
-      Page(page: 1, perPage: 20) {
-        media(search: $search, type: $type) {
-          id
-          title { romaji english }
-          coverImage { medium }
-          format
-          episodes
-          chapters
-          genres
-          averageScore
-          status
-        }
-      }
-    }
-  `;
-}
-
-// 5) Tweak your personal‐list renderer to include its own search bar.
-//   In renderMediaList(), before creating listContainer:
-const localInput = document.createElement('input');
-localInput.type = 'text';
-localInput.placeholder = 'Filter My List…';
-localInput.className = 'anilist-local-search';
-el.appendChild(localInput);
-
-// then hook it up just like you did for the global one:
-localInput.addEventListener('input', e => {
-  const term = e.target.value.toLowerCase();
-  const filtered = entries.filter(en => {
-    const t = en.media.title.english || en.media.title.romaji;
-    return t.toLowerCase().includes(term);
-  });
-  renderList(filtered);
-});
-
-// 6) Everywhere you build the “details” span (both card‐ and table‐layouts),
-//    insert this right before the status badge:
-const fmt = document.createElement('span');
-fmt.className = 'format';
-fmt.textContent = m.format;      // e.g. TV, Movie, ONA, etc.
-details.appendChild(fmt);
-
-// 7) In your table header (renderTableLayout), add a “Format” column:
-//    ['Title','Format','Status', …]
-
-// That’s it!  These additions give you:
-// - A totally separate “```anilist-search```” block for global AniList searches
-// - Your existing list block retains its own “filter my list” bar
-// - Every card/table row now shows the media.format (TV, Movie, ONA, …)
-  
+    
     // Create genres div
-    if (this.settings.showGenres) {
+    if (this.settings.showGenres && media.genres) {
       const genresDiv = document.createElement('div');
       genresDiv.className = 'genres';
       media.genres.slice(0, 3).forEach(genre => {
@@ -527,14 +579,45 @@ details.appendChild(fmt);
   }
 
   renderMediaList(el, entries, config) {
-    if (config.layout === 'table') {
-      this.renderTableLayout(el, entries);
-    } else {
-      this.renderCardLayout(el, entries);
-    }
+    // Add local search filter
+    const localInput = document.createElement('input');
+    localInput.type = 'text';
+    localInput.placeholder = 'Filter list...';
+    localInput.className = 'anilist-local-search';
+    el.appendChild(localInput);
+    
+    const listContainer = document.createElement('div');
+    listContainer.className = 'anilist-list-container';
+    el.appendChild(listContainer);
+    
+    const renderList = (filteredEntries) => {
+      // Clear container
+      while (listContainer.firstChild) {
+        listContainer.removeChild(listContainer.firstChild);
+      }
+      
+      if (config.layout === 'table') {
+        this.renderTableLayout(listContainer, filteredEntries);
+      } else {
+        this.renderCardLayout(listContainer, filteredEntries);
+      }
+    };
+    
+    // Initial render
+    renderList(entries);
+    
+    // Filter functionality
+    localInput.addEventListener('input', (e) => {
+      const term = e.target.value.toLowerCase();
+      const filtered = entries.filter(entry => {
+        const title = entry.media.title.english || entry.media.title.romaji;
+        return title.toLowerCase().includes(term);
+      });
+      renderList(filtered);
+    });
   }
 
-  renderCardLayout(el, entries) {
+  renderCardLayout(el, entries, isSearch = false) {
     const gridDiv = document.createElement('div');
     gridDiv.className = 'anilist-cards-grid';
     
@@ -559,7 +642,128 @@ details.appendChild(fmt);
       // Create clickable title
       const titleElement = document.createElement('h4');
       const titleLink = document.createElement('a');
-      titleLink.href = this.getAniListUrl(media.id);
+      titleLink.href = this.getAniListUrl(media.id, 'anime');
+      titleLink.target = '_blank';
+      titleLink.rel = 'noopener noreferrer';
+      titleLink.className = 'anilist-title-link';
+      titleLink.textContent = title;
+      titleElement.appendChild(titleLink);
+      mediaInfoDiv.appendChild(titleElement);
+      
+      // Create details div
+      const detailsDiv = document.createElement('div');
+      detailsDiv.className = 'media-details';
+      // Format
+    if (media.format) {
+      const formatSpan = document.createElement('span');
+      formatSpan.className = 'format';
+      formatSpan.textContent = media.format;
+      detailsDiv.appendChild(formatSpan);
+    }
+    
+    const statusBadge = document.createElement('span');
+    statusBadge.className = `status-badge status-${mediaList.status.toLowerCase().replace('_', '-')}`;
+    statusBadge.textContent = mediaList.status.replace('_', ' ');
+    detailsDiv.appendChild(statusBadge);
+    
+    if (this.settings.showProgress) {
+      const progressSpan = document.createElement('span');
+      progressSpan.className = 'progress';
+      progressSpan.textContent = `${mediaList.progress}/${media.episodes || media.chapters || '?'}`;
+      detailsDiv.appendChild(progressSpan);
+    }
+    
+    if (this.settings.showRatings && mediaList.score) {
+      const scoreSpan = document.createElement('span');
+      scoreSpan.className = 'score';
+      scoreSpan.textContent = `★ ${mediaList.score}`;
+      detailsDiv.appendChild(scoreSpan);
+    }
+    
+    mediaInfoDiv.appendChild(detailsDiv);
+    
+    // Create genres div
+    if (this.settings.showGenres && media.genres) {
+      const genresDiv = document.createElement('div');
+      genresDiv.className = 'genres';
+      media.genres.slice(0, 3).forEach(genre => {
+        const genreTag = document.createElement('span');
+        genreTag.className = 'genre-tag';
+        genreTag.textContent = genre;
+        genresDiv.appendChild(genreTag);
+      });
+      mediaInfoDiv.appendChild(genresDiv);
+    }
+    
+    cardDiv.appendChild(mediaInfoDiv);
+    el.appendChild(cardDiv);
+  }
+
+  renderMediaList(el, entries, config) {
+    // Add local search filter
+    const localInput = document.createElement('input');
+    localInput.type = 'text';
+    localInput.placeholder = 'Filter list...';
+    localInput.className = 'anilist-local-search';
+    el.appendChild(localInput);
+    
+    const listContainer = document.createElement('div');
+    listContainer.className = 'anilist-list-container';
+    el.appendChild(listContainer);
+    
+    const renderList = (filteredEntries) => {
+      // Clear container
+      while (listContainer.firstChild) {
+        listContainer.removeChild(listContainer.firstChild);
+      }
+      
+      if (config.layout === 'table') {
+        this.renderTableLayout(listContainer, filteredEntries);
+      } else {
+        this.renderCardLayout(listContainer, filteredEntries);
+      }
+    };
+    
+    // Initial render
+    renderList(entries);
+    
+    // Filter functionality
+    localInput.addEventListener('input', (e) => {
+      const term = e.target.value.toLowerCase();
+      const filtered = entries.filter(entry => {
+        const title = entry.media.title.english || entry.media.title.romaji;
+        return title.toLowerCase().includes(term);
+      });
+      renderList(filtered);
+    });
+  }
+
+  renderCardLayout(el, entries, isSearch = false) {
+    const gridDiv = document.createElement('div');
+    gridDiv.className = 'anilist-cards-grid';
+    
+    entries.forEach(entry => {
+      const media = entry.media;
+      const title = media.title.english || media.title.romaji;
+      
+      const cardDiv = document.createElement('div');
+      cardDiv.className = 'anilist-card';
+      
+      if (this.settings.showCoverImages) {
+        const img = document.createElement('img');
+        img.src = media.coverImage.medium;
+        img.alt = title;
+        img.className = 'media-cover';
+        cardDiv.appendChild(img);
+      }
+      
+      const mediaInfoDiv = document.createElement('div');
+      mediaInfoDiv.className = 'media-info';
+      
+      // Create clickable title
+      const titleElement = document.createElement('h4');
+      const titleLink = document.createElement('a');
+      titleLink.href = this.getAniListUrl(media.id, 'anime');
       titleLink.target = '_blank';
       titleLink.rel = 'noopener noreferrer';
       titleLink.className = 'anilist-title-link';
@@ -571,12 +775,20 @@ details.appendChild(fmt);
       const detailsDiv = document.createElement('div');
       detailsDiv.className = 'media-details';
       
+      // Format
+      if (media.format) {
+        const formatSpan = document.createElement('span');
+        formatSpan.className = 'format';
+        formatSpan.textContent = media.format;
+        detailsDiv.appendChild(formatSpan);
+      }
+      
       const statusBadge = document.createElement('span');
-      statusBadge.className = `status-badge status-${entry.status.toLowerCase()}`;
-      statusBadge.textContent = entry.status;
+      statusBadge.className = `status-badge status-${entry.status.toLowerCase().replace('_', '-')}`;
+      statusBadge.textContent = entry.status.replace('_', ' ');
       detailsDiv.appendChild(statusBadge);
       
-      if (this.settings.showProgress) {
+      if (this.settings.showProgress && !isSearch) {
         const progressSpan = document.createElement('span');
         progressSpan.className = 'progress';
         progressSpan.textContent = `${entry.progress}/${media.episodes || media.chapters || '?'}`;
@@ -593,7 +805,7 @@ details.appendChild(fmt);
       mediaInfoDiv.appendChild(detailsDiv);
       
       // Create genres div
-      if (this.settings.showGenres) {
+      if (this.settings.showGenres && media.genres) {
         const genresDiv = document.createElement('div');
         genresDiv.className = 'genres';
         media.genres.slice(0, 3).forEach(genre => {
@@ -620,25 +832,21 @@ details.appendChild(fmt);
     const thead = document.createElement('thead');
     const headerRow = document.createElement('tr');
     
-    const titleHeader = document.createElement('th');
-    titleHeader.textContent = 'Title';
-    headerRow.appendChild(titleHeader);
-    
-    const statusHeader = document.createElement('th');
-    statusHeader.textContent = 'Status';
-    headerRow.appendChild(statusHeader);
+    const headers = ['Title', 'Format', 'Status'];
     
     if (this.settings.showProgress) {
-      const progressHeader = document.createElement('th');
-      progressHeader.textContent = 'Progress';
-      headerRow.appendChild(progressHeader);
+      headers.push('Progress');
     }
     
     if (this.settings.showRatings) {
-      const scoreHeader = document.createElement('th');
-      scoreHeader.textContent = 'Score';
-      headerRow.appendChild(scoreHeader);
+      headers.push('Score');
     }
+    
+    headers.forEach(headerText => {
+      const th = document.createElement('th');
+      th.textContent = headerText;
+      headerRow.appendChild(th);
+    });
     
     thead.appendChild(headerRow);
     table.appendChild(thead);
@@ -655,7 +863,7 @@ details.appendChild(fmt);
       // Title cell with clickable link
       const titleCell = document.createElement('td');
       const titleLink = document.createElement('a');
-      titleLink.href = this.getAniListUrl(media.id);
+      titleLink.href = this.getAniListUrl(media.id, 'anime');
       titleLink.target = '_blank';
       titleLink.rel = 'noopener noreferrer';
       titleLink.className = 'anilist-title-link';
@@ -663,11 +871,16 @@ details.appendChild(fmt);
       titleCell.appendChild(titleLink);
       row.appendChild(titleCell);
       
+      // Format cell
+      const formatCell = document.createElement('td');
+      formatCell.textContent = media.format || '-';
+      row.appendChild(formatCell);
+      
       // Status cell
       const statusCell = document.createElement('td');
       const statusBadge = document.createElement('span');
-      statusBadge.className = `status-badge status-${entry.status.toLowerCase()}`;
-      statusBadge.textContent = entry.status;
+      statusBadge.className = `status-badge status-${entry.status.toLowerCase().replace('_', '-')}`;
+      statusBadge.textContent = entry.status.replace('_', ' ');
       statusCell.appendChild(statusBadge);
       row.appendChild(statusCell);
       
@@ -693,7 +906,16 @@ details.appendChild(fmt);
   }
 
   renderError(el, message) {
-    el.innerHTML = `<div class="anilist-error">Error: ${message}</div>`;
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'anilist-error';
+    errorDiv.textContent = `Error: ${message}`;
+    
+    // Clear element first
+    while (el.firstChild) {
+      el.removeChild(el.firstChild);
+    }
+    
+    el.appendChild(errorDiv);
   }
 
   onunload() {

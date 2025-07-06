@@ -36,7 +36,7 @@ Embed your AniList anime and manga data directly in your Obsidian notes, similar
 
 ## [comprehensive guide on how to use all its features:](Guide.md)
 
-### [Here is How I use it](My Template.md)
+### [Here is How I use it](My-Template.md)
 
 ## Advanced Features
 

@@ -3,7 +3,7 @@
 /* ─── Container Styles ─── */
 .anilist-container {
   margin: 1rem 0;
-  padding: 0 0.25rem;             /* ← horizontal padding off the screen edge */
+  padding: 0 0.1rem;             /* ← horizontal padding off the screen edge */
   font-family: var(--font-interface);
 }
 

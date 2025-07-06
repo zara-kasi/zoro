@@ -1,10 +1,12 @@
-/* ---------------- Container Styles ---------------- */
+/* styles.css */
+
+/* ─── Container Styles ─── */
 .anilist-container {
   margin: 1rem 0;
   font-family: var(--font-interface);
 }
 
-/* ---------------- Error Styles ---------------- */
+/* ─── Error Styles ─── */
 .anilist-error {
   color: var(--text-error);
   background: var(--background-modifier-error);
@@ -14,80 +16,133 @@
   margin: 1rem 0;
 }
 
-/* ------------- Card Layout Styles ------------- */
-/* Grid: exactly two columns, tight gap, no side padding/margin */
+/* ─── Card Layout Styles ─── */
+/* (Overridden for a tight 2‑column pack with 2:3 covers) */
 .anilist-cards-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 0.4rem;
-  margin: 0;       /* remove outer margin */
-  padding: 0;      /* remove outer padding */
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  margin: 1rem 0;
+  padding: 0;
 }
 
-/* Mobile: still two columns, slightly tighter */
+/* Tighter gaps on very narrow screens */
 @media (max-width: 480px) {
   .anilist-cards-grid {
     gap: 0.3rem;
   }
 }
 
-/* Card wrapper: vertical stack, centered */
+/* Make each card a vertical stack */
 .anilist-card,
 .anilist-single-card {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
   background: var(--background-secondary);
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  padding: 0.4rem;           /* tighter padding */
-  margin: 0;                 /* remove margin */
-  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: box-shadow 0.2s ease;
+  margin: 0;
+  padding: 0;
 }
 
-/* Hover lift */
+/* Hover shadow */
 .anilist-card:hover,
 .anilist-single-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 12px rgba(0,0,0,0.15);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 }
 
-/* Thumbnail: full‐width, fixed height, rounded corners */
+/* Cover image on top, forced 2:3 ratio */
 .anilist-card .media-cover,
 .anilist-single-card .media-cover {
   width: 100%;
-  height: 140px;
+  aspect-ratio: 2 / 3;
   object-fit: cover;
-  border-radius: 6px;
   flex-shrink: 0;
 }
 
-/* Title: below image, centered, clamped to 2 lines */
-.anilist-card h4,
-.anilist-single-card h3 {
-  margin: 0.3rem 0 0 0;
-  padding: 0 0.2rem;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--text-normal);
-  text-align: center;
-  line-height: 1.2;
-
-  /* clamp to 2 lines so all cards stay same height */
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-}
-
-/* Hide original info flex (if present) */
+/* Info block under the cover */
 .anilist-card .media-info,
 .anilist-single-card .media-info {
-  display: none;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
-/* ---------------- Table Layout Styles ---------------- */
-/* (UNCHANGED from your original) */
+/* Title styling */
+.anilist-card h4,
+.anilist-single-card h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-normal);
+  line-height: 1.3;
+}
+
+/* Slight bump on single-card titles */
+.anilist-single-card h3 {
+  font-size: 1.2rem;
+}
+
+/* Media‑details: status, progress, score */
+.media-details {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+/* Status badges */
+.status-badge {
+  padding: 0.2rem 0.6rem;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.status-current   { background: var(--color-green);  color: white; }
+.status-completed { background: var(--color-blue);   color: white; }
+.status-paused    { background: var(--color-yellow); color: var(--text-normal); }
+.status-dropped   { background: var(--color-red);    color: white; }
+.status-planning  { background: var(--color-purple); color: white; }
+.status-repeating { background: var(--color-cyan);   color: white; }
+
+/* Progress and Score pills */
+.progress,
+.score {
+  padding: 0.2rem 0.4rem;
+  background: var(--background-modifier-border);
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 500;
+}
+
+.score {
+  color: var(--color-orange);
+}
+
+/* Genre tags */
+.genres {
+  display: flex;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+
+.genre-tag {
+  background: var(--background-modifier-hover);
+  color: var(--text-muted);
+  padding: 0.2rem 0.5rem;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+/* ─── Table Layout Styles (unchanged) ─── */
 .anilist-table {
   width: 100%;
   border-collapse: collapse;
@@ -96,6 +151,7 @@
   border-radius: 8px;
   overflow: hidden;
 }
+
 .anilist-table th {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
@@ -104,31 +160,60 @@
   font-weight: 600;
   border-bottom: 1px solid var(--border-color);
 }
+
 .anilist-table td {
   padding: 0.8rem 1rem;
   border-bottom: 1px solid var(--border-color);
   color: var(--text-normal);
 }
+
 .anilist-table tr:hover {
   background: var(--background-modifier-hover);
 }
 
-/* ---------------- Status, Progress, Score, Genres (UNCHANGED) ---------------- */
-/* ... your existing status-badge, .progress, .score, .genres, .genre-tag, etc. ... */
+/* ─── User Stats (unchanged) ─── */
+.anilist-user-stats { /* … */ }
+.user-header       { /* … */ }
+/* (rest of stats-grid, stat-section, etc. stays the same) */
 
-/* ---------------- User Stats & Other Sections (UNCHANGED) ---------------- */
-/* ... your existing .anilist-user-stats, .stats-grid, .stat-section, etc. ... */
-
-/* ---------------- Inline & Mobile Adjustments (ONLY FOR NON‐CARD SECTIONS) ---------------- */
-@media (max-width: 768px) {
+/* ─── Mobile-specific adjustments (only for non-card layouts) ─── */
+@media (max-width: 480px) {
+  /* Preserve card vertical layout even on mobile */
   .anilist-card,
   .anilist-single-card {
-    /* already columnar, no change */
+    text-align: center;
   }
 }
+
+/* ─── Dark mode (unchanged) ─── */
+.theme-dark .anilist-card,
+.theme-dark .anilist-single-card,
+.theme-dark .anilist-user-stats {
+  background: var(--background-secondary);
+  border-color: var(--border-color);
+}
+
+.theme-dark .anilist-table {
+  background: var(--background-secondary);
+}
+
+/* ─── Fade‑in animation (unchanged) ─── */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.anilist-container > * {
+  animation: fadeIn 0.3s ease;
+}
+
+/* ─── Responsive text scaling (unchanged) ─── */
 @media (max-width: 600px) {
-  .anilist-card h4,
-  .anilist-single-card h3 {
-    font-size: 1rem;
-  }
-}
+  .a
+  

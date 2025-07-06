@@ -284,6 +284,17 @@ class AniListPlugin extends Plugin {
     `;
   }
 
+  // Helper function to generate AniList URL
+  getAniListUrl(mediaId) {
+    return `https://anilist.co/anime/${mediaId}`;
+  }
+
+  // Helper function to create clickable title
+  createClickableTitle(title, mediaId, tagName = 'h4') {
+    const url = this.getAniListUrl(mediaId);
+    return `<${tagName}><a href="${url}" target="_blank" rel="noopener noreferrer" class="anilist-title-link">${title}</a></${tagName}>`;
+  }
+
   renderAniListData(el, data, config) {
     el.empty();
     el.className = 'anilist-container';
@@ -359,7 +370,7 @@ class AniListPlugin extends Plugin {
       <div class="anilist-single-card">
         ${this.settings.showCoverImages ? `<img src="${media.coverImage.medium}" alt="${title}" class="media-cover">` : ''}
         <div class="media-info">
-          <h3>${title}</h3>
+          ${this.createClickableTitle(title, media.id, 'h3')}
           <div class="media-details">
             <span class="status-badge status-${mediaList.status.toLowerCase()}">${mediaList.status}</span>
             ${this.settings.showProgress ? `<span class="progress">${mediaList.progress}/${media.episodes || media.chapters || '?'}</span>` : ''}
@@ -390,7 +401,7 @@ class AniListPlugin extends Plugin {
         <div class="anilist-card">
           ${this.settings.showCoverImages ? `<img src="${media.coverImage.medium}" alt="${title}" class="media-cover">` : ''}
           <div class="media-info">
-            <h4>${title}</h4>
+            ${this.createClickableTitle(title, media.id)}
             <div class="media-details">
               <span class="status-badge status-${entry.status.toLowerCase()}">${entry.status}</span>
               ${this.settings.showProgress ? `<span class="progress">${entry.progress}/${media.episodes || media.chapters || '?'}</span>` : ''}
@@ -420,10 +431,11 @@ class AniListPlugin extends Plugin {
           ${entries.map(entry => {
             const media = entry.media;
             const title = media.title.english || media.title.romaji;
+            const url = this.getAniListUrl(media.id);
             
             return `
               <tr>
-                <td>${title}</td>
+                <td><a href="${url}" target="_blank" rel="noopener noreferrer" class="anilist-title-link">${title}</a></td>
                 <td><span class="status-badge status-${entry.status.toLowerCase()}">${entry.status}</span></td>
                 ${this.settings.showProgress ? `<td>${entry.progress}/${media.episodes || media.chapters || '?'}</td>` : ''}
                 ${this.settings.showRatings ? `<td>${entry.score ? '★ ' + entry.score : '-'}</td>` : ''}

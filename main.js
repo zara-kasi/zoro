@@ -60,8 +60,7 @@ async loadSettings() {
       this.renderError(el, error.message);
     }
   }
-
-  parseCodeBlockConfig(source) {
+parseCodeBlockConfig(source) {
   const config = {};
   const lines = source.split('\n').filter(line => line.trim());
   
@@ -83,9 +82,12 @@ async loadSettings() {
   
   config.listType = config.listType || 'CURRENT';
   config.layout = config.layout || this.settings.defaultLayout;
+  // Add this line to ensure mediaType is available
+  config.mediaType = config.mediaType || 'ANIME';
   
   return config;
-  }
+}
+
 
   parseSearchCodeBlockConfig(source) {
     const config = { type: 'search' };
@@ -389,9 +391,10 @@ async loadSettings() {
   }
 
   // Helper function to generate AniList URL
-  getAniListUrl(mediaId) {
-    return `https://anilist.co/anime/${mediaId}`;
-  }
+getAniListUrl(mediaId, mediaType = 'anime') {
+  const type = mediaType.toLowerCase();
+  return `https://anilist.co/${type}/${mediaId}`;
+}
 
   renderSearchInterface(el, config) {
     el.empty();
@@ -489,7 +492,7 @@ async loadSettings() {
       // Create clickable title
       const titleElement = document.createElement('h4');
       const titleLink = document.createElement('a');
-      titleLink.href = this.getAniListUrl(item.id);
+      titleLink.href = this.getAniListUrl(item.id, config.mediaType);
       titleLink.target = '_blank';
       titleLink.rel = 'noopener noreferrer';
       titleLink.className = 'anilist-title-link';
@@ -637,7 +640,7 @@ async loadSettings() {
     // Create clickable title
     const titleElement = document.createElement('h3');
     const titleLink = document.createElement('a');
-    titleLink.href = this.getAniListUrl(media.id);
+    titleLink.href = this.getAniListUrl(media.id, config.mediaType);
     titleLink.target = '_blank';
     titleLink.rel = 'noopener noreferrer';
     titleLink.className = 'anilist-title-link';
@@ -723,7 +726,7 @@ async loadSettings() {
       // Create clickable title
       const titleElement = document.createElement('h4');
       const titleLink = document.createElement('a');
-      titleLink.href = this.getAniListUrl(media.id);
+      titleLink.href = this.getAniListUrl(media.id, config.mediaType);
       titleLink.target = '_blank';
       titleLink.rel = 'noopener noreferrer';
       titleLink.className = 'anilist-title-link';
@@ -831,7 +834,7 @@ async loadSettings() {
       // Title cell with clickable link
       const titleCell = document.createElement('td');
       const titleLink = document.createElement('a');
-      titleLink.href = this.getAniListUrl(media.id);
+      titleLink.href = this.getAniListUrl(media.id, config.mediaType);
       titleLink.target = '_blank';
       titleLink.rel = 'noopener noreferrer';
       titleLink.className = 'anilist-title-link';

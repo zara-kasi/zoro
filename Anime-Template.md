@@ -1,6 +1,5 @@
 ```anilist-search
 mediaType: ANIME
-layout: card
 perPage: 10
 ```
 # Watching:

@@ -71,10 +71,11 @@
 2. Enter your AniList username in the "Default Username" field
 3. Configure your display preferences
 4. Start using the plugin in your notes!
-### Code Blocks
-You can begin by using the templates available here.
-[Anime](https://github.com/zara-kasi/AniList-Obsidian/blob/main/Anime-Template.md)
+5. You can begin by using the templates available here.
+[Anime](https://github.com/zara-kasi/AniList-Obsidian/blob/main/Anime-Template.md) ,
 [Manga](https://github.com/zara-kasi/AniList-Obsidian/blob/main/Manga-Template.md)
+
+### Code Blocks
 
 #### Media Lists
 Display your anime or manga lists using code blocks:

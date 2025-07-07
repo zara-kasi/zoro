@@ -973,19 +973,35 @@ new Setting(containerEl)
     .onChange(async (value) => {
       this.plugin.settings.gridColumns = value;
       await this.plugin.saveSettings();
+   }));
+new Setting(containerEl)
+  .setName('Guide')
+  .setDesc('Here are some templates that you can use for basic usage.')
+  .setClass('anilist-templates-setting')
+  .addButton(button => button
+    .setButtonText('Anime Template')
+    .onClick(() => {
+      window.open('https://github.com/zara-kasi/AniList-Obsidian/blob/main/Anime-Template.md', '_blank');
+    }))
+  .addButton(button => button
+    .setButtonText('Manga Template')
+    .onClick(() => {
+      window.open('https://github.com/zara-kasi/AniList-Obsidian/blob/main/Manga-Template.md', '_blank');
+    }))
+  .addButton(button => button
+    .setButtonText('More Info')
+    .onClick(() => {
+      window.open('https://github.com/zara-kasi/AniList-Obsidian/blob/main/README.md', '_blank');
     }));
-  }
-}
-// Add usage templates section
-containerEl.createEl('h3', { text: 'Usage Templates' });
 
-const templatesDiv = containerEl.createDiv();
-templatesDiv.innerHTML = `
-  <p>Here are some templates that you can use for basic usage.</p>
-  <p><a href="https://github.com/zara-kasi/AniList-Obsidian/blob/main/Anime-Template.md" target="_blank">Anime</a></p>
-  <p><a href="https://github.com/zara-kasi/AniList-Obsidian/blob/main/Manga-Template.md" target="_blank">Manga</a></p>
-  <p>For more customisation read this.</p>
-  <p><a href="https://github.com/zara-kasi/AniList-Obsidian/blob/main/README.md" target="_blank">More</a></p>
-`;
+containerEl.createEl('p', { 
+  text: 'For more customisation read the documentation above.',
+  cls: 'setting-item-description'
+});
+    
+  }
+  
+}
+
 
 module.exports = AniListPlugin;

@@ -3,8 +3,6 @@
 
 **Integrate your AniList anime & manga data directly into Obsidian notes!**
 
-
-
 ---
 
 ## Features
@@ -74,6 +72,9 @@
 3. Configure your display preferences
 4. Start using the plugin in your notes!
 ### Code Blocks
+You can begin by using the templates available here.
+[Anime](https://github.com/zara-kasi/AniList-Obsidian/blob/main/Anime-Template.md)
+[Manga](https://github.com/zara-kasi/AniList-Obsidian/blob/main/Manga-Template.md)
 
 #### Media Lists
 Display your anime or manga lists using code blocks:
@@ -129,8 +130,6 @@ mediaId: 123456
 ### Settings
 Use special `anilist:` links in your notes:
 
-You can customize the plugin behavior in Settings → Community Plugins → AniList Integration:
-```markdown
 <!-- User's current anime list -->
 [My Current Anime](anilist:username/current)
 
@@ -146,7 +145,7 @@ You can customize the plugin behavior in Settings → Community Plugins → AniL
 ### CSS Customization
 <!-- Specific anime/manga -->
 [Attack on Titan](anilist:username/anime/16498)
-```
+
 
 You can customize the appearance by adding CSS to your vault's `snippets` folder:
 **Link Format:**

@@ -269,5 +269,5 @@ MIT © 2025 zara-kasi
 - [ ] Custom sorting (e.g. by score, date)
 - [ ] Inline charts or rating bars
 - [ ] Support for custom field rendering (markdown or HTML)
-```
+
 

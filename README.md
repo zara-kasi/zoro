@@ -271,5 +271,3 @@ MIT © 2025 zara-kasi
 - [ ] Support for custom field rendering (markdown or HTML)
 ```
 
-Let me know if you want the `README.md` and `TO-DO.md` saved as actual files or embedded in your GitHub repo.
-````

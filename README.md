@@ -249,7 +249,7 @@ layout: table
 ```
 
 ### Error Messages
-- "Username is required": Add a username parameter to your code block
+- "Username is required": Add a username in settings or in code block.
 - "API Error": Check AniList service status and your internet connection
 - "No results found": Try different search terms or check spelling
 ---

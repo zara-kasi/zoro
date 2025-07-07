@@ -975,21 +975,33 @@ new Setting(containerEl)
       await this.plugin.saveSettings();
    }));
 new Setting(containerEl)
-  .setName('Usage Templates')
+  .setName('Guide')
   .setDesc('Here are some templates that you can use for basic usage.')
-  .setClass('anilist-templates-setting')
+  .setClass('anilist-templates-header');
+
+new Setting(containerEl)
+  .setName('Anime Template')
+  .setDesc('Template for anime entries')
   .addButton(button => button
-    .setButtonText('Anime Template')
+    .setButtonText('Open Template')
     .onClick(() => {
       window.open('https://github.com/zara-kasi/AniList-Obsidian/blob/main/Anime-Template.md', '_blank');
-    }))
+    }));
+
+new Setting(containerEl)
+  .setName('Manga Template')
+  .setDesc('Template for manga entries')
   .addButton(button => button
-    .setButtonText('Manga Template')
+    .setButtonText('Open Template')
     .onClick(() => {
       window.open('https://github.com/zara-kasi/AniList-Obsidian/blob/main/Manga-Template.md', '_blank');
-    }))
+    }));
+
+new Setting(containerEl)
+  .setName('More Information')
+  .setDesc('Plugin documentation and usage guide')
   .addButton(button => button
-    .setButtonText('More Info')
+    .setButtonText('View Documentation')
     .onClick(() => {
       window.open('https://github.com/zara-kasi/AniList-Obsidian/blob/main/README.md', '_blank');
     }));

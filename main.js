@@ -62,24 +62,29 @@ async loadSettings() {
   }
 
   parseCodeBlockConfig(source) {
-    const config = {};
-    const lines = source.split('\n').filter(line => line.trim());
-    
-    for (const line of lines) {
-      const [key, value] = line.split(':').map(s => s.trim());
-      if (key && value) {
-        config[key] = value;
-      }
+  const config = {};
+  const lines = source.split('\n').filter(line => line.trim());
+  
+  for (const line of lines) {
+    const [key, value] = line.split(':').map(s => s.trim());
+    if (key && value) {
+      config[key] = value;
     }
-    
-    if (!config.username) {
-      throw new Error('Username is required');
+  }
+  
+  // Use default username if none provided
+  if (!config.username) {
+    if (this.settings.defaultUsername) {
+      config.username = this.settings.defaultUsername;
+    } else {
+      throw new Error('Username is required. Please set a default username in plugin settings or specify one in the code block.');
     }
-    
-    config.listType = config.listType || 'CURRENT';
-    config.layout = config.layout || this.settings.defaultLayout;
-    
-    return config;
+  }
+  
+  config.listType = config.listType || 'CURRENT';
+  config.layout = config.layout || this.settings.defaultLayout;
+  
+  return config;
   }
 
   parseSearchCodeBlockConfig(source) {
@@ -121,29 +126,42 @@ async loadSettings() {
   }
 
   parseInlineLink(href) {
-    // Parse: anilist:username/anime/123456 or anilist:username/stats
-    const parts = href.replace('anilist:', '').split('/');
-    
+  // Parse: anilist:username/anime/123456 or anilist:username/stats or anilist:/stats (for default user)
+  const parts = href.replace('anilist:', '').split('/');
+  
+  let username, pathParts;
+  
+  // Check if first part is empty (indicating default username should be used)
+  if (parts[0] === '') {
+    if (!this.settings.defaultUsername) {
+      throw new Error('Default username not set. Please configure it in plugin settings.');
+    }
+    username = this.settings.defaultUsername;
+    pathParts = parts.slice(1); // Remove empty first element
+  } else {
     if (parts.length < 2) {
       throw new Error('Invalid AniList link format');
     }
-    
-    const config = {
-      username: parts[0],
-      layout: 'card'
-    };
-    
-    if (parts[1] === 'stats') {
-      config.type = 'stats';
-    } else if (parts[1] === 'anime' || parts[1] === 'manga') {
-      config.type = 'single';
-      config.mediaType = parts[1].toUpperCase();
-      config.mediaId = parts[2];
-    } else {
-      config.listType = parts[1].toUpperCase();
-    }
-    
-    return config;
+    username = parts[0];
+    pathParts = parts.slice(1);
+  }
+  
+  const config = {
+    username: username,
+    layout: 'card'
+  };
+  
+  if (pathParts[0] === 'stats') {
+    config.type = 'stats';
+  } else if (pathParts[0] === 'anime' || pathParts[0] === 'manga') {
+    config.type = 'single';
+    config.mediaType = pathParts[0].toUpperCase();
+    config.mediaId = pathParts[1];
+  } else {
+    config.listType = pathParts[0].toUpperCase();
+  }
+  
+  return config;
   }
 
   async fetchAniListData(config) {

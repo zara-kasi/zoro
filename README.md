@@ -1,260 +1,184 @@
-# AniList Integration Plugin for Obsidian
 
-A powerful Obsidian plugin that seamlessly integrates AniList data into your notes, allowing you to display anime and manga information directly within your vault.
+# AniList-Obsidian
 
-## Features
+**Integrate your AniList anime & manga data directly into Obsidian notes!**
 
-### 📋 Media Lists
-- Display your AniList anime/manga lists with customizable layouts
-- Support for all list statuses (Current, Completed, Paused, Dropped, Planning, Repeating)
-- Card and table layout options
-- Real-time data fetching with 5-minute caching
-
-### 🔍 Search Functionality
-- Interactive search interface for anime and manga
-- Real-time search results with debouncing
-- Clickable results with direct links to AniList
-
-### 📊 User Statistics
-- Display comprehensive user statistics
-- Anime and manga viewing/reading stats
-- Mean scores and standard deviations
-- Episodes watched, chapters read, and more
-
-### 🎯 Single Media Display
-- Show individual anime/manga entries
-- Personal progress and ratings
-- Detailed media information
-
-### 🔗 Inline Links
-- Special `anilist:` link syntax for quick media embedding
-- Automatic link processing in your notes
-
-### ⚙️ Customizable Settings
-- Toggle cover images, ratings, progress, and genres
-- Choose default layout preferences
-- Responsive design for mobile and desktop
-
-## Installation
-
-### Manual Installation
-1. Download the plugin files (`main.js`, `manifest.json`, `styles.css`)
-2. Create a folder named `anilist-integration` in your `.obsidian/plugins/` directory
-3. Place the downloaded files in this folder
-4. Enable the plugin in Obsidian's Community Plugins settings
-
-### From Community Plugins (when available)
-1. Open Obsidian Settings
-2. Go to Community Plugins
-3. Search for "AniList Integration"
-4. Install and enable the plugin
-
-## Usage
-
-### Code Blocks
-
-#### Media Lists
-Display your anime or manga lists using code blocks:
-
-```markdown
-```anilist
-username: your-anilist-username
-listType: CURRENT
-layout: card
-```
-
-**Parameters:**
-- `username`: Your AniList username (required)
-- `listType`: List status (CURRENT, COMPLETED, PAUSED, DROPPED, PLANNING, REPEATING)
-- `layout`: Display layout (card, table)
-
-#### Search Interface
-Create an interactive search interface:
-
-```markdown
-```anilist-search
-mediaType: ANIME
-```
-
-**Parameters:**
-- `mediaType`: Type of media to search (ANIME, MANGA)
-- `layout`: Display layout (card, table)
-
-#### User Statistics
-Display user statistics:
-
-```markdown
-```anilist
-username: your-anilist-username
-type: stats
-```
-
-#### Single Media Item
-Display a specific anime/manga from your list:
-
-```markdown
-```anilist
-username: your-anilist-username
-type: single
-mediaType: ANIME
-mediaId: 123456
-```
-
-### Inline Links
-
-Use special `anilist:` links in your notes:
-
-```markdown
-<!-- User's current anime list -->
-[My Current Anime](anilist:username/current)
-
-<!-- User statistics -->
-[My Stats](anilist:username/stats)
-
-<!-- Specific anime/manga -->
-[Attack on Titan](anilist:username/anime/16498)
-```
-
-**Link Format:**
-- `anilist:username/current` - Current watching/reading list
-- `anilist:username/completed` - Completed list
-- `anilist:username/stats` - User statistics
-- `anilist:username/anime/ID` - Specific anime
-- `anilist:username/manga/ID` - Specific manga
-
-## Configuration
-
-Access plugin settings through Obsidian Settings → Community Plugins → AniList Integration:
-
-### Display Options
-- **Default Layout**: Choose between card or table layout
-- **Show Cover Images**: Toggle anime/manga cover images
-- **Show Ratings**: Display user scores and ratings
-- **Show Progress**: Show watching/reading progress
-- **Show Genres**: Display genre tags
-
-### Performance Features
-- **Caching**: 5-minute cache for API responses
-- **Debounced Search**: 300ms delay for search queries
-- **Responsive Design**: Optimized for mobile and desktop
-
-## Supported List Types
-
-| Status | Description |
-|--------|-------------|
-| CURRENT | Currently watching/reading |
-| COMPLETED | Finished anime/manga |
-| PAUSED | On hold |
-| DROPPED | Discontinued |
-| PLANNING | Plan to watch/read |
-| REPEATING | Rewatching/rereading |
-
-## Layout Options
-
-### Card Layout
-- Grid-based display (3 columns on desktop)
-- Cover images with media information
-- Responsive design
-- Hover effects and animations
-
-### Table Layout
-- Tabular format with sortable columns
-- Compact information display
-- Better for large lists
-- Mobile-friendly
-
-## API Integration
-
-The plugin uses the AniList GraphQL API:
-- **Endpoint**: `https://graphql.anilist.co`
-- **Rate Limiting**: Handled automatically with caching
-- **Authentication**: Not required for public data
-
-## Examples
-
-### Basic Usage
-```markdown
-# My Current Anime
-```anilist
-username: myusername
-listType: CURRENT
-```
-
-# Search for Anime
-```anilist-search
-mediaType: ANIME
-```
-
-# My AniList Stats
-```anilist
-username: myusername
-type: stats
-```
-```
-
-### Advanced Usage
-```markdown
-# Completed Manga (Table View)
-```anilist
-username: myusername
-listType: COMPLETED
-layout: table
-```
-
-# Search for Manga
-```anilist-search
-mediaType: MANGA
-```
-
-Check out [my current anime](anilist:myusername/current) and [statistics](anilist:myusername/stats)!
-
-
-## Troubleshooting
-
-### Common Issues
-1. **Username not found**: Ensure your AniList username is correct and public
-2. **No data displayed**: Check if your lists are set to public on AniList
-3. **Images not loading**: Verify your internet connection and AniList accessibility
-4. **Search not working**: Make sure to type at least 3 characters
-
-### Error Messages
-- "Username is required": Add a username parameter to your code block
-- "API Error": Check AniList service status and your internet connection
-- "No results found": Try different search terms or check spelling
-
-## Privacy & Data
-
-- The plugin only accesses public AniList data
-- No authentication or personal data storage
-- All data is cached locally for 5 minutes
-- No data is sent to third parties
-
-## Contributing
-
-This plugin is open source. Feel free to contribute by:
-- Reporting bugs
-- Suggesting new features
-- Submitting pull requests
-- Improving documentation
-
-## Changelog
-
-### Version 1.0.0
-- Initial release
-- Basic media list display
-- Search functionality
-- User statistics
-- Inline link support
-- Customizable settings
-
-## Support
-
-For support, bug reports, or feature requests, please create an issue on the project repository.
-
-## License
-
-This plugin is released under the MIT License.
+![Plugin Logo](assets/icon.png)
 
 ---
 
-**Note**: This plugin is not affiliated with AniList. AniList is a trademark of their respective owners.
+## Features
+
+- Embed individual anime/manga entries with metadata (titles, cover image, status, score, dates)  
+- Generate watch/read lists (e.g. “Top Rated Anime”, “Currently Watching”)  
+- Inline links to AniList pages  
+- Caching for faster performance and reduced API calls  
+- Dark & light theme support  
+
+---
+
+## Installation
+
+1. Download the latest release from [Releases](https://github.com/zara-kasi/AniList-Obsidian/releases).  
+2. Unzip into your Obsidian vault’s `plugins/` folder, e.g.  
+
+3. Reload Obsidian and enable “AniList-Obsidian” in Settings → Community Plugins.
+
+---
+
+## Configuration
+
+1. Open Settings → AniList-Obsidian  
+2. Enter your AniList **Username** (e.g. `your-anilist-username`)  
+3. You can begin by using the templates available in the settings.
+
+---
+
+## Usage
+
+Wrap your commands in a fenced code block:
+
+
+
+```anilist
+user: your-anilist-username
+media: anime
+id: 5114
+layout: card
+```
+
+
+
+### Supported Parameters
+
+| Key      | Required? | Description                                          |
+|----------|-----------|------------------------------------------------------|
+| `user`   | Yes       | Your AniList username                                |
+| `media`  | No        | `anime` or `manga` (defaults to `anime`)             |
+| `id`     | Yes       | AniList media ID                                     |
+| `layout` | No        | `card`, `table`, or `inline` (defaults to `inline`)  |
+| `fields` | No        | Comma-separated list of extra fields (e.g. `score`)  |
+
+---
+
+## Examples
+
+- **Single inline entry**  
+
+
+```anilist
+user: your-anilist-username
+id: 30276
+```
+
+
+
+- **Table of currently watching anime**  
+
+
+```anilist
+user: your-anilist-username
+media: anime
+list: CURRENT
+layout: table
+```
+
+---
+
+## Troubleshooting
+
+- **Blank block**: make sure your username is correct, and check network console for errors.  
+- **Rate limit errors**: increase cache duration or switch to a personal AniList API key.  
+- **Styling issues**: customize your CSS in `.obsidian/plugins/AniList-Obsidian/styles.css`
+
+---
+
+## Contributing
+
+1. Fork the repo  
+2. Create a feature branch (`git checkout -b feature/awesome`)  
+3. Commit your changes with clear messages  
+4. Open a Pull Request against `main`  
+
+Please run `npm test` and `npm run lint` before submitting.
+
+---
+
+## License
+
+MIT © 2025 zara-kasi
+
+---
+
+## 🛠️ `TO-DO.md`
+
+
+# AniList-Obsidian Plugin — To-Do List
+
+## 🔧 Critical Fixes
+
+- [ ] **Fix README**
+- [ ] Replace placeholder repo links with correct ones (e.g. releases/issues)
+- [ ] Clarify install instructions and examples
+- [ ] Publish an initial release for manual installs
+
+- [ ] **Renderer Bugs**
+- [ ] `renderTableLayout` uses undefined variables (`title`, `entry`)
+- [ ] Output table structure correctly and render all items
+
+- [ ] **Parameter Parsing**
+- [ ] Support quoted values and whitespace handling in key-value pairs
+- [ ] Ensure default values work consistently (e.g. media type = "anime")
+- [ ] Align error messages with settings (e.g. "username required" vs stored config)
+
+## ⚠️ UX & Stability
+
+- [ ] **Error Handling**
+- [ ] Replace raw error output with clean, user-friendly messages
+- [ ] Add inline feedback or status banners inside the rendered blocks
+
+- [ ] **Loading State**
+- [ ] Show a spinner or "Loading..." placeholder while fetching data
+
+- [ ] **API Safety**
+- [ ] Sanitize all dynamic values (titles, genres, etc.) to prevent XSS
+
+- [ ] **Media Defaults**
+- [ ] Fallback to `anime` when media type is not provided
+- [ ] Validate all config inputs before use
+
+## 🎨 Styling
+
+- [ ] **Fix CSS**
+- [ ] Correct syntax errors (`minmax(200 px, 1 fr)` → `minmax(200px, 1fr)`)
+- [ ] Ensure consistent use of classes in HTML output
+- [ ] Respect Obsidian themes (dark/light modes)
+- [ ] Improve spacing, card layout, and responsiveness
+
+## 📦 Code Quality
+
+- [ ] **Refactor to TypeScript**
+- [ ] Set up build pipeline with `tsconfig.json`, `rollup`, etc.
+- [ ] Break logic into smaller, reusable modules
+
+- [ ] **Lint & Format**
+- [ ] Add ESLint + Prettier for code consistency
+
+- [ ] **Test Coverage**
+- [ ] Add unit tests for config parsing, rendering, and caching logic
+- [ ] Use Jest or similar framework
+
+- [ ] **Caching**
+- [ ] Replace in-memory cache with persistent Obsidian Data API
+- [ ] Allow configurable cache duration in settings
+
+## 🚀 Future Features
+
+- [ ] Support filters (genres, scores, tags, etc.)
+- [ ] Custom sorting (e.g. by score, date)
+- [ ] Inline charts or rating bars
+- [ ] Support for custom field rendering (markdown or HTML)
+```
+
+Let me know if you want the `README.md` and `TO-DO.md` saved as actual files or embedded in your GitHub repo.
+````

@@ -975,7 +975,7 @@ new Setting(containerEl)
       await this.plugin.saveSettings();
    }));
 new Setting(containerEl)
-  .setName('Guide')
+  .setName('Usage Templates')
   .setDesc('Here are some templates that you can use for basic usage.')
   .setClass('anilist-templates-setting')
   .addButton(button => button
@@ -993,11 +993,6 @@ new Setting(containerEl)
     .onClick(() => {
       window.open('https://github.com/zara-kasi/AniList-Obsidian/blob/main/README.md', '_blank');
     }));
-
-containerEl.createEl('p', { 
-  text: 'For more customisation read the documentation above.',
-  cls: 'setting-item-description'
-});
     
   }
   

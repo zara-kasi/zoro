@@ -976,5 +976,16 @@ new Setting(containerEl)
     }));
   }
 }
+// Add usage templates section
+containerEl.createEl('h3', { text: 'Usage Templates' });
+
+const templatesDiv = containerEl.createDiv();
+templatesDiv.innerHTML = `
+  <p>Here are some templates that you can use for basic usage.</p>
+  <p><a href="https://github.com/zara-kasi/AniList-Obsidian/blob/main/Anime-Template.md" target="_blank">Anime</a></p>
+  <p><a href="https://github.com/zara-kasi/AniList-Obsidian/blob/main/Manga-Template.md" target="_blank">Manga</a></p>
+  <p>For more customisation read this.</p>
+  <p><a href="https://github.com/zara-kasi/AniList-Obsidian/blob/main/README.md" target="_blank">More</a></p>
+`;
 
 module.exports = AniListPlugin;

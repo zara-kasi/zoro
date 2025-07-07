@@ -1,6 +1,5 @@
 ```anilist-search
 mediaType: ANIME
-perPage: 10
 ```
 # Watching:
 ```anilist

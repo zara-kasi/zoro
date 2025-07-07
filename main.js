@@ -26,16 +26,17 @@ class AniListPlugin extends Plugin {
     this.addSettingTab(new AniListSettingTab(this.app, this));
   }
 
-  async loadSettings() {
-    this.settings = Object.assign({}, {
-      defaultLayout: 'card',
-      showCoverImages: true,
-      showRatings: true,
-      showProgress: true,
-      showGenres: false,
-      gridColumns: 3
-    }, await this.loadData());
-  }
+async loadSettings() {
+  this.settings = Object.assign({}, {
+    defaultUsername: '', // Add this line
+    defaultLayout: 'card',
+    showCoverImages: true,
+    showRatings: true,
+    showProgress: true,
+    showGenres: false,
+    gridColumns: 3
+  }, await this.loadData());
+}
 
   async saveSettings() {
     await this.saveData(this.settings);

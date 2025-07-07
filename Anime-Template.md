@@ -1,6 +1,10 @@
+```anilist-search
+mediaType: ANIME
+layout: card
+perPage: 10
+```
 # Watching:
 ```anilist
-username: 
 listType: CURRENT
 mediaType: ANIME
 
@@ -8,40 +12,40 @@ mediaType: ANIME
 
 # Planning:
 ```anilist
-username: 
 listType: PLANNING
 mediaType: ANIME
-
+layout: 
 ```
 
 # Repeating:
 ```anilist
-username: 
 listType: REPEATING
 mediaType: ANIME
-
+layout: 
 ```
 
 # On Hold:
 ```anilist
-username: 
 listType: PAUSED
 mediaType: ANIME
-
+layout: 
 ```
 
 # Completed:
 ```anilist
-username: 
 listType: COMPLETED
 mediaType: ANIME
-
+layout: 
 ```
 
 # Dropped:
 ```anilist
-username: 
 listType: DROPPED
 mediaType: ANIME
+layout: 
 ```
 
+# Profile:
+```anilist
+type: stats
+```

@@ -1,6 +1,5 @@
 ```anilist-search
 mediaType: MANGA
-layout: card
 ```
 # Reading:
 ```anilist

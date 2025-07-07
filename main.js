@@ -900,6 +900,17 @@ class AniListSettingTab extends PluginSettingTab {
     containerEl.empty();
     
     containerEl.createEl('h2', { text: 'AniList Integration Settings' });
+
+new Setting(containerEl)
+    .setName('Default Username')
+    .setDesc('Your AniList username to use when none is specified in code blocks')
+    .addText(text => text
+      .setPlaceholder('Enter your AniList username')
+      .setValue(this.plugin.settings.defaultUsername)
+      .onChange(async (value) => {
+        this.plugin.settings.defaultUsername = value.trim();
+        await this.plugin.saveSettings();
+      }));
     
     new Setting(containerEl)
       .setName('Default Layout')

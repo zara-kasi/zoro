@@ -265,6 +265,7 @@ MIT © 2025 zara-kasi
 
 ## 🚀 Future Features
 
+- [ ] Add Cache support.
 - [ ] Support filters (genres, scores, tags, etc.)
 - [ ] Custom sorting (e.g. by score, date)
 - [ ] Inline charts or rating bars

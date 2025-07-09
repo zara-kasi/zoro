@@ -12,6 +12,8 @@ class AniListPlugin extends Plugin {
     
     // Load settings first
     await this.loadSettings();
+
+    await this.createTemplateNotes();
     
     // Register code block processor
     this.registerMarkdownCodeBlockProcessor('anilist', this.processAniListCodeBlock.bind(this));
@@ -41,6 +43,118 @@ async loadSettings() {
   async saveSettings() {
     await this.saveData(this.settings);
   }
+
+  // Add this method to your AniListPlugin class
+async createTemplateNotes() {
+  // Check if template notes already exist to avoid duplicates
+  const animeNoteExists = this.app.vault.getAbstractFileByPath('Anime List.md');
+  const mangaNoteExists = this.app.vault.getAbstractFileByPath('Manga List.md');
+  
+  // Anime template content
+  const animeTemplate = `\`\`\`anilist-search
+mediaType: ANIME
+\`\`\`
+# Watching:
+\`\`\`anilist
+listType: CURRENT
+mediaType: ANIME
+
+\`\`\`
+
+# Planning:
+\`\`\`anilist
+listType: PLANNING
+mediaType: ANIME
+\`\`\`
+
+# Repeating:
+\`\`\`anilist
+listType: REPEATING
+mediaType: ANIME
+\`\`\`
+
+# On Hold:
+\`\`\`anilist
+listType: PAUSED
+mediaType: ANIME
+\`\`\`
+
+# Completed:
+\`\`\`anilist
+listType: COMPLETED
+mediaType: ANIME
+\`\`\`
+
+# Dropped:
+\`\`\`anilist
+listType: DROPPED
+mediaType: ANIME
+\`\`\`
+
+# Profile:
+\`\`\`anilist
+type: stats
+\`\`\``;
+
+  // Manga template content
+  const mangaTemplate = `\`\`\`anilist-search
+mediaType: MANGA
+\`\`\`
+# Reading:
+\`\`\`anilist
+listType: CURRENT
+mediaType: MANGA
+\`\`\`
+
+# Planning:
+\`\`\`anilist
+listType: PLANNING
+mediaType: MANGA
+\`\`\`
+# Repeating:
+\`\`\`anilist
+listType: REPEATING
+mediaType: MANGA
+\`\`\`
+# On Hold:
+\`\`\`anilist
+listType: PAUSED
+mediaType: MANGA
+\`\`\`
+
+# Completed:
+\`\`\`anilist
+listType: COMPLETED
+mediaType: MANGA
+\`\`\`
+# Dropped:
+\`\`\`anilist
+listType: DROPPED
+mediaType: MANGA
+\`\`\`
+# Profile:
+\`\`\`anilist
+type: stats
+\`\`\``;
+
+  try {
+    // Create Anime List note if it doesn't exist
+    if (!animeNoteExists) {
+      await this.app.vault.create('Anime List.md', animeTemplate);
+      console.log('Created Anime List.md');
+    }
+    
+    // Create Manga List note if it doesn't exist
+    if (!mangaNoteExists) {
+      await this.app.vault.create('Manga List.md', mangaTemplate);
+      console.log('Created Manga List.md');
+    }
+    
+  } catch (error) {
+    console.error('Error creating template notes:', error);
+  }
+}
+
 
   async processAniListCodeBlock(source, el, ctx) {
     try {

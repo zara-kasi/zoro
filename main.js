@@ -137,21 +137,35 @@ mediaType: MANGA
 type: stats
 \`\`\``;
 
-  try {
+ try {
+    let createdNotes = [];
+    
     // Create Anime List note if it doesn't exist
     if (!animeNoteExists) {
       await this.app.vault.create('Anime List.md', animeTemplate);
+      createdNotes.push('Anime List');
       console.log('Created Anime List.md');
     }
     
     // Create Manga List note if it doesn't exist
     if (!mangaNoteExists) {
       await this.app.vault.create('Manga List.md', mangaTemplate);
+      createdNotes.push('Manga List');
       console.log('Created Manga List.md');
+    }
+    
+    // Show notification if any notes were created
+    if (createdNotes.length > 0) {
+      const message = createdNotes.length === 1 
+        ? `AniList Plugin: Created "${createdNotes[0]}" note! Check it out to start tracking your ${createdNotes[0].toLowerCase()}.`
+        : `AniList Plugin: Created "${createdNotes.join('" and "')}" notes! Check them out to start tracking your anime and manga.`;
+      
+      new Notice(message, 8000); // Show for 8 seconds
     }
     
   } catch (error) {
     console.error('Error creating template notes:', error);
+    new Notice('AniList Plugin: Error creating template notes. Please check the console for details.', 5000);
   }
 }
 

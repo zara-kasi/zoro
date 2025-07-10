@@ -3,81 +3,169 @@ const { Plugin, PluginSettingTab, Setting, Notice } = require('obsidian');
 class AniListPlugin extends Plugin {
   constructor() {
     super(...arguments);
-   this.cache = null; // Will be loaded from data
-}
+    this.cache = null; // Will be initialized in loadCache()
+  }
 
-// new cache code
-async loadCache() {
-  const cacheData = await this.loadData();
-  this.cache = new Map();
-  
-  if (cacheData?.cache) {
-    // Convert stored array back to Map and filter expired entries
-    const now = Date.now();
-    for (const [key, value] of cacheData.cache) {
-      if (now - value.timestamp < this.settings.cacheDuration) {
-        this.cache.set(key, value);
+  async loadCache() {
+    try {
+      // Initialize cache as Map
+      this.cache = new Map();
+      
+      // Load data from storage
+      const savedData = await this.loadData();
+      
+      // Check if we have cached data and it's in the expected format
+      if (savedData && savedData.cache && Array.isArray(savedData.cache)) {
+        const now = Date.now();
+        
+        // Convert stored array back to Map and filter expired entries
+        for (const [key, value] of savedData.cache) {
+          // Validate cache entry structure
+          if (value && typeof value === 'object' && 
+              typeof value.timestamp === 'number' && 
+              value.data !== undefined) {
+            
+            // Check if entry hasn't expired
+            if (now - value.timestamp < this.settings.cacheDuration) {
+              this.cache.set(key, value);
+            }
+          }
+        }
+        
+        console.log(`Loaded ${this.cache.size} valid cache entries`);
+      } else {
+        console.log('No valid cache data found, starting with empty cache');
       }
+    } catch (error) {
+      console.error('Error loading cache:', error);
+      // Initialize empty cache on error
+      this.cache = new Map();
     }
   }
-}
 
-async saveCache() {
-  // Convert Map to array for storage
-  const cacheData = {
-    cache: Array.from(this.cache.entries())
-  };
-  await this.saveData(cacheData);
-}
+  async saveCache() {
+    try {
+      // Only save if cache is initialized
+      if (!this.cache) {
+        console.warn('Cache not initialized, skipping save');
+        return;
+      }
 
-async clearCache() {
-  this.cache.clear();
-  await this.saveCache();
-}
+      // Get existing data to preserve settings
+      const existingData = await this.loadData() || {};
+      
+      // Convert Map to array for storage and merge with existing data
+      const dataToSave = {
+        ...existingData,
+        cache: Array.from(this.cache.entries())
+      };
+      
+      await this.saveData(dataToSave);
+      console.log(`Saved ${this.cache.size} cache entries`);
+    } catch (error) {
+      console.error('Error saving cache:', error);
+    }
+  }
 
+  async clearCache() {
+    try {
+      if (this.cache) {
+        this.cache.clear();
+        await this.saveCache();
+        console.log('Cache cleared successfully');
+      }
+    } catch (error) {
+      console.error('Error clearing cache:', error);
+    }
+  }
 
   async onload() {
     console.log('Loading AniList Plugin');
     
-    // Load settings first
-    await this.loadSettings();
-// Load Cache 
-await this.loadCache();
-
-    
-    // Register code block processor
-    this.registerMarkdownCodeBlockProcessor('anilist', this.processAniListCodeBlock.bind(this));
-    
-    // Register new search code block processors
-    this.registerMarkdownCodeBlockProcessor('anilist-search', this.processAniListSearchCodeBlock.bind(this));
-    
-    // Register inline link processor
-    this.registerMarkdownPostProcessor(this.processInlineLinks.bind(this));
-    
-    // Add plugin settings
-    this.addSettingTab(new AniListSettingTab(this.app, this));
+    try {
+      // Load settings first - this is crucial for cache duration
+      await this.loadSettings();
+      
+      // Then load cache (needs settings to be loaded first)
+      await this.loadCache();
+      
+      // Register code block processors
+      this.registerMarkdownCodeBlockProcessor('anilist', this.processAniListCodeBlock.bind(this));
+      this.registerMarkdownCodeBlockProcessor('anilist-search', this.processAniListSearchCodeBlock.bind(this));
+      
+      // Register inline link processor
+      this.registerMarkdownPostProcessor(this.processInlineLinks.bind(this));
+      
+      // Add plugin settings tab
+      this.addSettingTab(new AniListSettingTab(this.app, this));
+      
+      console.log('AniList Plugin loaded successfully');
+    } catch (error) {
+      console.error('Error loading AniList Plugin:', error);
+      new Notice('Failed to load AniList Plugin. Check console for details.');
+    }
   }
 
-
-async loadSettings() {
-  this.settings = Object.assign({}, {
-    defaultUsername: '', // Add this line
-    defaultLayout: 'card',
-    showCoverImages: true,
-    showRatings: true,
-    showProgress: true,
-    showGenres: false,
-cacheDuration: 5 * 60 * 1000 ,
-    gridColumns: 3
-  }, await this.loadData());
-}
+  async loadSettings() {
+    try {
+      const loadedData = await this.loadData();
+      
+      // Default settings
+      const defaultSettings = {
+        defaultUsername: '',
+        defaultLayout: 'card',
+        showCoverImages: true,
+        showRatings: true,
+        showProgress: true,
+        showGenres: false,
+        cacheDuration: 5 * 60 * 1000, // 5 minutes in milliseconds
+        gridColumns: 3
+      };
+      
+      // Merge with loaded settings, excluding cache data
+      const { cache, ...settingsData } = loadedData || {};
+      this.settings = Object.assign({}, defaultSettings, settingsData);
+      
+      // Validate cache duration
+      if (typeof this.settings.cacheDuration !== 'number' || this.settings.cacheDuration <= 0) {
+        this.settings.cacheDuration = defaultSettings.cacheDuration;
+      }
+      
+      console.log('Settings loaded successfully');
+    } catch (error) {
+      console.error('Error loading settings:', error);
+      // Use default settings on error
+      this.settings = {
+        defaultUsername: '',
+        defaultLayout: 'card',
+        showCoverImages: true,
+        showRatings: true,
+        showProgress: true,
+        showGenres: false,
+        cacheDuration: 5 * 60 * 1000,
+        gridColumns: 3
+      };
+    }
+  }
 
   async saveSettings() {
-    await this.saveData(this.settings);
+    try {
+      // Get existing data to preserve cache
+      const existingData = await this.loadData() || {};
+      
+      // Merge settings with existing data (preserving cache)
+      const dataToSave = {
+        ...existingData,
+        ...this.settings
+      };
+      
+      await this.saveData(dataToSave);
+      console.log('Settings saved successfully');
+    } catch (error) {
+      console.error('Error saving settings:', error);
+    }
+
   }
-
- 
-
   async processAniListCodeBlock(source, el, ctx) {
     try {
       const config = this.parseCodeBlockConfig(source);

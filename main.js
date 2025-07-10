@@ -1084,8 +1084,8 @@ new Setting(containerEl)
 // Create two notes One for Manga and other for Anime using Code block 
 
 new Setting(containerEl)
-  .setName('Create Sample Note')
-  .setDesc('Create two  new notes AniList Anime and AniList Manga ')
+  .setName('Create Sample Notes')
+  .setDesc('Creates two notes — one for Anime, one for Manga — with all your lists, search, and stats preloaded. No setup needed.')
   .addButton(button => button
     .setButtonText('Create Note')
     .setTooltip('Click to create a sample note in your vault')
@@ -1161,23 +1161,7 @@ new Setting(containerEl)
   .setDesc('Here are some templates that you can use for basic usage.')
   .setClass('anilist-templates-header');
 
-new Setting(containerEl)
-  .setName('Anime Template')
-  .setDesc('Template for anime entries')
-  .addButton(button => button
-    .setButtonText('Open Template')
-    .onClick(() => {
-      window.open('https://github.com/zara-kasi/AniList-Obsidian/blob/main/Anime-Template.md', '_blank');
-    }));
 
-new Setting(containerEl)
-  .setName('Manga Template')
-  .setDesc('Template for manga entries')
-  .addButton(button => button
-    .setButtonText('Open Template')
-    .onClick(() => {
-      window.open('https://github.com/zara-kasi/AniList-Obsidian/blob/main/Manga-Template.md', '_blank');
-    }));
 
 new Setting(containerEl)
   .setName('More Information')

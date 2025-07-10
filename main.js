@@ -1160,7 +1160,7 @@ new Setting(containerEl)
 // more information botton 
 
 new Setting(containerEl)
-  .setName('Power Featurs')
+  .setName('Power Features')
   .setDesc('Want more features? Visit our GitHub page for tips, tricks, and powerful ways to customize your notes.')
   .addButton(button => button
     .setButtonText('View Documentation')

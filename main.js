@@ -1172,5 +1172,4 @@ new Setting(containerEl)
   
 }
 
-
 module.exports = AniListPlugin;

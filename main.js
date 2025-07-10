@@ -914,35 +914,30 @@ mediaType: ANIME
 \`\`\`anilist
 listType: PLANNING
 mediaType: ANIME
-layout: card
 \`\`\`
 
 # 🌀Repeating:
 \`\`\`anilist
 listType: REPEATING
 mediaType: ANIME
-layout: card
 \`\`\`
 
 # ⏸️On Hold:
 \`\`\`anilist
 listType: PAUSED
 mediaType: ANIME
-layout: card
 \`\`\`
 
 # 🏁Completed:
 \`\`\`anilist
 listType: COMPLETED
 mediaType: ANIME
-layout: card
 \`\`\`
 
 # 🗑️Dropped:
 \`\`\`anilist
 listType: DROPPED
 mediaType: ANIME
-layout: card
 \`\`\`
 
 # 📊Stats:
@@ -957,7 +952,6 @@ Created on: ${new Date().toLocaleDateString()}
 
 const secondNoteContent = `\`\`\`anilist-search
 mediaType: MANGA
-layout: card
 \`\`\`
 # 📖Reading:
 \`\`\`anilist

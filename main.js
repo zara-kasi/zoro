@@ -483,7 +483,7 @@ getAniListUrl(mediaId, mediaType = 'anime') {
       
       if (this.settings.showCoverImages) {
         const img = document.createElement('img');
-        img.src = item.coverImage.medium;
+        img.src = item.coverImage.large;
         img.alt = title;
         img.className = 'media-cover';
         cardDiv.appendChild(img);
@@ -631,7 +631,7 @@ getAniListUrl(mediaId, mediaType = 'anime') {
     
     if (this.settings.showCoverImages) {
       const img = document.createElement('img');
-      img.src = media.coverImage.medium;
+      img.src = media.coverImage.large;
       img.alt = title;
       img.className = 'media-cover';
       cardDiv.appendChild(img);
@@ -717,7 +717,7 @@ getAniListUrl(mediaId, mediaType = 'anime') {
       
       if (this.settings.showCoverImages) {
         const img = document.createElement('img');
-        img.src = media.coverImage.medium;
+        img.src = media.coverImage.large;
         img.alt = title;
         img.className = 'media-cover';
         cardDiv.appendChild(img);

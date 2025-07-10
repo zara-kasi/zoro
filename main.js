@@ -1068,11 +1068,11 @@ class AniListSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     
-    containerEl.createEl('h2', { text: 'AniList Integration Settings' });
+    containerEl.createEl('h2', { text: 'Settings' });
 
 new Setting(containerEl)
-    .setName('Default Username')
-    .setDesc('Your AniList username to use when none is specified in code blocks')
+    .setName('Username')
+    .setDesc('Add your AniList username to view your lists and stats — just make sure your profile is public.')
     .addText(text => text
       .setPlaceholder('Enter your AniList username')
       .setValue(this.plugin.settings.defaultUsername)
@@ -1156,16 +1156,12 @@ new Setting(containerEl)
       this.plugin.settings.gridColumns = value;
       await this.plugin.saveSettings();
    }));
-new Setting(containerEl)
-  .setName('Guide')
-  .setDesc('Here are some templates that you can use for basic usage.')
-  .setClass('anilist-templates-header');
 
-
+// more information botton 
 
 new Setting(containerEl)
-  .setName('More Information')
-  .setDesc('Plugin documentation and usage guide')
+  .setName('Power Featurs')
+  .setDesc('Want more features? Visit our GitHub page for tips, tricks, and powerful ways to customize your notes.')
   .addButton(button => button
     .setButtonText('View Documentation')
     .onClick(() => {

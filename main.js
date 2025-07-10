@@ -35,13 +35,6 @@ async clearCache() {
   await this.saveCache();
 }
 
-// 3. Update Settings Interface
-interface AniListPluginSettings {
-  // ... existing settings
-  cacheDuration: number; // in milliseconds
-}
-
-// Update default settings:
 const DEFAULT_SETTINGS: AniListPluginSettings = {
   // ... existing defaults
   cacheDuration: 5 * 60 * 1000, // 5 minutes default
@@ -79,6 +72,7 @@ async loadSettings() {
     showRatings: true,
     showProgress: true,
     showGenres: false,
+cacheDuration: 5 * 60 * 1000 ,
     gridColumns: 3
   }, await this.loadData());
 }
@@ -610,7 +604,7 @@ getAniListUrl(mediaId, mediaType = 'anime') {
     } else {
       const entries = data.MediaListCollection.lists.flatMap(list => list.entries);
       if (config.layout === 'table') {
-        this.renderTableLayout(el, entries);
+        this.renderTableLayout(el, entries, config);
       } else {
         this.renderMediaList(el, entries, config);
       }
@@ -838,7 +832,7 @@ getAniListUrl(mediaId, mediaType = 'anime') {
     el.appendChild(gridDiv);
   }
 
-  renderTableLayout(el, entries) {
+  renderTableLayout(el, entries, config) {
     const table = document.createElement('table');
     table.className = 'anilist-table';
     

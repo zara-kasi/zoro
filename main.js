@@ -1092,7 +1092,7 @@ new Setting(containerEl)
     .setButtonText('Create Note')
     .setTooltip('Click to create a sample note in your vault')
     .onClick(async () => {
-      await this.plugin.createSampleNote();
+      await this.plugin.createSampleNotes();
     }));
 
     

@@ -1,39 +1,40 @@
 ```anilist-search
 mediaType: MANGA
+layout: card
 ```
-# Reading:
+# 📖Reading:
 ```anilist
 listType: CURRENT
 mediaType: MANGA
 ```
 
-# Planning:
+# 📝Planning:
 ```anilist
 listType: PLANNING
 mediaType: MANGA
 ```
-# Repeating:
+# 🌀Repeating:
 ```anilist
 listType: REPEATING
 mediaType: MANGA
 ```
-# On Hold:
+# ⏸️On Hold:
 ```anilist
 listType: PAUSED
 mediaType: MANGA
 ```
 
-# Completed:
+# 🏁Completed:
 ```anilist
 listType: COMPLETED
 mediaType: MANGA
 ```
-# Dropped:
+# 🗑️Dropped:
 ```anilist
 listType: DROPPED
 mediaType: MANGA
 ```
-# Profile:
+# 📊Stats:
 ```anilist
 type: stats
 ```

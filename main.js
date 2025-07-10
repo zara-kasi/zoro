@@ -125,7 +125,12 @@ if (now - value.timestamp < cacheDuration) {
       };
       
       // Merge with loaded settings, excluding cache data
-      const { cache, ...settingsData } = loadedData || {};
+
+const loadedData = await this.loadData() || {};
+const settingsData = { ...loadedData };
+delete settingsData.cache;
+
+
       this.settings = Object.assign({}, defaultSettings, settingsData);
       
       // Validate cache duration

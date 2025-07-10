@@ -890,6 +890,171 @@ getAniListUrl(mediaId, mediaType = 'anime') {
     el.innerHTML = `<div class="anilist-error">Error: ${message}</div>`;
   }
 
+// Note Creation 
+
+async createSampleNotes() {
+  try {
+    let successCount = 0;
+    let errorMessages = [];
+    
+    // **FIRST NOTE CONFIGURATION**
+    
+    const firstNoteTitle = "Anime Dashboard";
+    const firstNoteContent =```anilist-search
+mediaType: ANIME
+```
+# 👀Watching:
+```anilist
+listType: CURRENT
+mediaType: ANIME
+
+```
+
+# 📝Planning:
+```anilist
+listType: PLANNING
+mediaType: ANIME
+layout: 
+```
+
+# 🌀Repeating:
+```anilist
+listType: REPEATING
+mediaType: ANIME
+layout: 
+```
+
+# ⏸️On Hold:
+```anilist
+listType: PAUSED
+mediaType: ANIME
+layout: 
+```
+
+# 🏁Completed:
+```anilist
+listType: COMPLETED
+mediaType: ANIME
+layout: 
+```
+
+# 🗑️Dropped:
+```anilist
+listType: DROPPED
+mediaType: ANIME
+layout: 
+```
+
+# 📊Stats:
+```anilist
+type: stats
+```
+
+
+Created on: ${new Date().toLocaleDateString()}
+`;
+
+    // **SECOND NOTE CONFIGURATION** 
+
+    const secondNoteTitle = "Manga Dashboard";
+    const secondNoteContent =```anilist-search
+mediaType: MANGA
+layout: card
+```
+# 📖Reading:
+```anilist
+listType: CURRENT
+mediaType: MANGA
+```
+
+# 📝Planning:
+```anilist
+listType: PLANNING
+mediaType: MANGA
+```
+# 🌀Repeating:
+```anilist
+listType: REPEATING
+mediaType: MANGA
+```
+# ⏸️On Hold:
+```anilist
+listType: PAUSED
+mediaType: MANGA
+```
+
+# 🏁Completed:
+```anilist
+listType: COMPLETED
+mediaType: MANGA
+```
+# 🗑️Dropped:
+```anilist
+listType: DROPPED
+mediaType: MANGA
+```
+# 📊Stats:
+```anilist
+type: stats
+```
+
+Created on: ${new Date().toLocaleDateString()}
+`;
+
+    // Array of notes to create
+
+    const notesToCreate = [
+      { title: firstNoteTitle, content: firstNoteContent },
+      { title: secondNoteTitle, content: secondNoteContent }
+    ];
+
+    // Create each note
+
+    for (const note of notesToCreate) {
+      try {
+        const fileName = `${note.title}.md`;
+        const filePath = fileName;
+
+ // This creates the note in the vault root
+        
+        // Checking for if  file already exists
+        const existingFile = this.app.vault.getAbstractFileByPath(filePath);
+        if (existingFile) {
+          errorMessages.push(`"${note.title}" already exists`);
+          continue;
+        }
+        
+        // Create the new note
+        await this.app.vault.create(filePath, note.content);
+        successCount++;
+        
+      } catch (error) {
+        errorMessages.push(`Failed to create "${note.title}": ${error.message}`);
+      }
+    }
+    
+    // Show results
+    if (successCount > 0) {
+      new Notice(`Successfully created ${successCount} note${successCount > 1 ? 's' : ''}!`, 4000);
+      
+      // Open the first successfully created note
+
+      const firstNote = this.app.vault.getAbstractFileByPath(`${firstNoteTitle}.md`);
+      if (firstNote) {
+        await this.app.workspace.openLinkText(`${firstNoteTitle}.md`, '', false);
+      }
+    }
+    
+    if (errorMessages.length > 0) {
+      new Notice(`Issues: ${errorMessages.join(', ')}`, 5000);
+    }
+    
+  } catch (error) {
+    console.error('Error creating notes:', error);
+    new Notice(`Failed to create notes: ${error.message}`, 5000);
+  }
+}
+
   onunload() {
     console.log('Unloading AniList Plugin');
   }

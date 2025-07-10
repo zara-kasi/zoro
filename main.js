@@ -917,6 +917,19 @@ new Setting(containerEl)
         this.plugin.settings.defaultUsername = value.trim();
         await this.plugin.saveSettings();
       }));
+
+// Create two notes One for Manga and other for Anime using Code block 
+
+new Setting(containerEl)
+  .setName('Create Sample Note')
+  .setDesc('Create two  new notes AniList Anime and AniList Manga ')
+  .addButton(button => button
+    .setButtonText('Create Note')
+    .setTooltip('Click to create a sample note in your vault')
+    .onClick(async () => {
+      await this.plugin.createSampleNote();
+    }));
+
     
     new Setting(containerEl)
       .setName('Default Layout')

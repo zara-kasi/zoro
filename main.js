@@ -1067,8 +1067,7 @@ class AniListSettingTab extends PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    
-    containerEl.createEl('h2', { text: 'Settings' });
+
 
 new Setting(containerEl)
     .setName('Username')

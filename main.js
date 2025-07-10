@@ -950,7 +950,6 @@ layout: card
 type: stats
 \`\`\`
 
-Created on: ${new Date().toLocaleDateString()}
 `;
 
  const secondNoteTitle = "Manga Dashboard";
@@ -996,7 +995,6 @@ mediaType: MANGA
 type: stats
 \`\`\`
 
-Created on: ${new Date().toLocaleDateString()}
 `;
 
     // Array of notes to create

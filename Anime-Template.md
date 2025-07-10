@@ -1,44 +1,49 @@
 ```anilist-search
 mediaType: ANIME
 ```
-# Watching:
+# 👀Watching:
 ```anilist
 listType: CURRENT
 mediaType: ANIME
 
 ```
 
-# Planning:
+# 📝Planning:
 ```anilist
 listType: PLANNING
 mediaType: ANIME
+layout: 
 ```
 
-# Repeating:
+# 🌀Repeating:
 ```anilist
 listType: REPEATING
 mediaType: ANIME
+layout: 
 ```
 
-# On Hold:
+# ⏸️On Hold:
 ```anilist
 listType: PAUSED
 mediaType: ANIME
+layout: 
 ```
 
-# Completed:
+# 🏁Completed:
 ```anilist
 listType: COMPLETED
 mediaType: ANIME
+layout: 
 ```
 
-# Dropped:
+# 🗑️Dropped:
 ```anilist
 listType: DROPPED
 mediaType: ANIME
+layout: 
 ```
 
-# Profile:
+# 📊Stats:
 ```anilist
 type: stats
 ```

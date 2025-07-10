@@ -6,11 +6,55 @@ class AniListPlugin extends Plugin {
    this.cache = null; // Will be loaded from data
 }
 
+// new cache code
+async loadCache() {
+  const cacheData = await this.loadData();
+  this.cache = new Map();
+  
+  if (cacheData?.cache) {
+    // Convert stored array back to Map and filter expired entries
+    const now = Date.now();
+    for (const [key, value] of cacheData.cache) {
+      if (now - value.timestamp < this.settings.cacheDuration) {
+        this.cache.set(key, value);
+      }
+    }
+  }
+}
+
+async saveCache() {
+  // Convert Map to array for storage
+  const cacheData = {
+    cache: Array.from(this.cache.entries())
+  };
+  await this.saveData(cacheData);
+}
+
+async clearCache() {
+  this.cache.clear();
+  await this.saveCache();
+}
+
+// 3. Update Settings Interface
+interface AniListPluginSettings {
+  // ... existing settings
+  cacheDuration: number; // in milliseconds
+}
+
+// Update default settings:
+const DEFAULT_SETTINGS: AniListPluginSettings = {
+  // ... existing defaults
+  cacheDuration: 5 * 60 * 1000, // 5 minutes default
+}
+
+
   async onload() {
     console.log('Loading AniList Plugin');
     
     // Load settings first
     await this.loadSettings();
+// Load Cache 
+await this.loadCache();
 
     
     // Register code block processor
@@ -25,6 +69,7 @@ class AniListPlugin extends Plugin {
     // Add plugin settings
     this.addSettingTab(new AniListSettingTab(this.app, this));
   }
+
 
 async loadSettings() {
   this.settings = Object.assign({}, {
@@ -172,9 +217,9 @@ parseCodeBlockConfig(source) {
     const cacheKey = JSON.stringify(config);
     const cached = this.cache.get(cacheKey);
     
-    if (cached && Date.now() - cached.timestamp < this.cacheTimeout) {
-      return cached.data;
-    }
+   if (cached && Date.now() - cached.timestamp < this.settings.cacheDuration) {
+    return cached.data;
+  }
     
     let query, variables;
     
@@ -227,6 +272,10 @@ parseCodeBlockConfig(source) {
       data: result.data,
       timestamp: Date.now()
     });
+
+await this.saveCache();
+
+
     
     return result.data;
   }
@@ -1045,6 +1094,7 @@ type: stats
 }
 
   onunload() {
+await this.saveCache();
     console.log('Unloading AniList Plugin');
   }
 }
@@ -1158,6 +1208,30 @@ new Setting(containerEl)
     .onClick(() => {
       window.open('https://github.com/zara-kasi/AniList-Obsidian/blob/main/README.md', '_blank');
     }));
+
+// Add cache duration setting
+  new Setting(containerEl)
+    .setName('Cache Duration')
+    .setDesc('How long to cache AniList data (in minutes)')
+    .addText(text => text
+      .setPlaceholder('5')
+      .setValue(String(this.plugin.settings.cacheDuration / (60 * 1000)))
+      .onChange(async (value) => {
+        const minutes = parseInt(value) || 5;
+        this.plugin.settings.cacheDuration = minutes * 60 * 1000;
+        await this.plugin.saveSettings();
+      }));
+
+  // Add clear cache button
+  new Setting(containerEl)
+    .setName('Clear Cache')
+    .setDesc('Clear all cached AniList data')
+    .addButton(button => button
+      .setButtonText('Clear Cache')
+      .onClick(async () => {
+        await this.plugin.clearCache();
+        new Notice('Cache cleared successfully');
+      }));
     
   }
   

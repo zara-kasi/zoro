@@ -1,4 +1,4 @@
-const { Plugin, PluginSettingTab, Setting } = require('obsidian');
+const { Plugin, PluginSettingTab, Setting, Notice } = require('obsidian');
 
 class AniListPlugin extends Plugin {
   constructor() {

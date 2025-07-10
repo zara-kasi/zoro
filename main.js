@@ -1,4 +1,4 @@
-const { Plugin, PluginSettingTab, Setting } = require('obsidian');
+const { Plugin, PluginSettingTab, Setting, Notice } = require('obsidian');
 
 class AniListPlugin extends Plugin {
   constructor() {
@@ -890,6 +890,169 @@ getAniListUrl(mediaId, mediaType = 'anime') {
     el.innerHTML = `<div class="anilist-error">Error: ${message}</div>`;
   }
 
+// Note Creation 
+
+async createSampleNotes() {
+  try {
+    let successCount = 0;
+    let errorMessages = [];
+    
+    // **FIRST NOTE CONFIGURATION**
+    
+    const firstNoteTitle = "Anime Dashboard";
+    
+const firstNoteContent = `\`\`\`anilist-search
+mediaType: ANIME
+\`\`\`
+# 👀Watching:
+\`\`\`anilist
+listType: CURRENT
+mediaType: ANIME
+\`\`\`
+
+# 📝Planning:
+\`\`\`anilist
+listType: PLANNING
+mediaType: ANIME
+layout: card
+\`\`\`
+
+# 🌀Repeating:
+\`\`\`anilist
+listType: REPEATING
+mediaType: ANIME
+layout: card
+\`\`\`
+
+# ⏸️On Hold:
+\`\`\`anilist
+listType: PAUSED
+mediaType: ANIME
+layout: card
+\`\`\`
+
+# 🏁Completed:
+\`\`\`anilist
+listType: COMPLETED
+mediaType: ANIME
+layout: card
+\`\`\`
+
+# 🗑️Dropped:
+\`\`\`anilist
+listType: DROPPED
+mediaType: ANIME
+layout: card
+\`\`\`
+
+# 📊Stats:
+\`\`\`anilist
+type: stats
+\`\`\`
+
+Created on: ${new Date().toLocaleDateString()}
+`;
+
+ const secondNoteTitle = "Manga Dashboard";
+
+const secondNoteContent = `\`\`\`anilist-search
+mediaType: MANGA
+layout: card
+\`\`\`
+# 📖Reading:
+\`\`\`anilist
+listType: CURRENT
+mediaType: MANGA
+\`\`\`
+
+# 📝Planning:
+\`\`\`anilist
+listType: PLANNING
+mediaType: MANGA
+\`\`\`
+# 🌀Repeating:
+\`\`\`anilist
+listType: REPEATING
+mediaType: MANGA
+\`\`\`
+# ⏸️On Hold:
+\`\`\`anilist
+listType: PAUSED
+mediaType: MANGA
+\`\`\`
+
+# 🏁Completed:
+\`\`\`anilist
+listType: COMPLETED
+mediaType: MANGA
+\`\`\`
+# 🗑️Dropped:
+\`\`\`anilist
+listType: DROPPED
+mediaType: MANGA
+\`\`\`
+# 📊Stats:
+\`\`\`anilist
+type: stats
+\`\`\`
+
+Created on: ${new Date().toLocaleDateString()}
+`;
+
+    // Array of notes to create
+
+    const notesToCreate = [
+      { title: firstNoteTitle, content: firstNoteContent },
+      { title: secondNoteTitle, content: secondNoteContent }
+    ];
+
+    // Create each note
+
+    for (const note of notesToCreate) {
+      try {
+        const fileName = `${note.title}.md`;
+        const filePath = fileName;
+
+ // This creates the note in the vault root
+        
+        // Checking for if  file already exists
+        const existingFile = this.app.vault.getAbstractFileByPath(filePath);
+        if (existingFile) {
+          errorMessages.push(`"${note.title}" already exists`);
+          continue;
+        }
+        
+        // Create the new note
+        await this.app.vault.create(filePath, note.content);
+        successCount++;
+        
+      } catch (error) {
+        errorMessages.push(`Failed to create "${note.title}": ${error.message}`);
+      }
+    }
+    
+    // Show results
+    if (successCount > 0) {
+      new Notice(`Successfully created ${successCount} note${successCount > 1 ? 's' : ''}!`, 4000);
+      
+      // Open the first successfully created note
+
+      const firstNote = this.app.vault.getAbstractFileByPath(`${firstNoteTitle}.md`);
+      if (firstNote) {
+        await this.app.workspace.openLinkText(`${firstNoteTitle}.md`, '', false);
+      }
+    }
+    
+    if (errorMessages.length > 0) {
+      new Notice(`Issues: ${errorMessages.join(', ')}`, 5000);
+    }
+    
+  } catch (error) {
+    console.error('Error creating notes:', error);
+    new Notice(`Failed to create notes: ${error.message}`, 5000);
+  }
+}
+
   onunload() {
     console.log('Unloading AniList Plugin');
   }
@@ -905,11 +1068,11 @@ class AniListSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
     
-    containerEl.createEl('h2', { text: 'AniList Integration Settings' });
+    containerEl.createEl('h2', { text: 'Settings' });
 
 new Setting(containerEl)
-    .setName('Default Username')
-    .setDesc('Your AniList username to use when none is specified in code blocks')
+    .setName('Username')
+    .setDesc('Add your AniList username to view your lists and stats — just make sure your profile is public.')
     .addText(text => text
       .setPlaceholder('Enter your AniList username')
       .setValue(this.plugin.settings.defaultUsername)
@@ -917,6 +1080,19 @@ new Setting(containerEl)
         this.plugin.settings.defaultUsername = value.trim();
         await this.plugin.saveSettings();
       }));
+
+// Create two notes One for Manga and other for Anime using Code block 
+
+new Setting(containerEl)
+  .setName('Create Sample Notes')
+  .setDesc('Creates two notes — one for Anime, one for Manga — with all your lists, search, and stats preloaded. No setup needed.')
+  .addButton(button => button
+    .setButtonText('Create Note')
+    .setTooltip('Click to create a sample note in your vault')
+    .onClick(async () => {
+      await this.plugin.createSampleNotes();
+    }));
+
     
     new Setting(containerEl)
       .setName('Default Layout')
@@ -980,32 +1156,12 @@ new Setting(containerEl)
       this.plugin.settings.gridColumns = value;
       await this.plugin.saveSettings();
    }));
-new Setting(containerEl)
-  .setName('Guide')
-  .setDesc('Here are some templates that you can use for basic usage.')
-  .setClass('anilist-templates-header');
+
+// more information botton 
 
 new Setting(containerEl)
-  .setName('Anime Template')
-  .setDesc('Template for anime entries')
-  .addButton(button => button
-    .setButtonText('Open Template')
-    .onClick(() => {
-      window.open('https://github.com/zara-kasi/AniList-Obsidian/blob/main/Anime-Template.md', '_blank');
-    }));
-
-new Setting(containerEl)
-  .setName('Manga Template')
-  .setDesc('Template for manga entries')
-  .addButton(button => button
-    .setButtonText('Open Template')
-    .onClick(() => {
-      window.open('https://github.com/zara-kasi/AniList-Obsidian/blob/main/Manga-Template.md', '_blank');
-    }));
-
-new Setting(containerEl)
-  .setName('More Information')
-  .setDesc('Plugin documentation and usage guide')
+  .setName('Power Featurs')
+  .setDesc('Want more features? Visit our GitHub page for tips, tricks, and powerful ways to customize your notes.')
   .addButton(button => button
     .setButtonText('View Documentation')
     .onClick(() => {

@@ -3,9 +3,8 @@ const { Plugin, PluginSettingTab, Setting, Notice } = require('obsidian');
 class AniListPlugin extends Plugin {
   constructor() {
     super(...arguments);
-    this.cache = new Map();
-    this.cacheTimeout = 5 * 60 * 1000; // 5 minutes
-  }
+   this.cache = null; // Will be loaded from data
+}
 
   async onload() {
     console.log('Loading AniList Plugin');

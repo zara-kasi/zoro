@@ -900,103 +900,99 @@ async createSampleNotes() {
     // **FIRST NOTE CONFIGURATION**
     
     const firstNoteTitle = "Anime Dashboard";
-    const firstNoteContent =```anilist-search
+    
+const firstNoteContent = `\`\`\`anilist-search
 mediaType: ANIME
-```
+\`\`\`
 # 👀Watching:
-```anilist
+\`\`\`anilist
 listType: CURRENT
 mediaType: ANIME
-
-```
+\`\`\`
 
 # 📝Planning:
-```anilist
+\`\`\`anilist
 listType: PLANNING
 mediaType: ANIME
-layout: 
-```
+layout: card
+\`\`\`
 
 # 🌀Repeating:
-```anilist
+\`\`\`anilist
 listType: REPEATING
 mediaType: ANIME
-layout: 
-```
+layout: card
+\`\`\`
 
 # ⏸️On Hold:
-```anilist
+\`\`\`anilist
 listType: PAUSED
 mediaType: ANIME
-layout: 
-```
+layout: card
+\`\`\`
 
 # 🏁Completed:
-```anilist
+\`\`\`anilist
 listType: COMPLETED
 mediaType: ANIME
-layout: 
-```
+layout: card
+\`\`\`
 
 # 🗑️Dropped:
-```anilist
+\`\`\`anilist
 listType: DROPPED
 mediaType: ANIME
-layout: 
-```
+layout: card
+\`\`\`
 
 # 📊Stats:
-```anilist
+\`\`\`anilist
 type: stats
-```
-
+\`\`\`
 
 Created on: ${new Date().toLocaleDateString()}
 `;
 
-    // **SECOND NOTE CONFIGURATION** 
-
-    const secondNoteTitle = "Manga Dashboard";
-    const secondNoteContent =```anilist-search
+const secondNoteContent = `\`\`\`anilist-search
 mediaType: MANGA
 layout: card
-```
+\`\`\`
 # 📖Reading:
-```anilist
+\`\`\`anilist
 listType: CURRENT
 mediaType: MANGA
-```
+\`\`\`
 
 # 📝Planning:
-```anilist
+\`\`\`anilist
 listType: PLANNING
 mediaType: MANGA
-```
+\`\`\`
 # 🌀Repeating:
-```anilist
+\`\`\`anilist
 listType: REPEATING
 mediaType: MANGA
-```
+\`\`\`
 # ⏸️On Hold:
-```anilist
+\`\`\`anilist
 listType: PAUSED
 mediaType: MANGA
-```
+\`\`\`
 
 # 🏁Completed:
-```anilist
+\`\`\`anilist
 listType: COMPLETED
 mediaType: MANGA
-```
+\`\`\`
 # 🗑️Dropped:
-```anilist
+\`\`\`anilist
 listType: DROPPED
 mediaType: MANGA
-```
+\`\`\`
 # 📊Stats:
-```anilist
+\`\`\`anilist
 type: stats
-```
+\`\`\`
 
 Created on: ${new Date().toLocaleDateString()}
 `;

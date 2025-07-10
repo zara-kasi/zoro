@@ -35,11 +35,6 @@ async clearCache() {
   await this.saveCache();
 }
 
-const DEFAULT_SETTINGS: AniListPluginSettings = {
-  // ... existing defaults
-  cacheDuration: 5 * 60 * 1000, // 5 minutes default
-}
-
 
   async onload() {
     console.log('Loading AniList Plugin');

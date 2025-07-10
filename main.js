@@ -1067,11 +1067,9 @@ class AniListSettingTab extends PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
-    
-    containerEl.createEl('h2', { text: 'Settings' });
 
 new Setting(containerEl)
-    .setName('Username')
+    .setName('👤 Username')
     .setDesc('Add your AniList username to view your lists and stats — just make sure your profile is public.')
     .addText(text => text
       .setPlaceholder('Enter your AniList username')
@@ -1084,7 +1082,7 @@ new Setting(containerEl)
 // Create two notes One for Manga and other for Anime using Code block 
 
 new Setting(containerEl)
-  .setName('Create Sample Notes')
+  .setName('➕ Sample Notes')
   .setDesc('Creates two notes — one for Anime, one for Manga — with all your lists, search, and stats preloaded. No setup needed.')
   .addButton(button => button
     .setButtonText('Create Note')
@@ -1095,7 +1093,7 @@ new Setting(containerEl)
 
     
     new Setting(containerEl)
-      .setName('Default Layout')
+      .setName('🧊 Layout')
       .setDesc('Choose the default layout for media lists')
       .addDropdown(dropdown => dropdown
         .addOption('card', 'Card Layout')
@@ -1107,7 +1105,7 @@ new Setting(containerEl)
         }));
     
     new Setting(containerEl)
-      .setName('Show Cover Images')
+      .setName('🌆 Cover')
       .setDesc('Display cover images for anime/manga')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.showCoverImages)
@@ -1117,7 +1115,7 @@ new Setting(containerEl)
         }));
     
     new Setting(containerEl)
-      .setName('Show Ratings')
+      .setName('⭐ Ratings')
       .setDesc('Display user ratings/scores')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.showRatings)
@@ -1127,7 +1125,7 @@ new Setting(containerEl)
         }));
     
     new Setting(containerEl)
-      .setName('Show Progress')
+      .setName('📈 Progress')
       .setDesc('Display progress information')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.showProgress)
@@ -1137,7 +1135,7 @@ new Setting(containerEl)
         }));
     
     new Setting(containerEl)
-      .setName('Show Genres')
+      .setName('🎭 Genres')
       .setDesc('Display genre tags')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.showGenres)
@@ -1146,7 +1144,7 @@ new Setting(containerEl)
           await this.plugin.saveSettings();
         }));
     new Setting(containerEl)
-  .setName('Grid Columns')
+  .setName('🔲 Grid Columns')
   .setDesc('Number of columns in card grid layout')
   .addSlider(slider => slider
     .setLimits(1, 6, 1)
@@ -1160,7 +1158,7 @@ new Setting(containerEl)
 // more information botton 
 
 new Setting(containerEl)
-  .setName('Power Features')
+  .setName('⚡ Power Features')
   .setDesc('Want more features? Visit our GitHub page for tips, tricks, and powerful ways to customize your notes.')
   .addButton(button => button
     .setButtonText('View Documentation')

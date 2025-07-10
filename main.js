@@ -26,9 +26,11 @@ class AniListPlugin extends Plugin {
               value.data !== undefined) {
             
             // Check if entry hasn't expired
-            if (now - value.timestamp < this.settings.cacheDuration) {
-              this.cache.set(key, value);
-            }
+           // Check if entry hasn't expired
+const cacheDuration = this.settings?.cacheDuration || (5 * 60 * 1000);
+if (now - value.timestamp < cacheDuration) {
+  this.cache.set(key, value);
+}
           }
         }
         

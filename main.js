@@ -953,6 +953,8 @@ type: stats
 Created on: ${new Date().toLocaleDateString()}
 `;
 
+ const secondNoteTitle = "Manga Dashboard";
+
 const secondNoteContent = `\`\`\`anilist-search
 mediaType: MANGA
 layout: card

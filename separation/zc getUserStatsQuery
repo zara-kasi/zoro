@@ -1,30 +1,46 @@
-getUserStatsQuery() {
-    return `
-      query ($username: String) {
-        User(name: $username) {
-          id
-          name
-          avatar {
-            large
-            medium
-          }
-          statistics {
-            anime {
-              count
-              episodesWatched
-              minutesWatched
-              meanScore
-              standardDeviation
-            }
-            manga {
-              count
-              chaptersRead
-              volumesRead
-              meanScore
-              standardDeviation
-            }
+getUserStatsQuery({ mediaType = 'ANIME', layout = 'card', useViewer = false } = {}) {
+  const typeKey = mediaType.toLowerCase(); // 'anime' or 'manga'
+
+  const statFields = {
+    compact: `
+      count
+      meanScore
+    `,
+    card: `
+      count
+      meanScore
+      standardDeviation
+    `,
+    full: `
+      count
+      meanScore
+      standardDeviation
+      episodesWatched
+      minutesWatched
+      chaptersRead
+      volumesRead
+    `
+  };
+
+  const selectedFields = statFields[layout] || statFields.card;
+
+  const viewerPrefix = useViewer ? 'Viewer' : `User(name: $username)`;
+
+  return `
+    query ($username: String) {
+      ${viewerPrefix} {
+        id
+        name
+        avatar {
+          large
+          medium
+        }
+        statistics {
+          ${typeKey} {
+            ${selectedFields}
           }
         }
       }
-    `;
-  }
+    }
+  `;
+}

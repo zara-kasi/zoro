@@ -54,7 +54,7 @@ class ZoroPlugin extends Plugin {
         timestamp: Date.now()
       });
     };
-  } 
+   
 
 // Prune Cache 
 

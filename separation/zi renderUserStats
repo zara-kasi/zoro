@@ -1,0 +1,52 @@
+renderUserStats(el, user) {
+    const statsHtml = `
+      <div class="anilist-user-stats">
+        <div class="user-header">
+          <img src="${user.avatar.medium}" alt="${user.name}" class="user-avatar">
+          <h3>${user.name}</h3>
+        </div>
+        <div class="stats-grid">
+          <div class="stat-section">
+            <h4>Anime</h4>
+            <div class="stat-item">
+              <span>Count:</span>
+              <span>${user.statistics.anime.count}</span>
+            </div>
+            <div class="stat-item">
+              <span>Episodes:</span>
+              <span>${user.statistics.anime.episodesWatched}</span>
+            </div>
+            <div class="stat-item">
+              <span>Minutes:</span>
+              <span>${user.statistics.anime.minutesWatched.toLocaleString()}</span>
+            </div>
+            <div class="stat-item">
+              <span>Mean Score:</span>
+              <span>${user.statistics.anime.meanScore}</span>
+            </div>
+          </div>
+          <div class="stat-section">
+            <h4>Manga</h4>
+            <div class="stat-item">
+              <span>Count:</span>
+              <span>${user.statistics.manga.count}</span>
+            </div>
+            <div class="stat-item">
+              <span>Chapters:</span>
+              <span>${user.statistics.manga.chaptersRead}</span>
+            </div>
+            <div class="stat-item">
+              <span>Volumes:</span>
+              <span>${user.statistics.manga.volumesRead}</span>
+            </div>
+            <div class="stat-item">
+              <span>Mean Score:</span>
+              <span>${user.statistics.manga.meanScore}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+    
+    el.innerHTML = statsHtml;
+  }

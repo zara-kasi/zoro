@@ -1,15 +1,16 @@
 async testAccessToken() {
-  try {
-    const query = `
-      query {
-        Viewer {
-          id
-          name
-        }
+  const query = `
+    query {
+      Viewer {
+        id
+        name
       }
-    `;
-    
-    const response = await fetch('https://graphql.anilist.co', {
+    }
+  `;
+
+  try {
+    const response = await requestUrl({
+      url: 'https://graphql.anilist.co',
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -17,15 +18,18 @@ async testAccessToken() {
       },
       body: JSON.stringify({ query })
     });
-    
-    if (response.ok) {
-      const data = await response.json();
-      if (data.data && data.data.Viewer) {
-        new Notice(`🎉 Welcome ${data.data.Viewer.name}! Authentication successful.`);
-      }
+
+    const data = response.json;
+    if (!data || !data.data?.Viewer) {
+      throw new Error('Invalid access token or response malformed.');
     }
+
+    const username = data.data.Viewer.name;
+    new Notice(`🎉 Welcome, ${username}! Token is valid.`);
+    return true;
+
   } catch (error) {
-    console.warn('Token test failed:', error);
-    // Don't show error to user as main auth succeeded
+    console.warn('[Zoro] testAccessToken failed:', error);
+    throw new Error('Token verification failed. Please check your token or re-authenticate.');
   }
 }

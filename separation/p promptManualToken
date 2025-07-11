@@ -1,0 +1,17 @@
+async promptManualToken() {
+  const token = prompt('Paste your access token here:');
+  
+  if (token && token.trim()) {
+    try {
+      this.settings.accessToken = token.trim();
+      await this.saveSettings();
+      
+      // Test the token
+      await this.testAccessToken();
+      new Notice('✅ Manual token saved successfully!');
+      
+    } catch (error) {
+      new Notice(`❌ Token test failed: ${error.message}`);
+    }
+  }
+}

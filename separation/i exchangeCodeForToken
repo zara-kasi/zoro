@@ -1,24 +1,61 @@
 async exchangeCodeForToken(code, redirectUri) {
+  const clientId = this.settings.clientId;
+  const clientSecret = this.settings.clientSecret;
+
+  const body = new URLSearchParams({
+    grant_type: 'authorization_code',
+    code,
+    client_id: clientId,
+    client_secret: clientSecret || '', // optional but safe
+    redirect_uri: redirectUri,
+  });
+
+  const headers = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'Accept': 'application/json',
+  };
+
   try {
-    // Try Obsidian's built-in request method first
-    const response = await this.makeObsidianRequest(code, redirectUri);
-    
-    if (response.access_token) {
-      this.settings.accessToken = response.access_token;
-      await this.saveSettings();
-      new Notice('✅ Successfully authenticated with AniList!');
-      
-      // Test the token by making a simple API call
-      await this.testAccessToken();
-    } else {
-      throw new Error('No access token received from AniList');
+    const response = await requestUrl({
+      url: 'https://anilist.co/api/v2/oauth/token',
+      method: 'POST',
+      headers,
+      body: body.toString(),
+    });
+
+    const data = response?.json;
+
+    if (!data || typeof data !== 'object') {
+      console.error('[Zoro] Unexpected response from AniList:', response);
+      throw new Error('⚠️ Invalid response from AniList.');
     }
-    
-  } catch (error) {
-    console.error('Authentication error:', error);
-    new Notice(`❌ Authentication failed: ${error.message}`);
-    
-    // Show manual token option
-    this.showManualTokenOption();
+
+    if (!data.access_token) {
+      throw new Error(data.error_description || '❌ No access token returned by AniList.');
+    }
+
+    // Store auth details
+    this.settings.accessToken = data.access_token;
+
+    // Optional but recommended fields
+    if (data.refresh_token) {
+      this.settings.refreshToken = data.refresh_token;
+    }
+
+    if (data.expires_in) {
+      this.settings.tokenExpiry = Date.now() + (data.expires_in * 1000);
+    }
+
+    await this.saveSettings();
+
+    new Notice('✅ Successfully authenticated with AniList!', 4000);
+
+    // Optional sanity check
+    await this.testAccessToken?.();
+
+  } catch (err) {
+    console.error('[Zoro] Authentication error:', err);
+    new Notice(`❌ Authentication failed: ${err.message}`, 5000);
+    this.showManualTokenOption?.(); // optional UI fallback
   }
 }

@@ -1,0 +1,15 @@
+injectCSS() {
+  const styleId = 'anilist-plugin-styles';
+  
+  // Remove existing styles
+  const existingStyle = document.getElementById(styleId);
+  if (existingStyle) {
+    existingStyle.remove();
+  }
+  
+  // Add new styles
+  const style = document.createElement('style');
+  style.id = styleId;
+  style.textContent = additionalCSS;
+  document.head.appendChild(style);
+}

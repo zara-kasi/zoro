@@ -1,159 +1,136 @@
 async createSampleNotes() {
   try {
     let successCount = 0;
-    let errorMessages = [];
-    
-    // **FIRST NOTE CONFIGURATION**
-    
-    const firstNoteTitle = "Anime Dashboard";
-    
-const firstNoteContent = `\`\`\`anilist-search
-mediaType: ANIME
-\`\`\`
-# 👀Watching:
-\`\`\`anilist
-listType: CURRENT
-mediaType: ANIME
-\`\`\`
-
-# 📝Planning:
-\`\`\`anilist
-listType: PLANNING
-mediaType: ANIME
-layout: card
-\`\`\`
-
-# 🌀Repeating:
-\`\`\`anilist
-listType: REPEATING
-mediaType: ANIME
-layout: card
-\`\`\`
-
-# ⏸️On Hold:
-\`\`\`anilist
-listType: PAUSED
-mediaType: ANIME
-layout: card
-\`\`\`
-
-# 🏁Completed:
-\`\`\`anilist
-listType: COMPLETED
-mediaType: ANIME
-layout: card
-\`\`\`
-
-# 🗑️Dropped:
-\`\`\`anilist
-listType: DROPPED
-mediaType: ANIME
-layout: card
-\`\`\`
-
-# 📊Stats:
-\`\`\`anilist
-type: stats
-\`\`\`
-
-`;
-
- const secondNoteTitle = "Manga Dashboard";
-
-const secondNoteContent = `\`\`\`anilist-search
-mediaType: MANGA
-layout: card
-\`\`\`
-# 📖Reading:
-\`\`\`anilist
-listType: CURRENT
-mediaType: MANGA
-\`\`\`
-
-# 📝Planning:
-\`\`\`anilist
-listType: PLANNING
-mediaType: MANGA
-\`\`\`
-# 🌀Repeating:
-\`\`\`anilist
-listType: REPEATING
-mediaType: MANGA
-\`\`\`
-# ⏸️On Hold:
-\`\`\`anilist
-listType: PAUSED
-mediaType: MANGA
-\`\`\`
-
-# 🏁Completed:
-\`\`\`anilist
-listType: COMPLETED
-mediaType: MANGA
-\`\`\`
-# 🗑️Dropped:
-\`\`\`anilist
-listType: DROPPED
-mediaType: MANGA
-\`\`\`
-# 📊Stats:
-\`\`\`anilist
-type: stats
-\`\`\`
-
-`;
-
-    // Array of notes to create
+    const errorMessages: string[] = [];
 
     const notesToCreate = [
-      { title: firstNoteTitle, content: firstNoteContent },
-      { title: secondNoteTitle, content: secondNoteContent }
+      {
+        title: "Zoro Anime Dashboard",
+        content: `\`\`\`zoro-search
+mediaType: ANIME
+\`\`\`
+
+# 👀 Watching:
+\`\`\`zoro
+listType: CURRENT
+mediaType: ANIME
+\`\`\`
+
+# 📝 Planning:
+\`\`\`zoro
+listType: PLANNING
+mediaType: ANIME
+layout: card
+\`\`\`
+
+# 🌀 Repeating:
+\`\`\`zoro
+listType: REPEATING
+mediaType: ANIME
+layout: card
+\`\`\`
+
+# ⏸️ On Hold:
+\`\`\`zoro
+listType: PAUSED
+mediaType: ANIME
+layout: card
+\`\`\`
+
+# 🏁 Completed:
+\`\`\`zoro
+listType: COMPLETED
+mediaType: ANIME
+layout: card
+\`\`\`
+
+# 🗑️ Dropped:
+\`\`\`zoro
+listType: DROPPED
+mediaType: ANIME
+layout: card
+\`\`\`
+
+# 📊 Stats:
+\`\`\`zoro
+type: stats
+\`\`\``
+      },
+      {
+        title: "Zoro Manga Dashboard",
+        content: `\`\`\`zoro-search
+mediaType: MANGA
+layout: card
+\`\`\`
+
+# 📖 Reading:
+\`\`\`zoro
+listType: CURRENT
+mediaType: MANGA
+\`\`\`
+
+# 📝 Planning:
+\`\`\`zoro
+listType: PLANNING
+mediaType: MANGA
+\`\`\`
+
+# 🌀 Repeating:
+\`\`\`zoro
+listType: REPEATING
+mediaType: MANGA
+\`\`\`
+
+# ⏸️ On Hold:
+\`\`\`zoro
+listType: PAUSED
+mediaType: MANGA
+\`\`\`
+
+# 🏁 Completed:
+\`\`\`zoro
+listType: COMPLETED
+mediaType: MANGA
+\`\`\`
+
+# 🗑️ Dropped:
+\`\`\`zoro
+listType: DROPPED
+mediaType: MANGA
+\`\`\`
+
+# 📊 Stats:
+\`\`\`zoro
+type: stats
+\`\`\``
+      }
     ];
 
-    // Create each note
+    for (const { title, content } of notesToCreate) {
+      const filePath = `${title}.md`;
+      const existingFile = this.app.vault.getAbstractFileByPath(filePath);
 
-    for (const note of notesToCreate) {
-      try {
-        const fileName = `${note.title}.md`;
-        const filePath = fileName;
-
- // This creates the note in the vault root
-        
-        // Checking for if  file already exists
-        const existingFile = this.app.vault.getAbstractFileByPath(filePath);
-        if (existingFile) {
-          errorMessages.push(`"${note.title}" already exists`);
-          continue;
-        }
-        
-        // Create the new note
-        await this.app.vault.create(filePath, note.content);
-        successCount++;
-        
-      } catch (error) {
-        errorMessages.push(`Failed to create "${note.title}": ${error.message}`);
+      if (existingFile) {
+        errorMessages.push(`"${title}" already exists`);
+        continue;
       }
+
+      await this.app.vault.create(filePath, content);
+      successCount++;
     }
-    
-    // Show results
+
     if (successCount > 0) {
-      new Notice(`Successfully created ${successCount} note${successCount > 1 ? 's' : ''}!`, 4000);
-      
-      // Open the first successfully created note
+      new Notice(`✅ Created ${successCount} Zoro dashboard note${successCount > 1 ? 's' : ''}.`, 4000);
+      const first = this.app.vault.getAbstractFileByPath(`${notesToCreate[0].title}.md`);
+      if (first) await this.app.workspace.openLinkText(`${notesToCreate[0].title}.md`, '', false);
+    }
 
-      const firstNote = this.app.vault.getAbstractFileByPath(`${firstNoteTitle}.md`);
-      if (firstNote) {
-        await this.app.workspace.openLinkText(`${firstNoteTitle}.md`, '', false);
-      }
-    }
-    
     if (errorMessages.length > 0) {
-      new Notice(`Issues: ${errorMessages.join(', ')}`, 5000);
+      new Notice(`⚠️ Issues: ${errorMessages.join(', ')}`, 5000);
     }
-    
+
   } catch (error) {
     console.error('Error creating notes:', error);
-    new Notice(`Failed to create notes: ${error.message}`, 5000);
+    new Notice(`❌ Failed to create Zoro notes: ${error.message}`, 5000);
   }
 }
-

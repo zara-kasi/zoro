@@ -1,3 +1,4 @@
+// Config parsing helpers
 function parseCodeBlockConfig(source) {
   const config = {};
   source.split('\n').forEach(line => {

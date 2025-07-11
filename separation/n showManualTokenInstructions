@@ -1,0 +1,25 @@
+showManualTokenInstructions() {
+  const instructions = `
+📋 MANUAL TOKEN INSTRUCTIONS:
+
+1. Open Postman, curl, or similar tool
+2. Make a POST request to: https://anilist.co/api/v2/oauth/token
+3. Set Content-Type: application/json
+4. Use this JSON body:
+{
+  "grant_type": "authorization_code",
+  "client_id": "${this.settings.clientId}",
+  "client_secret": "${this.settings.clientSecret}",
+  "redirect_uri": "https://anilist.co/api/v2/oauth/pin",
+  "code": "YOUR_PIN_CODE_HERE"
+}
+
+5. Replace YOUR_PIN_CODE_HERE with your actual PIN
+6. Send the request
+7. Copy the "access_token" from the response
+8. Click "Manual Token Input" in plugin settings
+  `.trim();
+  
+  // Create a modal to show instructions
+  this.showInstructionsModal(instructions);
+}

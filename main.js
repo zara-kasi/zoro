@@ -102,9 +102,6 @@ async saveSettings() {
 }
 
 
-setTimeout(() => {
-  plugin.saveSettings();
-}, 300); // debounce-style delay
 
 
 
@@ -2297,23 +2294,6 @@ type: stats
   }
 }
 
-/// Injection css
-
-injectCSS() {
-  const styleId = 'zoro-plugin-styles';
-
-  // Remove any existing <style> element with the same ID
-  const existingStyle = document.getElementById(styleId);
-  if (existingStyle) {
-    existingStyle.remove();
-  }
-
-  // Dynamically inject CSS into the document head
-  const style = document.createElement('style');
-  style.id = styleId;
-  style.textContent = this.generateZoroCSS(); // pull styles from a method or external file
-  document.head.appendChild(style);
-}
 
 
 // Render Errors

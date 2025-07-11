@@ -1,0 +1,17 @@
+renderAniListData(el, data, config) {
+    el.empty();
+    el.className = 'anilist-container';
+    
+    if (config.type === 'stats') {
+      this.renderUserStats(el, data.User);
+    } else if (config.type === 'single') {
+      this.renderSingleMedia(el, data.MediaList, config);
+    } else {
+      const entries = data.MediaListCollection.lists.flatMap(list => list.entries);
+      if (config.layout === 'table') {
+        this.renderTableLayout(el, entries);
+      } else {
+        this.renderMediaList(el, entries, config);
+      }
+    }
+  }

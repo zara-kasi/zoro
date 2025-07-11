@@ -1,4 +1,4 @@
-async processAniListSearchCodeBlock(source, el, ctx) {
+async processZoroSearchCodeBlock(source, el, ctx) {
   try {
     const config = this.parseSearchCodeBlockConfig(source);
     

@@ -1,38 +1,58 @@
 parseInlineLink(href) {
-  // Parse: anilist:username/anime/123456 or anilist:username/stats or anilist:/stats (for default user)
-  const parts = href.replace('anilist:', '').split('/');
-  
+  const [base, hash] = href.replace('anilist:', '').split('#');
+
+  const parts = base.split('/');
   let username, pathParts;
-  
-  // Check if first part is empty (indicating default username should be used)
+
   if (parts[0] === '') {
     if (!this.settings.defaultUsername) {
-      throw new Error('Default username not set. Please configure it in plugin settings.');
+      throw new Error('⚠️ Default username not set. Configure it in plugin settings.');
     }
     username = this.settings.defaultUsername;
-    pathParts = parts.slice(1); // Remove empty first element
+    pathParts = parts.slice(1);
   } else {
     if (parts.length < 2) {
-      throw new Error('Invalid AniList link format');
+      throw new Error('❌ Invalid AniList inline link format.');
     }
     username = parts[0];
     pathParts = parts.slice(1);
   }
-  
+
   const config = {
     username: username,
-    layout: 'card'
+    layout: 'card', // Default layout
+    type: 'list'     // Default to media list
   };
-  
-  if (pathParts[0] === 'stats') {
+
+  const main = pathParts[0];
+  const second = pathParts[1];
+
+  if (main === 'stats') {
     config.type = 'stats';
-  } else if (pathParts[0] === 'anime' || pathParts[0] === 'manga') {
+  } else if (main === 'anime' || main === 'manga') {
     config.type = 'single';
-    config.mediaType = pathParts[0].toUpperCase();
-    config.mediaId = pathParts[1];
+    config.mediaType = main.toUpperCase();
+    if (!second || isNaN(parseInt(second))) {
+      throw new Error('⚠️ Invalid media ID for anime/manga inline link.');
+    }
+    config.mediaId = parseInt(second);
   } else {
-    config.listType = pathParts[0].toUpperCase();
+    config.listType = main.toUpperCase();
   }
-  
+
+  // Optional layout modifiers from hash
+  if (hash) {
+    const hashParts = hash.split(',');
+    for (const mod of hashParts) {
+      if (mod === 'compact' || mod === 'card' || mod === 'minimal' || mod === 'full') {
+        config.layout = mod;
+      }
+      if (mod === 'nocache') {
+        config.nocache = true;
+      }
+    }
+  }
+
   return config;
-  }
+}
+

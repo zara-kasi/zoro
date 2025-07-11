@@ -1,18 +1,30 @@
 showManualTokenOption() {
-  new Notice('🔧 Alternative: Get token manually from AniList API', 10000);
-  
+  new Notice('🔧 If authentication fails, you can enter the token manually.', 10000);
+
   setTimeout(() => {
     const userChoice = confirm(
-      'Would you like to try manual token input instead?\n\n' +
+      'Authentication failed. Would you like to manually input a token?\n\n' +
       'This involves:\n' +
-      '1. Using a tool like Postman or curl\n' +
-      '2. Making the API request manually\n' +
-      '3. Copying the token into the plugin\n\n' +
-      'Click OK for instructions, Cancel to retry authentication.'
+      '1. Visiting AniList\'s OAuth page\n' +
+      '2. Copying the access token\n' +
+      '3. Pasting it below in the plugin settings.\n\n' +
+      'Click OK to enter a token, Cancel to retry authentication.'
     );
-    
+
     if (userChoice) {
       this.showManualTokenInstructions();
     }
   }, 2000);
+}
+
+showManualTokenInstructions() {
+  new Notice('📝 Instructions for manual token entry:', 10000);
+  // You could include a more detailed, structured way to enter the token directly into settings here.
+  const instructions = `
+    1. Open the AniList OAuth page in your browser.
+    2. Copy the access token.
+    3. In Obsidian, go to Plugin Settings -> "Zoro" -> "Authentication".
+    4. Paste the token in the "Access Token" field.
+  `;
+  new Notice(instructions, 15000); // Show instructions in a notice or modal.
 }

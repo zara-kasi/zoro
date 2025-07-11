@@ -1,0 +1,54 @@
+async makeNodeRequest(requestBody) {
+  return new Promise((resolve, reject) => {
+    if (typeof require === 'undefined') {
+      throw new Error('Node.js not available');
+    }
+    
+    try {
+      const https = require('https');
+      const data = JSON.stringify(requestBody);
+      
+      const options = {
+        hostname: 'anilist.co',
+        port: 443,
+        path: '/api/v2/oauth/token',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': data.length,
+          'Accept': 'application/json'
+        }
+      };
+      
+      const req = https.request(options, (res) => {
+        let body = '';
+        
+        res.on('data', (chunk) => {
+          body += chunk;
+        });
+        
+        res.on('end', () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            try {
+              resolve(JSON.parse(body));
+            } catch (parseError) {
+              reject(new Error(`Failed to parse response: ${parseError.message}`));
+            }
+          } else {
+            reject(new Error(`HTTP ${res.statusCode}: ${body}`));
+          }
+        });
+      });
+      
+      req.on('error', (error) => {
+        reject(error);
+      });
+      
+      req.write(data);
+      req.end();
+      
+    } catch (error) {
+      reject(error);
+    }
+  });
+}

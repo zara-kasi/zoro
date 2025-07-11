@@ -1,21 +1,33 @@
 createEditModal(entry, onSave, onCancel) {
   const modal = document.createElement('div');
   modal.className = 'anilist-edit-modal';
-  
+
   const overlay = document.createElement('div');
   overlay.className = 'anilist-modal-overlay';
-  
+
   const content = document.createElement('div');
   content.className = 'anilist-modal-content';
-  
+
+  const form = document.createElement('form');
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    await trySave();
+  };
+
   const title = document.createElement('h3');
   title.textContent = entry.media.title.english || entry.media.title.romaji;
-  
-  // Status dropdown
+
+  // --- Status Field ---
+  const statusGroup = document.createElement('div');
+  statusGroup.className = 'form-group';
+
   const statusLabel = document.createElement('label');
-  statusLabel.textContent = 'Status:';
+  statusLabel.textContent = 'Status';
+  statusLabel.setAttribute('for', 'anilist-status');
+
   const statusSelect = document.createElement('select');
-  statusSelect.style.marginLeft = '10px';
+  statusSelect.id = 'anilist-status';
+
   ['CURRENT', 'PLANNING', 'COMPLETED', 'DROPPED', 'PAUSED', 'REPEATING'].forEach(status => {
     const option = document.createElement('option');
     option.value = status;
@@ -23,117 +35,154 @@ createEditModal(entry, onSave, onCancel) {
     if (status === entry.status) option.selected = true;
     statusSelect.appendChild(option);
   });
-  
-  // Score input
+
+  statusGroup.appendChild(statusLabel);
+  statusGroup.appendChild(statusSelect);
+
+  // --- Score Field ---
+  const scoreGroup = document.createElement('div');
+  scoreGroup.className = 'form-group';
+
   const scoreLabel = document.createElement('label');
-  scoreLabel.textContent = 'Score:';
+  scoreLabel.textContent = 'Score (0–10)';
+  scoreLabel.setAttribute('for', 'anilist-score');
+
   const scoreInput = document.createElement('input');
   scoreInput.type = 'number';
+  scoreInput.id = 'anilist-score';
   scoreInput.min = '0';
   scoreInput.max = '10';
   scoreInput.step = '0.1';
-  scoreInput.value = entry.score || '';
-  scoreInput.placeholder = 'Score (0-10)';
-  scoreInput.style.marginLeft = '10px';
-  
-  // Progress input
+  scoreInput.value = entry.score ?? '';
+  scoreInput.placeholder = 'e.g. 8.5';
+
+  scoreGroup.appendChild(scoreLabel);
+  scoreGroup.appendChild(scoreInput);
+
+  // --- Progress Field ---
+  const progressGroup = document.createElement('div');
+  progressGroup.className = 'form-group';
+
   const progressLabel = document.createElement('label');
-  progressLabel.textContent = 'Progress:';
+  progressLabel.textContent = 'Progress';
+  progressLabel.setAttribute('for', 'anilist-progress');
+
   const progressInput = document.createElement('input');
   progressInput.type = 'number';
+  progressInput.id = 'anilist-progress';
   progressInput.min = '0';
   progressInput.max = entry.media.episodes || entry.media.chapters || 999;
   progressInput.value = entry.progress || 0;
   progressInput.placeholder = 'Progress';
-  progressInput.style.marginLeft = '10px';
-  
-  // Quick progress buttons
+
+  progressGroup.appendChild(progressLabel);
+  progressGroup.appendChild(progressInput);
+
+  // --- Quick Buttons ---
   const quickProgressDiv = document.createElement('div');
   quickProgressDiv.className = 'quick-progress-buttons';
-  quickProgressDiv.style.marginTop = '10px';
-  
+
   const plusOneBtn = document.createElement('button');
+  plusOneBtn.type = 'button';
   plusOneBtn.textContent = '+1';
-  plusOneBtn.style.marginRight = '5px';
-  plusOneBtn.onclick = (e) => {
-    e.preventDefault();
+  plusOneBtn.onclick = () => {
     const current = parseInt(progressInput.value) || 0;
-    const max = entry.media.episodes || entry.media.chapters || 999;
-    if (current < max) {
-      progressInput.value = current + 1;
-    }
+    const max = progressInput.max;
+    if (current < max) progressInput.value = current + 1;
   };
-  
-const minusOneBtn = document.createElement('button');
+
+  const minusOneBtn = document.createElement('button');
+  minusOneBtn.type = 'button';
   minusOneBtn.textContent = '-1';
-  minusOneBtn.style.marginRight = '5px';
-  minusOneBtn.onclick = (e) => {
-    e.preventDefault();
+  minusOneBtn.onclick = () => {
     const current = parseInt(progressInput.value) || 0;
-    if (current > 0) {
-      progressInput.value = current - 1;
-    }
+    if (current > 0) progressInput.value = current - 1;
   };
-  
+
   const completeBtn = document.createElement('button');
+  completeBtn.type = 'button';
   completeBtn.textContent = 'Complete';
-  completeBtn.onclick = (e) => {
-    e.preventDefault();
+  completeBtn.onclick = () => {
     progressInput.value = entry.media.episodes || entry.media.chapters || 1;
     statusSelect.value = 'COMPLETED';
   };
-  
-  quickProgressDiv.appendChild(plusOneBtn);
-  quickProgressDiv.appendChild(minusOneBtn);
-  quickProgressDiv.appendChild(completeBtn);
-  
+
+  quickProgressDiv.append(plusOneBtn, minusOneBtn, completeBtn);
+
+  // --- Buttons ---
   const buttonContainer = document.createElement('div');
   buttonContainer.className = 'anilist-modal-buttons';
-  buttonContainer.style.marginTop = '15px';
-  
+
   const saveBtn = document.createElement('button');
   saveBtn.textContent = 'Save';
-  saveBtn.style.marginRight = '10px';
-  saveBtn.onclick = () => {
-    onSave({
-      status: statusSelect.value,
-      score: parseFloat(scoreInput.value) || null,
-      progress: parseInt(progressInput.value) || 0
-    });
-    document.body.removeChild(modal);
-  };
-  
+  saveBtn.type = 'submit';
+
   const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
   cancelBtn.textContent = 'Cancel';
   cancelBtn.onclick = () => {
     onCancel();
     document.body.removeChild(modal);
   };
-  
-  buttonContainer.appendChild(saveBtn);
-  buttonContainer.appendChild(cancelBtn);
-  
-  content.appendChild(title);
-  content.appendChild(statusLabel);
-  content.appendChild(statusSelect);
-  content.appendChild(document.createElement('br'));
-  content.appendChild(document.createElement('br'));
-  content.appendChild(scoreLabel);
-  content.appendChild(scoreInput);
-  content.appendChild(document.createElement('br'));
-  content.appendChild(document.createElement('br'));
-  content.appendChild(progressLabel);
-  content.appendChild(progressInput);
-  content.appendChild(quickProgressDiv);
-  content.appendChild(buttonContainer);
-  
-  modal.appendChild(overlay);
-  modal.appendChild(content);
-  
+
+  buttonContainer.append(saveBtn, cancelBtn);
+
+  form.append(title, statusGroup, scoreGroup, progressGroup, quickProgressDiv, buttonContainer);
+  content.appendChild(form);
+  modal.append(overlay, content);
+  document.body.appendChild(modal);
+
   overlay.onclick = () => {
     onCancel();
     document.body.removeChild(modal);
   };
-  
-  document.body.appendChild(modal);
+
+  // Keyboard accessibility
+  document.addEventListener('keydown', escListener);
+  function escListener(e) {
+    if (e.key === 'Escape') {
+      onCancel();
+      document.body.removeChild(modal);
+      document.removeEventListener('keydown', escListener);
+    }
+    if (e.key === 'Enter' && e.ctrlKey) {
+      trySave();
+    }
+  }
+
+  // Save logic
+  let saving = false;
+  async function trySave() {
+    if (saving) return;
+    saving = true;
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+
+    const scoreVal = parseFloat(scoreInput.value);
+    if (scoreInput.value && (isNaN(scoreVal) || scoreVal < 0 || scoreVal > 10)) {
+      alert("⚠ Score must be between 0 and 10.");
+      resetSaveBtn();
+      return;
+    }
+
+    try {
+      await onSave({
+        status: statusSelect.value,
+        score: scoreInput.value === '' ? null : scoreVal,
+        progress: parseInt(progressInput.value) || 0
+      });
+      document.body.removeChild(modal);
+      document.removeEventListener('keydown', escListener);
+    } catch (err) {
+      alert(`❌ Failed to save: ${err.message}`);
+    }
+
+    resetSaveBtn();
+  }
+
+  function resetSaveBtn() {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save';
+    saving = false;
+  }
 }

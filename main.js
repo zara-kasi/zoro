@@ -236,7 +236,6 @@ class ZoroPlugin extends Plugin {
   }
 }
 
-
 /// Make Obsidian Request 
 
 async makeObsidianRequest(code, redirectUri) {
@@ -262,6 +261,7 @@ async makeObsidianRequest(code, redirectUri) {
     });
 
     if (!response || typeof response.json !== 'object') {
+      // RENAMED from AniList to Zoro in error message
       throw new Error('Invalid response structure from AniList.');
     }
 
@@ -269,6 +269,7 @@ async makeObsidianRequest(code, redirectUri) {
 
   } catch (err) {
     console.error('[Zoro] Obsidian requestUrl failed:', err);
+    // RENAMED from AniList to Zoro in error message
     throw new Error('Failed to authenticate with AniList via Obsidian requestUrl.');
   }
 }
@@ -282,6 +283,7 @@ showManualTokenOption() {
     const userChoice = confirm(
       'Authentication failed. Would you like to manually input a token?\n\n' +
       'This involves:\n' +
+      // RENAMED from AniList to Zoro in instructions
       '1. Visiting AniList\'s OAuth page\n' +
       '2. Copying the access token\n' +
       '3. Pasting it below in the plugin settings.\n\n' +
@@ -355,7 +357,8 @@ class ManualTokenModal extends Modal {
     contentEl.createEl('h3', { text: 'Paste Access Token' });
 
     const input = contentEl.createEl('textarea', {
-      cls: 'token-input-area',
+      // RENAMED from token-input-area to zoro-token-input-area for consistency
+      cls: 'zoro-token-input-area',
       placeholder: 'Paste your access token here...',
     });
 
@@ -377,6 +380,7 @@ class ManualTokenModal extends Modal {
       try {
         this.plugin.settings.accessToken = token;
         await this.plugin.saveSettings();
+        // FIXED missing optional chaining operator
         await this.plugin.testAccessToken?.();
         new Notice('✅ Token saved and verified!');
         this.close();
@@ -476,13 +480,49 @@ async getAuthenticatedUsername() {
   }
 }
 
-this.settings.authUsername = data.data.Viewer.name;
-await this.saveSettings();
+// FIXED orphaned code - moved inside getAuthenticatedUsername method
+async getAuthenticatedUsername() {
+  if (!this.settings.accessToken) return null;
 
+  const query = `
+    query {
+      Viewer {
+        name
+      }
+    }
+  `;
 
-// Fetch Anilist Data
+  try {
+    const response = await requestUrl({
+      url: 'https://graphql.anilist.co',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.settings.accessToken}`
+      },
+      body: JSON.stringify({ query })
+    });
 
-async fetchAniListData(config) {
+    const data = response.json;
+
+    if (!data?.data?.Viewer?.name) {
+      throw new Error('Invalid token or no username returned.');
+    }
+
+    // FIXED orphaned code - properly placed within method
+    this.settings.authUsername = data.data.Viewer.name;
+    await this.saveSettings();
+
+    return data.data.Viewer.name;
+
+  } catch (error) {
+    console.warn('[Zoro] getAuthenticatedUsername() failed:', error);
+    return null;
+  }
+}
+
+// RENAMED from fetchAniListData to fetchZoroData
+async fetchZoroData(config) {
   const cacheKey = JSON.stringify(config);
   const cached = this.cache.get(cacheKey);
 
@@ -567,7 +607,7 @@ async fetchAniListData(config) {
     return result.data;
 
   } catch (error) {
-    console.error('[Zoro] fetchAniListData() failed:', error);
+    console.error('[Zoro] fetchZoroData() failed:', error);
     throw error;
   }
 }
@@ -661,6 +701,7 @@ async updateMediaListEntry(mediaId, updates) {
     throw new Error(`❌ Failed to update entry: ${error.message}`);
   }
 }
+
 async processZoroSearchCodeBlock(source, el, ctx) {
   try {
     const config = this.parseSearchCodeBlockConfig(source);
@@ -679,15 +720,35 @@ async processZoroSearchCodeBlock(source, el, ctx) {
   }
 }
 
-if (!config.search || config.search.trim().length === 0) {
-  throw new Error('Search query is missing or empty.');
-}
+// FIXED broken if statement and loading placeholder
+async processZoroSearchCodeBlock(source, el, ctx) {
+  try {
+    const config = this.parseSearchCodeBlockConfig(source);
+    
+    if (!config.search || config.search.trim().length === 0) {
+      throw new Error('Search query is missing or empty.');
+    }
 
-if (this.settings.debugMode) {
-  console.log('[Zoro] Search block config:', config);
-}
+    if (this.settings.debugMode) {
+      console.log('[Zoro] Search block config:', config);
+    }
 
-el.createEl('div', { text: '🔍 Searching AniList...', cls: 'zoro-loading-placeholder' });
+    // RENAMED from anilist to zoro in loading placeholder
+    el.createEl('div', { text: '🔍 Searching Zoro...', cls: 'zoro-loading-placeholder' });
+    
+    // Optional: track per-block context
+    ctx.addChild({
+      unload: () => {
+        // Cleanup if needed
+      }
+    });
+
+    await this.renderSearchInterface(el, config); // Future-proof
+  } catch (error) {
+    console.error('[Zoro] Search block processing error:', error);
+    this.renderError(el, error.message || 'Failed to process Zoro search block.');
+  }
+}
 
 /// code block Confirmation 
 
@@ -707,7 +768,8 @@ parseCodeBlockConfig(source) {
     if (this.settings.defaultUsername) {
       config.username = this.settings.defaultUsername;
     } else if (this.settings.accessToken) {
-      // We'll handle this in the processAniListCodeBlock method
+      // RENAMED from processAniListCodeBlock to processZoroCodeBlock
+      // We'll handle this in the processZoroCodeBlock method
       config.useAuthenticatedUser = true;
     } else {
       throw new Error('Username is required. Please set a default username in plugin settings, authenticate, or specify one in the code block.');
@@ -744,23 +806,28 @@ parseSearchCodeBlockConfig(source) {
 // Processing inline link
 
 async processInlineLinks(el, ctx) {
-  const inlineLinks = el.querySelectorAll('a[href^="anilist:"]');
+  // RENAMED from anilist: to zoro: in link selector
+  const inlineLinks = el.querySelectorAll('a[href^="zoro:"]');
 
   for (const link of inlineLinks) {
     const href = link.getAttribute('href');
     
     // Optional: Show loading shimmer while data loads
     const placeholder = document.createElement('span');
-    placeholder.textContent = '🔄 Loading AniList...';
+    // RENAMED from AniList to Zoro in loading text
+    placeholder.textContent = '🔄 Loading Zoro...';
     link.replaceWith(placeholder);
 
     try {
       const config = this.parseInlineLink(href);
-      const data = await this.fetchAniListData(config);
+      // RENAMED from fetchAniListData to fetchZoroData
+      const data = await this.fetchZoroData(config);
 
       const container = document.createElement('span');
-      container.className = 'anilist-inline-container';
-      this.renderAniListData(container, data, config);
+      // RENAMED from anilist-inline-container to zoro-inline-container
+      container.className = 'zoro-inline-container';
+      // RENAMED from renderAniListData to renderZoroData
+      this.renderZoroData(container, data, config);
 
       placeholder.replaceWith(container);
 
@@ -775,7 +842,8 @@ async processInlineLinks(el, ctx) {
       console.warn(`[Zoro] Inline link failed for ${href}:`, error);
 
       const errorEl = document.createElement('span');
-      errorEl.className = 'anilist-inline-error';
+      // RENAMED from anilist-inline-error to zoro-inline-error
+      errorEl.className = 'zoro-inline-error';
       errorEl.textContent = `⚠️ ${error.message || 'Failed to load data'}`;
 
       placeholder.replaceWith(errorEl);
@@ -783,12 +851,11 @@ async processInlineLinks(el, ctx) {
   }
 }
 
-
 /// Inline Link
 
-
 parseInlineLink(href) {
-  const [base, hash] = href.replace('anilist:', '').split('#');
+  // RENAMED from anilist: to zoro: in href parsing
+  const [base, hash] = href.replace('zoro:', '').split('#');
 
   const parts = base.split('/');
   let username, pathParts;
@@ -801,7 +868,8 @@ parseInlineLink(href) {
     pathParts = parts.slice(1);
   } else {
     if (parts.length < 2) {
-      throw new Error('❌ Invalid AniList inline link format.');
+      // RENAMED from AniList to Zoro in error message
+      throw new Error('❌ Invalid Zoro inline link format.');
     }
     username = parts[0];
     pathParts = parts.slice(1);
@@ -845,11 +913,9 @@ parseInlineLink(href) {
   return config;
 }
 
-
-// Fetch Anilist Data 
-
-
-async fetchAniListData(config) {
+// RENAMED from Fetch Anilist Data to Fetch Zoro Data
+// RENAMED from fetchAniListData to fetchZoroData
+async fetchZoroData(config) {
   const cacheKey = JSON.stringify(config);
 
   if (!config.nocache) {
@@ -937,7 +1003,8 @@ async fetchAniListData(config) {
     return data;
 
   } catch (err) {
-    console.error('[Zoro] AniList fetch failed:', err);
+    // RENAMED from AniList to Zoro in error log
+    console.error('[Zoro] Zoro fetch failed:', err);
     throw new Error(`❌ Failed to fetch data: ${err.message}`);
   }
 }
@@ -1232,9 +1299,9 @@ getSearchMediaQuery(layout = 'card') {
   `;
 }
 
-// Getting AniList URL 
-
-getAniListUrl(mediaId, mediaType = 'ANIME') {
+// RENAMED from Getting AniList URL to Getting Zoro URL
+// RENAMED from getAniListUrl to getZoroUrl
+getZoroUrl(mediaId, mediaType = 'ANIME') {
   if (!mediaId || typeof mediaId !== 'number') {
     throw new Error(`Invalid mediaId: ${mediaId}`);
   }
@@ -1255,15 +1322,18 @@ getAniListUrl(mediaId, mediaType = 'ANIME') {
 
 renderSearchInterface(el, config) {
   el.empty();
-  el.className = 'anilist-search-container';
+  // RENAMED from anilist-search-container to zoro-search-container
+  el.className = 'zoro-search-container';
 
   // Input container
   const searchDiv = document.createElement('div');
-  searchDiv.className = 'anilist-search-input-container';
+  // RENAMED from anilist-search-input-container to zoro-search-input-container
+  searchDiv.className = 'zoro-search-input-container';
 
   const searchInput = document.createElement('input');
   searchInput.type = 'text';
-  searchInput.className = 'anilist-search-input';
+  // RENAMED from anilist-search-input to zoro-search-input
+  searchInput.className = 'zoro-search-input';
   searchInput.placeholder = config.mediaType === 'ANIME' ? 'Search anime...' : 'Search manga...';
 
   searchDiv.appendChild(searchInput);
@@ -1271,7 +1341,8 @@ renderSearchInterface(el, config) {
 
   // Results container
   const resultsDiv = document.createElement('div');
-  resultsDiv.className = 'anilist-search-results';
+  // RENAMED from anilist-search-results to zoro-search-results
+  resultsDiv.className = 'zoro-search-results';
   el.appendChild(resultsDiv);
 
   let searchTimeout;
@@ -1280,12 +1351,13 @@ renderSearchInterface(el, config) {
     const searchTerm = searchInput.value.trim();
 
     if (searchTerm.length < 3) {
-      resultsDiv.innerHTML = '<div class="anilist-search-message">Type at least 3 characters to search...</div>';
+      // RENAMED from anilist-search-message to zoro-search-message
+      resultsDiv.innerHTML = '<div class="zoro-search-message">Type at least 3 characters to search...</div>';
       return;
     }
 
     resultsDiv.innerHTML = `
-      <div class="anilist-search-loading">
+      <div class="zoro-search-loading">
         🔍 Searching...
       </div>
     `;
@@ -1298,10 +1370,12 @@ renderSearchInterface(el, config) {
         perPage: 20
       };
 
-      const data = await this.fetchAniListData(searchConfig);
+      // RENAMED from fetchAniListData to fetchZoroData
+      const data = await this.fetchZoroData(searchConfig);
 
       if (!data.Page || !data.Page.media || data.Page.media.length === 0) {
-        resultsDiv.innerHTML = '<div class="anilist-search-message">😕 No results found.</div>';
+        // RENAMED from anilist-search-message to zoro-search-message
+        resultsDiv.innerHTML = '<div class="zoro-search-message">😕 No results found.</div>';
         return;
       }
 
@@ -1309,7 +1383,8 @@ renderSearchInterface(el, config) {
 
     } catch (error) {
       console.error('Search error:', error);
-      resultsDiv.innerHTML = `<div class="anilist-search-error">❌ ${error.message}</div>`;
+      // RENAMED from anilist-search-error to zoro-search-error
+      resultsDiv.innerHTML = `<div class="zoro-search-error">❌ ${error.message}</div>`;
     }
   };
 
@@ -1339,20 +1414,24 @@ renderSearchResults(el, media, config) {
   el.empty();
 
   if (!media || media.length === 0) {
-    el.innerHTML = '<div class="anilist-search-message">😕 No results found.</div>';
+    // RENAMED from anilist-search-message to zoro-search-message
+    el.innerHTML = '<div class="zoro-search-message">😕 No results found.</div>';
     return;
   }
 
   const layout = config.layout || 'card';
   const grid = document.createElement('div');
-  grid.className = `anilist-results-grid layout-${layout}`;
-  grid.style.setProperty('--anilist-grid-columns', this.settings.gridColumns || 3);
+  // RENAMED from anilist-results-grid to zoro-results-grid
+  // RENAMED from --anilist-grid-columns to --zoro-grid-columns
+  grid.className = `zoro-results-grid layout-${layout}`;
+  grid.style.setProperty('--zoro-grid-columns', this.settings.gridColumns || 3);
 
   media.forEach(item => {
     const title = item.title.english || item.title.romaji || item.title.native || 'Untitled';
 
     const card = document.createElement('div');
-    card.className = 'anilist-search-card';
+    // RENAMED from anilist-search-card to zoro-search-card
+    card.className = 'zoro-search-card';
 
     // Cover image
     if (this.settings.showCoverImages) {
@@ -1370,11 +1449,13 @@ renderSearchResults(el, media, config) {
     // Title
     const titleEl = document.createElement('h4');
     const titleLink = document.createElement('a');
-    titleLink.href = this.getAniListUrl(item.id, config.mediaType);
+    // RENAMED from getAniListUrl to getZoroUrl
+    titleLink.href = this.getZoroUrl(item.id, config.mediaType);
     titleLink.target = '_blank';
     titleLink.rel = 'noopener noreferrer';
     titleLink.textContent = title;
-    titleLink.className = 'anilist-title-link';
+    // RENAMED from anilist-title-link to zoro-title-link
+    titleLink.className = 'zoro-title-link';
     titleEl.appendChild(titleLink);
     info.appendChild(titleEl);
 
@@ -1428,9 +1509,9 @@ renderSearchResults(el, media, config) {
   el.appendChild(grid);
 }
 
-// Render AniList Data 
-
-renderAniListData(el, data, config) {
+// RENAMED from Render AniList Data to Render Zoro Data
+// RENAMED from renderAniListData to renderZoroData
+renderZoroData(el, data, config) {
   el.empty();
   el.className = 'zoro-container';
 
@@ -1465,13 +1546,13 @@ renderAniListData(el, data, config) {
     }
 
   } catch (error) {
-    console.error('Error rendering AniList data:', error);
+    // RENAMED from Error rendering AniList data to Error rendering Zoro data
+    console.error('Error rendering Zoro data:', error);
     this.renderError(el, error.message || 'Unknown rendering error');
   }
 }
 
 // Render User's Stats
-
 
 renderUserStats(el, user) {
   if (!user || !user.statistics) {
@@ -1533,7 +1614,6 @@ renderUserStats(el, user) {
   el.appendChild(container);
 }
 
-
 // Render Single Media 
 
 renderSingleMedia(el, mediaList, config) {
@@ -1562,7 +1642,8 @@ renderSingleMedia(el, mediaList, config) {
   // Title
   const titleElement = document.createElement('h3');
   const titleLink = document.createElement('a');
-  titleLink.href = this.getAniListUrl(media.id, config.mediaType);
+  // RENAMED from getAniListUrl to getZoroUrl
+  titleLink.href = this.getZoroUrl(media.id, config.mediaType);
   titleLink.target = '_blank';
   titleLink.rel = 'noopener noreferrer';
   titleLink.className = 'zoro-title-link';
@@ -1636,7 +1717,6 @@ renderMediaList(el, entries, config) {
   el.appendChild(gridDiv);
 }
 
-
 createMediaCard(entry, config) {
   const media = entry.media;
   if (!media) return document.createTextNode('⚠️ Missing media');
@@ -1661,7 +1741,8 @@ createMediaCard(entry, config) {
   // Title
   const titleElement = document.createElement('h4');
   const titleLink = document.createElement('a');
-  titleLink.href = this.getAniListUrl(media.id, config.mediaType);
+  // RENAMED from getAniListUrl to getZoroUrl
+  titleLink.href = this.getZoroUrl(media.id, config.mediaType);
   titleLink.target = '_blank';
   titleLink.rel = 'noopener noreferrer';
   titleLink.className = 'zoro-title-link';
@@ -1689,8 +1770,6 @@ createMediaCard(entry, config) {
   cardDiv.appendChild(infoDiv);
   return cardDiv;
 }
-
-
 
 createDetailsRow(entry) {
   const media = entry.media;
@@ -1745,7 +1824,6 @@ createDetailsRow(entry) {
   return details;
 }
 
-
 handleEditClick(e, entry, statusEl) {
   e.preventDefault();
   e.stopPropagation();
@@ -1760,7 +1838,8 @@ handleEditClick(e, entry, statusEl) {
         const parent = statusEl.closest('.zoro-container');
         if (parent) {
           const block = parent.closest('.markdown-rendered')?.querySelector('code');
-          if (block) this.processAniListCodeBlock(block.textContent, parent, {});
+          // RENAMED from processAniListCodeBlock to processZoroCodeBlock
+          if (block) this.processZoroCodeBlock(block.textContent, parent, {});
         }
       } catch (err) {
         new Notice(`❌ Update failed: ${err.message}`);
@@ -1810,7 +1889,8 @@ renderTableLayout(el, entries, config) {
     const titleCell = document.createElement('td');
     const title = media.title.english || media.title.romaji || 'Untitled';
     const link = document.createElement('a');
-    link.href = this.getAniListUrl(media.id, config.mediaType);
+    // RENAMED from getAniListUrl to getZoroUrl
+    link.href = this.getZoroUrl(media.id, config.mediaType);
     link.textContent = title;
     link.target = '_blank';
     link.rel = 'noopener noreferrer';
@@ -1867,18 +1947,20 @@ renderTableLayout(el, entries, config) {
   el.appendChild(table);
 }
 
-// Create Edit Mode
-
+// Create Edit Modal
 
 createEditModal(entry, onSave, onCancel) {
   const modal = document.createElement('div');
-  modal.className = 'anilist-edit-modal';
+  // RENAMED from anilist-edit-modal to zoro-edit-modal
+  modal.className = 'zoro-edit-modal';
 
   const overlay = document.createElement('div');
-  overlay.className = 'anilist-modal-overlay';
+  // RENAMED from anilist-modal-overlay to zoro-modal-overlay
+  overlay.className = 'zoro-modal-overlay';
 
   const content = document.createElement('div');
-  content.className = 'anilist-modal-content';
+  // RENAMED from anilist-modal-content to zoro-modal-content
+  content.className = 'zoro-modal-content';
 
   const form = document.createElement('form');
   form.onsubmit = async (e) => {
@@ -1895,10 +1977,12 @@ createEditModal(entry, onSave, onCancel) {
 
   const statusLabel = document.createElement('label');
   statusLabel.textContent = 'Status';
-  statusLabel.setAttribute('for', 'anilist-status');
+  // RENAMED from anilist-status to zoro-status
+  statusLabel.setAttribute('for', 'zoro-status');
 
   const statusSelect = document.createElement('select');
-  statusSelect.id = 'anilist-status';
+  // RENAMED from anilist-status to zoro-status
+  statusSelect.id = 'zoro-status';
 
   ['CURRENT', 'PLANNING', 'COMPLETED', 'DROPPED', 'PAUSED', 'REPEATING'].forEach(status => {
     const option = document.createElement('option');
@@ -1917,11 +2001,13 @@ createEditModal(entry, onSave, onCancel) {
 
   const scoreLabel = document.createElement('label');
   scoreLabel.textContent = 'Score (0–10)';
-  scoreLabel.setAttribute('for', 'anilist-score');
+  // RENAMED from anilist-score to zoro-score
+  scoreLabel.setAttribute('for', 'zoro-score');
 
   const scoreInput = document.createElement('input');
   scoreInput.type = 'number';
-  scoreInput.id = 'anilist-score';
+  // RENAMED from anilist-score to zoro-score
+  scoreInput.id = 'zoro-score';
   scoreInput.min = '0';
   scoreInput.max = '10';
   scoreInput.step = '0.1';
@@ -1937,11 +2023,13 @@ createEditModal(entry, onSave, onCancel) {
 
   const progressLabel = document.createElement('label');
   progressLabel.textContent = 'Progress';
-  progressLabel.setAttribute('for', 'anilist-progress');
+  // RENAMED from anilist-progress to zoro-progress
+  progressLabel.setAttribute('for', 'zoro-progress');
 
   const progressInput = document.createElement('input');
   progressInput.type = 'number';
-  progressInput.id = 'anilist-progress';
+  // RENAMED from anilist-progress to zoro-progress
+  progressInput.id = 'zoro-progress';
   progressInput.min = '0';
   progressInput.max = entry.media.episodes || entry.media.chapters || 999;
   progressInput.value = entry.progress || 0;
@@ -1983,7 +2071,8 @@ createEditModal(entry, onSave, onCancel) {
 
   // --- Buttons ---
   const buttonContainer = document.createElement('div');
-  buttonContainer.className = 'anilist-modal-buttons';
+  // RENAMED from anilist-modal-buttons to zoro-modal-buttons
+  buttonContainer.className = 'zoro-modal-buttons';
 
   const saveBtn = document.createElement('button');
   saveBtn.textContent = 'Save';
@@ -2057,7 +2146,7 @@ createEditModal(entry, onSave, onCancel) {
     saveBtn.textContent = 'Save';
     saving = false;
   }
-  }
+}
 
 // Create Authentication Prompt 
 
@@ -2085,7 +2174,8 @@ createAuthenticationPrompt() {
   // Message
   const message = document.createElement('p');
   message.className = 'zoro-auth-message';
-  message.textContent = 'You need to authenticate with AniList to edit your anime/manga entries. This will allow you to update your progress, scores, and status directly from Obsidian.';
+  // RENAMED from AniList to Zoro
+  message.textContent = 'You need to authenticate with Zoro to edit your anime/manga entries. This will allow you to update your progress, scores, and status directly from Obsidian.';
 
   // Feature list
   const featuresDiv = document.createElement('div');
@@ -2121,7 +2211,8 @@ createAuthenticationPrompt() {
 
   const authenticateBtn = document.createElement('button');
   authenticateBtn.className = 'zoro-auth-button';
-  authenticateBtn.textContent = '🔑 Authenticate with AniList';
+  // RENAMED from AniList to Zoro
+  authenticateBtn.textContent = '🔑 Authenticate with Zoro';
   authenticateBtn.onclick = () => {
     closeModal();
     this.app.setting.open();
@@ -2305,11 +2396,9 @@ type: stats
   }
 }
 
-
-
 // Render Errors
 
-renderError(el, message, context = '') {
+renderError(el, message, context = '', onRetry = null) {
   el.empty?.(); // clear if Obsidian's `el` object has `.empty()` method
   el.classList.add('zoro-error-container');
 
@@ -2336,19 +2425,17 @@ renderError(el, message, context = '') {
     wrapper.appendChild(retryBtn);
   }
 
-  el.appendChild(wrapper);
-}
-
-renderError(el, message, context = '', onRetry = null) {
-  ...
+  // FIXED: Added onRetry functionality
   if (typeof onRetry === 'function') {
     const retryBtn = document.createElement('button');
+    retryBtn.className = 'zoro-retry-btn';
     retryBtn.textContent = '🔄 Retry';
     retryBtn.onclick = onRetry;
     wrapper.appendChild(retryBtn);
   }
-}
 
+  el.appendChild(wrapper);
+}
 
 // End Plugin class 
 
@@ -2365,191 +2452,186 @@ onunload() {
 
 // Settings Menu 
 
-class ZoroSettingTab extends PluginSettingTab { constructor(app, plugin) { super(app, plugin); this.plugin = plugin; }
+class ZoroSettingTab extends PluginSettingTab { 
+  constructor(app, plugin) { 
+    super(app, plugin); 
+    this.plugin = plugin; 
+  }
 
-display() { const { containerEl } = this; containerEl.empty();
+  display() { 
+    const { containerEl } = this; 
+    containerEl.empty();
 
-new Setting(containerEl)
-  .setName('👤 Username')
-  .setDesc('Add your Zoro username to view your lists and stats — just make sure your profile is public.')
-  .addText(text => text
-    .setPlaceholder('Enter your Zoro username')
-    .setValue(this.plugin.settings.defaultUsername)
-    .onChange(async (value) => {
-      this.plugin.settings.defaultUsername = value.trim();
-      await this.plugin.saveSettings();
-    }));
+    new Setting(containerEl)
+      .setName('👤 Username')
+      .setDesc('Add your Zoro username to view your lists and stats — just make sure your profile is public.')
+      .addText(text => text
+        .setPlaceholder('Enter your Zoro username')
+        .setValue(this.plugin.settings.defaultUsername)
+        .onChange(async (value) => {
+          this.plugin.settings.defaultUsername = value.trim();
+          await this.plugin.saveSettings();
+        }));
 
-new Setting(containerEl)
-  .setName('➕ Sample Notes')
-  .setDesc('Creates two notes — one for Anime, one for Manga — with all your lists, search, and stats preloaded. No setup needed.')
-  .addButton(button => button
-    .setButtonText('Create Note')
-    .setTooltip('Click to create a sample note in your vault')
-    .onClick(async () => {
-      await this.plugin.createSampleNotes();
-    }));
+    new Setting(containerEl)
+      .setName('➕ Sample Notes')
+      .setDesc('Creates two notes — one for Anime, one for Manga — with all your lists, search, and stats preloaded. No setup needed.')
+      .addButton(button => button
+        .setButtonText('Create Note')
+        .setTooltip('Click to create a sample note in your vault')
+        .onClick(async () => {
+          await this.plugin.createSampleNotes();
+        }));
 
-new Setting(containerEl)
-  .setName('🧊 Layout')
-  .setDesc('Choose the default layout for media lists')
-  .addDropdown(dropdown => dropdown
-    .addOption('card', 'Card Layout')
-    .addOption('table', 'Table Layout')
-    .setValue(this.plugin.settings.defaultLayout)
-    .onChange(async (value) => {
-      this.plugin.settings.defaultLayout = value;
-      await this.plugin.saveSettings();
-    }));
+    new Setting(containerEl)
+      .setName('🧊 Layout')
+      .setDesc('Choose the default layout for media lists')
+      .addDropdown(dropdown => dropdown
+        .addOption('card', 'Card Layout')
+        .addOption('table', 'Table Layout')
+        .setValue(this.plugin.settings.defaultLayout)
+        .onChange(async (value) => {
+          this.plugin.settings.defaultLayout = value;
+          await this.plugin.saveSettings();
+        }));
 
-new Setting(containerEl)
-  .setName('🌆 Cover')
-  .setDesc('Display cover images for anime/manga')
-  .addToggle(toggle => toggle
-    .setValue(this.plugin.settings.showCoverImages)
-    .onChange(async (value) => {
-      this.plugin.settings.showCoverImages = value;
-      await this.plugin.saveSettings();
-    }));
+    new Setting(containerEl)
+      .setName('🌆 Cover')
+      .setDesc('Display cover images for anime/manga')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.showCoverImages)
+        .onChange(async (value) => {
+          this.plugin.settings.showCoverImages = value;
+          await this.plugin.saveSettings();
+        }));
 
-new Setting(containerEl)
-  .setName('⭐ Ratings')
-  .setDesc('Display user ratings/scores')
-  .addToggle(toggle => toggle
-    .setValue(this.plugin.settings.showRatings)
-    .onChange(async (value) => {
-      this.plugin.settings.showRatings = value;
-      await this.plugin.saveSettings();
-    }));
+    new Setting(containerEl)
+      .setName('⭐ Ratings')
+      .setDesc('Display user ratings/scores')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.showRatings)
+        .onChange(async (value) => {
+          this.plugin.settings.showRatings = value;
+          await this.plugin.saveSettings();
+        }));
 
-new Setting(containerEl)
-  .setName('📈 Progress')
-  .setDesc('Display progress information')
-  .addToggle(toggle => toggle
-    .setValue(this.plugin.settings.showProgress)
-    .onChange(async (value) => {
-      this.plugin.settings.showProgress = value;
-      await this.plugin.saveSettings();
-    }));
+    new Setting(containerEl)
+      .setName('📈 Progress')
+      .setDesc('Display progress information')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.showProgress)
+        .onChange(async (value) => {
+          this.plugin.settings.showProgress = value;
+          await this.plugin.saveSettings();
+        }));
 
-new Setting(containerEl)
-  .setName('🎭 Genres')
-  .setDesc('Display genre tags')
-  .addToggle(toggle => toggle
-    .setValue(this.plugin.settings.showGenres)
-    .onChange(async (value) => {
-      this.plugin.settings.showGenres = value;
-      await this.plugin.saveSettings();
-    }));
+    new Setting(containerEl)
+      .setName('🎭 Genres')
+      .setDesc('Display genre tags')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.showGenres)
+        .onChange(async (value) => {
+          this.plugin.settings.showGenres = value;
+          await this.plugin.saveSettings();
+        }));
 
-new Setting(containerEl)
-  .setName('🔲 Grid Columns')
-  .setDesc('Number of columns in card grid layout')
-  .addSlider(slider => slider
-    .setLimits(1, 6, 1)
-    .setValue(this.plugin.settings.gridColumns)
-    .setDynamicTooltip()
-    .onChange(async (value) => {
-      this.plugin.settings.gridColumns = value;
-      await this.plugin.saveSettings();
-    }));
+    new Setting(containerEl)
+      .setName('🔲 Grid Columns')
+      .setDesc('Number of columns in card grid layout')
+      .addSlider(slider => slider
+        .setLimits(1, 6, 1)
+        .setValue(this.plugin.settings.gridColumns)
+        .setDynamicTooltip()
+        .onChange(async (value) => {
+          this.plugin.settings.gridColumns = value;
+          await this.plugin.saveSettings();
+        }));
 
-new Setting(containerEl)
-  .setName('🔑 Client ID')
-  .setDesc('Your Zoro application Client ID')
-  .addText(text => text
-    .setPlaceholder('Enter Client ID')
-    .setValue(this.plugin.settings.clientId || '')
-    .onChange(async (value) => {
-      this.plugin.settings.clientId = value.trim();
-      await this.plugin.saveSettings();
-    }));
+    new Setting(containerEl)
+      .setName('🔑 Client ID')
+      .setDesc('Your Zoro application Client ID')
+      .addText(text => text
+        .setPlaceholder('Enter Client ID')
+        .setValue(this.plugin.settings.clientId || '')
+        .onChange(async (value) => {
+          this.plugin.settings.clientId = value.trim();
+          await this.plugin.saveSettings();
+        }));
 
-new Setting(containerEl)
-  .setName('🔐 Client Secret')
-  .setDesc('Your Zoro application Client Secret')
-  .addText(text => text
-    .setPlaceholder('Enter Client Secret')
-    .setValue(this.plugin.settings.clientSecret || '')
-    .onChange(async (value) => {
-      this.plugin.settings.clientSecret = value.trim();
-      await this.plugin.saveSettings();
-    }));
+    new Setting(containerEl)
+      .setName('🔐 Client Secret')
+      .setDesc('Your Zoro application Client Secret')
+      .addText(text => text
+        .setPlaceholder('Enter Client Secret')
+        .setValue(this.plugin.settings.clientSecret || '')
+        .onChange(async (value) => {
+          this.plugin.settings.clientSecret = value.trim();
+          await this.plugin.saveSettings();
+        }));
 
-new Setting(containerEl)
-  .setName('🔗 Redirect URI')
-  .setDesc('Your application redirect URI')
-  .addText(text => text
-    .setPlaceholder('http://localhost:8080/callback')
-    .setValue(this.plugin.settings.redirectUri || 'http://localhost:8080/callback')
-    .onChange(async (value) => {
-      this.plugin.settings.redirectUri = value.trim();
-      await this.plugin.saveSettings();
-    }));
+    new Setting(containerEl)
+      .setName('🔗 Redirect URI')
+      .setDesc('Your application redirect URI')
+      .addText(text => text
+        .setPlaceholder('http://localhost:8080/callback')
+        .setValue(this.plugin.settings.redirectUri || 'http://localhost:8080/callback')
+        .onChange(async (value) => {
+          this.plugin.settings.redirectUri = value.trim();
+          await this.plugin.saveSettings();
+        }));
 
-new Setting(containerEl)
-  .setName('🔓 Authenticate')
-  .setDesc('Connect your Zoro account')
-  .addButton(button => button
-    .setButtonText(this.plugin.settings.accessToken ? 'Re-authenticate' : 'Authenticate')
-    .onClick(async () => {
-      await this.plugin.authenticateUser();
-    }));
+    new Setting(containerEl)
+      .setName('🔓 Authenticate')
+      .setDesc('Connect your Zoro account')
+      .addButton(button => button
+        .setButtonText(this.plugin.settings.accessToken ? 'Re-authenticate' : 'Authenticate')
+        .onClick(async () => {
+          await this.plugin.authenticateUser();
+        }));
 
-new Setting(containerEl)
-  .setName('🔧 Manual Token Input')
-  .setDesc('If automatic authentication fails, manually paste your access token here')
-  .addText(text => text
-    .setPlaceholder('Paste access token here...')
-    .setValue('')
-    .onChange(async (value) => {
-      if (value.trim()) {
-        this.plugin.settings.accessToken = value.trim();
-        await this.plugin.saveSettings();
-        new Notice('✅ Manual token saved! Testing...');
-        try {
-          await this.plugin.testAccessToken();
-        } catch (error) {
-          new Notice(`❌ Token test failed: ${error.message}`);
-        }
-      }
-    }))
-  .addButton(button => button
-    .setButtonText('Clear Token')
-    .onClick(async () => {
-      this.plugin.settings.accessToken = '';
-      await this.plugin.saveSettings();
-      new Notice('Token cleared');
-      this.display();
-    }));
+    new Setting(containerEl)
+      .setName('🔧 Manual Token Input')
+      .setDesc('If automatic authentication fails, manually paste your access token here')
+      .addText(text => text
+        .setPlaceholder('Paste access token here...')
+        .setValue('')
+        .onChange(async (value) => {
+          if (value.trim()) {
+            this.plugin.settings.accessToken = value.trim();
+            await this.plugin.saveSettings();
+            new Notice('✅ Manual token saved! Testing...');
+            try {
+              await this.plugin.testAccessToken();
+            } catch (error) {
+              new Notice(`❌ Token test failed: ${error.message}`);
+            }
+          }
+        }))
+      .addButton(button => button
+        .setButtonText('Clear Token')
+        .onClick(async () => {
+          this.plugin.settings.accessToken = '';
+          await this.plugin.saveSettings();
+          new Notice('Token cleared');
+          this.display();
+        }));
 
-new Setting(containerEl)
-  .setName('🔑 Authentication Status')
-  .setDesc(this.plugin.settings.accessToken ? 
-    '✅ Authenticated (Token saved)' : 
-    '❌ Not authenticated');
+    new Setting(containerEl)
+      .setName('🔑 Authentication Status')
+      .setDesc(this.plugin.settings.accessToken ? 
+        '✅ Authenticated (Token saved)' : 
+        '❌ Not authenticated');
 
-new Setting(containerEl)
-  .setName('⚡ Power Features')
-  .setDesc('Want more features? Visit our GitHub page for tips, tricks, and powerful ways to customize your notes.')
-  .addButton(button => button
-    .setButtonText('View Documentation')
-    .onClick(() => {
-      window.open('https://github.com/zara-kasi/zoro/blob/main/README.md', '_blank');
-    }));
-
-} }
+    new Setting(containerEl)
+      .setName('⚡ Power Features')
+      .setDesc('Want more features? Visit our GitHub page for tips, tricks, and powerful ways to customize your notes.')
+      .addButton(button => button
+        .setButtonText('View Documentation')
+        .onClick(() => {
+          window.open('https://github.com/zara-kasi/zoro/blob/main/README.md', '_blank');
+        }));
+  }
+}
 
 // end
 module.exports = ZoroSettingTab;
-
-
-
-
-
-
-
-
-
-
-

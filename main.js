@@ -2207,6 +2207,20 @@ type: stats
 
     el.appendChild(wrapper);
   }
+
+  // Inject Css
+  injectCSS() {
+  const css = `
+    .zoro-search-container { margin: 1rem 0; }
+    .zoro-search-input { width: 100%; padding: 0.5rem; }
+    .zoro-results-grid { display: grid; grid-template-columns: repeat(var(--zoro-grid-columns, 3), 1fr); gap: 1rem; }
+    .zoro-search-card { border: 1px solid var(--background-modifier-border); border-radius: 4px; padding: 1rem; }
+  `;
+  
+  const style = document.createElement('style');
+  style.textContent = css;
+  document.head.appendChild(style);
+  }
   
     
 

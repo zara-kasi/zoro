@@ -58,4 +58,11 @@ async exchangeCodeForToken(code, redirectUri) {
     new Notice(`❌ Authentication failed: ${err.message}`, 5000);
     this.showManualTokenOption?.(); // optional UI fallback
   }
+
+}
+
+
+isTokenExpired() {
+  const expiry = this.settings.tokenExpiry;
+  return !expiry || Date.now() >= expiry;
 }

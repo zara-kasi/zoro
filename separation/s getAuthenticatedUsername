@@ -33,6 +33,3 @@ async getAuthenticatedUsername() {
     return null;
   }
 }
-
-this.settings.authUsername = data.data.Viewer.name;
-await this.saveSettings();

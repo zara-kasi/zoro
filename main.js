@@ -22,8 +22,6 @@ class ZoroPlugin extends Plugin {
   // Constructor 
   constructor(app, manifest) {
     super(app, manifest);
-
-    // In-memory cache with timeout enforcement
     
   // Initialize separate caches
   this.cache = {
@@ -36,24 +34,6 @@ class ZoroPlugin extends Plugin {
   // Add periodic pruning
   this.pruneInterval = setInterval(() => this.pruneCache(), this.cacheTimeout);
   }
-    this.getFromCache = (key) => {
-      const entry = this.cache.get(key);
-      if (!entry) return null;
-
-      const { value, timestamp } = entry;
-      if ((Date.now() - timestamp) > this.cacheTimeout) {
-        this.cache.delete(key);
-        return null;
-      }
-      return value;
-    };
-
-    this.setToCache = (key, value) => {
-      this.cache.set(key, {
-        value,
-        timestamp: Date.now()
-      });
-    };
    
 
 // Prune Cache 
@@ -205,12 +185,14 @@ setToCache(type, key, value) {
     try {
       new Notice('🔐 Opening authentication page...', 3000);
 
-      // Add message listener
-  window.addEventListener('message', (event) => {
-    if (event.origin !== 'https://anilist.co') return;
-    this.exchangeCodeForToken(event.data.code);
-    authWindow.close();
-  });
+
+ window.addEventListener('message', this.handleAuthMessage.bind(this));
+      
+     // Implement handler
+  handleAuthMessage(event) {
+  if (event.origin !== 'https://anilist.co') return;
+  this.exchangeCodeForToken(event.data.code);
+}
       
       if (window.require) {
         const { shell } = window.require('electron');
@@ -370,6 +352,7 @@ setToCache(type, key, value) {
 
   }
 
+  // Refresh Token Validation 
   async ensureValidToken() {
   if (!this.settings.accessToken) return false;
   
@@ -2355,7 +2338,24 @@ type: stats
     new Notice(`Failed to create notes: ${error.message}`, 5000);
   }
  }
+
   
+  // Inject Css
+  injectCSS() {
+  const styleId = 'zoro-plugin-styles';
+  const existingStyle = document.getElementById(styleId);
+  if (existingStyle) existingStyle.remove();
+  
+  const css = `
+    .zoro-container { /* styles */ }
+    /* add all necessary styles here */
+  `;
+  
+  const style = document.createElement('style');
+  style.id = styleId;
+  style.textContent = css;
+  document.head.appendChild(style);
+}
 
   // Render Errors
   renderError(el, message, context = '', onRetry = null) {
@@ -2397,21 +2397,7 @@ type: stats
     el.appendChild(wrapper);
   }
 
-  // Inject Css
-  injectCSS() {
-  const css = `
-    .zoro-search-container { margin: 1rem 0; }
-    .zoro-search-input { width: 100%; padding: 0.5rem; }
-    .zoro-results-grid { display: grid; grid-template-columns: repeat(var(--zoro-grid-columns, 3), 1fr); gap: 1rem; }
-    .zoro-search-card { border: 1px solid var(--background-modifier-border); border-radius: 4px; padding: 1rem; }
-  `;
-  
-  const style = document.createElement('style');
-  style.textContent = css;
-  document.head.appendChild(style);
-  }
  
-    
   // Plugin unload method
   onunload() {
     console.log('Unloading Zoro Plugin');
@@ -2700,12 +2686,16 @@ class ZoroSettingTab extends PluginSettingTab {
           new Notice('Token cleared');
           this.display();
         }));
+    
+// Authentication Status 
 
-    new Setting(containerEl)
-      .setName('🔑 Authentication Status')
-      .setDesc(this.plugin.settings.accessToken ? 
-        '✅ Authenticated (Token saved)' : 
-        '❌ Not authenticated');
+new Setting(containerEl)
+  .setName('Authentication Status')
+  .setDesc(
+    this.plugin.settings.accessToken 
+      ? `✅ Connected (Expires: ${new Date(this.plugin.settings.tokenExpiry).toLocaleDateString()})`
+      : '❌ Disconnected'
+  );
 
     // Token Status 
 new Setting(containerEl)

@@ -286,41 +286,6 @@ showManualTokenOption() {
   }, 2000);
 }
 
-showManualTokenInstructions() {
-  new Notice('📝 Instructions for manual token entry:', 10000);
-  // You could include a more detailed, structured way to enter the token directly into settings here.
-  const instructions = `
-    1. Open the AniList OAuth page in your browser.
-    2. Copy the access token.
-    3. In Obsidian, go to Plugin Settings -> "Zoro" -> "Authentication".
-    4. Paste the token in the "Access Token" field.
-  `;
-  new Notice(instructions, 15000); // Show instructions in a notice or modal.
-}
-
-//// Follow Up with the instructions 
-
-showManualTokenInstructions() {
-  const instructions = `
-📋 MANUAL TOKEN INSTRUCTIONS:
-
-1. Open https://anilist.co/api/v2/oauth/pin and authorize the app.
-2. You’ll receive a PIN code.
-3. Use a tool like Postman or curl (if you're technical), or skip to step 6.
-4. Make a POST request to: https://anilist.co/api/v2/oauth/token
-5. Use content type: application/x-www-form-urlencoded
-   And body (not JSON!):
-     grant_type=authorization_code&
-     client_id=${this.settings.clientId}&
-     client_secret=${this.settings.clientSecret}&
-     redirect_uri=https://anilist.co/api/v2/oauth/pin&
-     code=YOUR_PIN_CODE_HERE
-6. Get your access_token from the response.
-7. Paste it into the plugin settings under “Manual Token Input”.
-`.trim();
-
-  this.showInstructionsModal(instructions);
-}
 
 /// Instructions Model 
 

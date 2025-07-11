@@ -1,0 +1,43 @@
+getSearchMediaQuery() {
+    return `
+      query ($search: String, $type: MediaType, $page: Int, $perPage: Int) {
+        Page(page: $page, perPage: $perPage) {
+          pageInfo {
+            total
+            currentPage
+            lastPage
+            hasNextPage
+            perPage
+          }
+          media(search: $search, type: $type) {
+            id
+            title {
+              romaji
+              english
+              native
+            }
+            coverImage {
+              large
+              medium
+            }
+            episodes
+            chapters
+            genres
+            format
+            averageScore
+            status
+            startDate {
+              year
+              month
+              day
+            }
+            endDate {
+              year
+              month
+              day
+            }
+          }
+        }
+      }
+    `;
+  }

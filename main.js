@@ -38,7 +38,7 @@ async loadSettings() {
     gridColumns: 3,
     clientId: '',
     clientSecret: '',
-    redirectUri: 'http://localhost:8080/callback',
+    redirectUri: 'https://anilist.co/api/v2/oauth/pin',
     accessToken: ''
   }, await this.loadData());
 }
@@ -62,30 +62,34 @@ async loadSettings() {
 // Authentication 
 
 
+
 async authenticateUser() {
   if (!this.settings.clientId) {
     new Notice('Please set Client ID in plugin settings first');
     return;
   }
   
-  const authUrl = `https://anilist.co/api/v2/oauth/authorize?client_id=${this.settings.clientId}&redirect_uri=${encodeURIComponent(this.settings.redirectUri)}&response_type=code`;
+  // Use AniList's built-in PIN display page
+  const redirectUri = 'https://anilist.co/api/v2/oauth/pin';
   
-  new Notice('Opening AniList authentication page...');
+  const authUrl = `https://anilist.co/api/v2/oauth/authorize?client_id=${this.settings.clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code`;
+  
+  new Notice('Opening AniList authentication page...', 3000);
   window.open(authUrl, '_blank');
   
-  // Show instructions
-  new Notice('Copy the authorization code from the callback URL and paste it in the prompt', 10000);
+  // Show clear instructions
+  new Notice('After authorizing, copy the PIN code and paste it in the next prompt.', 8000);
   
-  // Simple prompt for code
+  // Give user time to complete auth
   setTimeout(() => {
-    const code = prompt('Enter the authorization code from AniList:');
-    if (code) {
-      this.exchangeCodeForToken(code);
+    const code = prompt('Paste the PIN code from AniList here:');
+    if (code && code.trim()) {
+      this.exchangeCodeForToken(code.trim(), redirectUri);
     }
-  }, 2000);
+  }, 4000);
 }
 
-async exchangeCodeForToken(code) {
+async exchangeCodeForToken(code, redirectUri) {
   try {
     const response = await fetch('https://anilist.co/api/v2/oauth/token', {
       method: 'POST',
@@ -94,7 +98,7 @@ async exchangeCodeForToken(code) {
         client_id: this.settings.clientId,
         client_secret: this.settings.clientSecret,
         code: code,
-        redirect_uri: this.settings.redirectUri,
+        redirect_uri: redirectUri,
         grant_type: 'authorization_code'
       })
     });
@@ -103,15 +107,14 @@ async exchangeCodeForToken(code) {
     if (data.access_token) {
       this.settings.accessToken = data.access_token;
       await this.saveSettings();
-      new Notice('Successfully authenticated with AniList!');
+      new Notice('✅ Successfully authenticated with AniList!');
     } else {
       throw new Error('Failed to get access token');
     }
   } catch (error) {
-    new Notice(`Authentication failed: ${error.message}`);
+    new Notice(`❌ Authentication failed: ${error.message}`);
   }
 }
-
 
 // Search Bar
 

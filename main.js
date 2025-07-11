@@ -1161,7 +1161,7 @@ new Setting(containerEl)
   .addButton(button => button
     .setButtonText('View Documentation')
     .onClick(() => {
-      window.open('https://github.com/zara-kasi/AniList-Obsidian/blob/main/README.md', '_blank');
+      window.open('https://github.com/zara-kasi/zoro/blob/main/README.md', '_blank');
     }));
     
   }

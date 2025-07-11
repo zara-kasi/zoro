@@ -1,39 +1,48 @@
 async authenticateUser() {
-  if (!this.settings.clientId) {
-    new Notice('Please set Client ID in plugin settings first');
+  const clientId = this.settings.clientId;
+  const redirectUri = this.settings.redirectUri || 'https://anilist.co/api/v2/oauth/pin';
+
+  if (!clientId) {
+    new Notice('❌ Please set your Client ID in plugin settings first.', 5000);
     return;
   }
-  
-  // Use AniList's built-in PIN display page
-  const redirectUri = 'https://anilist.co/api/v2/oauth/pin';
-  
-  const authUrl = `https://anilist.co/api/v2/oauth/authorize?client_id=${this.settings.clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code`;
-  
-  new Notice('Opening AniList authentication page...', 3000);
-  
+
+  const authUrl = `https://anilist.co/api/v2/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code`;
+
   try {
-    // Open the authentication URL
+    new Notice('🔐 Opening AniList login page...', 3000);
+
     if (window.require) {
-      // If running in Electron (desktop app)
       const { shell } = window.require('electron');
       await shell.openExternal(authUrl);
     } else {
-      // Fallback for web/mobile
       window.open(authUrl, '_blank');
     }
-    
-    // Show clear instructions
-    new Notice('After authorizing, copy the PIN code and paste it in the next prompt.', 8000);
-    
-    // Give user time to complete auth
-    setTimeout(() => {
-      const code = prompt('Paste the PIN code from AniList here:');
-      if (code && code.trim()) {
-        this.exchangeCodeForToken(code.trim(), redirectUri);
-      }
-    }, 4000);
-    
+
+    const code = await this.promptForCode('Paste the PIN code from AniList:');
+
+    if (!code || !code.trim()) {
+      new Notice('⚠️ No code entered. Authentication cancelled.', 4000);
+      return;
+    }
+
+    await this.exchangeCodeForToken(code.trim(), redirectUri);
+    new Notice('✅ Authenticated successfully.', 4000);
   } catch (error) {
-    new Notice(`Error opening authentication page: ${error.message}`);
+    console.error('[Zoro] Authentication failed:', error);
+    new Notice(`❌ Authentication error: ${error.message}`, 5000);
   }
 }
+
+async promptForCode(message) {
+  return new Promise((resolve) => {
+    const code = prompt(message);
+    resolve(code);
+  });
+}
+
+if (this.settings.accessToken) {
+  const reuse = confirm('You are already authenticated. Do you want to re-authenticate?');
+  if (!reuse) return;
+}
+

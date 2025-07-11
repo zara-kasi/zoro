@@ -1,8 +1,27 @@
 async processAniListSearchCodeBlock(source, el, ctx) {
-    try {
-      const config = this.parseSearchCodeBlockConfig(source);
-      this.renderSearchInterface(el, config);
-    } catch (error) {
-      this.renderError(el, error.message);
-    }
+  try {
+    const config = this.parseSearchCodeBlockConfig(source);
+    
+    // Optional: track per-block context
+    ctx.addChild({
+      unload: () => {
+        // Cleanup if needed
+      }
+    });
+
+    await this.renderSearchInterface(el, config); // Future-proof
+  } catch (error) {
+    console.error('[Zoro] Search block processing error:', error);
+    this.renderError(el, error.message || 'Failed to process AniList search block.');
   }
+}
+
+if (!config.search || config.search.trim().length === 0) {
+  throw new Error('Search query is missing or empty.');
+}
+
+if (this.settings.debugMode) {
+  console.log('[Zoro] Search block config:', config);
+}
+
+el.createEl('div', { text: '🔍 Searching AniList...', cls: 'zoro-loading-placeholder' });

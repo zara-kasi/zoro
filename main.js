@@ -72,34 +72,21 @@ constructor(app, manifest) {
   this.settings = this.validateSettings(saved);
 }
 
-
-validateSettings(data) {
-  return {
-    defaultUsername: typeof data?.defaultUsername === 'string' ? data.defaultUsername : '',
-    defaultLayout: ['card', 'list'].includes(data?.defaultLayout) ? data.defaultLayout : 'card',
-    showCoverImages: !!data?.showCoverImages,
-    showRatings: !!data?.showRatings,
-    showProgress: !!data?.showProgress,
-    showGenres: !!data?.showGenres,
-    gridColumns: Number.isInteger(data?.gridColumns) ? data.gridColumns : 3,
-    clientId: typeof data?.clientId === 'string' ? data.clientId : '',
-    clientSecret: typeof data?.clientSecret === 'string' ? data.clientSecret : '',
-    redirectUri: typeof data?.redirectUri === 'string' ? data.redirectUri : DEFAULT_SETTINGS.redirectUri,
-    accessToken: typeof data?.accessToken === 'string' ? data.accessToken : '',
-  };
-}
-
+// Validate Settings 
   
-// Save settings 
-
 validateSettings(settings) {
   return {
-    ...DEFAULT_SETTINGS,
-    ...settings,
-    gridColumns: Number.isInteger(settings.gridColumns) ? settings.gridColumns : DEFAULT_SETTINGS.gridColumns,
-    redirectUri: typeof settings.redirectUri === 'string' ? settings.redirectUri : DEFAULT_SETTINGS.redirectUri,
-    accessToken: typeof settings.accessToken === 'string' ? settings.accessToken : '',
-    // add additional field checks as needed
+    defaultUsername: typeof settings?.defaultUsername === 'string' ? settings.defaultUsername : '',
+    defaultLayout: ['card', 'list'].includes(settings?.defaultLayout) ? settings.defaultLayout : 'card',
+    showCoverImages: !!settings?.showCoverImages,
+    showRatings: !!settings?.showRatings,
+    showProgress: !!settings?.showProgress,
+    showGenres: !!settings?.showGenres,
+    gridColumns: Number.isInteger(settings?.gridColumns) ? settings.gridColumns : 3,
+    clientId: typeof settings?.clientId === 'string' ? settings.clientId : '',
+    clientSecret: typeof settings?.clientSecret === 'string' ? settings.clientSecret : '',
+    redirectUri: typeof settings?.redirectUri === 'string' ? settings.redirectUri : DEFAULT_SETTINGS.redirectUri,
+    accessToken: typeof settings?.accessToken === 'string' ? settings.accessToken : '',
   };
 }
 

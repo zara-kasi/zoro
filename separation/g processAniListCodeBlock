@@ -1,20 +1,32 @@
-async processAniListCodeBlock(source, el, ctx) {
+async processZoroCodeBlock(source, el, ctx) {
   try {
-    const config = this.parseCodeBlockConfig(source);
-    
-    // If useAuthenticatedUser is true, get the authenticated username
+    const config = this.parseCodeBlockConfig(source) || {};
+
+    // Debug: Log raw config
+    console.log('[Zoro] Code block config:', config);
+
+    // Handle authenticated user resolution
     if (config.useAuthenticatedUser) {
       const authUsername = await this.getAuthenticatedUsername();
-      if (authUsername) {
-        config.username = authUsername;
-      } else {
-        throw new Error('Unable to get authenticated user. Please check your authentication or set a username.');
+      if (!authUsername) {
+        throw new Error('❌ Could not retrieve authenticated username. Check your authentication setup or set a username manually.');
       }
+      config.username = authUsername;
     }
-    
-    const data = await this.fetchAniListData(config);
-    this.renderAniListData(el, data, config);
+
+    if (!config.username) {
+      throw new Error('❌ No username provided. Set `username:` in your code block or enable `useAuthenticatedUser`.');
+    }
+
+    const data = await this.fetchZoroData(config);
+
+    if (!data || (Array.isArray(data) && data.length === 0)) {
+      throw new Error('⚠️ No data returned from Zoro API.');
+    }
+
+    this.renderZoroData(el, data, config);
   } catch (error) {
-    this.renderError(el, error.message);
+    console.error('[Zoro] Code block processing error:', error);
+    this.renderError(el, error.message || 'Unknown error occurred.');
   }
 }

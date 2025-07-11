@@ -1,0 +1,3 @@
+renderError(el, message) {
+    el.innerHTML = `<div class="anilist-error">Error: ${message}</div>`;
+  }

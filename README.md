@@ -1,5 +1,5 @@
 
-# AniList-Obsidian
+# Zoro
 
 **Integrate your AniList anime & manga data directly into Obsidian notes!**
 

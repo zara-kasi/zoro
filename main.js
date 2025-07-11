@@ -29,13 +29,17 @@ class AniListPlugin extends Plugin {
 
 async loadSettings() {
   this.settings = Object.assign({}, {
-    defaultUsername: '', // Add this line
+    defaultUsername: '',
     defaultLayout: 'card',
     showCoverImages: true,
     showRatings: true,
     showProgress: true,
     showGenres: false,
-    gridColumns: 3
+    gridColumns: 3,
+    clientId: '',
+    clientSecret: '',
+    redirectUri: 'http://localhost:8080/callback',
+    accessToken: ''
   }, await this.loadData());
 }
 
@@ -59,69 +63,57 @@ async loadSettings() {
 
 
 async authenticateUser() {
-  // Redirect user to AniList OAuth
-  const clientId = 'YOUR_CLIENT_ID';
-  const redirectUri = 'YOUR_REDIRECT_URI';
-  const authUrl = `https://anilist.co/api/v2/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code`;
+  if (!this.settings.clientId) {
+    new Notice('Please set Client ID in plugin settings first');
+    return;
+  }
   
-  // Open auth URL and handle callback
+  const authUrl = `https://anilist.co/api/v2/oauth/authorize?client_id=${this.settings.clientId}&redirect_uri=${encodeURIComponent(this.settings.redirectUri)}&response_type=code`;
+  
+  new Notice('Opening AniList authentication page...');
   window.open(authUrl, '_blank');
+  
+  // Show instructions
+  new Notice('Copy the authorization code from the callback URL and paste it in the prompt', 10000);
+  
+  // Simple prompt for code
+  setTimeout(() => {
+    const code = prompt('Enter the authorization code from AniList:');
+    if (code) {
+      this.exchangeCodeForToken(code);
+    }
+  }, 2000);
 }
 
 async exchangeCodeForToken(code) {
-  // Exchange authorization code for access token
-  const response = await fetch('https://anilist.co/api/v2/oauth/token', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      client_id: 'YOUR_CLIENT_ID',
-      client_secret: 'YOUR_CLIENT_SECRET',
-      code: code,
-      redirect_uri: 'YOUR_REDIRECT_URI',
-      grant_type: 'authorization_code'
-    })
-  });
-  
-  const data = await response.json();
-  this.settings.accessToken = data.access_token;
-  await this.saveSettings();
-}
-
-// Update media list entry
-
-
-updateMediaListEntry(mediaId, updates) {
-  const mutation = `
-    mutation ($mediaId: Int, $status: MediaListStatus, $score: Float, $progress: Int) {
-      SaveMediaListEntry(mediaId: $mediaId, status: $status, score: $score, progress: $progress) {
-        id
-        status
-        score
-        progress
-      }
+  try {
+    const response = await fetch('https://anilist.co/api/v2/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        client_id: this.settings.clientId,
+        client_secret: this.settings.clientSecret,
+        code: code,
+        redirect_uri: this.settings.redirectUri,
+        grant_type: 'authorization_code'
+      })
+    });
+    
+    const data = await response.json();
+    if (data.access_token) {
+      this.settings.accessToken = data.access_token;
+      await this.saveSettings();
+      new Notice('Successfully authenticated with AniList!');
+    } else {
+      throw new Error('Failed to get access token');
     }
-  `;
-  
-  return this.makeAuthenticatedRequest(mutation, {
-    mediaId: mediaId,
-    ...updates
-  });
-}
-
-async makeAuthenticatedRequest(query, variables) {
-  const response = await fetch('https://graphql.anilist.co', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${this.settings.accessToken}`
-    },
-    body: JSON.stringify({ query, variables })
-  });
-  
-  return response.json();
+  } catch (error) {
+    new Notice(`Authentication failed: ${error.message}`);
+  }
 }
 
 
+// Search Bar
 
   async processAniListSearchCodeBlock(source, el, ctx) {
     try {
@@ -817,62 +809,30 @@ getAniListUrl(mediaId, mediaType = 'anime') {
         detailsDiv.appendChild(formatBadge);
       }
 
-// Add to renderMediaList function
-const actionsDiv = document.createElement('div');
-actionsDiv.className = 'media-actions';
 
-// Rating dropdown
-const ratingSelect = document.createElement('select');
-ratingSelect.className = 'rating-select';
-for (let i = 1; i <= 10; i++) {
-  const option = document.createElement('option');
-  option.value = i;
-  option.textContent = i;
-  if (i === entry.score) option.selected = true;
-  ratingSelect.appendChild(option);
-}
-
-ratingSelect.addEventListener('change', async (e) => {
-  await this.updateRating(entry.media.id, parseInt(e.target.value));
-});
-
-// Status dropdown
-const statusSelect = document.createElement('select');
-statusSelect.className = 'status-select';
-const statuses = ['CURRENT', 'PLANNING', 'COMPLETED', 'DROPPED', 'PAUSED', 'REPEATING'];
-statuses.forEach(status => {
-  const option = document.createElement('option');
-  option.value = status;
-  option.textContent = status;
-  if (status === entry.status) option.selected = true;
-  statusSelect.appendChild(option);
-});
-
-statusSelect.addEventListener('change', async (e) => {
-  await this.updateStatus(entry.media.id, e.target.value);
-});
-
-// Progress input
-const progressInput = document.createElement('input');
-progressInput.type = 'number';
-progressInput.className = 'progress-input';
-progressInput.value = entry.progress;
-progressInput.max = entry.media.episodes || entry.media.chapters || 999;
-
-progressInput.addEventListener('change', async (e) => {
-  await this.updateProgress(entry.media.id, parseInt(e.target.value));
-});
-
-actionsDiv.appendChild(ratingSelect);
-actionsDiv.appendChild(statusSelect);
-actionsDiv.appendChild(progressInput);
-cardDiv.appendChild(actionsDiv);
-
+const statusBadge = document.createElement('span');
+statusBadge.className = `status-badge status-${entry.status.toLowerCase()} clickable-status`;
+statusBadge.textContent = entry.status;
+statusBadge.style.cursor = 'pointer';
+statusBadge.onclick = (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  
+  this.createEditModal(entry, 
+    async (updates) => {
+      await this.updateMediaListEntry(entry.media.id, updates);
+      new Notice('Updated successfully!');
+      // Refresh the view
+      location.reload();
+    },
+    () => {
+      // Cancel - do nothing
+    }
+  );
+};
+detailsDiv.appendChild(statusBadge);
       
-      const statusBadge = document.createElement('span');
-      statusBadge.className = `status-badge status-${entry.status.toLowerCase()}`;
-      statusBadge.textContent = entry.status;
-      detailsDiv.appendChild(statusBadge);
+
       
       if (this.settings.showProgress) {
         const progressSpan = document.createElement('span');
@@ -1009,6 +969,87 @@ cardDiv.appendChild(actionsDiv);
   renderError(el, message) {
     el.innerHTML = `<div class="anilist-error">Error: ${message}</div>`;
   }
+
+// floating window for customisation 
+
+createEditModal(entry, onSave, onCancel) {
+  const modal = document.createElement('div');
+  modal.className = 'anilist-edit-modal';
+  
+  const overlay = document.createElement('div');
+  overlay.className = 'anilist-modal-overlay';
+  
+  const content = document.createElement('div');
+  content.className = 'anilist-modal-content';
+  
+  const title = document.createElement('h3');
+  title.textContent = entry.media.title.english || entry.media.title.romaji;
+  
+  const statusSelect = document.createElement('select');
+  ['CURRENT', 'PLANNING', 'COMPLETED', 'DROPPED', 'PAUSED', 'REPEATING'].forEach(status => {
+    const option = document.createElement('option');
+    option.value = status;
+    option.textContent = status;
+    if (status === entry.status) option.selected = true;
+    statusSelect.appendChild(option);
+  });
+  
+  const scoreInput = document.createElement('input');
+  scoreInput.type = 'number';
+  scoreInput.min = '0';
+  scoreInput.max = '10';
+  scoreInput.step = '0.1';
+  scoreInput.value = entry.score || '';
+  scoreInput.placeholder = 'Score (0-10)';
+  
+  const progressInput = document.createElement('input');
+  progressInput.type = 'number';
+  progressInput.min = '0';
+  progressInput.max = entry.media.episodes || entry.media.chapters || 999;
+  progressInput.value = entry.progress || 0;
+  progressInput.placeholder = 'Progress';
+  
+  const buttonContainer = document.createElement('div');
+  buttonContainer.className = 'anilist-modal-buttons';
+  
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = 'Save';
+  saveBtn.onclick = () => {
+    onSave({
+      status: statusSelect.value,
+      score: parseFloat(scoreInput.value) || null,
+      progress: parseInt(progressInput.value) || 0
+    });
+    document.body.removeChild(modal);
+  };
+  
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.onclick = () => {
+    onCancel();
+    document.body.removeChild(modal);
+  };
+  
+  buttonContainer.appendChild(saveBtn);
+  buttonContainer.appendChild(cancelBtn);
+  
+  content.appendChild(title);
+  content.appendChild(statusSelect);
+  content.appendChild(scoreInput);
+  content.appendChild(progressInput);
+  content.appendChild(buttonContainer);
+  
+  modal.appendChild(overlay);
+  modal.appendChild(content);
+  
+  overlay.onclick = () => {
+    onCancel();
+    document.body.removeChild(modal);
+  };
+  
+  document.body.appendChild(modal);
+}
+
 
 // Note Creation 
 
@@ -1272,6 +1313,50 @@ new Setting(containerEl)
       this.plugin.settings.gridColumns = value;
       await this.plugin.saveSettings();
    }));
+
+// Authentication Botton
+
+new Setting(containerEl)
+  .setName('🔑 Client ID')
+  .setDesc('Your AniList application Client ID')
+  .addText(text => text
+    .setPlaceholder('Enter Client ID')
+    .setValue(this.plugin.settings.clientId || '')
+    .onChange(async (value) => {
+      this.plugin.settings.clientId = value.trim();
+      await this.plugin.saveSettings();
+    }));
+
+new Setting(containerEl)
+  .setName('🔐 Client Secret')
+  .setDesc('Your AniList application Client Secret')
+  .addText(text => text
+    .setPlaceholder('Enter Client Secret')
+    .setValue(this.plugin.settings.clientSecret || '')
+    .onChange(async (value) => {
+      this.plugin.settings.clientSecret = value.trim();
+      await this.plugin.saveSettings();
+    }));
+
+new Setting(containerEl)
+  .setName('🔗 Redirect URI')
+  .setDesc('Your application redirect URI')
+  .addText(text => text
+    .setPlaceholder('http://localhost:8080/callback')
+    .setValue(this.plugin.settings.redirectUri || 'http://localhost:8080/callback')
+    .onChange(async (value) => {
+      this.plugin.settings.redirectUri = value.trim();
+      await this.plugin.saveSettings();
+    }));
+
+new Setting(containerEl)
+  .setName('🔓 Authenticate')
+  .setDesc('Connect your AniList account')
+  .addButton(button => button
+    .setButtonText(this.plugin.settings.accessToken ? 'Re-authenticate' : 'Authenticate')
+    .onClick(async () => {
+      await this.plugin.authenticateUser();
+    }));
 
 // more information botton 
 

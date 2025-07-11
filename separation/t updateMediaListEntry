@@ -1,0 +1,53 @@
+async updateMediaListEntry(mediaId, updates) {
+  if (!this.settings.accessToken) {
+    throw new Error('Authentication required to update entries');
+  }
+  
+  const mutation = `
+    mutation ($mediaId: Int, $status: MediaListStatus, $score: Float, $progress: Int) {
+      SaveMediaListEntry(mediaId: $mediaId, status: $status, score: $score, progress: $progress) {
+        id
+        status
+        score
+        progress
+      }
+    }
+  `;
+  
+  const variables = {
+    mediaId: mediaId,
+    status: updates.status,
+    score: updates.score,
+    progress: updates.progress
+  };
+  
+  try {
+    const response = await fetch('https://graphql.anilist.co', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.settings.accessToken}`
+      },
+      body: JSON.stringify({ query: mutation, variables })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to update entry: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    
+    if (result.errors) {
+      throw new Error(result.errors[0].message);
+    }
+    
+    // Clear cache to force refresh
+    this.cache.clear();
+    
+    return result.data.SaveMediaListEntry;
+    
+  } catch (error) {
+    console.error('Update failed:', error);
+    throw error;
+  }
+}

@@ -1,10 +1,10 @@
 onunload() {
-  console.log('Unloading AniList Plugin');
-  
-  // Remove injected CSS
-  const styleId = 'anilist-plugin-styles';
+  console.log('Unloading Zoro Plugin');
+
+  const styleId = 'zoro-plugin-styles';
   const existingStyle = document.getElementById(styleId);
   if (existingStyle) {
     existingStyle.remove();
+    console.log(`Removed style element with ID: ${styleId}`);
   }
 }

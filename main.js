@@ -18,11 +18,7 @@ const DEFAULT_SETTINGS = {
 // Plugin Class 
 class ZoroPlugin extends Plugin { 
 
-  constructor(app, manifest) {
-  super(app, manifest);
 
- 
- 
   // Constructor 
   constructor(app, manifest) {
     super(app, manifest);

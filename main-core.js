@@ -1,3 +1,4 @@
+// The plugin bootstrap and core logic
 const { Plugin, PluginSettingTab, Setting, Notice } = require('obsidian');
 const auth = require('./auth');
 const api = require('./api');

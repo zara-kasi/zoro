@@ -2280,4 +2280,6 @@ new Setting(containerEl)
   
 }
 
-module.exports = AniListPlugin;
+module.exports = {
+  default: AniListPlugin
+};

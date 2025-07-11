@@ -1,35 +1,40 @@
 createAuthenticationPrompt() {
+  // Create modal wrapper
   const modal = document.createElement('div');
-  modal.className = 'anilist-edit-modal';
-  
+  modal.className = 'zoro-edit-modal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-label', 'Authentication Required');
+
+  // Overlay
   const overlay = document.createElement('div');
-  overlay.className = 'anilist-modal-overlay';
-  
+  overlay.className = 'zoro-modal-overlay';
+
+  // Modal content container
   const content = document.createElement('div');
-  content.className = 'anilist-modal-content auth-prompt';
-  
+  content.className = 'zoro-modal-content auth-prompt';
+
+  // Title
   const title = document.createElement('h3');
+  title.className = 'zoro-auth-title';
   title.textContent = '🔐 Authentication Required';
-  title.style.textAlign = 'center';
-  title.style.marginBottom = '20px';
-  
+
+  // Message
   const message = document.createElement('p');
+  message.className = 'zoro-auth-message';
   message.textContent = 'You need to authenticate with AniList to edit your anime/manga entries. This will allow you to update your progress, scores, and status directly from Obsidian.';
-  message.style.textAlign = 'center';
-  message.style.marginBottom = '20px';
-  message.style.color = 'var(--text-muted)';
-  
+
+  // Feature list
   const featuresDiv = document.createElement('div');
-  featuresDiv.style.marginBottom = '20px';
-  
+  featuresDiv.className = 'zoro-auth-features';
+
   const featuresTitle = document.createElement('h4');
+  featuresTitle.className = 'zoro-auth-features-title';
   featuresTitle.textContent = 'Features after authentication:';
-  featuresTitle.style.marginBottom = '10px';
-  
+
   const featuresList = document.createElement('ul');
-  featuresList.style.textAlign = 'left';
-  featuresList.style.marginLeft = '20px';
-  
+  featuresList.className = 'zoro-auth-feature-list';
+
   const features = [
     'Edit progress, scores, and status',
     'Access private lists and profiles',
@@ -37,62 +42,63 @@ createAuthenticationPrompt() {
     'Auto-detect your username',
     'Real-time updates'
   ];
-  
+
   features.forEach(feature => {
     const li = document.createElement('li');
     li.textContent = feature;
-    li.style.marginBottom = '5px';
     featuresList.appendChild(li);
   });
-  
+
   featuresDiv.appendChild(featuresTitle);
   featuresDiv.appendChild(featuresList);
-  
+
+  // Buttons
   const buttonContainer = document.createElement('div');
-  buttonContainer.className = 'anilist-modal-buttons';
-  buttonContainer.style.marginTop = '20px';
-  buttonContainer.style.justifyContent = 'center';
-  
+  buttonContainer.className = 'zoro-modal-buttons';
+
   const authenticateBtn = document.createElement('button');
+  authenticateBtn.className = 'zoro-auth-button';
   authenticateBtn.textContent = '🔑 Authenticate with AniList';
-  authenticateBtn.style.marginRight = '10px';
-  authenticateBtn.style.padding = '10px 20px';
-  authenticateBtn.style.fontSize = '14px';
-  authenticateBtn.style.fontWeight = 'bold';
   authenticateBtn.onclick = () => {
-    // Close modal first
-    document.body.removeChild(modal);
-    
-    // Open plugin settings
+    closeModal();
     this.app.setting.open();
-    this.app.setting.openTabById('anilist-plugin');
-    
-    // Show notice
+    this.app.setting.openTabById(this.manifest.id);
     new Notice('📝 Please configure authentication in the plugin settings');
   };
-  
+
   const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'zoro-cancel-button';
   cancelBtn.textContent = 'Cancel';
-  cancelBtn.style.background = 'var(--background-secondary)';
-  cancelBtn.style.color = 'var(--text-normal)';
-  cancelBtn.onclick = () => {
-    document.body.removeChild(modal);
-  };
-  
+  cancelBtn.onclick = () => closeModal();
+
   buttonContainer.appendChild(authenticateBtn);
   buttonContainer.appendChild(cancelBtn);
-  
+
+  // Build modal
   content.appendChild(title);
   content.appendChild(message);
   content.appendChild(featuresDiv);
   content.appendChild(buttonContainer);
-  
+
   modal.appendChild(overlay);
   modal.appendChild(content);
-  
-  overlay.onclick = () => {
-    document.body.removeChild(modal);
-  };
-  
   document.body.appendChild(modal);
+
+  // Focus and Esc key handling
+  authenticateBtn.focus();
+  document.addEventListener('keydown', handleKeyDown);
+
+  overlay.onclick = closeModal;
+
+  function closeModal() {
+    if (modal.parentNode) modal.parentNode.removeChild(modal);
+    document.removeEventListener('keydown', handleKeyDown);
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeModal();
+    }
+  }
 }

@@ -2233,7 +2233,31 @@ type: stats
     }
   }
 
-} // FIXED: Closing brace for ZoroPlugin class
+} 
+
+
+ Add these classes after your main plugin class:
+
+class InstructionsModal extends Modal {
+  constructor(app, instructions, plugin) {
+    super(app);
+    this.instructions = instructions;
+    this.plugin = plugin;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.createEl('h2', { text: 'Instructions' });
+    contentEl.createEl('p', { text: this.instructions });
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
+
 
 // Manual Token Modal Class - FIXED: Now properly outside the main class
 class ManualTokenModal extends Modal {

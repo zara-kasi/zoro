@@ -75,44 +75,325 @@ async authenticateUser() {
   const authUrl = `https://anilist.co/api/v2/oauth/authorize?client_id=${this.settings.clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code`;
   
   new Notice('Opening AniList authentication page...', 3000);
-  window.open(authUrl, '_blank');
   
-  // Show clear instructions
-  new Notice('After authorizing, copy the PIN code and paste it in the next prompt.', 8000);
-  
-  // Give user time to complete auth
-  setTimeout(() => {
-    const code = prompt('Paste the PIN code from AniList here:');
-    if (code && code.trim()) {
-      this.exchangeCodeForToken(code.trim(), redirectUri);
+  try {
+    // Open the authentication URL
+    if (window.require) {
+      // If running in Electron (desktop app)
+      const { shell } = window.require('electron');
+      await shell.openExternal(authUrl);
+    } else {
+      // Fallback for web/mobile
+      window.open(authUrl, '_blank');
     }
-  }, 4000);
+    
+    // Show clear instructions
+    new Notice('After authorizing, copy the PIN code and paste it in the next prompt.', 8000);
+    
+    // Give user time to complete auth
+    setTimeout(() => {
+      const code = prompt('Paste the PIN code from AniList here:');
+      if (code && code.trim()) {
+        this.exchangeCodeForToken(code.trim(), redirectUri);
+      }
+    }, 4000);
+    
+  } catch (error) {
+    new Notice(`Error opening authentication page: ${error.message}`);
+  }
 }
 
 async exchangeCodeForToken(code, redirectUri) {
   try {
-    const response = await fetch('https://anilist.co/api/v2/oauth/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        client_id: this.settings.clientId,
-        client_secret: this.settings.clientSecret,
-        code: code,
-        redirect_uri: redirectUri,
-        grant_type: 'authorization_code'
-      })
-    });
+    const requestBody = {
+      grant_type: 'authorization_code',
+      client_id: this.settings.clientId,
+      client_secret: this.settings.clientSecret,
+      redirect_uri: redirectUri,
+      code: code
+    };
+
+    // Method 1: Try with proper headers and error handling
+    const response = await this.makeTokenRequest(requestBody);
     
-    const data = await response.json();
-    if (data.access_token) {
-      this.settings.accessToken = data.access_token;
+    if (response.access_token) {
+      this.settings.accessToken = response.access_token;
       await this.saveSettings();
       new Notice('✅ Successfully authenticated with AniList!');
+      
+      // Test the token by making a simple API call
+      await this.testAccessToken();
     } else {
-      throw new Error('Failed to get access token');
+      throw new Error('No access token received from AniList');
+    }
+    
+  } catch (error) {
+    console.error('Authentication error:', error);
+    new Notice(`❌ Authentication failed: ${error.message}`);
+    
+    // Provide troubleshooting tips
+    new Notice('💡 Try: 1) Check Client ID/Secret 2) Ensure PIN is correct 3) Try again', 8000);
+  }
+}
+
+async makeTokenRequest(requestBody) {
+  // Try multiple methods for better compatibility
+  
+  // Method 1: Standard fetch with proper headers
+  try {
+    const response = await fetch('https://anilist.co/api/v2/oauth/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'User-Agent': 'AniList-Obsidian-Plugin'
+      },
+      body: JSON.stringify(requestBody),
+      mode: 'cors'
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP ${response.status}: ${errorText}`);
+    }
+    
+    const data = await response.json();
+    return data;
+    
+  } catch (fetchError) {
+    console.warn('Standard fetch failed, trying alternative method:', fetchError);
+    
+    // Method 2: Try with Obsidian's requestUrl if available
+    if (this.app.vault.adapter && this.app.vault.adapter.requestUrl) {
+      try {
+        const response = await this.app.vault.adapter.requestUrl({
+          url: 'https://anilist.co/api/v2/oauth/token',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify(requestBody)
+        });
+        
+        return JSON.parse(response.text);
+        
+      } catch (obsidianError) {
+        console.warn('Obsidian requestUrl failed:', obsidianError);
+      }
+    }
+    
+    // Method 3: Try with XMLHttpRequest as fallback
+    try {
+      return await this.makeXHRTokenRequest(requestBody);
+    } catch (xhrError) {
+      console.warn('XHR request failed:', xhrError);
+      throw new Error(`All request methods failed. Last error: ${fetchError.message}`);
+    }
+  }
+}
+
+async makeXHRTokenRequest(requestBody) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    
+    xhr.open('POST', 'https://anilist.co/api/v2/oauth/token', true);
+    xhr.setRequestHeader('Content-Type', 'application/json');
+    xhr.setRequestHeader('Accept', 'application/json');
+    
+    xhr.onload = function() {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          const data = JSON.parse(xhr.responseText);
+          resolve(data);
+        } catch (parseError) {
+          reject(new Error(`Failed to parse response: ${parseError.message}`));
+        }
+      } else {
+        reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText}`));
+      }
+    };
+    
+    xhr.onerror = function() {
+      reject(new Error('Network error occurred'));
+    };
+    
+    xhr.ontimeout = function() {
+      reject(new Error('Request timed out'));
+    };
+    
+    xhr.timeout = 30000; // 30 second timeout
+    xhr.send(JSON.stringify(requestBody));
+  });
+}
+
+async testAccessToken() {
+  try {
+    const query = `
+      query {
+        Viewer {
+          id
+          name
+        }
+      }
+    `;
+    
+    const response = await fetch('https://graphql.anilist.co', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.settings.accessToken}`
+      },
+      body: JSON.stringify({ query })
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      if (data.data && data.data.Viewer) {
+        new Notice(`🎉 Welcome ${data.data.Viewer.name}! Authentication successful.`);
+      }
     }
   } catch (error) {
-    new Notice(`❌ Authentication failed: ${error.message}`);
+    console.warn('Token test failed:', error);
+    // Don't show error to user as main auth succeeded
+  }
+}
+
+// Enhanced fetchAniListData method with better error handling
+async fetchAniListData(config) {
+  const cacheKey = JSON.stringify(config);
+  const cached = this.cache.get(cacheKey);
+  
+  if (cached && Date.now() - cached.timestamp < this.cacheTimeout) {
+    return cached.data;
+  }
+  
+  let query, variables;
+  
+  if (config.type === 'stats') {
+    query = this.getUserStatsQuery();
+    variables = { username: config.username };
+  } else if (config.type === 'single') {
+    query = this.getSingleMediaQuery();
+    variables = { 
+      username: config.username, 
+      mediaId: parseInt(config.mediaId),
+      type: config.mediaType
+    };
+  } else if (config.type === 'search') {
+    query = this.getSearchMediaQuery();
+    variables = { 
+      search: config.search,
+      type: config.mediaType,
+      page: config.page || 1,
+      perPage: config.perPage || 20
+    };
+  } else {
+    query = this.getMediaListQuery();
+    variables = { 
+      username: config.username, 
+      status: config.listType,
+      type: config.mediaType || 'ANIME'
+    };
+  }
+  
+  try {
+    const headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    };
+    
+    // Add authorization header if we have an access token
+    if (this.settings.accessToken) {
+      headers['Authorization'] = `Bearer ${this.settings.accessToken}`;
+    }
+    
+    const response = await fetch('https://graphql.anilist.co', {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify({ query, variables })
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`API Error ${response.status}: ${errorText}`);
+    }
+    
+    const result = await response.json();
+    
+    if (result.errors) {
+      // Handle specific error cases
+      if (result.errors[0].message.includes('Private')) {
+        throw new Error('This user\'s list is private. Please make sure your AniList profile is public.');
+      }
+      throw new Error(result.errors[0].message);
+    }
+    
+    this.cache.set(cacheKey, {
+      data: result.data,
+      timestamp: Date.now()
+    });
+    
+    return result.data;
+    
+  } catch (error) {
+    console.error('API request failed:', error);
+    throw error;
+  }
+}
+
+// Method to update media list entries (requires authentication)
+async updateMediaListEntry(mediaId, updates) {
+  if (!this.settings.accessToken) {
+    throw new Error('Authentication required to update entries');
+  }
+  
+  const mutation = `
+    mutation ($mediaId: Int, $status: MediaListStatus, $score: Float, $progress: Int) {
+      SaveMediaListEntry(mediaId: $mediaId, status: $status, score: $score, progress: $progress) {
+        id
+        status
+        score
+        progress
+      }
+    }
+  `;
+  
+  const variables = {
+    mediaId: mediaId,
+    status: updates.status,
+    score: updates.score,
+    progress: updates.progress
+  };
+  
+  try {
+    const response = await fetch('https://graphql.anilist.co', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.settings.accessToken}`
+      },
+      body: JSON.stringify({ query: mutation, variables })
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Failed to update entry: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    
+    if (result.errors) {
+      throw new Error(result.errors[0].message);
+    }
+    
+    // Clear cache to force refresh
+    this.cache.clear();
+    
+    return result.data.SaveMediaListEntry;
+    
+  } catch (error) {
+    console.error('Update failed:', error);
+    throw error;
   }
 }
 

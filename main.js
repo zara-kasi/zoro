@@ -1277,8 +1277,6 @@ class InstructionsModal extends Modal {
     const { contentEl } = this;
     contentEl.empty();
   }
-}
-
 
 
   // RENAMED from renderAniListData to renderZoroData

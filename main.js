@@ -1,230 +1,241 @@
-const { Plugin, PluginSettingTab, Setting, Notice } = require('obsidian');
+const { Plugin, PluginSettingTab, Setting, Notice, requestUrl } = require('obsidian');
 
-// plugin Class 
+// Default settings constant
+const DEFAULT_SETTINGS = {
+  defaultUsername: '',
+  defaultLayout: 'card',
+  showCoverImages: true,
+  showRatings: true,
+  showProgress: true,
+  showGenres: true,
+  gridColumns: 3,
+  clientId: '',
+  clientSecret: '',
+  redirectUri: 'https://anilist.co/api/v2/oauth/pin',
+  accessToken: '',
+};
+
+// Plugin Class 
 class ZoroPlugin extends Plugin { 
 
-// Constructor 
-constructor(app, manifest) {
-  super(app, manifest);
+  // Constructor 
+  constructor(app, manifest) {
+    super(app, manifest);
 
-  // In-memory cache with timeout enforcement
-  this.cache = new Map();
-  this.cacheTimeout = 5 * 60 * 1000;
+    // In-memory cache with timeout enforcement
+    this.cache = new Map();
+    this.cacheTimeout = 5 * 60 * 1000;
 
-  this.getFromCache = (key) => {
-    const entry = this.cache.get(key);
-    if (!entry) return null;
+    this.getFromCache = (key) => {
+      const entry = this.cache.get(key);
+      if (!entry) return null;
 
-    const { value, timestamp } = entry;
-    if ((Date.now() - timestamp) > this.cacheTimeout) {
-      this.cache.delete(key);
-      return null;
-    }
-    return value;
-  };
+      const { value, timestamp } = entry;
+      if ((Date.now() - timestamp) > this.cacheTimeout) {
+        this.cache.delete(key);
+        return null;
+      }
+      return value;
+    };
 
-  this.setToCache = (key, value) => {
-    this.cache.set(key, {
-      value,
-      timestamp: Date.now()
-    });
-  };
-} 
+    this.setToCache = (key, value) => {
+      this.cache.set(key, {
+        value,
+        timestamp: Date.now()
+      });
+    };
+  } 
 
   // On Load
-
   async onload() {
-  console.log('[Zoro] Plugin loading...');
+    console.log('[Zoro] Plugin loading...');
 
-  // Load settings
-  try {
-    await this.loadSettings();
-    console.log('[Zoro] Settings loaded.');
-  } catch (err) {
-    console.error('[Zoro] Failed to load settings:', err);
-  }
+    // Load settings
+    try {
+      await this.loadSettings();
+      console.log('[Zoro] Settings loaded.');
+    } catch (err) {
+      console.error('[Zoro] Failed to load settings:', err);
+    }
 
-  // Inject custom CSS
-  try {
-    this.injectCSS();
-    console.log('[Zoro] CSS injected.');
-  } catch (err) {
-    console.error('[Zoro] Failed to inject CSS:', err);
-  }
+    // Inject custom CSS
+    try {
+      this.injectCSS();
+      console.log('[Zoro] CSS injected.');
+    } catch (err) {
+      console.error('[Zoro] Failed to inject CSS:', err);
+    }
 
-  // Register Markdown code block processors
-  this.registerMarkdownCodeBlockProcessor('zoro', this.processZoroCodeBlock.bind(this));
-  this.registerMarkdownCodeBlockProcessor('zoro-search', this.processZoroSearchCodeBlock.bind(this));
+    // Register Markdown code block processors
+    this.registerMarkdownCodeBlockProcessor('zoro', this.processZoroCodeBlock.bind(this));
+    this.registerMarkdownCodeBlockProcessor('zoro-search', this.processZoroSearchCodeBlock.bind(this));
 
-  // Process inline links (e.g., [[Zoro:ID]])
-  this.registerMarkdownPostProcessor(this.processInlineLinks.bind(this));
+    // Process inline links (e.g., [[Zoro:ID]])
+    this.registerMarkdownPostProcessor(this.processInlineLinks.bind(this));
 
-  // Add plugin settings tab
-  this.addSettingTab(new ZoroSettingTab(this.app, this));
+    // Add plugin settings tab
+    this.addSettingTab(new ZoroSettingTab(this.app, this));
 
-  console.log('[Zoro] Plugin loaded successfully.');
+    console.log('[Zoro] Plugin loaded successfully.');
   }
 
   // Load settings 
-
   async loadSettings() {
-  const saved = await this.loadData();
-  this.settings = this.validateSettings(saved);
-}
-
-// Validate Settings 
-  
-validateSettings(settings) {
-  return {
-    defaultUsername: typeof settings?.defaultUsername === 'string' ? settings.defaultUsername : '',
-    defaultLayout: ['card', 'list'].includes(settings?.defaultLayout) ? settings.defaultLayout : 'card',
-    showCoverImages: !!settings?.showCoverImages,
-    showRatings: !!settings?.showRatings,
-    showProgress: !!settings?.showProgress,
-    showGenres: !!settings?.showGenres,
-    gridColumns: Number.isInteger(settings?.gridColumns) ? settings.gridColumns : 3,
-    clientId: typeof settings?.clientId === 'string' ? settings.clientId : '',
-    clientSecret: typeof settings?.clientSecret === 'string' ? settings.clientSecret : '',
-    redirectUri: typeof settings?.redirectUri === 'string' ? settings.redirectUri : DEFAULT_SETTINGS.redirectUri,
-    accessToken: typeof settings?.accessToken === 'string' ? settings.accessToken : '',
-  };
-}
-
-async saveSettings() {
-  try {
-    const validSettings = this.validateSettings(this.settings);
-    await this.saveData(validSettings);
-    console.log('[Zoro] Settings saved successfully.');
-  } catch (err) {
-    console.error('[Zoro] Failed to save settings:', err);
-    new Notice('⚠️ Failed to save settings. See console for details.');
-  }
-}
-
-
-
-
-
-// For User Authentication 
-
-async authenticateUser() {
-  const clientId = this.settings.clientId;
-  const redirectUri = this.settings.redirectUri || 'https://anilist.co/api/v2/oauth/pin';
-
-  if (!clientId) {
-    new Notice('❌ Please set your Client ID in plugin settings first.', 5000);
-    return;
+    const saved = await this.loadData();
+    this.settings = this.validateSettings(saved);
   }
 
-  const authUrl = `https://anilist.co/api/v2/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code`;
+  // Validate Settings 
+  validateSettings(settings) {
+    return {
+      defaultUsername: typeof settings?.defaultUsername === 'string' ? settings.defaultUsername : '',
+      defaultLayout: ['card', 'list'].includes(settings?.defaultLayout) ? settings.defaultLayout : 'card',
+      showCoverImages: !!settings?.showCoverImages,
+      showRatings: !!settings?.showRatings,
+      showProgress: !!settings?.showProgress,
+      showGenres: !!settings?.showGenres,
+      gridColumns: Number.isInteger(settings?.gridColumns) ? settings.gridColumns : 3,
+      clientId: typeof settings?.clientId === 'string' ? settings.clientId : '',
+      clientSecret: typeof settings?.clientSecret === 'string' ? settings.clientSecret : '',
+      redirectUri: typeof settings?.redirectUri === 'string' ? settings.redirectUri : DEFAULT_SETTINGS.redirectUri,
+      accessToken: typeof settings?.accessToken === 'string' ? settings.accessToken : '',
+    };
+  }
 
-  try {
-    new Notice('🔐 Opening AniList login page...', 3000);
-
-    if (window.require) {
-      const { shell } = window.require('electron');
-      await shell.openExternal(authUrl);
-    } else {
-      window.open(authUrl, '_blank');
+  async saveSettings() {
+    try {
+      const validSettings = this.validateSettings(this.settings);
+      await this.saveData(validSettings);
+      console.log('[Zoro] Settings saved successfully.');
+    } catch (err) {
+      console.error('[Zoro] Failed to save settings:', err);
+      new Notice('⚠️ Failed to save settings. See console for details.');
     }
+  }
 
-    const code = await this.promptForCode('Paste the PIN code from AniList:');
+  // For User Authentication 
+  async authenticateUser() {
+    const clientId = this.settings.clientId;
+    const redirectUri = this.settings.redirectUri || 'https://anilist.co/api/v2/oauth/pin';
 
-    if (!code || !code.trim()) {
-      new Notice('⚠️ No code entered. Authentication cancelled.', 4000);
+    if (!clientId) {
+      new Notice('❌ Please set your Client ID in plugin settings first.', 5000);
       return;
     }
 
-    await this.exchangeCodeForToken(code.trim(), redirectUri);
-    new Notice('✅ Authenticated successfully.', 4000);
-  } catch (error) {
-    console.error('[Zoro] Authentication failed:', error);
-    new Notice(`❌ Authentication error: ${error.message}`, 5000);
+    // Check if already authenticated
+    if (this.settings.accessToken) {
+      const reuse = confirm('Do you want to re-authenticate?');
+      if (!reuse) return;
+    }
+
+    const authUrl = `https://anilist.co/api/v2/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code`;
+
+    try {
+      new Notice('🔐 Opening authentication page...', 3000);
+
+      if (window.require) {
+        const { shell } = window.require('electron');
+        await shell.openExternal(authUrl);
+      } else {
+        window.open(authUrl, '_blank');
+      }
+
+      const code = await this.promptForCode('Paste the PIN code from the authentication page:');
+
+      if (!code || !code.trim()) {
+        new Notice('⚠️ No code entered. Authentication cancelled.', 4000);
+        return;
+      }
+
+      await this.exchangeCodeForToken(code.trim(), redirectUri);
+      new Notice('✅ Authenticated successfully.', 4000);
+    } catch (error) {
+      console.error('[Zoro] Authentication failed:', error);
+      new Notice(`❌ Authentication error: ${error.message}`, 5000);
+    }
   }
-}
 
-async promptForCode(message) {
-  return new Promise((resolve) => {
-    const code = prompt(message);
-    resolve(code);
-  });
-}
+  async promptForCode(message) {
+    return new Promise((resolve) => {
+      const code = prompt(message);
+      resolve(code);
+    });
+  }
 
-if (this.settings.accessToken) {
-  const reuse = confirm('Do you want to re-authenticate?');
-  if (!reuse) return;
-}
+  // Exchange code for token 
+  async exchangeCodeForToken(code, redirectUri) {
+    const clientId = this.settings.clientId;
+    const clientSecret = this.settings.clientSecret;
 
-/// Exchange code for token 
-
-async exchangeCodeForToken(code, redirectUri) {
-  const clientId = this.settings.clientId;
-  const clientSecret = this.settings.clientSecret;
-
-  const body = new URLSearchParams({
-    grant_type: 'authorization_code',
-    code,
-    client_id: clientId,
-    client_secret: clientSecret || '', // optional but safe
-    redirect_uri: redirectUri,
-  });
-
-  const headers = {
-    'Content-Type': 'application/x-www-form-urlencoded',
-    'Accept': 'application/json',
-  };
-
-  try {
-    const response = await requestUrl({
-      url: 'https://anilist.co/api/v2/oauth/token',
-      method: 'POST',
-      headers,
-      body: body.toString(),
+    const body = new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      client_id: clientId,
+      client_secret: clientSecret || '', // optional but safe
+      redirect_uri: redirectUri,
     });
 
-    const data = response?.json;
+    const headers = {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json',
+    };
 
-    if (!data || typeof data !== 'object') {
-      console.error('[Zoro] Unexpected response from AniList:', response);
-      throw new Error('⚠️ Invalid response from AniList.');
+    try {
+      const response = await requestUrl({
+        url: 'https://anilist.co/api/v2/oauth/token',
+        method: 'POST',
+        headers,
+        body: body.toString(),
+      });
+
+      const data = response?.json;
+
+      if (!data || typeof data !== 'object') {
+        console.error('[Zoro] Unexpected response from server:', response);
+        throw new Error('⚠️ Invalid response from server.');
+      }
+
+      if (!data.access_token) {
+        throw new Error(data.error_description || '❌ No access token returned by server.');
+      }
+
+      // Store auth details
+      this.settings.accessToken = data.access_token;
+
+      // Optional but recommended fields
+      if (data.refresh_token) {
+        this.settings.refreshToken = data.refresh_token;
+      }
+
+      if (data.expires_in) {
+        this.settings.tokenExpiry = Date.now() + (data.expires_in * 1000);
+      }
+
+      await this.saveSettings();
+
+      new Notice('✅ Successfully authenticated with the service!', 4000);
+
+      // Optional sanity check
+      if (this.testAccessToken) {
+        await this.testAccessToken();
+      }
+
+    } catch (err) {
+      console.error('[Zoro] Authentication error:', err);
+      new Notice(`❌ Authentication failed: ${err.message}`, 5000);
+      if (this.showManualTokenOption) {
+        this.showManualTokenOption(); // optional UI fallback
+      }
     }
-
-    if (!data.access_token) {
-      throw new Error(data.error_description || '❌ No access token returned by AniList.');
-    }
-
-    // Store auth details
-    this.settings.accessToken = data.access_token;
-
-    // Optional but recommended fields
-    if (data.refresh_token) {
-      this.settings.refreshToken = data.refresh_token;
-    }
-
-    if (data.expires_in) {
-      this.settings.tokenExpiry = Date.now() + (data.expires_in * 1000);
-    }
-
-    await this.saveSettings();
-
-    new Notice('✅ Successfully authenticated with AniList!', 4000);
-
-    // Optional sanity check
-    await this.testAccessToken?.();
-
-  } catch (err) {
-    console.error('[Zoro] Authentication error:', err);
-    new Notice(`❌ Authentication failed: ${err.message}`, 5000);
-    this.showManualTokenOption?.(); // optional UI fallback
   }
 
+  isTokenExpired() {
+    const expiry = this.settings.tokenExpiry;
+    return !expiry || Date.now() >= expiry;
+  }
 }
 
-
-isTokenExpired() {
-  const expiry = this.settings.tokenExpiry;
-  return !expiry || Date.now() >= expiry;
-}
 
 /// Make Obsidian Request 
 

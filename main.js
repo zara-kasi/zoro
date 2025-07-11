@@ -2263,7 +2263,10 @@ type: stats
 
     el.appendChild(wrapper);
   }
+  }
+    
 
+    
   // Plugin unload method
   onunload() {
     console.log('Unloading Zoro Plugin');

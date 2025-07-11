@@ -1,0 +1,274 @@
+renderMediaList(el, entries, config) {
+    const gridDiv = document.createElement('div');
+    gridDiv.className = 'anilist-cards-grid';
+    gridDiv.style.setProperty('--anilist-grid-columns', this.settings.gridColumns);
+    
+    entries.forEach(entry => {
+      const media = entry.media;
+      const title = media.title.english || media.title.romaji;
+      
+      const cardDiv = document.createElement('div');
+      cardDiv.className = 'anilist-card';
+      
+      if (this.settings.showCoverImages) {
+        const img = document.createElement('img');
+        img.src = media.coverImage.large;
+        img.alt = title;
+        img.className = 'media-cover';
+        cardDiv.appendChild(img);
+      }
+      
+      const mediaInfoDiv = document.createElement('div');
+      mediaInfoDiv.className = 'media-info';
+      
+      // Create clickable title
+      const titleElement = document.createElement('h4');
+      const titleLink = document.createElement('a');
+      titleLink.href = this.getAniListUrl(media.id, config.mediaType);
+      titleLink.target = '_blank';
+      titleLink.rel = 'noopener noreferrer';
+      titleLink.className = 'anilist-title-link';
+      titleLink.textContent = title;
+      titleElement.appendChild(titleLink);
+      mediaInfoDiv.appendChild(titleElement);
+      
+      // Create details div
+      const detailsDiv = document.createElement('div');
+      detailsDiv.className = 'media-details';
+      
+      // Format badge
+      if (media.format) {
+        const formatBadge = document.createElement('span');
+        formatBadge.className = 'format-badge';
+        formatBadge.textContent = media.format;
+        detailsDiv.appendChild(formatBadge);
+      }
+
+
+// status badge as a customisation panel button 
+
+const statusBadge = document.createElement('span');
+statusBadge.className = `status-badge status-${entry.status.toLowerCase()}`;
+statusBadge.textContent = entry.status;
+
+// Always make it clickable to show authentication prompt
+statusBadge.className += ' clickable-status';
+statusBadge.style.cursor = 'pointer';
+
+if (this.settings.accessToken) {
+  statusBadge.title = 'Click to edit';
+  statusBadge.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    this.createEditModal(entry, 
+      async (updates) => {
+        try {
+          await this.updateMediaListEntry(entry.media.id, updates);
+          new Notice('✅ Updated successfully!');
+          // Clear cache to force refresh
+          this.cache.clear();
+          // Refresh the current view
+          const currentEl = statusBadge.closest('.anilist-container');
+          if (currentEl) {
+            // Re-render the current block
+            const codeBlock = statusBadge.closest('.markdown-rendered').querySelector('code');
+            if (codeBlock) {
+              this.processAniListCodeBlock(codeBlock.textContent, currentEl, {});
+            }
+          }
+        } catch (error) {
+          new Notice(`❌ Update failed: ${error.message}`);
+        }
+      },
+      () => {
+        // Cancel - do nothing
+      }
+    );
+  };
+} else {
+  statusBadge.title = 'Click to authenticate';
+  statusBadge.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    this.createAuthenticationPrompt();
+  };
+}
+
+detailsDiv.appendChild(statusBadge);
+      
+
+// css for badge
+
+const additionalCSS = `
+.anilist-edit-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.anilist-modal-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+.anilist-modal-content {
+  background: var(--background-primary);
+  border-radius: 8px;
+  padding: 20px;
+  max-width: 400px;
+  width: 90%;
+  position: relative;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.anilist-modal-content.auth-prompt {
+  max-width: 500px;
+}
+
+.anilist-modal-content h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  color: var(--text-normal);
+}
+
+.anilist-modal-content h4 {
+  margin-bottom: 10px;
+  color: var(--text-normal);
+}
+
+.anilist-modal-content p {
+  color: var(--text-normal);
+  line-height: 1.5;
+}
+
+.anilist-modal-content ul {
+  color: var(--text-normal);
+}
+
+.anilist-modal-content label {
+  color: var(--text-normal);
+  font-weight: 500;
+}
+
+.anilist-modal-content input,
+.anilist-modal-content select {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  padding: 5px 8px;
+  color: var(--text-normal);
+}
+
+.quick-progress-buttons button {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 4px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.quick-progress-buttons button:hover {
+  background: var(--interactive-accent-hover);
+}
+
+.anilist-modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.anilist-modal-buttons button {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 4px;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+.anilist-modal-buttons button:hover {
+  background: var(--interactive-accent-hover);
+}
+
+.clickable-status {
+  transition: all 0.2s ease;
+}
+
+.clickable-status:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Authentication prompt specific styles */
+.auth-prompt .anilist-modal-buttons {
+  justify-content: center;
+}
+
+.auth-prompt .anilist-modal-buttons button:first-child {
+  background: linear-gradient(45deg, #02A9FF, #3B82F6);
+  position: relative;
+  overflow: hidden;
+}
+
+.auth-prompt .anilist-modal-buttons button:first-child:hover {
+  background: linear-gradient(45deg, #0284C7, #2563EB);
+  transform: translateY(-1px);
+}
+
+.auth-prompt .anilist-modal-buttons button:first-child:active {
+  transform: translateY(0);
+}
+`;
+
+
+
+      
+      if (this.settings.showProgress) {
+        const progressSpan = document.createElement('span');
+        progressSpan.className = 'progress';
+        progressSpan.textContent = `${entry.progress}/${media.episodes || media.chapters || '?'}`;
+        detailsDiv.appendChild(progressSpan);
+      }
+      
+      if (this.settings.showRatings && entry.score) {
+        const scoreSpan = document.createElement('span');
+        scoreSpan.className = 'score';
+        scoreSpan.textContent = `★ ${entry.score}`;
+        detailsDiv.appendChild(scoreSpan);
+      }
+      
+      mediaInfoDiv.appendChild(detailsDiv);
+      
+      // Create genres div
+      if (this.settings.showGenres) {
+        const genresDiv = document.createElement('div');
+        genresDiv.className = 'genres';
+        media.genres.slice(0, 3).forEach(genre => {
+          const genreTag = document.createElement('span');
+          genreTag.className = 'genre-tag';
+          genreTag.textContent = genre;
+          genresDiv.appendChild(genreTag);
+        });
+        mediaInfoDiv.appendChild(genresDiv);
+      }
+      
+      cardDiv.appendChild(mediaInfoDiv);
+      gridDiv.appendChild(cardDiv);
+    });
+    
+    el.appendChild(gridDiv);
+  }

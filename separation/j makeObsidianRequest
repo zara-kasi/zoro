@@ -1,42 +1,33 @@
 async makeObsidianRequest(code, redirectUri) {
-  const requestBody = {
+  const body = new URLSearchParams({
     grant_type: 'authorization_code',
     client_id: this.settings.clientId,
-    client_secret: this.settings.clientSecret,
+    client_secret: this.settings.clientSecret || '',
     redirect_uri: redirectUri,
     code: code
+  });
+
+  const headers = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+    'Accept': 'application/json',
   };
 
-  // Method 1: Try Obsidian's requestUrl (most reliable)
   try {
-    const response = await window.requestUrl({
+    const response = await requestUrl({
       url: 'https://anilist.co/api/v2/oauth/token',
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify(requestBody)
+      headers,
+      body: body.toString()
     });
-    
-    return JSON.parse(response.text);
-  } catch (obsidianError) {
-    console.warn('Obsidian requestUrl failed:', obsidianError);
-  }
 
-  // Method 2: Try Node.js https module (if available)
-  try {
-    return await this.makeNodeRequest(requestBody);
-  } catch (nodeError) {
-    console.warn('Node.js request failed:', nodeError);
-  }
+    if (!response || typeof response.json !== 'object') {
+      throw new Error('Invalid response structure from AniList.');
+    }
 
-  // Method 3: Try electron net module (if available)
-  try {
-    return await this.makeElectronRequest(requestBody);
-  } catch (electronError) {
-    console.warn('Electron request failed:', electronError);
-  }
+    return response.json;
 
-  throw new Error('All request methods failed. Try manual token input.');
+  } catch (err) {
+    console.error('[Zoro] Obsidian requestUrl failed:', err);
+    throw new Error('Failed to authenticate with AniList via Obsidian requestUrl.');
+  }
 }

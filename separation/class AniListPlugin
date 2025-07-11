@@ -1,0 +1,6 @@
+class AniListPlugin extends Plugin { // ....
+}
+
+module.exports = {
+  default: AniListPlugin
+};

@@ -376,44 +376,6 @@ class ZoroPlugin extends Plugin {
     }
   }
 
-// MISSING IMPORTS - Add these at the top of your file:
-// import { Plugin, Modal, Notice, requestUrl } from 'obsidian';
-
-// MISSING DEFAULT SETTINGS - Add this before the main class:
-// const DEFAULT_SETTINGS = {
-//   accessToken: '',
-//   defaultUsername: '',
-//   defaultLayout: 'card',
-//   cacheTimeout: 300000,
-//   debugMode: false
-// };
-
-// Main Plugin Class - FIXED: Properly extends Plugin
-class ZoroPlugin extends Plugin {
-  
-  // MISSING CONSTRUCTOR - Add this method:
-  // constructor(app, manifest) {
-  //   super(app, manifest);
-  //   this.cache = new Map();
-  //   this.cacheTimeout = 300000; // 5 minutes
-  // }
-
-  // MISSING ONLOAD METHOD - Add this method:
-  // async onload() {
-  //   await this.loadSettings();
-  //   this.injectCSS();
-  //   this.registerMarkdownCodeBlockProcessor('zoro', this.processZoroCodeBlock.bind(this));
-  //   this.registerMarkdownCodeBlockProcessor('zoro-search', this.processZoroSearchCodeBlock.bind(this));
-  //   this.registerMarkdownPostProcessor(this.processInlineLinks.bind(this));
-  // }
-
-  // MISSING LOADSETTINGS AND SAVESETTINGS METHODS - Add these:
-  // async loadSettings() {
-  //   this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
-  // }
-  // async saveSettings() {
-  //   await this.saveData(this.settings);
-  // }
 
   // Fetch Zoro Data - FIXED: Now properly inside the class
   async fetchZoroData(config) {

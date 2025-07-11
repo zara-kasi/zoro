@@ -1,0 +1,63 @@
+renderSearchInterface(el, config) {
+    el.empty();
+    el.className = 'anilist-search-container';
+    
+    // Create search input
+    const searchDiv = document.createElement('div');
+    searchDiv.className = 'anilist-search-input-container';
+    
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'anilist-search-input';
+    searchInput.placeholder = config.mediaType === 'ANIME' ? 'Search anime...' : 'Search manga...';
+    
+    
+    searchDiv.appendChild(searchInput);
+    el.appendChild(searchDiv);
+    
+    // Create results container
+    const resultsDiv = document.createElement('div');
+    resultsDiv.className = 'anilist-search-results';
+    el.appendChild(resultsDiv);
+    
+    // Add event listeners
+    let searchTimeout;
+    
+    const performSearch = async () => {
+      const searchTerm = searchInput.value.trim();
+      
+      if (searchTerm.length < 3) {
+        resultsDiv.innerHTML = '<div class="anilist-search-message">Type at least 3 characters to search...</div>';
+        return;
+      }
+      
+      try {
+        resultsDiv.innerHTML = '<div class="anilist-search-loading">Searching...</div>';
+        
+        const searchConfig = {
+          ...config,
+          search: searchTerm,
+          page: 1,
+          perPage: 20
+        };
+        
+        const data = await this.fetchAniListData(searchConfig);
+        this.renderSearchResults(resultsDiv, data.Page.media, config);
+        
+      } catch (error) {
+        this.renderError(resultsDiv, error.message);
+      }
+    };
+    
+    searchInput.addEventListener('input', () => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(performSearch, 300);
+    });
+    
+    
+    searchInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        performSearch();
+      }
+    });
+  }

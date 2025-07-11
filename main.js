@@ -1279,61 +1279,6 @@ class InstructionsModal extends Modal {
   }
 }
 
-// Manual Token Modal Class - FIXED: Now properly outside the main class
-class ManualTokenModal extends Modal {
-  constructor(app, plugin) {
-    super(app);
-    this.plugin = plugin;
-  }
-
-  onOpen() {
-    const { contentEl } = this;
-
-    contentEl.createEl('h3', { text: 'Paste Access Token' });
-
-    const input = contentEl.createEl('textarea', {
-      cls: 'zoro-token-input-area',
-      placeholder: 'Paste your access token here...',
-    });
-
-    input.style.width = '100%';
-    input.style.minHeight = '80px';
-    input.style.marginTop = '10px';
-
-    const btnContainer = contentEl.createDiv({ cls: 'modal-button-row' });
-
-    const saveBtn = btnContainer.createEl('button', { text: 'Save Token' });
-    saveBtn.onclick = async () => {
-      const token = input.value.trim();
-
-      if (!token) {
-        new Notice('⚠️ Please enter a valid token.');
-        return;
-      }
-
-      try {
-        this.plugin.settings.accessToken = token;
-        await this.plugin.saveSettings();
-        if (this.plugin.testAccessToken) {
-          await this.plugin.testAccessToken();
-        }
-        new Notice('✅ Token saved and verified!');
-        this.close();
-      } catch (err) {
-        console.error('Token test failed:', err);
-        new Notice(`❌ Token invalid: ${err.message}`);
-      }
-    };
-
-    const cancelBtn = btnContainer.createEl('button', { text: 'Cancel' });
-    cancelBtn.onclick = () => this.close();
-  }
-
-  onClose() {
-    const { contentEl } = this;
-    contentEl.empty();
-  }
-}
 
 
   // RENAMED from renderAniListData to renderZoroData
@@ -2281,6 +2226,63 @@ type: stats
   }
 
 } // FIXED: Closing brace for ZoroPlugin class
+
+// Manual Token Modal Class - FIXED: Now properly outside the main class
+class ManualTokenModal extends Modal {
+  constructor(app, plugin) {
+    super(app);
+    this.plugin = plugin;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+
+    contentEl.createEl('h3', { text: 'Paste Access Token' });
+
+    const input = contentEl.createEl('textarea', {
+      cls: 'zoro-token-input-area',
+      placeholder: 'Paste your access token here...',
+    });
+
+    input.style.width = '100%';
+    input.style.minHeight = '80px';
+    input.style.marginTop = '10px';
+
+    const btnContainer = contentEl.createDiv({ cls: 'modal-button-row' });
+
+    const saveBtn = btnContainer.createEl('button', { text: 'Save Token' });
+    saveBtn.onclick = async () => {
+      const token = input.value.trim();
+
+      if (!token) {
+        new Notice('⚠️ Please enter a valid token.');
+        return;
+      }
+
+      try {
+        this.plugin.settings.accessToken = token;
+        await this.plugin.saveSettings();
+        if (this.plugin.testAccessToken) {
+          await this.plugin.testAccessToken();
+        }
+        new Notice('✅ Token saved and verified!');
+        this.close();
+      } catch (err) {
+        console.error('Token test failed:', err);
+        new Notice(`❌ Token invalid: ${err.message}`);
+      }
+    };
+
+    const cancelBtn = btnContainer.createEl('button', { text: 'Cancel' });
+    cancelBtn.onclick = () => this.close();
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
 
 // Settings Menu 
 class ZoroSettingTab extends PluginSettingTab { 

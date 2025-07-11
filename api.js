@@ -1,3 +1,4 @@
+// AniList GraphQL fetch logic
 async function fetchAniListData(config) {
   const key = JSON.stringify(config);
   const cached = this.cache.get(key);

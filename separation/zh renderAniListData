@@ -1,6 +1,6 @@
 renderAniListData(el, data, config) {
   el.empty();
-  el.className = 'anilist-container';
+  el.className = 'zoro-container';
 
   try {
     if (config.type === 'stats') {

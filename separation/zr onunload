@@ -1,0 +1,10 @@
+onunload() {
+  console.log('Unloading AniList Plugin');
+  
+  // Remove injected CSS
+  const styleId = 'anilist-plugin-styles';
+  const existingStyle = document.getElementById(styleId);
+  if (existingStyle) {
+    existingStyle.remove();
+  }
+}

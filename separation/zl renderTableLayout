@@ -1,0 +1,95 @@
+renderTableLayout(el, entries) {
+    const table = document.createElement('table');
+    table.className = 'anilist-table';
+    
+    // Create header
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    
+    const titleHeader = document.createElement('th');
+    titleHeader.textContent = 'Title';
+    headerRow.appendChild(titleHeader);
+    
+    const formatHeader = document.createElement('th');
+    formatHeader.textContent = 'Format';
+    headerRow.appendChild(formatHeader);
+    
+    const statusHeader = document.createElement('th');
+    statusHeader.textContent = 'Status';
+    headerRow.appendChild(statusHeader);
+    
+    if (this.settings.showProgress) {
+      const progressHeader = document.createElement('th');
+      progressHeader.textContent = 'Progress';
+      headerRow.appendChild(progressHeader);
+    }
+    
+    if (this.settings.showRatings) {
+      const scoreHeader = document.createElement('th');
+      scoreHeader.textContent = 'Score';
+      headerRow.appendChild(scoreHeader);
+    }
+    
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+    
+    // Create body
+    const tbody = document.createElement('tbody');
+    
+    entries.forEach(entry => {
+      const media = entry.media;
+      const title = media.title.english || media.title.romaji;
+      
+      const row = document.createElement('tr');
+      
+      // Title cell with clickable link
+      const titleCell = document.createElement('td');
+      const titleLink = document.createElement('a');
+      titleLink.href = this.getAniListUrl(media.id, config.mediaType);
+      titleLink.target = '_blank';
+      titleLink.rel = 'noopener noreferrer';
+      titleLink.className = 'anilist-title-link';
+      titleLink.textContent = title;
+      titleCell.appendChild(titleLink);
+      row.appendChild(titleCell);
+      
+      // Format cell
+      const formatCell = document.createElement('td');
+      if (media.format) {
+        const formatBadge = document.createElement('span');
+        formatBadge.className = 'format-badge';
+        formatBadge.textContent = media.format;
+        formatCell.appendChild(formatBadge);
+      } else {
+        formatCell.textContent = '-';
+      }
+      row.appendChild(formatCell);
+      
+      // Status cell
+      const statusCell = document.createElement('td');
+      const statusBadge = document.createElement('span');
+      statusBadge.className = `status-badge status-${entry.status.toLowerCase()}`;
+      statusBadge.textContent = entry.status;
+      statusCell.appendChild(statusBadge);
+      row.appendChild(statusCell);
+      
+      // Progress cell
+      if (this.settings.showProgress) {
+        const progressCell = document.createElement('td');
+        progressCell.textContent = `${entry.progress}/${media.episodes || media.chapters || '?'}`;
+        row.appendChild(progressCell);
+      }
+      
+      // Score cell
+      if (this.settings.showRatings) {
+        const scoreCell = document.createElement('td');
+        scoreCell.textContent = entry.score ? `★ ${entry.score}` : '-';
+        row.appendChild(scoreCell);
+      }
+      
+      tbody.appendChild(row);
+    });
+    
+    table.appendChild(tbody);
+    el.appendChild(table);
+  }

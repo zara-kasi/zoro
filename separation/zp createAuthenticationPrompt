@@ -1,0 +1,98 @@
+createAuthenticationPrompt() {
+  const modal = document.createElement('div');
+  modal.className = 'anilist-edit-modal';
+  
+  const overlay = document.createElement('div');
+  overlay.className = 'anilist-modal-overlay';
+  
+  const content = document.createElement('div');
+  content.className = 'anilist-modal-content auth-prompt';
+  
+  const title = document.createElement('h3');
+  title.textContent = '🔐 Authentication Required';
+  title.style.textAlign = 'center';
+  title.style.marginBottom = '20px';
+  
+  const message = document.createElement('p');
+  message.textContent = 'You need to authenticate with AniList to edit your anime/manga entries. This will allow you to update your progress, scores, and status directly from Obsidian.';
+  message.style.textAlign = 'center';
+  message.style.marginBottom = '20px';
+  message.style.color = 'var(--text-muted)';
+  
+  const featuresDiv = document.createElement('div');
+  featuresDiv.style.marginBottom = '20px';
+  
+  const featuresTitle = document.createElement('h4');
+  featuresTitle.textContent = 'Features after authentication:';
+  featuresTitle.style.marginBottom = '10px';
+  
+  const featuresList = document.createElement('ul');
+  featuresList.style.textAlign = 'left';
+  featuresList.style.marginLeft = '20px';
+  
+  const features = [
+    'Edit progress, scores, and status',
+    'Access private lists and profiles',
+    'Quick progress buttons (+1, -1, Complete)',
+    'Auto-detect your username',
+    'Real-time updates'
+  ];
+  
+  features.forEach(feature => {
+    const li = document.createElement('li');
+    li.textContent = feature;
+    li.style.marginBottom = '5px';
+    featuresList.appendChild(li);
+  });
+  
+  featuresDiv.appendChild(featuresTitle);
+  featuresDiv.appendChild(featuresList);
+  
+  const buttonContainer = document.createElement('div');
+  buttonContainer.className = 'anilist-modal-buttons';
+  buttonContainer.style.marginTop = '20px';
+  buttonContainer.style.justifyContent = 'center';
+  
+  const authenticateBtn = document.createElement('button');
+  authenticateBtn.textContent = '🔑 Authenticate with AniList';
+  authenticateBtn.style.marginRight = '10px';
+  authenticateBtn.style.padding = '10px 20px';
+  authenticateBtn.style.fontSize = '14px';
+  authenticateBtn.style.fontWeight = 'bold';
+  authenticateBtn.onclick = () => {
+    // Close modal first
+    document.body.removeChild(modal);
+    
+    // Open plugin settings
+    this.app.setting.open();
+    this.app.setting.openTabById('anilist-plugin');
+    
+    // Show notice
+    new Notice('📝 Please configure authentication in the plugin settings');
+  };
+  
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.style.background = 'var(--background-secondary)';
+  cancelBtn.style.color = 'var(--text-normal)';
+  cancelBtn.onclick = () => {
+    document.body.removeChild(modal);
+  };
+  
+  buttonContainer.appendChild(authenticateBtn);
+  buttonContainer.appendChild(cancelBtn);
+  
+  content.appendChild(title);
+  content.appendChild(message);
+  content.appendChild(featuresDiv);
+  content.appendChild(buttonContainer);
+  
+  modal.appendChild(overlay);
+  modal.appendChild(content);
+  
+  overlay.onclick = () => {
+    document.body.removeChild(modal);
+  };
+  
+  document.body.appendChild(modal);
+}

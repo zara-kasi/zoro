@@ -29,6 +29,7 @@ class ZoroPlugin extends Plugin {
     mediaData: new Map(),    // Individual media items
     searchResults: new Map() // Search queries
   };
+    this.requestQueue = new RequestQueue();
     this.cacheTimeout = 5 * 60 * 1000;
 
   // Add periodic pruning
@@ -130,9 +131,14 @@ setToCache(type, key, value) {
   async loadSettings() {
     const saved = await this.loadData();
     this.settings = this.validateSettings(saved);
-    const encryptedSecret = await this.app.vault.encrypt(this.settings.clientSecret);
-  // Save encryptedSecret instead of plain text
+    if (this.settings.clientSecret) {
+    this.settings.encryptedSecret = await this.app.vault.encrypt(
+      this.settings.clientSecret
+    );
   }
+  await this.saveData(this.settings);
+}
+
 
   // Validate Settings 
   validateSettings(settings) {
@@ -166,8 +172,7 @@ setToCache(type, key, value) {
   async authenticateUser() {
     const clientId = this.settings.clientId;
     const redirectUri = this.settings.redirectUri || 'https://anilist.co/api/v2/oauth/pin';
-    const authWindow = window.open(authUrl, '_blank', 'width=500,height=600');
-  
+    
 
     if (!clientId) {
       new Notice('❌ Please set your Client ID in plugin settings first.', 5000);
@@ -185,7 +190,8 @@ setToCache(type, key, value) {
     try {
       new Notice('🔐 Opening authentication page...', 3000);
 
-
+const authWindow = window.open(authUrl, '_blank', 'width=500,height=600');
+  
  window.addEventListener('message', this.handleAuthMessage.bind(this));
       
      // Implement handler
@@ -481,6 +487,39 @@ setToCache(type, key, value) {
     }
   }
 
+
+  // Rate limit 
+
+  class RequestQueue {
+  constructor() {
+    this.queue = [];
+    this.delay = 350; // ~170 requests/min (AniList limit: 90/min)
+    this.isProcessing = false;
+  }
+
+  async add(requestFn) {
+    return new Promise((resolve) => {
+      this.queue.push({ requestFn, resolve });
+      this.process();
+    });
+  }
+
+  async process() {
+    if (this.isProcessing || !this.queue.length) return;
+    
+    this.isProcessing = true;
+    const { requestFn, resolve } = this.queue.shift();
+    
+    try {
+      resolve(await requestFn());
+    } finally {
+      setTimeout(() => {
+        this.isProcessing = false;
+        this.process();
+      }, this.delay);
+    }
+  }
+}
 
 
   // Get Authenticated Username 
@@ -2340,7 +2379,7 @@ type: stats
  }
 
   
-  // Inject Css
+  // Inject Css not ok
   injectCSS() {
   const styleId = 'zoro-plugin-styles';
   const existingStyle = document.getElementById(styleId);

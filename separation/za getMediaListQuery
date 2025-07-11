@@ -1,44 +1,80 @@
-getMediaListQuery() {
-    return `
-      query ($username: String, $status: MediaListStatus, $type: MediaType) {
-        MediaListCollection(userName: $username, status: $status, type: $type) {
-          lists {
-            entries {
-              id
-              status
-              score
-              progress
-              media {
-                id
-                title {
-                  romaji
-                  english
-                  native
-                }
-                coverImage {
-                  large
-                  medium
-                }
-                episodes
-                chapters
-                genres
-                format
-                averageScore
-                status
-                startDate {
-                  year
-                  month
-                  day
-                }
-                endDate {
-                  year
-                  month
-                  day
-                }
-              }
+getMediaListQuery(layout = 'card') {
+  const baseFields = `
+    id
+    status
+    score
+    progress
+  `;
+
+  const mediaFields = {
+    compact: `
+      id
+      title {
+        romaji
+      }
+      coverImage {
+        medium
+      }
+    `,
+    card: `
+      id
+      title {
+        romaji
+        english
+        native
+      }
+      coverImage {
+        large
+        medium
+      }
+      format
+      averageScore
+      status
+    `,
+    full: `
+      id
+      title {
+        romaji
+        english
+        native
+      }
+      coverImage {
+        large
+        medium
+      }
+      episodes
+      chapters
+      genres
+      format
+      averageScore
+      status
+      startDate {
+        year
+        month
+        day
+      }
+      endDate {
+        year
+        month
+        day
+      }
+    `
+  };
+
+  const fields = mediaFields[layout] || mediaFields.card;
+
+  return `
+    query ($username: String, $status: MediaListStatus, $type: MediaType) {
+      MediaListCollection(userName: $username, status: $status, type: $type) {
+        lists {
+          entries {
+            ${baseFields}
+            media {
+              ${fields}
             }
           }
         }
       }
-    `;
-  }
+    }
+  `;
+}

@@ -154,7 +154,7 @@ async promptForCode(message) {
 }
 
 if (this.settings.accessToken) {
-  const reuse = confirm('You are already authenticated. Do you want to re-authenticate?');
+  const reuse = confirm('Do you want to re-authenticate?');
   if (!reuse) return;
 }
 

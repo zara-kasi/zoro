@@ -1230,7 +1230,6 @@ class ZoroPlugin extends Plugin {
       card.appendChild(info);
       grid.appendChild(card);
     });
-
     el.appendChild(grid);
   }
 

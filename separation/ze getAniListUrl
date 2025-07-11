@@ -1,0 +1,4 @@
+getAniListUrl(mediaId, mediaType = 'anime') {
+  const type = mediaType.toLowerCase();
+  return `https://anilist.co/${type}/${mediaId}`;
+}

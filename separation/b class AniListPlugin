@@ -1,6 +1,6 @@
-class AniListPlugin extends Plugin { // ....
+class ZoroPlugin extends Plugin { // ....
 }
 
 module.exports = {
-  default: AniListPlugin
+  default: ZoroPlugin
 };

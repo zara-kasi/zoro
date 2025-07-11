@@ -1,3 +1,4 @@
+// Rendering and CSS injection
 function renderAniListData(el, data, config) {
   el.empty();
   el.className = 'zoro-container';

@@ -1,3 +1,4 @@
+// Authentication & token exchange functions
 const { Notice } = require('obsidian');
 const { prompt } = window;
 

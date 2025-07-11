@@ -1,25 +1,17 @@
-class AniListSettingTab extends PluginSettingTab {
-  constructor(app, plugin) {
-    super(app, plugin);
-    this.plugin = plugin;
-  }
+class ZoroSettingTab extends PluginSettingTab { constructor(app, plugin) { super(app, plugin); this.plugin = plugin; }
 
-  display() {
-    const { containerEl } = this;
-    containerEl.empty();
+display() { const { containerEl } = this; containerEl.empty();
 
 new Setting(containerEl)
-    .setName('👤 Username')
-    .setDesc('Add your AniList username to view your lists and stats — just make sure your profile is public.')
-    .addText(text => text
-      .setPlaceholder('Enter your AniList username')
-      .setValue(this.plugin.settings.defaultUsername)
-      .onChange(async (value) => {
-        this.plugin.settings.defaultUsername = value.trim();
-        await this.plugin.saveSettings();
-      }));
-
-// Create two notes One for Manga and other for Anime using Code block 
+  .setName('👤 Username')
+  .setDesc('Add your Zoro username to view your lists and stats — just make sure your profile is public.')
+  .addText(text => text
+    .setPlaceholder('Enter your Zoro username')
+    .setValue(this.plugin.settings.defaultUsername)
+    .onChange(async (value) => {
+      this.plugin.settings.defaultUsername = value.trim();
+      await this.plugin.saveSettings();
+    }));
 
 new Setting(containerEl)
   .setName('➕ Sample Notes')
@@ -31,59 +23,59 @@ new Setting(containerEl)
       await this.plugin.createSampleNotes();
     }));
 
-    
-    new Setting(containerEl)
-      .setName('🧊 Layout')
-      .setDesc('Choose the default layout for media lists')
-      .addDropdown(dropdown => dropdown
-        .addOption('card', 'Card Layout')
-        .addOption('table', 'Table Layout')
-        .setValue(this.plugin.settings.defaultLayout)
-        .onChange(async (value) => {
-          this.plugin.settings.defaultLayout = value;
-          await this.plugin.saveSettings();
-        }));
-    
-    new Setting(containerEl)
-      .setName('🌆 Cover')
-      .setDesc('Display cover images for anime/manga')
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.showCoverImages)
-        .onChange(async (value) => {
-          this.plugin.settings.showCoverImages = value;
-          await this.plugin.saveSettings();
-        }));
-    
-    new Setting(containerEl)
-      .setName('⭐ Ratings')
-      .setDesc('Display user ratings/scores')
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.showRatings)
-        .onChange(async (value) => {
-          this.plugin.settings.showRatings = value;
-          await this.plugin.saveSettings();
-        }));
-    
-    new Setting(containerEl)
-      .setName('📈 Progress')
-      .setDesc('Display progress information')
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.showProgress)
-        .onChange(async (value) => {
-          this.plugin.settings.showProgress = value;
-          await this.plugin.saveSettings();
-        }));
-    
-    new Setting(containerEl)
-      .setName('🎭 Genres')
-      .setDesc('Display genre tags')
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.showGenres)
-        .onChange(async (value) => {
-          this.plugin.settings.showGenres = value;
-          await this.plugin.saveSettings();
-        }));
-    new Setting(containerEl)
+new Setting(containerEl)
+  .setName('🧊 Layout')
+  .setDesc('Choose the default layout for media lists')
+  .addDropdown(dropdown => dropdown
+    .addOption('card', 'Card Layout')
+    .addOption('table', 'Table Layout')
+    .setValue(this.plugin.settings.defaultLayout)
+    .onChange(async (value) => {
+      this.plugin.settings.defaultLayout = value;
+      await this.plugin.saveSettings();
+    }));
+
+new Setting(containerEl)
+  .setName('🌆 Cover')
+  .setDesc('Display cover images for anime/manga')
+  .addToggle(toggle => toggle
+    .setValue(this.plugin.settings.showCoverImages)
+    .onChange(async (value) => {
+      this.plugin.settings.showCoverImages = value;
+      await this.plugin.saveSettings();
+    }));
+
+new Setting(containerEl)
+  .setName('⭐ Ratings')
+  .setDesc('Display user ratings/scores')
+  .addToggle(toggle => toggle
+    .setValue(this.plugin.settings.showRatings)
+    .onChange(async (value) => {
+      this.plugin.settings.showRatings = value;
+      await this.plugin.saveSettings();
+    }));
+
+new Setting(containerEl)
+  .setName('📈 Progress')
+  .setDesc('Display progress information')
+  .addToggle(toggle => toggle
+    .setValue(this.plugin.settings.showProgress)
+    .onChange(async (value) => {
+      this.plugin.settings.showProgress = value;
+      await this.plugin.saveSettings();
+    }));
+
+new Setting(containerEl)
+  .setName('🎭 Genres')
+  .setDesc('Display genre tags')
+  .addToggle(toggle => toggle
+    .setValue(this.plugin.settings.showGenres)
+    .onChange(async (value) => {
+      this.plugin.settings.showGenres = value;
+      await this.plugin.saveSettings();
+    }));
+
+new Setting(containerEl)
   .setName('🔲 Grid Columns')
   .setDesc('Number of columns in card grid layout')
   .addSlider(slider => slider
@@ -93,13 +85,11 @@ new Setting(containerEl)
     .onChange(async (value) => {
       this.plugin.settings.gridColumns = value;
       await this.plugin.saveSettings();
-   }));
-
-// Authentication Botton
+    }));
 
 new Setting(containerEl)
   .setName('🔑 Client ID')
-  .setDesc('Your AniList application Client ID')
+  .setDesc('Your Zoro application Client ID')
   .addText(text => text
     .setPlaceholder('Enter Client ID')
     .setValue(this.plugin.settings.clientId || '')
@@ -110,7 +100,7 @@ new Setting(containerEl)
 
 new Setting(containerEl)
   .setName('🔐 Client Secret')
-  .setDesc('Your AniList application Client Secret')
+  .setDesc('Your Zoro application Client Secret')
   .addText(text => text
     .setPlaceholder('Enter Client Secret')
     .setValue(this.plugin.settings.clientSecret || '')
@@ -132,14 +122,12 @@ new Setting(containerEl)
 
 new Setting(containerEl)
   .setName('🔓 Authenticate')
-  .setDesc('Connect your AniList account')
+  .setDesc('Connect your Zoro account')
   .addButton(button => button
     .setButtonText(this.plugin.settings.accessToken ? 'Re-authenticate' : 'Authenticate')
     .onClick(async () => {
       await this.plugin.authenticateUser();
     }));
-
-
 
 new Setting(containerEl)
   .setName('🔧 Manual Token Input')
@@ -152,8 +140,6 @@ new Setting(containerEl)
         this.plugin.settings.accessToken = value.trim();
         await this.plugin.saveSettings();
         new Notice('✅ Manual token saved! Testing...');
-        
-        // Test the token
         try {
           await this.plugin.testAccessToken();
         } catch (error) {
@@ -167,17 +153,14 @@ new Setting(containerEl)
       this.plugin.settings.accessToken = '';
       await this.plugin.saveSettings();
       new Notice('Token cleared');
-      this.display(); // Refresh the settings display
+      this.display();
     }));
 
-// Also add a status display
 new Setting(containerEl)
   .setName('🔑 Authentication Status')
   .setDesc(this.plugin.settings.accessToken ? 
     '✅ Authenticated (Token saved)' : 
     '❌ Not authenticated');
-
-// more information botton 
 
 new Setting(containerEl)
   .setName('⚡ Power Features')
@@ -185,11 +168,10 @@ new Setting(containerEl)
   .addButton(button => button
     .setButtonText('View Documentation')
     .onClick(() => {
-      window.open('https://github.com/zara-kasi/AniList-Obsidian/blob/main/README.md', '_blank');
+      window.open('https://github.com/zara-kasi/zoro/blob/main/README.md', '_blank');
     }));
-    
-  }
-  
-}
 
-module.exports = AniListPlugin;
+} }
+
+module.exports = ZoroSettingTab;
+

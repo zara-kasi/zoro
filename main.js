@@ -1268,20 +1268,20 @@ clearCacheForMedia(mediaId) {
     return `https://anilist.co/${urlType}/${mediaId}`;
   }
 
-  // Render Search Interface - FIXED: Now properly inside the class
+  // Render Search Interface
   renderSearchInterface(el, config) {
     el.empty();
-    // RENAMED from anilist-search-container to zoro-search-container
+    
     el.className = 'zoro-search-container';
 
     // Input container
     const searchDiv = document.createElement('div');
-    // RENAMED from anilist-search-input-container to zoro-search-input-container
+    
     searchDiv.className = 'zoro-search-input-container';
 
     const searchInput = document.createElement('input');
     searchInput.type = 'text';
-    // RENAMED from anilist-search-input to zoro-search-input
+    
     searchInput.className = 'zoro-search-input';
     searchInput.placeholder = config.mediaType === 'ANIME' ? 'Search anime...' : 'Search manga...';
 
@@ -1290,7 +1290,7 @@ clearCacheForMedia(mediaId) {
 
     // Results container
     const resultsDiv = document.createElement('div');
-    // RENAMED from anilist-search-results to zoro-search-results
+    
     resultsDiv.className = 'zoro-search-results';
     el.appendChild(resultsDiv);
 
@@ -1319,11 +1319,11 @@ clearCacheForMedia(mediaId) {
           perPage: 20
         };
 
-        // RENAMED from fetchAniListData to fetchZoroData
+        
         const data = await this.fetchZoroData(searchConfig);
 
         if (!data.Page || !data.Page.media || data.Page.media.length === 0) {
-          // RENAMED from anilist-search-message to zoro-search-message
+          
           resultsDiv.innerHTML = '<div class="zoro-search-message">😕 No results found.</div>';
           return;
         }
@@ -1332,7 +1332,7 @@ clearCacheForMedia(mediaId) {
 
       } catch (error) {
         console.error('Search error:', error);
-        // RENAMED from anilist-search-error to zoro-search-error
+        
         resultsDiv.innerHTML = `<div class="zoro-search-error">❌ ${error.message}</div>`;
       }
     };
@@ -2114,8 +2114,8 @@ clearCacheForMedia(mediaId) {
     // Message
     const message = document.createElement('p');
     message.className = 'zoro-auth-message';
-    // RENAMED from AniList to Zoro
-    message.textContent = 'You need to authenticate with Zoro to edit your anime/manga entries. This will allow you to update your progress, scores, and status directly from Obsidian.';
+    
+    message.textContent = 'You need to authenticate with AniList to edit your anime/manga entries. This will allow you to update your progress, scores, and status directly from Obsidian.';
 
     // Feature list
     const featuresDiv = document.createElement('div');
@@ -2151,8 +2151,8 @@ clearCacheForMedia(mediaId) {
 
     const authenticateBtn = document.createElement('button');
     authenticateBtn.className = 'zoro-auth-button';
-    // RENAMED from AniList to Zoro
-    authenticateBtn.textContent = '🔑 Authenticate with Zoro';
+    
+    authenticateBtn.textContent = '🔑 Authenticate with AniList';
     authenticateBtn.onclick = () => {
       closeModal();
       this.app.setting.open();
@@ -2197,16 +2197,16 @@ clearCacheForMedia(mediaId) {
     }
   }
 
-  // Create Sample Notes from default Templates
-  async createSampleNotes() {
-    try {
-      let successCount = 0;
-      const errorMessages = [];
-
-      const notesToCreate = [
-        {
-          title: "Zoro Anime Dashboard",
-          content: `\`\`\`zoro-search
+ async createSampleNotes() {
+  try {
+    let successCount = 0;
+    let errorMessages = [];
+    
+    // **FIRST NOTE CONFIGURATION**
+    
+    const firstNoteTitle = "Anime Dashboard";
+    
+const firstNoteContent =`\`\`\`zoro-search
 mediaType: ANIME
 \`\`\`
 
@@ -2249,11 +2249,13 @@ mediaType: ANIME
 # 📊 Stats:
 \`\`\`zoro
 type: stats
-\`\`\``
-        },
-        {
-          title: "Zoro Manga Dashboard",
-          content: `\`\`\`zoro-search
+\`\`\` 
+
+`;
+
+ const secondNoteTitle = "Manga Dashboard";
+
+const secondNoteContent =`\`\`\`zoro-search
 mediaType: MANGA
 \`\`\`
 
@@ -2296,39 +2298,64 @@ mediaType: MANGA
 # 📊 Stats:
 \`\`\`zoro
 type: stats
-\`\`\``
-        }
-      ];
+\`\`\` 
 
-      for (const { title, content } of notesToCreate) {
-        const filePath = `${title}.md`;
+`;
+
+    // Array of notes to create
+
+    const notesToCreate = [
+      { title: firstNoteTitle, content: firstNoteContent },
+      { title: secondNoteTitle, content: secondNoteContent }
+    ];
+
+    // Create each note
+
+    for (const note of notesToCreate) {
+      try {
+        const fileName = `${note.title}.md`;
+        const filePath = fileName;
+
+ // This creates the note in the vault root
+        
+        // Checking for if  file already exists
         const existingFile = this.app.vault.getAbstractFileByPath(filePath);
-
         if (existingFile) {
-          errorMessages.push(`"${title}" already exists`);
+          errorMessages.push(`"${note.title}" already exists`);
           continue;
         }
-
-        await this.app.vault.create(filePath, content);
+        
+        // Create the new note
+        await this.app.vault.create(filePath, note.content);
         successCount++;
+        
+      } catch (error) {
+        errorMessages.push(`Failed to create "${note.title}": ${error.message}`);
       }
-
-      if (successCount > 0) {
-        new Notice(`✅ Created ${successCount} Zoro dashboard note${successCount > 1 ? 's' : ''}.`, 4000);
-        const first = this.app.vault.getAbstractFileByPath(`${notesToCreate[0].title}.md`);
-        if (first) await this.app.workspace.openLinkText(`${notesToCreate[0].title}.md`, '', false);
-      }
-
-      if (errorMessages.length > 0) {
-        new Notice(`⚠️ Issues: ${errorMessages.join(', ')}`, 5000);
-      }
-
-    } catch (error) {
-      console.error('Error creating notes:', error);
-      new Notice(`❌ Failed to create Zoro notes: ${error.message}`, 5000);
     }
-  }
+    
+    // Show results
+    if (successCount > 0) {
+      new Notice(`Successfully created ${successCount} note${successCount > 1 ? 's' : ''}!`, 4000);
+      
+      // Open the first successfully created note
 
+      const firstNote = this.app.vault.getAbstractFileByPath(`${firstNoteTitle}.md`);
+      if (firstNote) {
+        await this.app.workspace.openLinkText(`${firstNoteTitle}.md`, '', false);
+      }
+    }
+    
+    if (errorMessages.length > 0) {
+      new Notice(`Issues: ${errorMessages.join(', ')}`, 5000);
+    }
+    
+  } catch (error) {
+    console.error('Error creating notes:', error);
+    new Notice(`Failed to create notes: ${error.message}`, 5000);
+  }
+ }
+  
 
   // Render Errors
   renderError(el, message, context = '', onRetry = null) {

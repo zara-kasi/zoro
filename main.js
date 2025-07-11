@@ -55,6 +55,74 @@ async loadSettings() {
     }
   }
 
+// Authentication 
+
+
+async authenticateUser() {
+  // Redirect user to AniList OAuth
+  const clientId = 'YOUR_CLIENT_ID';
+  const redirectUri = 'YOUR_REDIRECT_URI';
+  const authUrl = `https://anilist.co/api/v2/oauth/authorize?client_id=${clientId}&redirect_uri=${redirectUri}&response_type=code`;
+  
+  // Open auth URL and handle callback
+  window.open(authUrl, '_blank');
+}
+
+async exchangeCodeForToken(code) {
+  // Exchange authorization code for access token
+  const response = await fetch('https://anilist.co/api/v2/oauth/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      client_id: 'YOUR_CLIENT_ID',
+      client_secret: 'YOUR_CLIENT_SECRET',
+      code: code,
+      redirect_uri: 'YOUR_REDIRECT_URI',
+      grant_type: 'authorization_code'
+    })
+  });
+  
+  const data = await response.json();
+  this.settings.accessToken = data.access_token;
+  await this.saveSettings();
+}
+
+// Update media list entry
+
+
+updateMediaListEntry(mediaId, updates) {
+  const mutation = `
+    mutation ($mediaId: Int, $status: MediaListStatus, $score: Float, $progress: Int) {
+      SaveMediaListEntry(mediaId: $mediaId, status: $status, score: $score, progress: $progress) {
+        id
+        status
+        score
+        progress
+      }
+    }
+  `;
+  
+  return this.makeAuthenticatedRequest(mutation, {
+    mediaId: mediaId,
+    ...updates
+  });
+}
+
+async makeAuthenticatedRequest(query, variables) {
+  const response = await fetch('https://graphql.anilist.co', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${this.settings.accessToken}`
+    },
+    body: JSON.stringify({ query, variables })
+  });
+  
+  return response.json();
+}
+
+
+
   async processAniListSearchCodeBlock(source, el, ctx) {
     try {
       const config = this.parseSearchCodeBlockConfig(source);
@@ -748,6 +816,58 @@ getAniListUrl(mediaId, mediaType = 'anime') {
         formatBadge.textContent = media.format;
         detailsDiv.appendChild(formatBadge);
       }
+
+// Add to renderMediaList function
+const actionsDiv = document.createElement('div');
+actionsDiv.className = 'media-actions';
+
+// Rating dropdown
+const ratingSelect = document.createElement('select');
+ratingSelect.className = 'rating-select';
+for (let i = 1; i <= 10; i++) {
+  const option = document.createElement('option');
+  option.value = i;
+  option.textContent = i;
+  if (i === entry.score) option.selected = true;
+  ratingSelect.appendChild(option);
+}
+
+ratingSelect.addEventListener('change', async (e) => {
+  await this.updateRating(entry.media.id, parseInt(e.target.value));
+});
+
+// Status dropdown
+const statusSelect = document.createElement('select');
+statusSelect.className = 'status-select';
+const statuses = ['CURRENT', 'PLANNING', 'COMPLETED', 'DROPPED', 'PAUSED', 'REPEATING'];
+statuses.forEach(status => {
+  const option = document.createElement('option');
+  option.value = status;
+  option.textContent = status;
+  if (status === entry.status) option.selected = true;
+  statusSelect.appendChild(option);
+});
+
+statusSelect.addEventListener('change', async (e) => {
+  await this.updateStatus(entry.media.id, e.target.value);
+});
+
+// Progress input
+const progressInput = document.createElement('input');
+progressInput.type = 'number';
+progressInput.className = 'progress-input';
+progressInput.value = entry.progress;
+progressInput.max = entry.media.episodes || entry.media.chapters || 999;
+
+progressInput.addEventListener('change', async (e) => {
+  await this.updateProgress(entry.media.id, parseInt(e.target.value));
+});
+
+actionsDiv.appendChild(ratingSelect);
+actionsDiv.appendChild(statusSelect);
+actionsDiv.appendChild(progressInput);
+cardDiv.appendChild(actionsDiv);
+
       
       const statusBadge = document.createElement('span');
       statusBadge.className = `status-badge status-${entry.status.toLowerCase()}`;

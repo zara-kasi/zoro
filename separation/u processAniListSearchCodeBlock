@@ -12,7 +12,7 @@ async processZoroSearchCodeBlock(source, el, ctx) {
     await this.renderSearchInterface(el, config); // Future-proof
   } catch (error) {
     console.error('[Zoro] Search block processing error:', error);
-    this.renderError(el, error.message || 'Failed to process AniList search block.');
+    this.renderError(el, error.message || 'Failed to process Zoro search block.');
   }
 }
 

@@ -1,5 +1,26 @@
-constructor() {
-    super(...arguments);
-    this.cache = new Map();
-    this.cacheTimeout = 5 * 60 * 1000; // 5 minutes
-  }
+constructor(app, manifest) {
+  super(app, manifest);
+
+  // In-memory cache with timeout enforcement
+  this.cache = new Map();
+  this.cacheTimeout = 5 * 60 * 1000;
+
+  this.getFromCache = (key) => {
+    const entry = this.cache.get(key);
+    if (!entry) return null;
+
+    const { value, timestamp } = entry;
+    if ((Date.now() - timestamp) > this.cacheTimeout) {
+      this.cache.delete(key);
+      return null;
+    }
+    return value;
+  };
+
+  this.setToCache = (key, value) => {
+    this.cache.set(key, {
+      value,
+      timestamp: Date.now()
+    });
+  };
+} 

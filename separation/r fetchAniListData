@@ -1,0 +1,83 @@
+async fetchAniListData(config) {
+  const cacheKey = JSON.stringify(config);
+  const cached = this.cache.get(cacheKey);
+  
+  if (cached && Date.now() - cached.timestamp < this.cacheTimeout) {
+    return cached.data;
+  }
+  
+  let query, variables;
+  
+  if (config.type === 'stats') {
+    query = this.getUserStatsQuery();
+    variables = { username: config.username };
+  } else if (config.type === 'single') {
+    query = this.getSingleMediaQuery();
+    variables = { 
+      username: config.username, 
+      mediaId: parseInt(config.mediaId),
+      type: config.mediaType
+    };
+  } else if (config.type === 'search') {
+    query = this.getSearchMediaQuery();
+    variables = { 
+      search: config.search,
+      type: config.mediaType,
+      page: config.page || 1,
+      perPage: config.perPage || 20
+    };
+  } else {
+    query = this.getMediaListQuery();
+    variables = { 
+      username: config.username, 
+      status: config.listType,
+      type: config.mediaType || 'ANIME'
+    };
+  }
+  
+  try {
+    const headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    };
+
+if (this.settings.accessToken) {
+      headers['Authorization'] = `Bearer ${this.settings.accessToken}`;
+    }
+    
+    const response = await fetch('https://graphql.anilist.co', {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify({ query, variables })
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`API Error ${response.status}: ${errorText}`);
+    }
+    
+    const result = await response.json();
+    
+    if (result.errors) {
+      // Handle specific error cases
+      if (result.errors[0].message.includes('Private')) {
+        if (this.settings.accessToken) {
+          throw new Error('This user\'s list is private and you don\'t have permission to view it.');
+        } else {
+          throw new Error('This user\'s list is private. Please authenticate to view private lists.');
+        }
+      }
+      throw new Error(result.errors[0].message);
+    }
+this.cache.set(cacheKey, {
+      data: result.data,
+      timestamp: Date.now()
+    });
+    
+    return result.data;
+    
+  } catch (error) {
+    console.error('API request failed:', error);
+    throw error;
+  }
+}

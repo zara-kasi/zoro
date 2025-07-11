@@ -62,7 +62,6 @@ async loadSettings() {
 // Authentication 
 
 
-
 async authenticateUser() {
   if (!this.settings.clientId) {
     new Notice('Please set Client ID in plugin settings first');
@@ -105,16 +104,8 @@ async authenticateUser() {
 
 async exchangeCodeForToken(code, redirectUri) {
   try {
-    const requestBody = {
-      grant_type: 'authorization_code',
-      client_id: this.settings.clientId,
-      client_secret: this.settings.clientSecret,
-      redirect_uri: redirectUri,
-      code: code
-    };
-
-    // Method 1: Try with proper headers and error handling
-    const response = await this.makeTokenRequest(requestBody);
+    // Try Obsidian's built-in request method first
+    const response = await this.makeObsidianRequest(code, redirectUri);
     
     if (response.access_token) {
       this.settings.accessToken = response.access_token;
@@ -131,100 +122,252 @@ async exchangeCodeForToken(code, redirectUri) {
     console.error('Authentication error:', error);
     new Notice(`❌ Authentication failed: ${error.message}`);
     
-    // Provide troubleshooting tips
-    new Notice('💡 Try: 1) Check Client ID/Secret 2) Ensure PIN is correct 3) Try again', 8000);
+    // Show manual token option
+    this.showManualTokenOption();
   }
 }
 
-async makeTokenRequest(requestBody) {
-  // Try multiple methods for better compatibility
-  
-  // Method 1: Standard fetch with proper headers
+async makeObsidianRequest(code, redirectUri) {
+  const requestBody = {
+    grant_type: 'authorization_code',
+    client_id: this.settings.clientId,
+    client_secret: this.settings.clientSecret,
+    redirect_uri: redirectUri,
+    code: code
+  };
+
+  // Method 1: Try Obsidian's requestUrl (most reliable)
   try {
-    const response = await fetch('https://anilist.co/api/v2/oauth/token', {
+    const response = await window.requestUrl({
+      url: 'https://anilist.co/api/v2/oauth/token',
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'User-Agent': 'AniList-Obsidian-Plugin'
+        'Accept': 'application/json'
       },
-      body: JSON.stringify(requestBody),
-      mode: 'cors'
+      body: JSON.stringify(requestBody)
     });
     
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`HTTP ${response.status}: ${errorText}`);
-    }
-    
-    const data = await response.json();
-    return data;
-    
-  } catch (fetchError) {
-    console.warn('Standard fetch failed, trying alternative method:', fetchError);
-    
-    // Method 2: Try with Obsidian's requestUrl if available
-    if (this.app.vault.adapter && this.app.vault.adapter.requestUrl) {
-      try {
-        const response = await this.app.vault.adapter.requestUrl({
-          url: 'https://anilist.co/api/v2/oauth/token',
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json'
-          },
-          body: JSON.stringify(requestBody)
-        });
-        
-        return JSON.parse(response.text);
-        
-      } catch (obsidianError) {
-        console.warn('Obsidian requestUrl failed:', obsidianError);
-      }
-    }
-    
-    // Method 3: Try with XMLHttpRequest as fallback
-    try {
-      return await this.makeXHRTokenRequest(requestBody);
-    } catch (xhrError) {
-      console.warn('XHR request failed:', xhrError);
-      throw new Error(`All request methods failed. Last error: ${fetchError.message}`);
-    }
+    return JSON.parse(response.text);
+  } catch (obsidianError) {
+    console.warn('Obsidian requestUrl failed:', obsidianError);
   }
+
+  // Method 2: Try Node.js https module (if available)
+  try {
+    return await this.makeNodeRequest(requestBody);
+  } catch (nodeError) {
+    console.warn('Node.js request failed:', nodeError);
+  }
+
+  // Method 3: Try electron net module (if available)
+  try {
+    return await this.makeElectronRequest(requestBody);
+  } catch (electronError) {
+    console.warn('Electron request failed:', electronError);
+  }
+
+  throw new Error('All request methods failed. Try manual token input.');
 }
 
-async makeXHRTokenRequest(requestBody) {
+async makeNodeRequest(requestBody) {
   return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
+    if (typeof require === 'undefined') {
+      throw new Error('Node.js not available');
+    }
     
-    xhr.open('POST', 'https://anilist.co/api/v2/oauth/token', true);
-    xhr.setRequestHeader('Content-Type', 'application/json');
-    xhr.setRequestHeader('Accept', 'application/json');
-    
-    xhr.onload = function() {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        try {
-          const data = JSON.parse(xhr.responseText);
-          resolve(data);
-        } catch (parseError) {
-          reject(new Error(`Failed to parse response: ${parseError.message}`));
+    try {
+      const https = require('https');
+      const data = JSON.stringify(requestBody);
+      
+      const options = {
+        hostname: 'anilist.co',
+        port: 443,
+        path: '/api/v2/oauth/token',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': data.length,
+          'Accept': 'application/json'
         }
-      } else {
-        reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText}`));
-      }
-    };
-    
-    xhr.onerror = function() {
-      reject(new Error('Network error occurred'));
-    };
-    
-    xhr.ontimeout = function() {
-      reject(new Error('Request timed out'));
-    };
-    
-    xhr.timeout = 30000; // 30 second timeout
-    xhr.send(JSON.stringify(requestBody));
+      };
+      
+      const req = https.request(options, (res) => {
+        let body = '';
+        
+        res.on('data', (chunk) => {
+          body += chunk;
+        });
+        
+        res.on('end', () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            try {
+              resolve(JSON.parse(body));
+            } catch (parseError) {
+              reject(new Error(`Failed to parse response: ${parseError.message}`));
+            }
+          } else {
+            reject(new Error(`HTTP ${res.statusCode}: ${body}`));
+          }
+        });
+      });
+      
+      req.on('error', (error) => {
+        reject(error);
+      });
+      
+      req.write(data);
+      req.end();
+      
+    } catch (error) {
+      reject(error);
+    }
   });
+}
+
+async makeElectronRequest(requestBody) {
+  return new Promise((resolve, reject) => {
+    if (typeof require === 'undefined') {
+      throw new Error('Electron not available');
+    }
+    
+    try {
+      const { net } = require('electron');
+      
+      const request = net.request({
+        method: 'POST',
+        url: 'https://anilist.co/api/v2/oauth/token',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        }
+      });
+      
+      request.on('response', (response) => {
+        let body = '';
+        
+        response.on('data', (chunk) => {
+          body += chunk;
+        });
+        
+        response.on('end', () => {
+          if (response.statusCode >= 200 && response.statusCode < 300) {
+            try {
+              resolve(JSON.parse(body));
+            } catch (parseError) {
+              reject(new Error(`Failed to parse response: ${parseError.message}`));
+            }
+          } else {
+            reject(new Error(`HTTP ${response.statusCode}: ${body}`));
+          }
+        });
+      });
+      
+      request.on('error', (error) => {
+        reject(error);
+      });
+      
+      request.write(JSON.stringify(requestBody));
+      request.end();
+      
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+showManualTokenOption() {
+  new Notice('🔧 Alternative: Get token manually from AniList API', 10000);
+  
+  setTimeout(() => {
+    const userChoice = confirm(
+      'Would you like to try manual token input instead?\n\n' +
+      'This involves:\n' +
+      '1. Using a tool like Postman or curl\n' +
+      '2. Making the API request manually\n' +
+      '3. Copying the token into the plugin\n\n' +
+      'Click OK for instructions, Cancel to retry authentication.'
+    );
+    
+    if (userChoice) {
+      this.showManualTokenInstructions();
+    }
+  }, 2000);
+}
+
+showManualTokenInstructions() {
+  const instructions = `
+📋 MANUAL TOKEN INSTRUCTIONS:
+
+1. Open Postman, curl, or similar tool
+2. Make a POST request to: https://anilist.co/api/v2/oauth/token
+3. Set Content-Type: application/json
+4. Use this JSON body:
+{
+  "grant_type": "authorization_code",
+  "client_id": "${this.settings.clientId}",
+  "client_secret": "${this.settings.clientSecret}",
+  "redirect_uri": "https://anilist.co/api/v2/oauth/pin",
+  "code": "YOUR_PIN_CODE_HERE"
+}
+
+5. Replace YOUR_PIN_CODE_HERE with your actual PIN
+6. Send the request
+7. Copy the "access_token" from the response
+8. Click "Manual Token Input" in plugin settings
+  `.trim();
+  
+  // Create a modal to show instructions
+  this.showInstructionsModal(instructions);
+}
+
+showInstructionsModal(instructions) {
+  const modal = document.createElement('div');
+  modal.className = 'anilist-instructions-modal';
+  modal.innerHTML = `
+    <div class="anilist-modal-overlay"></div>
+    <div class="anilist-modal-content">
+      <h3>Manual Token Setup</h3>
+      <pre style="background: #f5f5f5; padding: 15px; border-radius: 5px; font-size: 12px; overflow-x: auto; white-space: pre-wrap;">${instructions}</pre>
+      <div class="anilist-modal-buttons">
+        <button class="manual-token-btn">Manual Token Input</button>
+        <button class="close-btn">Close</button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  
+  modal.querySelector('.manual-token-btn').onclick = () => {
+    document.body.removeChild(modal);
+    this.promptManualToken();
+  };
+  
+  modal.querySelector('.close-btn').onclick = () => {
+    document.body.removeChild(modal);
+  };
+  
+  modal.querySelector('.anilist-modal-overlay').onclick = () => {
+    document.body.removeChild(modal);
+  };
+}
+
+async promptManualToken() {
+  const token = prompt('Paste your access token here:');
+  
+  if (token && token.trim()) {
+    try {
+      this.settings.accessToken = token.trim();
+      await this.saveSettings();
+      
+      // Test the token
+      await this.testAccessToken();
+      new Notice('✅ Manual token saved successfully!');
+      
+    } catch (error) {
+      new Notice(`❌ Token test failed: ${error.message}`);
+    }
+  }
 }
 
 async testAccessToken() {
@@ -1641,6 +1784,44 @@ new Setting(containerEl)
     .onClick(async () => {
       await this.plugin.authenticateUser();
     }));
+
+
+
+new Setting(containerEl)
+  .setName('🔧 Manual Token Input')
+  .setDesc('If automatic authentication fails, manually paste your access token here')
+  .addText(text => text
+    .setPlaceholder('Paste access token here...')
+    .setValue('')
+    .onChange(async (value) => {
+      if (value.trim()) {
+        this.plugin.settings.accessToken = value.trim();
+        await this.plugin.saveSettings();
+        new Notice('✅ Manual token saved! Testing...');
+        
+        // Test the token
+        try {
+          await this.plugin.testAccessToken();
+        } catch (error) {
+          new Notice(`❌ Token test failed: ${error.message}`);
+        }
+      }
+    }))
+  .addButton(button => button
+    .setButtonText('Clear Token')
+    .onClick(async () => {
+      this.plugin.settings.accessToken = '';
+      await this.plugin.saveSettings();
+      new Notice('Token cleared');
+      this.display(); // Refresh the settings display
+    }));
+
+// Also add a status display
+new Setting(containerEl)
+  .setName('🔑 Authentication Status')
+  .setDesc(this.plugin.settings.accessToken ? 
+    '✅ Authenticated (Token saved)' : 
+    '❌ Not authenticated');
 
 // more information botton 
 

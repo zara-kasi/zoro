@@ -1,0 +1,15 @@
+async loadSettings() {
+  this.settings = Object.assign({}, {
+    defaultUsername: '',
+    defaultLayout: 'card',
+    showCoverImages: true,
+    showRatings: true,
+    showProgress: true,
+    showGenres: false,
+    gridColumns: 3,
+    clientId: '',
+    clientSecret: '',
+    redirectUri: 'https://anilist.co/api/v2/oauth/pin',
+    accessToken: ''
+  }, await this.loadData());
+}

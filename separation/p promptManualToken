@@ -1,17 +1,56 @@
-async promptManualToken() {
-  const token = prompt('Paste your access token here:');
-  
-  if (token && token.trim()) {
-    try {
-      this.settings.accessToken = token.trim();
-      await this.saveSettings();
-      
-      // Test the token
-      await this.testAccessToken();
-      new Notice('✅ Manual token saved successfully!');
-      
-    } catch (error) {
-      new Notice(`❌ Token test failed: ${error.message}`);
-    }
+class ManualTokenModal extends Modal {
+  constructor(app, plugin) {
+    super(app);
+    this.plugin = plugin;
   }
+
+  onOpen() {
+    const { contentEl } = this;
+
+    contentEl.createEl('h3', { text: 'Paste Access Token' });
+
+    const input = contentEl.createEl('textarea', {
+      cls: 'token-input-area',
+      placeholder: 'Paste your access token here...',
+    });
+
+    input.style.width = '100%';
+    input.style.minHeight = '80px';
+    input.style.marginTop = '10px';
+
+    const btnContainer = contentEl.createDiv({ cls: 'modal-button-row' });
+
+    const saveBtn = btnContainer.createEl('button', { text: 'Save Token' });
+    saveBtn.onclick = async () => {
+      const token = input.value.trim();
+
+      if (!token) {
+        new Notice('⚠️ Please enter a valid token.');
+        return;
+      }
+
+      try {
+        this.plugin.settings.accessToken = token;
+        await this.plugin.saveSettings();
+        await this.plugin.testAccessToken?.();
+        new Notice('✅ Token saved and verified!');
+        this.close();
+      } catch (err) {
+        console.error('Token test failed:', err);
+        new Notice(`❌ Token invalid: ${err.message}`);
+      }
+    };
+
+    const cancelBtn = btnContainer.createEl('button', { text: 'Cancel' });
+    cancelBtn.onclick = () => this.close();
+  }
+
+  onClose() {
+    const { contentEl } = this;
+    contentEl.empty();
+  }
+}
+
+async promptManualToken() {
+  new ManualTokenModal(this.app, this).open();
 }

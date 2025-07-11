@@ -1,4 +1,12 @@
-getAniListUrl(mediaId, mediaType = 'anime') {
-  const type = mediaType.toLowerCase();
-  return `https://anilist.co/${type}/${mediaId}`;
+getAniListUrl(mediaId, mediaType = 'ANIME') {
+  if (!mediaId || typeof mediaId !== 'number') {
+    throw new Error(`Invalid mediaId: ${mediaId}`);
+  }
+
+  const type = String(mediaType).toUpperCase();
+
+  const validTypes = ['ANIME', 'MANGA'];
+  const urlType = validTypes.includes(type) ? type.toLowerCase() : 'anime'; // fallback
+
+  return `https://anilist.co/${urlType}/${mediaId}`;
 }

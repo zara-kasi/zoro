@@ -1,0 +1,20 @@
+async processAniListCodeBlock(source, el, ctx) {
+  try {
+    const config = this.parseCodeBlockConfig(source);
+    
+    // If useAuthenticatedUser is true, get the authenticated username
+    if (config.useAuthenticatedUser) {
+      const authUsername = await this.getAuthenticatedUsername();
+      if (authUsername) {
+        config.username = authUsername;
+      } else {
+        throw new Error('Unable to get authenticated user. Please check your authentication or set a username.');
+      }
+    }
+    
+    const data = await this.fetchAniListData(config);
+    this.renderAniListData(el, data, config);
+  } catch (error) {
+    this.renderError(el, error.message);
+  }
+}

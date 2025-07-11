@@ -18,14 +18,28 @@ const DEFAULT_SETTINGS = {
 // Plugin Class 
 class ZoroPlugin extends Plugin { 
 
+  constructor(app, manifest) {
+  super(app, manifest);
+
+ 
+ 
   // Constructor 
   constructor(app, manifest) {
     super(app, manifest);
 
     // In-memory cache with timeout enforcement
-    this.cache = new Map();
+    
+  // Initialize separate caches
+  this.cache = {
+    userData: new Map(),     // User stats and lists
+    mediaData: new Map(),    // Individual media items
+    searchResults: new Map() // Search queries
+  };
     this.cacheTimeout = 5 * 60 * 1000;
 
+  // Add periodic pruning
+  this.pruneInterval = setInterval(() => this.pruneCache(), this.cacheTimeout);
+  }
     this.getFromCache = (key) => {
       const entry = this.cache.get(key);
       if (!entry) return null;
@@ -45,6 +59,63 @@ class ZoroPlugin extends Plugin {
       });
     };
   } 
+
+// Prune Cache 
+
+pruneCache() {
+  const now = Date.now();
+  
+  // Prune user data cache
+  for (const [key, entry] of this.cache.userData) {
+    if (now - entry.timestamp > this.cacheTimeout) {
+      this.cache.userData.delete(key);
+    }
+  }
+  
+  // Prune media data cache
+  for (const [key, entry] of this.cache.mediaData) {
+    if (now - entry.timestamp > this.cacheTimeout) {
+      this.cache.mediaData.delete(key);
+    }
+  }
+  
+  // Prune search results cache
+  for (const [key, entry] of this.cache.searchResults) {
+    if (now - entry.timestamp > this.cacheTimeout) {
+      this.cache.searchResults.delete(key);
+    }
+  }
+  
+  console.log('[Zoro] Cache pruned');
+}
+
+      // Get from cache 
+
+  getFromCache(type, key) {
+  const cacheMap = this.cache[type];
+  if (!cacheMap) return null;
+  
+  const entry = cacheMap.get(key);
+  if (!entry) return null;
+
+  // Auto-prune expired entries on access
+  if ((Date.now() - entry.timestamp) > this.cacheTimeout) {
+    cacheMap.delete(key);
+    return null;
+  }
+  return entry.value;
+}
+
+setToCache(type, key, value) {
+  const cacheMap = this.cache[type];
+  if (!cacheMap) return;
+  
+  cacheMap.set(key, {
+    value,
+    timestamp: Date.now()
+  });
+}
+
 
   // On Load
   async onload() {
@@ -83,6 +154,8 @@ class ZoroPlugin extends Plugin {
   async loadSettings() {
     const saved = await this.loadData();
     this.settings = this.validateSettings(saved);
+    const encryptedSecret = await this.app.vault.encrypt(this.settings.clientSecret);
+  // Save encryptedSecret instead of plain text
   }
 
   // Validate Settings 
@@ -113,10 +186,12 @@ class ZoroPlugin extends Plugin {
     }
   }
 
-  // For User Authentication 
+  // Authentication 
   async authenticateUser() {
     const clientId = this.settings.clientId;
     const redirectUri = this.settings.redirectUri || 'https://anilist.co/api/v2/oauth/pin';
+    const authWindow = window.open(authUrl, '_blank', 'width=500,height=600');
+  
 
     if (!clientId) {
       new Notice('❌ Please set your Client ID in plugin settings first.', 5000);
@@ -134,6 +209,13 @@ class ZoroPlugin extends Plugin {
     try {
       new Notice('🔐 Opening authentication page...', 3000);
 
+      // Add message listener
+  window.addEventListener('message', (event) => {
+    if (event.origin !== 'https://anilist.co') return;
+    this.exchangeCodeForToken(event.data.code);
+    authWindow.close();
+  });
+      
       if (window.require) {
         const { shell } = window.require('electron');
         await shell.openExternal(authUrl);
@@ -162,6 +244,7 @@ class ZoroPlugin extends Plugin {
       resolve(code);
     });
   }
+
 
   // Exchange code for token 
   async exchangeCodeForToken(code, redirectUri) {
@@ -203,7 +286,8 @@ class ZoroPlugin extends Plugin {
       // Store auth details
       this.settings.accessToken = data.access_token;
 
-      // Optional but recommended fields
+      // Refresh Token 
+      
       if (data.refresh_token) {
         this.settings.refreshToken = data.refresh_token;
       }
@@ -235,6 +319,92 @@ class ZoroPlugin extends Plugin {
     return !expiry || Date.now() >= expiry;
   }
 
+   }
+
+  
+  // Refresh Token
+  async refreshToken() {
+  if (!this.settings.refreshToken) {
+    throw new Error('No refresh token available');
+  }
+
+  try {
+    const body = new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: this.settings.refreshToken,
+      client_id: this.settings.clientId,
+      client_secret: this.settings.clientSecret || '',
+    });
+
+    const headers = {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json',
+    };
+
+    const response = await requestUrl({
+      url: 'https://anilist.co/api/v2/oauth/token',
+      method: 'POST',
+      headers,
+      body: body.toString(),
+    });
+
+    const data = response?.json;
+    
+    if (!data?.access_token) {
+      throw new Error(data?.error_description || 'Invalid token response');
+    }
+
+    // Update tokens
+    this.settings.accessToken = data.access_token;
+    
+    // Update refresh token if provided (refresh tokens can rotate)
+    if (data.refresh_token) {
+      this.settings.refreshToken = data.refresh_token;
+    }
+    
+    // Update expiration
+    if (data.expires_in) {
+      this.settings.tokenExpiry = Date.now() + (data.expires_in * 1000);
+    }
+
+    await this.saveSettings();
+    return true;
+  } catch (error) {
+    console.error('[Zoro] Token refresh failed:', error);
+    
+    // Clear invalid tokens
+    this.settings.accessToken = '';
+    this.settings.refreshToken = '';
+    await this.saveSettings();
+    
+    throw new Error('Token refresh failed. Please re-authenticate.');
+  }
+
+  }
+
+  async ensureValidToken() {
+  if (!this.settings.accessToken) return false;
+  
+  // Check if token is expired or near expiration (5 minute buffer)
+  const isExpired = this.settings.tokenExpiry 
+    && (Date.now() + 300000) >= this.settings.tokenExpiry;
+  
+  if (isExpired) {
+    try {
+      await this.refreshToken();
+      new Notice('🔁 Token refreshed successfully');
+      return true;
+    } catch (error) {
+      new Notice('⚠️ Token refresh failed: ' + error.message);
+      return false;
+    }
+  }
+  return true;
+  }
+
+  
+
+  
   // Make Obsidian Request 
   async makeObsidianRequest(code, redirectUri) {
     const body = new URLSearchParams({
@@ -336,8 +506,17 @@ class ZoroPlugin extends Plugin {
     }
   }
 
+
+
   // Get Authenticated Username 
   async getAuthenticatedUsername() {
+
+if (this.settings.accessToken) {
+  await this.ensureValidToken();
+  
+  headers['Authorization'] = `Bearer ${this.settings.accessToken}`;
+}
+    
     if (!this.settings.accessToken) return null;
 
     const query = `
@@ -374,19 +553,42 @@ class ZoroPlugin extends Plugin {
       console.warn('[Zoro] getAuthenticatedUsername() failed:', error);
       return null;
     }
+}
+    
+    /// *Fetching*
+
+  // Fetch Zoro Data 
+    
+    async fetchZoroData(config) {
+  const cacheKey = JSON.stringify(config);
+  let cacheType;
+
+  // Determine cache type based on request
+  if (config.type === 'stats') {
+    cacheType = 'userData';
+  } else if (config.type === 'single') {
+    cacheType = 'mediaData';
+  } else if (config.type === 'search') {
+    cacheType = 'searchResults';
+  } else {
+    cacheType = 'userData'; // Default for lists
   }
 
-
-  // Fetch Zoro Data - FIXED: Now properly inside the class
-  async fetchZoroData(config) {
-    const cacheKey = JSON.stringify(config);
-    const cached = this.cache.get(cacheKey);
+  const cached = this.getFromCache(cacheType, cacheKey);
+  if (cached) return cached;
 
     if (cached && Date.now() - cached.timestamp < this.cacheTimeout) {
       return cached.data;
     }
 
     let query, variables;
+    
+      
+if (this.settings.accessToken) {
+  await this.ensureValidToken();
+  
+  headers['Authorization'] = `Bearer ${this.settings.accessToken}`;
+}
 
     if (config.type === 'stats') {
       query = this.getUserStatsQuery();
@@ -455,12 +657,11 @@ class ZoroPlugin extends Plugin {
         throw new Error('AniList returned no data.');
       }
 
-      this.cache.set(cacheKey, {
-        data: result.data,
-        timestamp: Date.now()
-      });
+       // Save to cache
+  this.setToCache(cacheType, cacheKey, result.data);
+  return result.data;
+    
 
-      return result.data;
 
     } catch (error) {
       console.error('[Zoro] fetchZoroData() failed:', error);
@@ -468,6 +669,21 @@ class ZoroPlugin extends Plugin {
     }
   }
 
+
+
+// Loading indicator 
+async fetchData(config) {
+  this.showLoader();
+  try {
+    // API call
+  } catch (error) {
+    // Handle error
+  } finally {
+    this.hideLoader();
+  }
+}
+  
+  
   // Process Zoro Code Block - FIXED: Now properly inside the class
   async processZoroCodeBlock(source, el, ctx) {
     try {
@@ -502,9 +718,12 @@ class ZoroPlugin extends Plugin {
     }
   }
 
-  // Update Media List Entry - FIXED: Now properly inside the class
-  async updateMediaListEntry(mediaId, updates) {
-    if (!this.settings.accessToken) {
+// Update Media List 
+    
+    async updateMediaListEntry(mediaId, updates) {
+  try {
+    // Ensure valid token before proceeding
+    if (!this.settings.accessToken || !(await this.ensureValidToken())) {
       throw new Error('❌ Authentication required to update entries.');
     }
 
@@ -519,7 +738,7 @@ class ZoroPlugin extends Plugin {
       }
     `;
 
-    // Filter out undefined values — critical to avoid mutation errors
+    // Filter out undefined values
     const variables = {
       mediaId,
       ...(updates.status !== undefined && { status: updates.status }),
@@ -527,34 +746,57 @@ class ZoroPlugin extends Plugin {
       ...(updates.progress !== undefined && { progress: updates.progress }),
     };
 
+    const response = await requestUrl({
+      url: 'https://graphql.anilist.co',
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.settings.accessToken}`
+      },
+      body: JSON.stringify({ query: mutation, variables })
+    });
+
+    const result = response.json;
+
+    if (!result || result.errors?.length > 0) {
+      const message = result.errors?.[0]?.message || 'Unknown mutation error';
+      throw new Error(`AniList update error: ${message}`);
+    }
+
+    // Targeted cache clearing instead of full clear
+    this.clearCacheForMedia(mediaId);
+    
+    return result.data.SaveMediaListEntry;
+
+  } catch (error) {
+    console.error('[Zoro] updateMediaListEntry failed:', error);
+    throw new Error(`❌ Failed to update entry: ${error.message}`);
+  }
+}
+
+clearCacheForMedia(mediaId) {
+  // Clear media-specific cache
+  for (const [key] of this.cache.mediaData) {
     try {
-      const response = await requestUrl({
-        url: 'https://graphql.anilist.co',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.settings.accessToken}`
-        },
-        body: JSON.stringify({ query: mutation, variables })
-      });
-
-      const result = response.json;
-
-      if (!result || result.errors?.length > 0) {
-        const message = result.errors?.[0]?.message || 'Unknown mutation error';
-        throw new Error(`AniList update error: ${message}`);
+      const parsedKey = JSON.parse(key);
+      if (parsedKey.mediaId === mediaId || parsedKey.id === mediaId) {
+        this.cache.mediaData.delete(key);
       }
-
-      // Clear cache on success
-      this.cache.clear();
-
-      return result.data.SaveMediaListEntry;
-
-    } catch (error) {
-      console.error('[Zoro] updateMediaListEntry failed:', error);
-      throw new Error(`❌ Failed to update entry: ${error.message}`);
+    } catch {
+      // Handle non-JSON keys
+      if (key.includes(`mediaId":${mediaId}`) || key.includes(`"id":${mediaId}`)) {
+        this.cache.mediaData.delete(key);
+      }
     }
   }
+  
+  // Clear user lists cache (since they contain this media)
+  this.cache.userData.clear();
+  
+  console.log(`[Zoro] Cleared cache for media ${mediaId}`);
+}
+
+   
 
   // Process Zoro Search Code Block - FIXED: Removed duplicate and fixed structure
   async processZoroSearchCodeBlock(source, el, ctx) {
@@ -734,17 +976,6 @@ class ZoroPlugin extends Plugin {
 
     return config;
   }
-
-// MISSING: Import statements at the top of file
-// import { Plugin, Modal, Notice } from 'obsidian';
-
-// MISSING: Default settings object
-// const DEFAULT_SETTINGS = { ... };
-
-// MISSING: Main plugin class declaration
-// class ZoroPlugin extends Plugin {
-
-  // MISSING: Constructor, onload, onunload, saveSettings, loadSettings methods
 
   // Get Media List Query - FIXED: Now properly inside the class
   getMediaListQuery(layout = 'card') {
@@ -1031,8 +1262,8 @@ class ZoroPlugin extends Plugin {
     `;
   }
 
-  // Getting Zoro URL - FIXED: Now properly inside the class
-  getZoroUrl(mediaId, mediaType = 'ANIME') {
+  // Getting AniList URL
+  getAniListUrl(mediaId, mediaType = 'ANIME') {
     if (!mediaId || typeof mediaId !== 'number') {
       throw new Error(`Invalid mediaId: ${mediaId}`);
     }
@@ -2160,9 +2391,7 @@ type: stats
   style.textContent = css;
   document.head.appendChild(style);
   }
-  
-    
-
+ 
     
   // Plugin unload method
   onunload() {
@@ -2173,6 +2402,16 @@ type: stats
     if (existingStyle) {
       existingStyle.remove();
       console.log(`Removed style element with ID: ${styleId}`);
+       // Clear pruning interval
+  if (this.pruneInterval) {
+    clearInterval(this.pruneInterval);
+  }
+      
+  // Clear all caches
+  this.cache.userData.clear();
+  this.cache.mediaData.clear();
+  this.cache.searchResults.clear();
+      
     }
   }
 
@@ -2448,6 +2687,13 @@ class ZoroSettingTab extends PluginSettingTab {
       .setDesc(this.plugin.settings.accessToken ? 
         '✅ Authenticated (Token saved)' : 
         '❌ Not authenticated');
+
+    // Token Status 
+new Setting(containerEl)
+  .setName('🔄 Token Status')
+  .setDesc(this.plugin.settings.accessToken ? 
+    `Token expires: ${new Date(this.plugin.settings.tokenExpiry).toLocaleString()}` : 
+    'No active token');
 
     new Setting(containerEl)
       .setName('⚡ Power Features')

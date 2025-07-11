@@ -1,0 +1,24 @@
+async exchangeCodeForToken(code, redirectUri) {
+  try {
+    // Try Obsidian's built-in request method first
+    const response = await this.makeObsidianRequest(code, redirectUri);
+    
+    if (response.access_token) {
+      this.settings.accessToken = response.access_token;
+      await this.saveSettings();
+      new Notice('✅ Successfully authenticated with AniList!');
+      
+      // Test the token by making a simple API call
+      await this.testAccessToken();
+    } else {
+      throw new Error('No access token received from AniList');
+    }
+    
+  } catch (error) {
+    console.error('Authentication error:', error);
+    new Notice(`❌ Authentication failed: ${error.message}`);
+    
+    // Show manual token option
+    this.showManualTokenOption();
+  }
+}

@@ -1,0 +1,38 @@
+parseInlineLink(href) {
+  // Parse: anilist:username/anime/123456 or anilist:username/stats or anilist:/stats (for default user)
+  const parts = href.replace('anilist:', '').split('/');
+  
+  let username, pathParts;
+  
+  // Check if first part is empty (indicating default username should be used)
+  if (parts[0] === '') {
+    if (!this.settings.defaultUsername) {
+      throw new Error('Default username not set. Please configure it in plugin settings.');
+    }
+    username = this.settings.defaultUsername;
+    pathParts = parts.slice(1); // Remove empty first element
+  } else {
+    if (parts.length < 2) {
+      throw new Error('Invalid AniList link format');
+    }
+    username = parts[0];
+    pathParts = parts.slice(1);
+  }
+  
+  const config = {
+    username: username,
+    layout: 'card'
+  };
+  
+  if (pathParts[0] === 'stats') {
+    config.type = 'stats';
+  } else if (pathParts[0] === 'anime' || pathParts[0] === 'manga') {
+    config.type = 'single';
+    config.mediaType = pathParts[0].toUpperCase();
+    config.mediaId = pathParts[1];
+  } else {
+    config.listType = pathParts[0].toUpperCase();
+  }
+  
+  return config;
+  }

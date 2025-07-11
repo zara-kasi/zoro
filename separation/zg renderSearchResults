@@ -1,0 +1,87 @@
+  renderSearchResults(el, media, config) {
+    el.empty();
+    
+    if (media.length === 0) {
+      el.innerHTML = '<div class="anilist-search-message">No results found.</div>';
+      return;
+    }
+    
+    const gridDiv = document.createElement('div');
+    gridDiv.className = 'anilist-cards-grid';
+    gridDiv.style.setProperty('--anilist-grid-columns', this.settings.gridColumns);
+    
+    media.forEach(item => {
+      const title = item.title.english || item.title.romaji;
+      
+      const cardDiv = document.createElement('div');
+      cardDiv.className = 'anilist-search-card';
+      
+      if (this.settings.showCoverImages) {
+        const img = document.createElement('img');
+        img.src = item.coverImage.large;
+        img.alt = title;
+        img.className = 'media-cover';
+        cardDiv.appendChild(img);
+      }
+      
+      const mediaInfoDiv = document.createElement('div');
+      mediaInfoDiv.className = 'media-info';
+      
+      // Create clickable title
+      const titleElement = document.createElement('h4');
+      const titleLink = document.createElement('a');
+      titleLink.href = this.getAniListUrl(item.id, config.mediaType);
+      titleLink.target = '_blank';
+      titleLink.rel = 'noopener noreferrer';
+      titleLink.className = 'anilist-title-link';
+      titleLink.textContent = title;
+      titleElement.appendChild(titleLink);
+      mediaInfoDiv.appendChild(titleElement);
+      
+      // Create details div
+      const detailsDiv = document.createElement('div');
+      detailsDiv.className = 'media-details';
+      
+      // Format badge
+      if (item.format) {
+        const formatBadge = document.createElement('span');
+        formatBadge.className = 'format-badge';
+        formatBadge.textContent = item.format;
+        detailsDiv.appendChild(formatBadge);
+      }
+      
+      // Status badge
+      const statusBadge = document.createElement('span');
+      statusBadge.className = `status-badge status-${item.status.toLowerCase()}`;
+      statusBadge.textContent = item.status;
+      detailsDiv.appendChild(statusBadge);
+      
+      // Average score
+      if (this.settings.showRatings && item.averageScore) {
+        const scoreSpan = document.createElement('span');
+        scoreSpan.className = 'score';
+        scoreSpan.textContent = `★ ${item.averageScore}`;
+        detailsDiv.appendChild(scoreSpan);
+      }
+      
+      mediaInfoDiv.appendChild(detailsDiv);
+      
+      // Create genres div
+      if (this.settings.showGenres) {
+        const genresDiv = document.createElement('div');
+        genresDiv.className = 'genres';
+        item.genres.slice(0, 3).forEach(genre => {
+          const genreTag = document.createElement('span');
+          genreTag.className = 'genre-tag';
+          genreTag.textContent = genre;
+          genresDiv.appendChild(genreTag);
+        });
+        mediaInfoDiv.appendChild(genresDiv);
+      }
+      
+      cardDiv.appendChild(mediaInfoDiv);
+      gridDiv.appendChild(cardDiv);
+    });
+    
+    el.appendChild(gridDiv);
+  }

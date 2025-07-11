@@ -13,6 +13,10 @@ class AniListPlugin extends Plugin {
     // Load settings first
     await this.loadSettings();
 
+  // Inject CSS
+
+this.injectCSS();
+
     
     // Register code block processor
     this.registerMarkdownCodeBlockProcessor('anilist', this.processAniListCodeBlock.bind(this));
@@ -47,17 +51,30 @@ async loadSettings() {
     await this.saveData(this.settings);
   }
 
- 
+ // AniList Code block 
 
-  async processAniListCodeBlock(source, el, ctx) {
-    try {
-      const config = this.parseCodeBlockConfig(source);
-      const data = await this.fetchAniListData(config);
-      this.renderAniListData(el, data, config);
-    } catch (error) {
-      this.renderError(el, error.message);
+async processAniListCodeBlock(source, el, ctx) {
+  try {
+    const config = this.parseCodeBlockConfig(source);
+    
+    // If useAuthenticatedUser is true, get the authenticated username
+    if (config.useAuthenticatedUser) {
+      const authUsername = await this.getAuthenticatedUsername();
+      if (authUsername) {
+        config.username = authUsername;
+      } else {
+        throw new Error('Unable to get authenticated user. Please check your authentication or set a username.');
+      }
     }
+    
+    const data = await this.fetchAniListData(config);
+    this.renderAniListData(el, data, config);
+  } catch (error) {
+    this.renderError(el, error.message);
   }
+}
+
+
 
 // Authentication 
 
@@ -402,7 +419,10 @@ async testAccessToken() {
   }
 }
 
-// Enhanced fetchAniListData method with better error handling
+
+
+// Fetch Anilist Data
+
 async fetchAniListData(config) {
   const cacheKey = JSON.stringify(config);
   const cached = this.cache.get(cacheKey);
@@ -445,9 +465,8 @@ async fetchAniListData(config) {
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     };
-    
-    // Add authorization header if we have an access token
-    if (this.settings.accessToken) {
+
+if (this.settings.accessToken) {
       headers['Authorization'] = `Bearer ${this.settings.accessToken}`;
     }
     
@@ -467,7 +486,11 @@ async fetchAniListData(config) {
     if (result.errors) {
       // Handle specific error cases
       if (result.errors[0].message.includes('Private')) {
-        throw new Error('This user\'s list is private. Please make sure your AniList profile is public.');
+        if (this.settings.accessToken) {
+          throw new Error('This user\'s list is private and you don\'t have permission to view it.');
+        } else {
+          throw new Error('This user\'s list is private. Please authenticate to view private lists.');
+        }
       }
       throw new Error(result.errors[0].message);
     }
@@ -484,6 +507,51 @@ async fetchAniListData(config) {
     throw error;
   }
 }
+
+
+
+// Get the authenticated user's username
+
+
+
+async getAuthenticatedUsername() {
+  if (!this.settings.accessToken) {
+    return null;
+  }
+  
+  try {
+    const query = `
+      query {
+        Viewer {
+          name
+        }
+      }
+    `;
+    
+    const response = await fetch('https://graphql.anilist.co', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.settings.accessToken}`
+      },
+      body: JSON.stringify({ query })
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      return data.data?.Viewer?.name || null;
+    }
+    
+    return null;
+  } catch (error) {
+    console.warn('Failed to get authenticated username:', error);
+    return null;
+  }
+}
+
+
+
+
 
 // Method to update media list entries (requires authentication)
 async updateMediaListEntry(mediaId, updates) {
@@ -550,6 +618,10 @@ async updateMediaListEntry(mediaId, updates) {
       this.renderError(el, error.message);
     }
   }
+
+// Parse code block 
+
+
 parseCodeBlockConfig(source) {
   const config = {};
   const lines = source.split('\n').filter(line => line.trim());
@@ -561,18 +633,20 @@ parseCodeBlockConfig(source) {
     }
   }
   
-  // Use default username if none provided
+  // Use authenticated user if no username provided and no default username
   if (!config.username) {
     if (this.settings.defaultUsername) {
       config.username = this.settings.defaultUsername;
+    } else if (this.settings.accessToken) {
+      // We'll handle this in the processAniListCodeBlock method
+      config.useAuthenticatedUser = true;
     } else {
-      throw new Error('Username is required. Please set a default username in plugin settings or specify one in the code block.');
+      throw new Error('Username is required. Please set a default username in plugin settings, authenticate, or specify one in the code block.');
     }
   }
   
   config.listType = config.listType || 'CURRENT';
   config.layout = config.layout || this.settings.defaultLayout;
-  // Add this line to ensure mediaType is available
   config.mediaType = config.mediaType || 'ANIME';
   
   return config;
@@ -1237,28 +1311,196 @@ getAniListUrl(mediaId, mediaType = 'anime') {
       }
 
 
+// status badge as a customisation panel button 
+
 const statusBadge = document.createElement('span');
-statusBadge.className = `status-badge status-${entry.status.toLowerCase()} clickable-status`;
+statusBadge.className = `status-badge status-${entry.status.toLowerCase()}`;
 statusBadge.textContent = entry.status;
+
+// Always make it clickable to show authentication prompt
+statusBadge.className += ' clickable-status';
 statusBadge.style.cursor = 'pointer';
-statusBadge.onclick = (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  
-  this.createEditModal(entry, 
-    async (updates) => {
-      await this.updateMediaListEntry(entry.media.id, updates);
-      new Notice('Updated successfully!');
-      // Refresh the view
-      location.reload();
-    },
-    () => {
-      // Cancel - do nothing
-    }
-  );
-};
+
+if (this.settings.accessToken) {
+  statusBadge.title = 'Click to edit';
+  statusBadge.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    this.createEditModal(entry, 
+      async (updates) => {
+        try {
+          await this.updateMediaListEntry(entry.media.id, updates);
+          new Notice('✅ Updated successfully!');
+          // Clear cache to force refresh
+          this.cache.clear();
+          // Refresh the current view
+          const currentEl = statusBadge.closest('.anilist-container');
+          if (currentEl) {
+            // Re-render the current block
+            const codeBlock = statusBadge.closest('.markdown-rendered').querySelector('code');
+            if (codeBlock) {
+              this.processAniListCodeBlock(codeBlock.textContent, currentEl, {});
+            }
+          }
+        } catch (error) {
+          new Notice(`❌ Update failed: ${error.message}`);
+        }
+      },
+      () => {
+        // Cancel - do nothing
+      }
+    );
+  };
+} else {
+  statusBadge.title = 'Click to authenticate';
+  statusBadge.onclick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    this.createAuthenticationPrompt();
+  };
+}
+
 detailsDiv.appendChild(statusBadge);
       
+
+// css for badge
+
+const additionalCSS = `
+.anilist-edit-modal {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.anilist-modal-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+.anilist-modal-content {
+  background: var(--background-primary);
+  border-radius: 8px;
+  padding: 20px;
+  max-width: 400px;
+  width: 90%;
+  position: relative;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.anilist-modal-content.auth-prompt {
+  max-width: 500px;
+}
+
+.anilist-modal-content h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  color: var(--text-normal);
+}
+
+.anilist-modal-content h4 {
+  margin-bottom: 10px;
+  color: var(--text-normal);
+}
+
+.anilist-modal-content p {
+  color: var(--text-normal);
+  line-height: 1.5;
+}
+
+.anilist-modal-content ul {
+  color: var(--text-normal);
+}
+
+.anilist-modal-content label {
+  color: var(--text-normal);
+  font-weight: 500;
+}
+
+.anilist-modal-content input,
+.anilist-modal-content select {
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 4px;
+  padding: 5px 8px;
+  color: var(--text-normal);
+}
+
+.quick-progress-buttons button {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 4px;
+  padding: 5px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.quick-progress-buttons button:hover {
+  background: var(--interactive-accent-hover);
+}
+
+.anilist-modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.anilist-modal-buttons button {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 4px;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+.anilist-modal-buttons button:hover {
+  background: var(--interactive-accent-hover);
+}
+
+.clickable-status {
+  transition: all 0.2s ease;
+}
+
+.clickable-status:hover {
+  transform: scale(1.05);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+/* Authentication prompt specific styles */
+.auth-prompt .anilist-modal-buttons {
+  justify-content: center;
+}
+
+.auth-prompt .anilist-modal-buttons button:first-child {
+  background: linear-gradient(45deg, #02A9FF, #3B82F6);
+  position: relative;
+  overflow: hidden;
+}
+
+.auth-prompt .anilist-modal-buttons button:first-child:hover {
+  background: linear-gradient(45deg, #0284C7, #2563EB);
+  transform: translateY(-1px);
+}
+
+.auth-prompt .anilist-modal-buttons button:first-child:active {
+  transform: translateY(0);
+}
+`;
+
+
 
       
       if (this.settings.showProgress) {
@@ -1399,6 +1641,7 @@ detailsDiv.appendChild(statusBadge);
 
 // floating window for customisation 
 
+
 createEditModal(entry, onSave, onCancel) {
   const modal = document.createElement('div');
   modal.className = 'anilist-edit-modal';
@@ -1412,7 +1655,11 @@ createEditModal(entry, onSave, onCancel) {
   const title = document.createElement('h3');
   title.textContent = entry.media.title.english || entry.media.title.romaji;
   
+  // Status dropdown
+  const statusLabel = document.createElement('label');
+  statusLabel.textContent = 'Status:';
   const statusSelect = document.createElement('select');
+  statusSelect.style.marginLeft = '10px';
   ['CURRENT', 'PLANNING', 'COMPLETED', 'DROPPED', 'PAUSED', 'REPEATING'].forEach(status => {
     const option = document.createElement('option');
     option.value = status;
@@ -1421,6 +1668,9 @@ createEditModal(entry, onSave, onCancel) {
     statusSelect.appendChild(option);
   });
   
+  // Score input
+  const scoreLabel = document.createElement('label');
+  scoreLabel.textContent = 'Score:';
   const scoreInput = document.createElement('input');
   scoreInput.type = 'number';
   scoreInput.min = '0';
@@ -1428,19 +1678,66 @@ createEditModal(entry, onSave, onCancel) {
   scoreInput.step = '0.1';
   scoreInput.value = entry.score || '';
   scoreInput.placeholder = 'Score (0-10)';
+  scoreInput.style.marginLeft = '10px';
   
+  // Progress input
+  const progressLabel = document.createElement('label');
+  progressLabel.textContent = 'Progress:';
   const progressInput = document.createElement('input');
   progressInput.type = 'number';
   progressInput.min = '0';
   progressInput.max = entry.media.episodes || entry.media.chapters || 999;
   progressInput.value = entry.progress || 0;
   progressInput.placeholder = 'Progress';
+  progressInput.style.marginLeft = '10px';
+  
+  // Quick progress buttons
+  const quickProgressDiv = document.createElement('div');
+  quickProgressDiv.className = 'quick-progress-buttons';
+  quickProgressDiv.style.marginTop = '10px';
+  
+  const plusOneBtn = document.createElement('button');
+  plusOneBtn.textContent = '+1';
+  plusOneBtn.style.marginRight = '5px';
+  plusOneBtn.onclick = (e) => {
+    e.preventDefault();
+    const current = parseInt(progressInput.value) || 0;
+    const max = entry.media.episodes || entry.media.chapters || 999;
+    if (current < max) {
+      progressInput.value = current + 1;
+    }
+  };
+  
+const minusOneBtn = document.createElement('button');
+  minusOneBtn.textContent = '-1';
+  minusOneBtn.style.marginRight = '5px';
+  minusOneBtn.onclick = (e) => {
+    e.preventDefault();
+    const current = parseInt(progressInput.value) || 0;
+    if (current > 0) {
+      progressInput.value = current - 1;
+    }
+  };
+  
+  const completeBtn = document.createElement('button');
+  completeBtn.textContent = 'Complete';
+  completeBtn.onclick = (e) => {
+    e.preventDefault();
+    progressInput.value = entry.media.episodes || entry.media.chapters || 1;
+    statusSelect.value = 'COMPLETED';
+  };
+  
+  quickProgressDiv.appendChild(plusOneBtn);
+  quickProgressDiv.appendChild(minusOneBtn);
+  quickProgressDiv.appendChild(completeBtn);
   
   const buttonContainer = document.createElement('div');
   buttonContainer.className = 'anilist-modal-buttons';
+  buttonContainer.style.marginTop = '15px';
   
   const saveBtn = document.createElement('button');
   saveBtn.textContent = 'Save';
+  saveBtn.style.marginRight = '10px';
   saveBtn.onclick = () => {
     onSave({
       status: statusSelect.value,
@@ -1461,9 +1758,17 @@ createEditModal(entry, onSave, onCancel) {
   buttonContainer.appendChild(cancelBtn);
   
   content.appendChild(title);
+  content.appendChild(statusLabel);
   content.appendChild(statusSelect);
+  content.appendChild(document.createElement('br'));
+  content.appendChild(document.createElement('br'));
+  content.appendChild(scoreLabel);
   content.appendChild(scoreInput);
+  content.appendChild(document.createElement('br'));
+  content.appendChild(document.createElement('br'));
+  content.appendChild(progressLabel);
   content.appendChild(progressInput);
+  content.appendChild(quickProgressDiv);
   content.appendChild(buttonContainer);
   
   modal.appendChild(overlay);
@@ -1639,10 +1944,147 @@ type: stats
   }
 }
 
-  onunload() {
-    console.log('Unloading AniList Plugin');
+
+// authentication prompt
+
+createAuthenticationPrompt() {
+  const modal = document.createElement('div');
+  modal.className = 'anilist-edit-modal';
+  
+  const overlay = document.createElement('div');
+  overlay.className = 'anilist-modal-overlay';
+  
+  const content = document.createElement('div');
+  content.className = 'anilist-modal-content auth-prompt';
+  
+  const title = document.createElement('h3');
+  title.textContent = '🔐 Authentication Required';
+  title.style.textAlign = 'center';
+  title.style.marginBottom = '20px';
+  
+  const message = document.createElement('p');
+  message.textContent = 'You need to authenticate with AniList to edit your anime/manga entries. This will allow you to update your progress, scores, and status directly from Obsidian.';
+  message.style.textAlign = 'center';
+  message.style.marginBottom = '20px';
+  message.style.color = 'var(--text-muted)';
+  
+  const featuresDiv = document.createElement('div');
+  featuresDiv.style.marginBottom = '20px';
+  
+  const featuresTitle = document.createElement('h4');
+  featuresTitle.textContent = 'Features after authentication:';
+  featuresTitle.style.marginBottom = '10px';
+  
+  const featuresList = document.createElement('ul');
+  featuresList.style.textAlign = 'left';
+  featuresList.style.marginLeft = '20px';
+  
+  const features = [
+    'Edit progress, scores, and status',
+    'Access private lists and profiles',
+    'Quick progress buttons (+1, -1, Complete)',
+    'Auto-detect your username',
+    'Real-time updates'
+  ];
+  
+  features.forEach(feature => {
+    const li = document.createElement('li');
+    li.textContent = feature;
+    li.style.marginBottom = '5px';
+    featuresList.appendChild(li);
+  });
+  
+  featuresDiv.appendChild(featuresTitle);
+  featuresDiv.appendChild(featuresList);
+  
+  const buttonContainer = document.createElement('div');
+  buttonContainer.className = 'anilist-modal-buttons';
+  buttonContainer.style.marginTop = '20px';
+  buttonContainer.style.justifyContent = 'center';
+  
+  const authenticateBtn = document.createElement('button');
+  authenticateBtn.textContent = '🔑 Authenticate with AniList';
+  authenticateBtn.style.marginRight = '10px';
+  authenticateBtn.style.padding = '10px 20px';
+  authenticateBtn.style.fontSize = '14px';
+  authenticateBtn.style.fontWeight = 'bold';
+  authenticateBtn.onclick = () => {
+    // Close modal first
+    document.body.removeChild(modal);
+    
+    // Open plugin settings
+    this.app.setting.open();
+    this.app.setting.openTabById('anilist-plugin');
+    
+    // Show notice
+    new Notice('📝 Please configure authentication in the plugin settings');
+  };
+  
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.style.background = 'var(--background-secondary)';
+  cancelBtn.style.color = 'var(--text-normal)';
+  cancelBtn.onclick = () => {
+    document.body.removeChild(modal);
+  };
+  
+  buttonContainer.appendChild(authenticateBtn);
+  buttonContainer.appendChild(cancelBtn);
+  
+  content.appendChild(title);
+  content.appendChild(message);
+  content.appendChild(featuresDiv);
+  content.appendChild(buttonContainer);
+  
+  modal.appendChild(overlay);
+  modal.appendChild(content);
+  
+  overlay.onclick = () => {
+    document.body.removeChild(modal);
+  };
+  
+  document.body.appendChild(modal);
+}
+
+
+//  ADD method to inject css
+
+
+injectCSS() {
+  const styleId = 'anilist-plugin-styles';
+  
+  // Remove existing styles
+  const existingStyle = document.getElementById(styleId);
+  if (existingStyle) {
+    existingStyle.remove();
+  }
+  
+  // Add new styles
+  const style = document.createElement('style');
+  style.id = styleId;
+  style.textContent = additionalCSS;
+  document.head.appendChild(style);
+}
+ 
+
+
+
+// unload
+
+onunload() {
+  console.log('Unloading AniList Plugin');
+  
+  // Remove injected CSS
+  const styleId = 'anilist-plugin-styles';
+  const existingStyle = document.getElementById(styleId);
+  if (existingStyle) {
+    existingStyle.remove();
   }
 }
+
+
+
+
 
 class AniListSettingTab extends PluginSettingTab {
   constructor(app, plugin) {

@@ -1,0 +1,8 @@
+async processAniListSearchCodeBlock(source, el, ctx) {
+    try {
+      const config = this.parseSearchCodeBlockConfig(source);
+      this.renderSearchInterface(el, config);
+    } catch (error) {
+      this.renderError(el, error.message);
+    }
+  }

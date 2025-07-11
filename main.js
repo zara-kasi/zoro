@@ -1379,6 +1379,7 @@ class ManualTokenModal extends Modal {
     if (!user || !user.statistics) {
       this.renderError(el, 'User statistics unavailable.');
       return;
+    }
     
 
     const safe = (val, fallback = '—') => (val != null ? val : fallback);
@@ -2263,7 +2264,7 @@ type: stats
 
     el.appendChild(wrapper);
   }
-  }
+  
     
 
     

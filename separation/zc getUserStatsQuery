@@ -1,0 +1,30 @@
+getUserStatsQuery() {
+    return `
+      query ($username: String) {
+        User(name: $username) {
+          id
+          name
+          avatar {
+            large
+            medium
+          }
+          statistics {
+            anime {
+              count
+              episodesWatched
+              minutesWatched
+              meanScore
+              standardDeviation
+            }
+            manga {
+              count
+              chaptersRead
+              volumesRead
+              meanScore
+              standardDeviation
+            }
+          }
+        }
+      }
+    `;
+  }

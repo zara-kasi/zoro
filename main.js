@@ -314,14 +314,6 @@ setToCache(type, key, value) {
     }
   }
 
-  isTokenExpired() {
-    const expiry = this.settings.tokenExpiry;
-    return !expiry || Date.now() >= expiry;
-  }
-
-   }
-
-  
   // Refresh Token
   async refreshToken() {
   if (!this.settings.refreshToken) {
@@ -402,7 +394,11 @@ setToCache(type, key, value) {
   return true;
   }
 
-  
+  // Token Expiry 
+  isTokenExpired() {
+    const expiry = this.settings.tokenExpiry;
+    return !expiry || Date.now() >= expiry;
+  }
 
   
   // Make Obsidian Request 

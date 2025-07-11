@@ -1,3 +1,4 @@
+// Settings UI tab
 const { PluginSettingTab, Setting, Notice } = require('obsidian');
 
 class ZoroSettingTab extends PluginSettingTab {

@@ -1,0 +1,30 @@
+showInstructionsModal(instructions) {
+  const modal = document.createElement('div');
+  modal.className = 'anilist-instructions-modal';
+  modal.innerHTML = `
+    <div class="anilist-modal-overlay"></div>
+    <div class="anilist-modal-content">
+      <h3>Manual Token Setup</h3>
+      <pre style="background: #f5f5f5; padding: 15px; border-radius: 5px; font-size: 12px; overflow-x: auto; white-space: pre-wrap;">${instructions}</pre>
+      <div class="anilist-modal-buttons">
+        <button class="manual-token-btn">Manual Token Input</button>
+        <button class="close-btn">Close</button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  
+  modal.querySelector('.manual-token-btn').onclick = () => {
+    document.body.removeChild(modal);
+    this.promptManualToken();
+  };
+  
+  modal.querySelector('.close-btn').onclick = () => {
+    document.body.removeChild(modal);
+  };
+  
+  modal.querySelector('.anilist-modal-overlay').onclick = () => {
+    document.body.removeChild(modal);
+  };
+}

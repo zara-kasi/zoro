@@ -1234,10 +1234,6 @@ class ZoroPlugin extends Plugin {
     el.appendChild(grid);
   }
 
-  // COMMENT: Main plugin class definition should be here at the top
-// COMMENT: Should include: class ZoroPlugin extends Plugin { ... }
-// COMMENT: Should include: Plugin imports, settings interface, onload/onunload methods
-
 // Instructions Modal Class - FIXED: Now properly outside the main class
 class InstructionsModal extends Modal {
   constructor(app, instructions, plugin) {

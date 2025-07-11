@@ -1,0 +1,40 @@
+getSingleMediaQuery() {
+    return `
+      query ($username: String, $mediaId: Int, $type: MediaType) {
+        MediaList(userName: $username, mediaId: $mediaId, type: $type) {
+          id
+          status
+          score
+          progress
+          media {
+            id
+            title {
+              romaji
+              english
+              native
+            }
+            coverImage {
+              large
+              medium
+            }
+            episodes
+            chapters
+            genres
+            format
+            averageScore
+            status
+            startDate {
+              year
+              month
+              day
+            }
+            endDate {
+              year
+              month
+              day
+            }
+          }
+        }
+      }
+    `;
+  }

@@ -1,6 +1,6 @@
 const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal } = require('obsidian');
 
-// Default settings constant
+// Default settings constant ok
 const DEFAULT_SETTINGS = {
   defaultUsername: '',
   defaultLayout: 'card',
@@ -113,7 +113,7 @@ setToCache(type, key, value) {
 }
 
 
-  // On Load
+  // On Load  ok
   async onload() {
     console.log('[Zoro] Plugin loading...');
 

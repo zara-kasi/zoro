@@ -1,0 +1,23 @@
+async onload() {
+    console.log('Loading AniList Plugin');
+    
+    // Load settings first
+    await this.loadSettings();
+
+  // Inject CSS
+
+this.injectCSS();
+
+    
+    // Register code block processor
+    this.registerMarkdownCodeBlockProcessor('anilist', this.processAniListCodeBlock.bind(this));
+    
+    // Register new search code block processors
+    this.registerMarkdownCodeBlockProcessor('anilist-search', this.processAniListSearchCodeBlock.bind(this));
+    
+    // Register inline link processor
+    this.registerMarkdownPostProcessor(this.processInlineLinks.bind(this));
+    
+    // Add plugin settings
+    this.addSettingTab(new AniListSettingTab(this.app, this));
+  }

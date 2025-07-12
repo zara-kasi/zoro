@@ -2106,7 +2106,7 @@ clearCacheForMedia(mediaId) {
   }
 
   // Create Authentication Prompt 
-    createAuthenticationPrompt() {
+     createAuthenticationPrompt() {
     // Create modal wrapper
     const modal = document.createElement('div');
     modal.className = 'zoro-edit-modal';

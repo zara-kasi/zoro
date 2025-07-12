@@ -2396,6 +2396,21 @@ type: stats
   this.exchangeCodeForToken(event.data.code);
 }
 
+async promptForCredentialsAndAuth() {
+  const clientId = prompt("Enter your AniList Client ID:");
+  if (!clientId) {
+    new Notice("⚠️ Client ID is required");
+    return;
+  }
+
+  const clientSecret = prompt("Enter your AniList Client Secret:");
+  if (!clientSecret) {
+    new Notice("⚠️ Client Secret is required");
+    return;
+  }
+
+  await this.authenticateUserWithClient(clientId, clientSecret);
+}
   // Render Errors
   renderError(el, message, context = '', onRetry = null) {
     el.empty?.(); // clear if Obsidian's `el` object has `.empty()` method
@@ -2573,6 +2588,17 @@ class ZoroSettingTab extends PluginSettingTab {
   display() { 
     const { containerEl } = this; 
     containerEl.empty();
+    containerEl.createEl('h3', { text: '🐢 Low Effort' });
+
+ new Setting(containerEl)
+      .setName('➕ Sample Notes')
+      .setDesc('Creates two notes — one for Anime, one for Manga — with all your lists, search, and stats setup preloaded.')
+      .addButton(button => button
+        .setButtonText('Create Note')
+        .setTooltip('Click to create a sample note in your vault')
+        .onClick(async () => {
+          await this.plugin.createSampleNotes();
+        }));
 
     new Setting(containerEl)
       .setName('👤 Username')
@@ -2585,15 +2611,7 @@ class ZoroSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
 
-    new Setting(containerEl)
-      .setName('➕ Sample Notes')
-      .setDesc('Creates two notes — one for Anime, one for Manga — with all your lists, search, and stats preloaded. No setup needed.')
-      .addButton(button => button
-        .setButtonText('Create Note')
-        .setTooltip('Click to create a sample note in your vault')
-        .onClick(async () => {
-          await this.plugin.createSampleNotes();
-        }));
+containerEl.createEl('hr');
 
     new Setting(containerEl)
       .setName('🧊 Layout')
@@ -2658,43 +2676,63 @@ class ZoroSettingTab extends PluginSettingTab {
           this.plugin.settings.gridColumns = value;
           await this.plugin.saveSettings();
         }));
+        
+        containerEl.createEl('hr');
+    // ─── GROUP TITLE + EXPLANATION ───
+containerEl.createEl('h3', { text: '🚀 MaxOutput' });
 
-    new Setting(containerEl)
-      .setName('🔑 Client ID')
-      .setDesc('Your Zoro application Client ID')
-      .addText(text => text
-        .setPlaceholder('Enter Client ID')
-        .setValue(this.plugin.settings.clientId || '')
-        .onChange(async (value) => {
-          this.plugin.settings.clientId = value.trim();
-          await this.plugin.saveSettings();
-        }));
+containerEl.createEl('p', {
+  text: 'This setting isn’t complicated… if you’re into unnecessarily complicated things.',
+});
 
-    new Setting(containerEl)
-      .setName('🔐 Client Secret')
-      .setDesc('Your Zoro application Client Secret')
-      .addText(text => text
-        .setPlaceholder('Enter Client Secret')
-        .setValue(this.plugin.settings.clientSecret || '')
-        .onChange(async (value) => {
-          this.plugin.settings.clientSecret = value.trim();
-          await this.plugin.saveSettings();
-        }));
+// ─── CREDENTIALS BUTTONS (SIDE-BY-SIDE) ───
+const row = containerEl.createDiv();
+row.style.display = 'flex';
+row.style.justifyContent = 'space-between';
+row.style.alignItems = 'center';
+row.style.gap = '0.5rem';
+row.style.marginTop = '1rem';
+row.style.width = '100%';
 
-    new Setting(containerEl)
-      .setName('🔗 Redirect URI')
-      .setDesc('Your application redirect URI')
-      .addText(text => text
-        .setPlaceholder('http://localhost:8080/callback')
-        .setValue(this.plugin.settings.redirectUri || 'http://localhost:8080/callback')
-        .onChange(async (value) => {
-          this.plugin.settings.redirectUri = value.trim();
-          await this.plugin.saveSettings();
-        }));
+const leftBtn = row.createDiv();
+const rightBtn = row.createDiv();
 
+[leftBtn, rightBtn].forEach(el => {
+  el.style.flex = '1';
+});
+
+const btn1 = leftBtn.createEl('button', { text: 'Client ID' });
+btn1.classList.add('mod-cta');
+btn1.style.width = '100%';
+btn1.onclick = () => {
+  new SingleInputModal(this.plugin.app, 'Enter AniList Client ID', (value) => {
+    this.plugin.settings.clientId = value;
+    this.plugin.saveSettings();
+    new Notice('✅ Client ID saved.');
+  }).open();
+};
+
+const btn2 = rightBtn.createEl('button', { text: 'Client Secret' });
+btn2.classList.add('mod-cta');
+btn2.style.width = '100%';
+btn2.onclick = () => {
+  new SingleInputModal(this.plugin.app, 'Enter AniList Client Secret', (value) => {
+    this.plugin.settings.clientSecret = value;
+    this.plugin.saveSettings();
+    new Notice('✅ Client Secret saved.');
+  }).open();
+};
+
+// ─── DIVIDER / SPACER BEFORE AUTHENTICATION BUTTON ───
+containerEl.createEl('hr'); // Adds a horizontal line
+
+// Optional: More space if you want it to look relaxed
+containerEl.createEl('div', { text: '' }).style.marginBottom = '1rem';
+
+    
     new Setting(containerEl)
       .setName('🔓 Authenticate')
-      .setDesc('Connect AniList  API with Zoro')
+      .setDesc('Connect Zoro with AniList API.')
       .addButton(button => button
         .setButtonText(this.plugin.settings.accessToken ? 'Re-authenticate' : 'Authenticate')
         .onClick(async () => {
@@ -2712,8 +2750,8 @@ new Setting(containerEl)
       : '❌ Disconnected'
   );
     new Setting(containerEl)
-      .setName('⚡ Power Features')
-      .setDesc('Want more features? Visit our GitHub page for tips, tricks, and powerful ways to customize your notes.')
+      .setName('🪤 Hidden Settings ')
+      .setDesc('Not sure how this works? That’s fine. Most people click around and hope for the best. But you could be better than that. The full guide covers authentication, custom blocks, tips, and all the stuff I couldn’t fit here..')
       .addButton(button => button
         .setButtonText('View Documentation')
         .onClick(() => {

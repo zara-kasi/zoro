@@ -495,7 +495,7 @@ const authWindow = window.open(authUrl, '_blank', 'width=500,height=600');
           'Authorization': `Bearer ${this.settings.accessToken}`
         },
         body: JSON.stringify({ query })
-      });
+      }));
 
       const data = response.json;
       if (!data || !data.data?.Viewer) {

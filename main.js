@@ -560,7 +560,7 @@ if (this.settings.accessToken) {
 
       return data.data.Viewer.name;
 
-    } catch (error) {
+     catch (error) {
       console.warn('[Zoro] getAuthenticatedUsername() failed:', error);
       return null;
     }

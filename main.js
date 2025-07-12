@@ -2737,14 +2737,6 @@ new Setting(containerEl)
       ? `✅ Connected (Expires: ${new Date(this.plugin.settings.tokenExpiry).toLocaleDateString()})`
       : '❌ Disconnected'
   );
-
-    // Token Status 
-new Setting(containerEl)
-  .setName('🔄 Token Status')
-  .setDesc(this.plugin.settings.accessToken ? 
-    `Token expires: ${new Date(this.plugin.settings.tokenExpiry).toLocaleString()}` : 
-    'No active token');
-
     new Setting(containerEl)
       .setName('⚡ Power Features')
       .setDesc('Want more features? Visit our GitHub page for tips, tricks, and powerful ways to customize your notes.')

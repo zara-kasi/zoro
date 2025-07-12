@@ -2463,50 +2463,6 @@ type: stats
 } 
 
 
-// Class Instruction modal
-
-class InstructionsModal extends Modal {
-  constructor(app, instructions, plugin) {
-    super(app);
-    this.instructions = instructions;
-    this.plugin = plugin;
-  }
-
-  onOpen() {
-    const { contentEl } = this;
-
-    contentEl.createEl('h3', { text: 'Manual Token Setup' });
-
-    const pre = contentEl.createEl('pre', {
-      text: this.instructions,
-    });
-    pre.style.whiteSpace = 'pre-wrap';
-    pre.style.fontSize = '12px';
-    pre.style.background = '#f5f5f5';
-    pre.style.padding = '12px';
-    pre.style.borderRadius = '5px';
-    pre.style.overflowX = 'auto';
-
-    const btnContainer = contentEl.createDiv({ cls: 'modal-button-row' });
-
-    const manualTokenBtn = btnContainer.createEl('button', { text: 'Manual Token Input' });
-    manualTokenBtn.onclick = () => {
-      this.close();
-      this.plugin.promptManualToken();
-    };
-
-    const closeBtn = btnContainer.createEl('button', { text: 'Close' });
-    closeBtn.onclick = () => this.close();
-  }
-
-  onClose() {
-    const { contentEl } = this;
-    contentEl.empty();
-  }
-}
-
-
-// Manual Token Modal Class - FIXED: Now properly outside the main class
 
 
 class ClientIdModal extends Modal {

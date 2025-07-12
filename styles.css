@@ -356,14 +356,18 @@
 /* Authentication Modal Styles */
 .auth-modal {
   padding: 2rem;
-  max-width: 400px;
+  max-width: 450px;
   margin: 0 auto;
+  background: var(--background-primary);
+  border-radius: 8px;
 }
 
 .auth-modal h2 {
   margin-bottom: 1rem;
   text-align: center;
   color: var(--text-normal);
+  font-size: 1.4rem;
+  font-weight: 600;
 }
 
 .auth-modal-desc {
@@ -371,6 +375,7 @@
   text-align: center;
   color: var(--text-muted);
   font-size: 0.9rem;
+  line-height: 1.4;
 }
 
 .auth-input-container {
@@ -379,23 +384,31 @@
 
 .auth-input {
   width: 100%;
-  padding: 0.75rem;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
+  padding: 0.875rem 1rem;
+  border: 2px solid var(--background-modifier-border);
+  border-radius: 8px;
   background: var(--background-primary);
   color: var(--text-normal);
   font-size: 1rem;
-  transition: border-color 0.2s ease;
+  transition: all 0.2s ease;
+  font-family: var(--font-interface);
 }
 
 .auth-input:focus {
   outline: none;
   border-color: var(--interactive-accent);
-  box-shadow: 0 0 0 2px var(--interactive-accent-hover);
+  box-shadow: 0 0 0 3px var(--interactive-accent-hover);
 }
 
 .auth-input::placeholder {
   color: var(--text-muted);
+}
+
+.pin-input {
+  font-family: var(--font-monospace);
+  letter-spacing: 0.5px;
+  text-align: center;
+  font-size: 1.1rem;
 }
 
 .auth-button-container {
@@ -412,16 +425,18 @@
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
-  min-width: 80px;
+  min-width: 90px;
+  font-family: var(--font-interface);
 }
 
 .auth-button:not(.mod-cta) {
-  background: var(--background-secondary);
+  background: var(--interactive-normal);
   color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
 }
 
 .auth-button:not(.mod-cta):hover {
-  background: var(--background-modifier-hover);
+  background: var(--interactive-hover);
 }
 
 .auth-button.mod-cta {
@@ -433,10 +448,44 @@
   background: var(--interactive-accent-hover);
 }
 
+.submit-button {
+  position: relative;
+  overflow: hidden;
+}
+
+.submit-button.ready {
+  background: var(--color-green);
+  transform: scale(1.02);
+}
+
+.submit-button.ready:hover {
+  background: var(--color-green);
+  filter: brightness(1.1);
+}
+
+.pin-modal {
+  border: 2px solid var(--interactive-accent);
+}
+
+.pin-modal h2 {
+  color: var(--interactive-accent);
+}
+
+/* Settings button font size fix */
+.setting-item .setting-item-control button {
+  font-size: 0.85rem !important;
+  padding: 0.5rem 1rem !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: 200px !important;
+}
+
 /* Mobile responsive */
 @media (max-width: 480px) {
   .auth-modal {
     padding: 1.5rem;
+    max-width: 350px;
   }
   
   .auth-button-container {
@@ -445,5 +494,10 @@
   
   .auth-button {
     width: 100%;
+  }
+  
+  .setting-item .setting-item-control button {
+    max-width: 100% !important;
+    font-size: 1rem !important;
   }
 }

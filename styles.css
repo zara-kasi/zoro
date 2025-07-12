@@ -353,4 +353,97 @@
   cursor: pointer;
 }
 
-/* REMOVED duplicate CSS generation function - CSS should not contain JavaScript */
+/* Authentication Modal Styles */
+.auth-modal {
+  padding: 2rem;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.auth-modal h2 {
+  margin-bottom: 1rem;
+  text-align: center;
+  color: var(--text-normal);
+}
+
+.auth-modal-desc {
+  margin-bottom: 1.5rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.auth-input-container {
+  margin-bottom: 1.5rem;
+}
+
+.auth-input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 1rem;
+  transition: border-color 0.2s ease;
+}
+
+.auth-input:focus {
+  outline: none;
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 2px var(--interactive-accent-hover);
+}
+
+.auth-input::placeholder {
+  color: var(--text-muted);
+}
+
+.auth-button-container {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+.auth-button {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 80px;
+}
+
+.auth-button:not(.mod-cta) {
+  background: var(--background-secondary);
+  color: var(--text-normal);
+}
+
+.auth-button:not(.mod-cta):hover {
+  background: var(--background-modifier-hover);
+}
+
+.auth-button.mod-cta {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.auth-button.mod-cta:hover {
+  background: var(--interactive-accent-hover);
+}
+
+/* Mobile responsive */
+@media (max-width: 480px) {
+  .auth-modal {
+    padding: 1.5rem;
+  }
+  
+  .auth-button-container {
+    flex-direction: column;
+  }
+  
+  .auth-button {
+    width: 100%;
+  }
+}

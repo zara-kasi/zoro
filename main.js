@@ -2758,9 +2758,6 @@ class ZoroSettingTab extends PluginSettingTab {
 
   display() { 
     const { containerEl } = this; 
-    containerEl.empty();
-    containerEl.createEl('h3', { text: '🐢' });
-
  new Setting(containerEl)
       .setName('➕ Sample Notes')
       .setDesc('Creates notes to view your anime and manga data.')
@@ -2867,7 +2864,7 @@ containerEl.createEl('hr');
 
     new Setting(containerEl)
       .setName('🪤 Hidden Settings ')
-      .setDesc('Not sure how this works? That’s fine. Most people click around and hope for the best. But you could be better than that. The full guide covers authentication, custom blocks, tips, and all the stuff I couldn’t fit here..')
+      .setDesc('Yes, there’s an authentication guide. Click it.')
       .addButton(button => button
         .setButtonText('View Documentation')
         .onClick(() => {

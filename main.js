@@ -446,35 +446,6 @@ setToCache(type, key, value) {
     }
   }
 
-  // In case of failure Show manual exchange token option 
-  showManualTokenOption() {
-    new Notice('🔧 If authentication fails, you can enter the token manually.', 10000);
-
-    setTimeout(() => {
-      const userChoice = confirm(
-        'Authentication failed. Would you like to manually input a token?\n\n' +
-        'This involves:\n' +
-        '1. Visiting AniList\'s OAuth page\n' +
-        '2. Copying the access token\n' +
-        '3. Pasting it below in the plugin settings.\n\n' +
-        'Click OK to enter a token, Cancel to retry authentication.'
-      );
-
-      if (userChoice) {
-        this.showManualTokenInstructions();
-      }
-    }, 2000);
-  }
-
-  showInstructionsModal(instructions) {
-    new InstructionsModal(this.app, instructions, this).open();
-  }
-
-  // Prompt For manual Token
-  async promptManualToken() {
-    new ManualTokenModal(this.app, this).open();
-  }
-
   // Test access token 
   async testAccessToken() {
     const query = `
@@ -1271,7 +1242,7 @@ clearCacheForMedia(mediaId) {
   }
 
   // Getting AniList URL
-  getAniListUrl(mediaId, mediaType = 'ANIME') {
+  getZoroUrl(mediaId, mediaType = 'ANIME') {
     if (!mediaId || typeof mediaId !== 'number') {
       throw new Error(`Invalid mediaId: ${mediaId}`);
     }

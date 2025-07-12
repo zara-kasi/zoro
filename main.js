@@ -298,11 +298,7 @@ const authWindow = window.open(authUrl, '_blank', 'width=500,height=600');
     }
   }
 
-  // Refresh Token
-  async refreshToken() {
-  if (!this.settings.refreshToken) {
-    throw new Error('No refresh token available');
-  }
+ 
 
   try {
     const body = new URLSearchParams({
@@ -2460,6 +2456,13 @@ type: stats
   }
 
 } 
+
+ // Refresh Token
+  async refreshToken() {
+  if (!this.settings.refreshToken) {
+    throw new Error('No refresh token available');
+  }
+  }
 
 // Class Instruction modal
 

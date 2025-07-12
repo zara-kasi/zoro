@@ -2396,21 +2396,6 @@ type: stats
   this.exchangeCodeForToken(event.data.code);
 }
 
-async promptForCredentialsAndAuth() {
-  const clientId = prompt("Enter your AniList Client ID:");
-  if (!clientId) {
-    new Notice("⚠️ Client ID is required");
-    return;
-  }
-
-  const clientSecret = prompt("Enter your AniList Client Secret:");
-  if (!clientSecret) {
-    new Notice("⚠️ Client Secret is required");
-    return;
-  }
-
-  await this.authenticateUserWithClient(clientId, clientSecret);
-}
   // Render Errors
   renderError(el, message, context = '', onRetry = null) {
     el.empty?.(); // clear if Obsidian's `el` object has `.empty()` method
@@ -2685,43 +2670,47 @@ containerEl.createEl('p', {
   text: 'This setting isn’t complicated… if you’re into unnecessarily complicated things.',
 });
 
-// ─── CREDENTIALS BUTTONS (SIDE-BY-SIDE) ───
-const row = containerEl.createDiv();
-row.style.display = 'flex';
-row.style.justifyContent = 'space-between';
-row.style.alignItems = 'center';
-row.style.gap = '0.5rem';
-row.style.marginTop = '1rem';
-row.style.width = '100%';
+    new Setting(containerEl)
+      .setName('🔑 Client ID')
+      .setDesc('Your Zoro application Client ID')
+      .addText(text => text
+        .setPlaceholder('Enter Client ID')
+        .setValue(this.plugin.settings.clientId || '')
+        .onChange(async (value) => {
+          this.plugin.settings.clientId = value.trim();
+          await this.plugin.saveSettings();
+        }));
 
-const leftBtn = row.createDiv();
-const rightBtn = row.createDiv();
+    new Setting(containerEl)
+      .setName('🔐 Client Secret')
+      .setDesc('Your Zoro application Client Secret')
+      .addText(text => text
+        .setPlaceholder('Enter Client Secret')
+        .setValue(this.plugin.settings.clientSecret || '')
+        .onChange(async (value) => {
+          this.plugin.settings.clientSecret = value.trim();
+          await this.plugin.saveSettings();
+        }));
 
-[leftBtn, rightBtn].forEach(el => {
-  el.style.flex = '1';
-});
+    new Setting(containerEl)
+      .setName('🔗 Redirect URI')
+      .setDesc('Your application redirect URI')
+      .addText(text => text
+        .setPlaceholder('http://localhost:8080/callback')
+        .setValue(this.plugin.settings.redirectUri || 'http://localhost:8080/callback')
+        .onChange(async (value) => {
+          this.plugin.settings.redirectUri = value.trim();
+          await this.plugin.saveSettings();
+        }));
 
-const btn1 = leftBtn.createEl('button', { text: 'Client ID' });
-btn1.classList.add('mod-cta');
-btn1.style.width = '100%';
-btn1.onclick = () => {
-  new SingleInputModal(this.plugin.app, 'Enter AniList Client ID', (value) => {
-    this.plugin.settings.clientId = value;
-    this.plugin.saveSettings();
-    new Notice('✅ Client ID saved.');
-  }).open();
-};
-
-const btn2 = rightBtn.createEl('button', { text: 'Client Secret' });
-btn2.classList.add('mod-cta');
-btn2.style.width = '100%';
-btn2.onclick = () => {
-  new SingleInputModal(this.plugin.app, 'Enter AniList Client Secret', (value) => {
-    this.plugin.settings.clientSecret = value;
-    this.plugin.saveSettings();
-    new Notice('✅ Client Secret saved.');
-  }).open();
-};
+    new Setting(containerEl)
+      .setName('🔓 Authenticate')
+      .setDesc('Connect AniList  API with Zoro')
+      .addButton(button => button
+        .setButtonText(this.plugin.settings.accessToken ? 'Re-authenticate' : 'Authenticate')
+        .onClick(async () => {
+          await this.plugin.authenticateUser();
+        }));
 
 // ─── DIVIDER / SPACER BEFORE AUTHENTICATION BUTTON ───
 containerEl.createEl('hr'); // Adds a horizontal line

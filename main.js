@@ -201,7 +201,7 @@ setToCache(type, key, value) {
     }
   }
 
-  // Authentication 
+ // Authentication 
   async authenticateUser() {
     const clientId = this.settings.clientId;
     const redirectUri = this.settings.redirectUri || 'https://anilist.co/api/v2/oauth/pin';
@@ -227,11 +227,6 @@ const authWindow = window.open(authUrl, '_blank', 'width=500,height=600');
   
  window.addEventListener('message', this.handleAuthMessage.bind(this));
       
-     // Implement handler
-  handleAuthMessage(event) {
-  if (event.origin !== 'https://anilist.co') return;
-  this.exchangeCodeForToken(event.data.code);
-}
       
       if (window.require) {
         const { shell } = window.require('electron');
@@ -2394,6 +2389,12 @@ type: stats
   document.head.appendChild(style);
 }
 
+// Implement handler
+  handleAuthMessage(event) {
+  if (event.origin !== 'https://anilist.co') return;
+  this.exchangeCodeForToken(event.data.code);
+}
+
   // Render Errors
   renderError(el, message, context = '', onRetry = null) {
     el.empty?.(); // clear if Obsidian's `el` object has `.empty()` method
@@ -2433,6 +2434,7 @@ type: stats
 
     el.appendChild(wrapper);
   }
+  
 
  
   // Plugin unload method

@@ -638,7 +638,7 @@ if (this.settings.accessToken) {
         method: 'POST',
         headers,
         body: JSON.stringify({ query, variables })
-      });
+      }));
 
       const result = response.json;
 
@@ -762,7 +762,7 @@ async fetchData(config) {
         'Authorization': `Bearer ${this.settings.accessToken}`
       },
       body: JSON.stringify({ query: mutation, variables })
-    });
+    }));
 
     const result = response.json;
 

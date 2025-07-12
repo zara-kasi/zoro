@@ -350,7 +350,7 @@ const authWindow = window.open(authUrl, '_blank', 'width=500,height=600');
 
     await this.saveSettings();
     return true;
-  } catch (error) {
+   catch (error) {
     console.error('[Zoro] Token refresh failed:', error);
     
     // Clear invalid tokens

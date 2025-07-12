@@ -15,6 +15,40 @@ const DEFAULT_SETTINGS = {
   accessToken: '',
 };
 
+  // Rate limit 
+class RequestQueue {
+  constructor() {
+    this.queue = [];
+    this.delay = 700; // ~85 requests/min (AniList limit: 90/min)
+    this.isProcessing = false;
+  }
+
+  add(requestFn) {
+    return new Promise((resolve) => {
+      this.queue.push({ requestFn, resolve });
+      this.process();
+    });
+  }
+
+  async process() {
+    if (this.isProcessing || !this.queue.length) return;
+
+    this.isProcessing = true;
+    const { requestFn, resolve } = this.queue.shift();
+
+    try {
+      const result = await requestFn();
+      resolve(result);
+    } finally {
+      setTimeout(() => {
+        this.isProcessing = false;
+        this.process();
+      }, this.delay);
+    }
+  }
+}
+
+
 // Plugin Class 
 class ZoroPlugin extends Plugin { 
 
@@ -484,32 +518,6 @@ const authWindow = window.open(authUrl, '_blank', 'width=500,height=600');
   }
 
 
-
-  async add(requestFn) {
-    return new Promise((resolve) => {
-      this.queue.push({ requestFn, resolve });
-      this.process();
-    });
-  }
-
-  async process() {
-    if (this.isProcessing || !this.queue.length) return;
-    
-    this.isProcessing = true;
-    const { requestFn, resolve } = this.queue.shift();
-    
-    try {
-      resolve(await requestFn());
-    } finally {
-      setTimeout(() => {
-        this.isProcessing = false;
-        this.process();
-      }, this.delay);
-    }
-  }
-
-
-
   // Get Authenticated Username 
   async getAuthenticatedUsername() {
 
@@ -751,7 +759,7 @@ async fetchData(config) {
     };
 
     
-// Rate Limit 
+// Rate Limit  add
     const response = await this.requestQueue.add(() => requestUrl({
   url: 'https://graphql.anilist.co',
       method: 'POST',
@@ -2453,17 +2461,6 @@ type: stats
 
 } 
 
-
-  // Rate limit 
-
-  class RequestQueue {
-  constructor() {
-    this.queue = [];
-    this.delay = 700; // ~85 requests/min (AniList limit: 90/min)
-    this.isProcessing = false;
-  }
-
-  
 
 // Class Instruction modal
 

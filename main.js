@@ -432,8 +432,7 @@ const authWindow = window.open(authUrl, '_blank', 'width=500,height=600');
         method: 'POST',
         headers,
         body: body.toString()
-      })
-    };
+      }));
 
       if (!response || typeof response.json !== 'object') {
         throw new Error('Invalid response structure from AniList.');

@@ -2576,9 +2576,9 @@ class ZoroSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('👤 Username')
-      .setDesc('Add your Zoro username to view your lists and stats — just make sure your profile is public.')
+      .setDesc('Add your AniList username to view your lists and stats — just make sure your profile is public.')
       .addText(text => text
-        .setPlaceholder('Enter your Zoro username')
+        .setPlaceholder('Enter your AniList username')
         .setValue(this.plugin.settings.defaultUsername)
         .onChange(async (value) => {
           this.plugin.settings.defaultUsername = value.trim();
@@ -2694,39 +2694,13 @@ class ZoroSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('🔓 Authenticate')
-      .setDesc('Connect your Zoro account')
+      .setDesc('Connect AniList  API with Zoro')
       .addButton(button => button
         .setButtonText(this.plugin.settings.accessToken ? 'Re-authenticate' : 'Authenticate')
         .onClick(async () => {
           await this.plugin.authenticateUser();
         }));
 
-    new Setting(containerEl)
-      .setName('🔧 Manual Token Input')
-      .setDesc('If automatic authentication fails, manually paste your access token here')
-      .addText(text => text
-        .setPlaceholder('Paste access token here...')
-        .setValue('')
-        .onChange(async (value) => {
-          if (value.trim()) {
-            this.plugin.settings.accessToken = value.trim();
-            await this.plugin.saveSettings();
-            new Notice('✅ Manual token saved! Testing...');
-            try {
-              await this.plugin.testAccessToken();
-            } catch (error) {
-              new Notice(`❌ Token test failed: ${error.message}`);
-            }
-          }
-        }))
-      .addButton(button => button
-        .setButtonText('Clear Token')
-        .onClick(async () => {
-          this.plugin.settings.accessToken = '';
-          await this.plugin.saveSettings();
-          new Notice('Token cleared');
-          this.display();
-        }));
     
 // Authentication Status 
 

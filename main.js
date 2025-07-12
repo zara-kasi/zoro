@@ -2561,7 +2561,192 @@ class ManualTokenModal extends Modal {
     contentEl.empty();
   }
 }
+// ADD these classes to your main plugin file:
 
+// ADD these classes to your main plugin file:
+
+class ClientIdModal extends Modal {
+  constructor(app, onSubmit) {
+    super(app);
+    this.onSubmit = onSubmit;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.addClass('auth-modal');
+    
+    contentEl.createEl('h2', { text: '🔑 Enter Client ID' });
+    
+    const desc = contentEl.createEl('p');
+    desc.setText('Enter your AniList application Client ID');
+    desc.addClass('auth-modal-desc');
+    
+    const inputContainer = contentEl.createEl('div', { cls: 'auth-input-container' });
+    
+    const input = inputContainer.createEl('input', {
+      type: 'text',
+      placeholder: 'Client ID',
+      cls: 'auth-input'
+    });
+    
+    const buttonContainer = contentEl.createEl('div', { cls: 'auth-button-container' });
+    
+    const submitButton = buttonContainer.createEl('button', {
+      text: 'Save',
+      cls: 'mod-cta auth-button'
+    });
+    
+    const cancelButton = buttonContainer.createEl('button', {
+      text: 'Cancel',
+      cls: 'auth-button'
+    });
+    
+    submitButton.addEventListener('click', () => {
+      const value = input.value.trim();
+      if (value) {
+        this.onSubmit(value);
+        this.close();
+      }
+    });
+    
+    cancelButton.addEventListener('click', () => {
+      this.close();
+    });
+    
+    input.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        submitButton.click();
+      }
+    });
+    
+    setTimeout(() => input.focus(), 100);
+  }
+}
+
+class ClientSecretModal extends Modal {
+  constructor(app, onSubmit) {
+    super(app);
+    this.onSubmit = onSubmit;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.addClass('auth-modal');
+    
+    contentEl.createEl('h2', { text: '🔐 Enter Client Secret' });
+    
+    const desc = contentEl.createEl('p');
+    desc.setText('Enter your AniList application Client Secret');
+    desc.addClass('auth-modal-desc');
+    
+    const inputContainer = contentEl.createEl('div', { cls: 'auth-input-container' });
+    
+    const input = inputContainer.createEl('input', {
+      type: 'password',
+      placeholder: 'Client Secret',
+      cls: 'auth-input'
+    });
+    
+    const buttonContainer = contentEl.createEl('div', { cls: 'auth-button-container' });
+    
+    const submitButton = buttonContainer.createEl('button', {
+      text: 'Save',
+      cls: 'mod-cta auth-button'
+    });
+    
+    const cancelButton = buttonContainer.createEl('button', {
+      text: 'Cancel',
+      cls: 'auth-button'
+    });
+    
+    submitButton.addEventListener('click', () => {
+      const value = input.value.trim();
+      if (value) {
+        this.onSubmit(value);
+        this.close();
+      }
+    });
+    
+    cancelButton.addEventListener('click', () => {
+      this.close();
+    });
+    
+    input.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        submitButton.click();
+      }
+    });
+    
+    setTimeout(() => input.focus(), 100);
+  }
+}
+
+class AuthPinModal extends Modal {
+  constructor(app, onSubmit) {
+    super(app);
+    this.onSubmit = onSubmit;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.addClass('auth-modal pin-modal');
+    
+    contentEl.createEl('h2', { text: '🔓 Complete Authentication' });
+    
+    const desc = contentEl.createEl('p');
+    desc.setText('Copy the authorization code from the browser and paste it below');
+    desc.addClass('auth-modal-desc');
+    
+    const inputContainer = contentEl.createEl('div', { cls: 'auth-input-container' });
+    
+    const input = inputContainer.createEl('input', {
+      type: 'text',
+      placeholder: 'Paste authorization code here',
+      cls: 'auth-input pin-input'
+    });
+    
+    const buttonContainer = contentEl.createEl('div', { cls: 'auth-button-container' });
+    
+    const submitButton = buttonContainer.createEl('button', {
+      text: '✅ Complete Authentication',
+      cls: 'mod-cta auth-button submit-button'
+    });
+    
+    const cancelButton = buttonContainer.createEl('button', {
+      text: 'Cancel',
+      cls: 'auth-button'
+    });
+    
+    submitButton.addEventListener('click', () => {
+      const value = input.value.trim();
+      if (value) {
+        this.onSubmit(value);
+        this.close();
+      }
+    });
+    
+    cancelButton.addEventListener('click', () => {
+      this.close();
+    });
+    
+    input.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        submitButton.click();
+      }
+    });
+    
+    input.addEventListener('input', (e) => {
+      const value = e.target.value.trim();
+      if (value) {
+        submitButton.classList.add('ready');
+      } else {
+        submitButton.classList.remove('ready');
+      }
+    });
+    
+    setTimeout(() => input.focus(), 100);
+  }
+}
 
 // Settings Menu 
 class ZoroSettingTab extends PluginSettingTab { 
@@ -2569,15 +2754,16 @@ class ZoroSettingTab extends PluginSettingTab {
     super(app, plugin); 
     this.plugin = plugin; 
   }
+  
 
   display() { 
     const { containerEl } = this; 
     containerEl.empty();
-    containerEl.createEl('h3', { text: '🐢 Low Effort' });
+    containerEl.createEl('h3', { text: '🐢' });
 
  new Setting(containerEl)
       .setName('➕ Sample Notes')
-      .setDesc('Creates two notes — one for Anime, one for Manga — with all your lists, search, and stats setup preloaded.')
+      .setDesc('Creates notes to view your anime and manga data.')
       .addButton(button => button
         .setButtonText('Create Note')
         .setTooltip('Click to create a sample note in your vault')
@@ -2587,7 +2773,7 @@ class ZoroSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName('👤 Username')
-      .setDesc('Add your AniList username to view your lists and stats — just make sure your profile is public.')
+      .setDesc('Lets you access your public profile and stats — that’s it.')
       .addText(text => text
         .setPlaceholder('Enter your AniList username')
         .setValue(this.plugin.settings.defaultUsername)
@@ -2595,6 +2781,21 @@ class ZoroSettingTab extends PluginSettingTab {
           this.plugin.settings.defaultUsername = value.trim();
           await this.plugin.saveSettings();
         }));
+        
+        // Dynamic Authentication button
+
+const authSetting = new Setting(containerEl)
+  .setName('🔓 Authentication')
+  .setDesc('Lets you peek at your private profile and actually change stuff.');
+
+authSetting.addButton(button => {
+  this.authButton = button;
+  this.updateAuthButton();
+  
+  button.onClick(async () => {
+    await this.handleAuthButtonClick();
+  });
+});
 
 containerEl.createEl('hr');
 
@@ -2662,82 +2863,8 @@ containerEl.createEl('hr');
           await this.plugin.saveSettings();
         }));
         
-        containerEl.createEl('hr');
-    // ─── GROUP TITLE + EXPLANATION ───
-containerEl.createEl('h3', { text: '🚀 MaxOutput' });
+      
 
-containerEl.createEl('p', {
-  text: 'This setting isn’t complicated… if you’re into unnecessarily complicated things.',
-});
-
-    new Setting(containerEl)
-      .setName('🔑 Client ID')
-      .setDesc('Your Zoro application Client ID')
-      .addText(text => text
-        .setPlaceholder('Enter Client ID')
-        .setValue(this.plugin.settings.clientId || '')
-        .onChange(async (value) => {
-          this.plugin.settings.clientId = value.trim();
-          await this.plugin.saveSettings();
-        }));
-
-    new Setting(containerEl)
-      .setName('🔐 Client Secret')
-      .setDesc('Your Zoro application Client Secret')
-      .addText(text => text
-        .setPlaceholder('Enter Client Secret')
-        .setValue(this.plugin.settings.clientSecret || '')
-        .onChange(async (value) => {
-          this.plugin.settings.clientSecret = value.trim();
-          await this.plugin.saveSettings();
-        }));
-
-    new Setting(containerEl)
-      .setName('🔗 Redirect URI')
-      .setDesc('Your application redirect URI')
-      .addText(text => text
-        .setPlaceholder('http://localhost:8080/callback')
-        .setValue(this.plugin.settings.redirectUri || 'http://localhost:8080/callback')
-        .onChange(async (value) => {
-          this.plugin.settings.redirectUri = value.trim();
-          await this.plugin.saveSettings();
-        }));
-
-    new Setting(containerEl)
-      .setName('🔓 Authenticate')
-      .setDesc('Connect AniList  API with Zoro')
-      .addButton(button => button
-        .setButtonText(this.plugin.settings.accessToken ? 'Re-authenticate' : 'Authenticate')
-        .onClick(async () => {
-          await this.plugin.authenticateUser();
-        }));
-
-// ─── DIVIDER / SPACER BEFORE AUTHENTICATION BUTTON ───
-containerEl.createEl('hr'); // Adds a horizontal line
-
-// Optional: More space if you want it to look relaxed
-containerEl.createEl('div', { text: '' }).style.marginBottom = '1rem';
-
-    
-    new Setting(containerEl)
-      .setName('🔓 Authenticate')
-      .setDesc('Connect Zoro with AniList API.')
-      .addButton(button => button
-        .setButtonText(this.plugin.settings.accessToken ? 'Re-authenticate' : 'Authenticate')
-        .onClick(async () => {
-          await this.plugin.authenticateUser();
-        }));
-
-    
-// Authentication Status 
-
-new Setting(containerEl)
-  .setName('Authentication Status')
-  .setDesc(
-    this.plugin.settings.accessToken 
-      ? `✅ Connected (Expires: ${new Date(this.plugin.settings.tokenExpiry).toLocaleDateString()})`
-      : '❌ Disconnected'
-  );
     new Setting(containerEl)
       .setName('🪤 Hidden Settings ')
       .setDesc('Not sure how this works? That’s fine. Most people click around and hope for the best. But you could be better than that. The full guide covers authentication, custom blocks, tips, and all the stuff I couldn’t fit here..')
@@ -2747,6 +2874,61 @@ new Setting(containerEl)
           window.open('https://github.com/zara-kasi/zoro/blob/main/README.md', '_blank');
         }));
   }
+  // ADD these methods to your settings tab class:
+// ADD these methods to your settings tab class:
+
+updateAuthButton() {
+  if (!this.authButton) return;
+  
+  const settings = this.plugin.settings;
+  
+  if (!settings.clientId) {
+    this.authButton.setButtonText('Enter Client ID');
+    this.authButton.removeCta();
+  } else if (!settings.clientSecret) {
+    this.authButton.setButtonText('Enter Client Secret');
+    this.authButton.removeCta();
+  } else if (!settings.accessToken) {
+    this.authButton.setButtonText('Authenticate Now');
+    this.authButton.setCta();
+  } else {
+    const expiryDate = new Date(settings.tokenExpiry).toLocaleDateString('en-US', { 
+      month: 'short', 
+      day: 'numeric' 
+    });
+    this.authButton.setButtonText(`✅ Active until ${expiryDate}`);
+    this.authButton.setCta();
+  }
+}
+
+async handleAuthButtonClick() {
+  const settings = this.plugin.settings;
+  
+  if (!settings.clientId) {
+    const modal = new ClientIdModal(this.app, async (clientId) => {
+      if (clientId && clientId.trim()) {
+        this.plugin.settings.clientId = clientId.trim();
+        await this.plugin.saveSettings();
+        this.updateAuthButton();
+      }
+    });
+    modal.open();
+  } else if (!settings.clientSecret) {
+    const modal = new ClientSecretModal(this.app, async (clientSecret) => {
+      if (clientSecret && clientSecret.trim()) {
+        this.plugin.settings.clientSecret = clientSecret.trim();
+        await this.plugin.saveSettings();
+        this.updateAuthButton();
+      }
+    });
+    modal.open();
+  } else if (!settings.accessToken) {
+    await this.plugin.authenticateUser();
+  } else {
+    await this.plugin.authenticateUser();
+  }
+}
+
 }
 
 module.exports = {

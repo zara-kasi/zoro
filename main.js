@@ -361,7 +361,7 @@ const authWindow = window.open(authUrl, '_blank', 'width=500,height=600');
     throw new Error('Token refresh failed. Please re-authenticate.');
   }
 
-  }
+  
 
   // Refresh Token Validation 
   async ensureValidToken() {
@@ -560,7 +560,8 @@ if (this.settings.accessToken) {
 
       return data.data.Viewer.name;
 
-     catch (error) {
+    } 
+catch (error) {
       console.warn('[Zoro] getAuthenticatedUsername() failed:', error);
       return null;
     }

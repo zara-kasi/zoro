@@ -7,7 +7,7 @@ const DEFAULT_SETTINGS = {
   showCoverImages: true,
   showRatings: true,
   showProgress: true,
-  showGenres: true,
+  showGenres: false,
   gridColumns: 3,
   clientId: '',
   clientSecret: '',
@@ -191,8 +191,9 @@ setToCache(type, key, value) {
 
   // Load settings 
   async loadSettings() {
-    const saved = await this.loadData();
-    this.settings = this.validateSettings(saved);
+    const saved = await this.loadData() || {};
+    const merged = Object.assign({}, DEFAULT_SETTINGS, saved);
+    this.settings = this.validateSettings(merged);
    
    // no secret saved...
    if (!this.settings.clientSecret) {
@@ -224,7 +225,6 @@ setToCache(type, key, value) {
     try {
       new Notice('🔐 Opening authentication page...', 3000);
 
-const authWindow = window.open(authUrl, '_blank', 'width=500,height=600');
   
  window.addEventListener('message', this.handleAuthMessage.bind(this));
       
@@ -587,7 +587,11 @@ const authWindow = window.open(authUrl, '_blank', 'width=500,height=600');
     }
 
     let query, variables;
-    
+     try {
+      const headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      };
       
 if (this.settings.accessToken) {
   await this.ensureValidToken();
@@ -622,11 +626,7 @@ if (this.settings.accessToken) {
       };
     }
 
-    try {
-      const headers = {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      };
+   
 
       if (this.settings.accessToken) {
         headers['Authorization'] = `Bearer ${this.settings.accessToken}`;
@@ -2507,63 +2507,7 @@ class InstructionsModal extends Modal {
 
 
 // Manual Token Modal Class - FIXED: Now properly outside the main class
-class ManualTokenModal extends Modal {
-  constructor(app, plugin) {
-    super(app);
-    this.plugin = plugin;
-  }
 
-  onOpen() {
-    const { contentEl } = this;
-
-    contentEl.createEl('h3', { text: 'Paste Access Token' });
-
-    const input = contentEl.createEl('textarea', {
-      cls: 'zoro-token-input-area',
-      placeholder: 'Paste your access token here...',
-    });
-
-    input.style.width = '100%';
-    input.style.minHeight = '80px';
-    input.style.marginTop = '10px';
-
-    const btnContainer = contentEl.createDiv({ cls: 'modal-button-row' });
-
-    const saveBtn = btnContainer.createEl('button', { text: 'Save Token' });
-    saveBtn.onclick = async () => {
-      const token = input.value.trim();
-
-      if (!token) {
-        new Notice('⚠️ Please enter a valid token.');
-        return;
-      }
-
-      try {
-        this.plugin.settings.accessToken = token;
-        await this.plugin.saveSettings();
-        if (this.plugin.testAccessToken) {
-          await this.plugin.testAccessToken();
-        }
-        new Notice('✅ Token saved and verified!');
-        this.close();
-      } catch (err) {
-        console.error('Token test failed:', err);
-        new Notice(`❌ Token invalid: ${err.message}`);
-      }
-    };
-
-    const cancelBtn = btnContainer.createEl('button', { text: 'Cancel' });
-    cancelBtn.onclick = () => this.close();
-  }
-
-  onClose() {
-    const { contentEl } = this;
-    contentEl.empty();
-  }
-}
-// ADD these classes to your main plugin file:
-
-// ADD these classes to your main plugin file:
 
 class ClientIdModal extends Modal {
   constructor(app, onSubmit) {

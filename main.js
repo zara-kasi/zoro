@@ -297,7 +297,16 @@ const authWindow = window.open(authUrl, '_blank', 'width=500,height=600');
       }
     }
   }
+  
 
+  
+ // Refresh Token
+  async refreshToken() {
+  if (!this.settings.refreshToken) {
+    throw new Error('No refresh token available');
+  }
+  }
+  
  
 
   try {
@@ -484,14 +493,6 @@ const authWindow = window.open(authUrl, '_blank', 'width=500,height=600');
   }
 
 
-  // Rate limit 
-
-  class RequestQueue {
-  constructor() {
-    this.queue = [];
-    this.delay = 350; // ~170 requests/min (AniList limit: 90/min)
-    this.isProcessing = false;
-  }
 
   async add(requestFn) {
     return new Promise((resolve) => {
@@ -2457,11 +2458,14 @@ type: stats
 
 } 
 
- // Refresh Token
-  async refreshToken() {
-  if (!this.settings.refreshToken) {
-    throw new Error('No refresh token available');
-      }
+
+  // Rate limit 
+
+  class RequestQueue {
+  constructor() {
+    this.queue = [];
+    this.delay = 700; // ~85 requests/min (AniList limit: 90/min)
+    this.isProcessing = false;
   }
 
   

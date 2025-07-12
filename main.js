@@ -517,54 +517,53 @@ const authWindow = window.open(authUrl, '_blank', 'width=500,height=600');
     }
   }
 
-
-  // Get Authenticated Username 
+// Authenticated Username 
   async getAuthenticatedUsername() {
+  if (!this.settings.accessToken) return null;
 
-if (this.settings.accessToken) {
   await this.ensureValidToken();
-  
-  headers['Authorization'] = `Bearer ${this.settings.accessToken}`;
-}
-    
-    if (!this.settings.accessToken) return null;
 
-    const query = `
-      query {
-        Viewer {
-          name
-        }
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${this.settings.accessToken}`,
+  };
+
+  const query = `
+    query {
+      Viewer {
+        name
       }
-    `;
-
-    try {
-      const response = await this.requestQueue.add(() => requestUrl({
-  url: 'https://graphql.anilist.co',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.settings.accessToken}`
-        },
-        body: JSON.stringify({ query })
-      });
-
-      const data = response.json;
-
-      if (!data?.data?.Viewer?.name) {
-        throw new Error('Invalid token or no username returned.');
-      }
-
-      this.settings.authUsername = data.data.Viewer.name;
-      await this.saveSettings();
-
-      return data.data.Viewer.name;
-
-    } 
-catch (error) {
-      console.warn('[Zoro] getAuthenticatedUsername() failed:', error);
-      return null;
     }
-}
+  `;
+
+  try {
+    const response = await this.requestQueue.add(() =>
+      requestUrl({
+        url: 'https://graphql.anilist.co',
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ query }),
+      })
+    );
+
+    const data = response.json;
+
+    if (!data?.data?.Viewer?.name) {
+      throw new Error('Invalid token or no username returned.');
+    }
+
+    this.settings.authUsername = data.data.Viewer.name;
+    await this.saveSettings();
+
+    return data.data.Viewer.name;
+
+  } catch (error) {
+    console.warn('[Zoro] getAuthenticatedUsername() failed:', error);
+    return null;
+  }
+  }
+  
+ 
     
     /// *Fetching*
 
@@ -2755,4 +2754,7 @@ new Setting(containerEl)
   }
 }
 
-module.exports = ZoroPlugin;
+module.exports = {
+  default: ZoroPlugin,
+};
+

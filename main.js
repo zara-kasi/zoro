@@ -519,7 +519,7 @@ const authWindow = window.open(authUrl, '_blank', 'width=500,height=600');
       }, this.delay);
     }
   }
-}
+
 
 
   // Get Authenticated Username 

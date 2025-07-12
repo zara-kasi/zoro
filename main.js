@@ -2461,8 +2461,10 @@ type: stats
   async refreshToken() {
   if (!this.settings.refreshToken) {
     throw new Error('No refresh token available');
+      }
   }
-  }
+
+  
 
 // Class Instruction modal
 

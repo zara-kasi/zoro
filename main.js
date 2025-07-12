@@ -165,14 +165,13 @@ setToCache(type, key, value) {
   async loadSettings() {
     const saved = await this.loadData();
     this.settings = this.validateSettings(saved);
-    if (this.settings.clientSecret) {
-    this.settings.encryptedSecret = await this.app.vault.encrypt(
-      this.settings.clientSecret
-    );
+   
+   // no secret saved...
+   if (!this.settings.clientSecret) {
+    const secret = await this.promptForSecret("Paste your client secret:");
+    this.settings.clientSecret = secret.trim();
+    await this.saveData(this.settings);
   }
-  await this.saveData(this.settings);
-}
-
 
   // Validate Settings 
   validateSettings(settings) {
@@ -2758,4 +2757,3 @@ module.exports = {
   default: ZoroPlugin,
 };
 
-// test git pusg 

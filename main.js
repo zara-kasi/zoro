@@ -249,8 +249,8 @@ const authWindow = window.open(authUrl, '_blank', 'width=500,height=600');
     };
 
     try {
-      const response = await requestUrl({
-        url: 'https://anilist.co/api/v2/oauth/token',
+      const response = await this.requestQueue.add(() => requestUrl({
+  url: 'https://anilist.co/api/v2/oauth/token',
         method: 'POST',
         headers,
         body: body.toString(),
@@ -297,17 +297,13 @@ const authWindow = window.open(authUrl, '_blank', 'width=500,height=600');
       }
     }
   }
-  
 
-  
- // Refresh Token
+  // Refresh Token
+
   async refreshToken() {
   if (!this.settings.refreshToken) {
     throw new Error('No refresh token available');
   }
-  }
-  
- 
 
   try {
     const body = new URLSearchParams({
@@ -322,46 +318,41 @@ const authWindow = window.open(authUrl, '_blank', 'width=500,height=600');
       'Accept': 'application/json',
     };
 
-    const response = await requestUrl({
+    const response = await this.requestQueue.add(() => requestUrl({
       url: 'https://anilist.co/api/v2/oauth/token',
       method: 'POST',
       headers,
       body: body.toString(),
-    });
+    }));
 
     const data = response?.json;
-    
+
     if (!data?.access_token) {
       throw new Error(data?.error_description || 'Invalid token response');
     }
 
-    // Update tokens
     this.settings.accessToken = data.access_token;
-    
-    // Update refresh token if provided (refresh tokens can rotate)
+
     if (data.refresh_token) {
       this.settings.refreshToken = data.refresh_token;
     }
-    
-    // Update expiration
+
     if (data.expires_in) {
-      this.settings.tokenExpiry = Date.now() + (data.expires_in * 1000);
+      this.settings.tokenExpiry = Date.now() + data.expires_in * 1000;
     }
 
     await this.saveSettings();
     return true;
-   catch (error) {
+
+  } catch (error) {
     console.error('[Zoro] Token refresh failed:', error);
-    
-    // Clear invalid tokens
     this.settings.accessToken = '';
     this.settings.refreshToken = '';
     await this.saveSettings();
-    
     throw new Error('Token refresh failed. Please re-authenticate.');
   }
+}
 
-  
 
   // Refresh Token Validation 
   async ensureValidToken() {
@@ -407,8 +398,8 @@ const authWindow = window.open(authUrl, '_blank', 'width=500,height=600');
     };
 
     try {
-      const response = await requestUrl({
-        url: 'https://anilist.co/api/v2/oauth/token',
+      const response = await this.requestQueue.add(() => requestUrl({
+  url: 'https://anilist.co/api/v2/oauth/token',
         method: 'POST',
         headers,
         body: body.toString()
@@ -467,8 +458,8 @@ const authWindow = window.open(authUrl, '_blank', 'width=500,height=600');
     `;
 
     try {
-      const response = await requestUrl({
-        url: 'https://graphql.anilist.co',
+      const response = await this.requestQueue.add(() => requestUrl({
+  url: 'https://graphql.anilist.co',
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -539,8 +530,8 @@ if (this.settings.accessToken) {
     `;
 
     try {
-      const response = await requestUrl({
-        url: 'https://graphql.anilist.co',
+      const response = await this.requestQueue.add(() => requestUrl({
+  url: 'https://graphql.anilist.co',
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -638,9 +629,10 @@ if (this.settings.accessToken) {
       if (this.settings.accessToken) {
         headers['Authorization'] = `Bearer ${this.settings.accessToken}`;
       }
+      // Rate limit add
+      const response = await this.requestQueue.add(() => requestUrl({
+  url: 'https://graphql.anilist.co',
 
-      const response = await requestUrl({
-        url: 'https://graphql.anilist.co',
         method: 'POST',
         headers,
         body: JSON.stringify({ query, variables })
@@ -758,8 +750,10 @@ async fetchData(config) {
       ...(updates.progress !== undefined && { progress: updates.progress }),
     };
 
-    const response = await requestUrl({
-      url: 'https://graphql.anilist.co',
+    
+// Rate Limit 
+    const response = await this.requestQueue.add(() => requestUrl({
+  url: 'https://graphql.anilist.co',
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

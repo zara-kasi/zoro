@@ -1928,7 +1928,7 @@ clearCacheForMedia(mediaId) {
     scoreGroup.className = 'form-group';
 
     const scoreLabel = document.createElement('label');
-    scoreLabel.textContent = 'Score (0–10)';
+    scoreLabel.textContent = 'Score (0–5)';
     // RENAMED from anilist-score to zoro-score
     scoreLabel.setAttribute('for', 'zoro-score');
 
@@ -2629,7 +2629,10 @@ class ZoroSettingTab extends PluginSettingTab {
   
 
   display() { 
-    const { containerEl } = this; 
+    const { containerEl } = this;
+    // This will clear the Setting's tab each time you open it 
+    containerEl.empty()
+    
  new Setting(containerEl)
       .setName('➕ Sample Notes')
       .setDesc('Creates notes to view your anime and manga data.')
@@ -2654,7 +2657,7 @@ class ZoroSettingTab extends PluginSettingTab {
         // Dynamic Authentication button
 
 const authSetting = new Setting(containerEl)
-  .setName('🔓 Authentication')
+  .setName('🔓 Optional Login')
   .setDesc('Lets you peek at your private profile and actually change stuff.');
 
 authSetting.addButton(button => {
@@ -2743,9 +2746,7 @@ containerEl.createEl('hr');
           window.open('https://github.com/zara-kasi/zoro/blob/main/README.md', '_blank');
         }));
   }
-  // ADD these methods to your settings tab class:
-// ADD these methods to your settings tab class:
-
+  //  Dynamic Update of Auth button
 updateAuthButton() {
   if (!this.authButton) return;
   
@@ -2765,7 +2766,7 @@ updateAuthButton() {
       month: 'short', 
       day: 'numeric' 
     });
-    this.authButton.setButtonText(`✅ Active until ${expiryDate}`);
+    this.authButton.setButtonText(`✅  Acccount Connected`);
     this.authButton.setCta();
   }
 }

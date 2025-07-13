@@ -138,7 +138,87 @@
   --zoro-setting-btn-padding: 0.5rem 1rem;
   --zoro-setting-btn-max-width: 200px;
   --zoro-setting-btn-mobile-font-size: 1rem;
+  
+/* === Edit Modal Form Styling === */
+  --zoro-form-title-font-size: 1.2rem;
+  --zoro-form-title-font-weight: 600;
+  --zoro-form-title-margin-bottom: 1.5rem;
+  --zoro-form-title-color: var(--text-normal);
+  
+  /* === Form Group Styling === */
+  --zoro-form-group-margin-bottom: 1rem;
+  --zoro-form-group-display: flex;
+  --zoro-form-group-flex-direction: column;
+  --zoro-form-group-gap: 0.5rem;
+  
+  /* === Form Label Styling === */
+  --zoro-form-label-font-size: 0.9rem;
+  --zoro-form-label-font-weight: 500;
+  --zoro-form-label-color: var(--text-normal);
+  --zoro-form-label-margin-bottom: 0.25rem;
+  
+  /* === Form Input Styling === */
+  --zoro-form-input-padding: 0.75rem 1rem;
+  --zoro-form-input-border-width: 1px;
+  --zoro-form-input-border-radius: 6px;
+  --zoro-form-input-font-size: 0.9rem;
+  --zoro-form-input-background: var(--background-primary);
+  --zoro-form-input-border-color: var(--background-modifier-border);
+  --zoro-form-input-focus-border-color: var(--interactive-accent);
+  --zoro-form-input-focus-shadow: 0 0 0 2px;
+  --zoro-form-input-focus-shadow-color: var(--interactive-accent-hover);
+  
+  /* === Select Dropdown Styling === */
+  --zoro-form-select-padding: 0.75rem 1rem;
+  --zoro-form-select-border-width: 1px;
+  --zoro-form-select-border-radius: 6px;
+  --zoro-form-select-font-size: 0.9rem;
+  --zoro-form-select-background: var(--background-primary);
+  --zoro-form-select-border-color: var(--background-modifier-border);
+  --zoro-form-select-focus-border-color: var(--interactive-accent);
+  
+  /* === Quick Progress Buttons === */
+  --zoro-quick-progress-gap: 0.5rem;
+  --zoro-quick-progress-margin-top: 0.5rem;
+  --zoro-quick-progress-margin-bottom: 1rem;
+  --zoro-quick-btn-padding: 0.5rem 1rem;
+  --zoro-quick-btn-border-radius: 4px;
+  --zoro-quick-btn-font-size: 0.8rem;
+  --zoro-quick-btn-font-weight: 500;
+  --zoro-quick-btn-background: var(--interactive-normal);
+  --zoro-quick-btn-color: var(--text-normal);
+  --zoro-quick-btn-border: 1px solid var(--background-modifier-border);
+  --zoro-quick-btn-hover-background: var(--interactive-hover);
+  
+  /* === Modal Button Styling === */
+  --zoro-modal-btn-padding: 0.75rem 1.5rem;
+  --zoro-modal-btn-border-radius: 6px;
+  --zoro-modal-btn-font-size: 0.9rem;
+  --zoro-modal-btn-font-weight: 500;
+  --zoro-modal-btn-gap: 0.75rem;
+  --zoro-modal-btn-margin-top: 1.5rem;
+  
+  /* === Save Button Styling === */
+  --zoro-save-btn-background: var(--interactive-accent);
+  --zoro-save-btn-color: var(--text-on-accent);
+  --zoro-save-btn-hover-background: var(--interactive-accent-hover);
+  --zoro-save-btn-disabled-background: var(--background-modifier-border);
+  --zoro-save-btn-disabled-color: var(--text-muted);
+  
+  /* === Cancel Button Styling === */
+  --zoro-cancel-btn-background: var(--background-secondary);
+  --zoro-cancel-btn-color: var(--text-normal);
+  --zoro-cancel-btn-border: 1px solid var(--background-modifier-border);
+  --zoro-cancel-btn-hover-background: var(--background-modifier-hover);
+  
+  /* === Complete Button Special Styling === */
+  --zoro-complete-btn-background: var(--color-green);
+  --zoro-complete-btn-color: white;
+  --zoro-complete-btn-hover-background: var(--color-green);
+  --zoro-complete-btn-hover-filter: brightness(1.1);
 }
+
+
 
 /* ─── Container Styles ─── */
 .zoro-container {
@@ -645,4 +725,307 @@
   .user-header h3 {
     font-size: var(--zoro-mobile-user-header-font-size);
   }
+  /* ─── Edit Modal Form Styles ─── */
+.zoro-edit-modal form {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
 }
+
+.zoro-edit-modal h3 {
+  font-size: var(--zoro-form-title-font-size);
+  font-weight: var(--zoro-form-title-font-weight);
+  color: var(--zoro-form-title-color);
+  margin: 0 0 var(--zoro-form-title-margin-bottom) 0;
+  text-align: center;
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: 0.75rem;
+}
+
+/* ─── Form Group Styling ─── */
+.zoro-edit-modal .form-group {
+  display: var(--zoro-form-group-display);
+  flex-direction: var(--zoro-form-group-flex-direction);
+  gap: var(--zoro-form-group-gap);
+  margin-bottom: var(--zoro-form-group-margin-bottom);
+}
+
+/* ─── Form Label Styling ─── */
+.zoro-edit-modal label {
+  font-size: var(--zoro-form-label-font-size);
+  font-weight: var(--zoro-form-label-font-weight);
+  color: var(--zoro-form-label-color);
+  margin-bottom: var(--zoro-form-label-margin-bottom);
+}
+
+/* ─── Form Input Styling ─── */
+.zoro-edit-modal input[type="number"] {
+  padding: var(--zoro-form-input-padding);
+  border: var(--zoro-form-input-border-width) solid var(--zoro-form-input-border-color);
+  border-radius: var(--zoro-form-input-border-radius);
+  font-size: var(--zoro-form-input-font-size);
+  background: var(--zoro-form-input-background);
+  color: var(--text-normal);
+  transition: all var(--zoro-transition-duration) ease;
+  font-family: var(--font-interface);
+}
+
+.zoro-edit-modal input[type="number"]:focus {
+  outline: none;
+  border-color: var(--zoro-form-input-focus-border-color);
+  box-shadow: var(--zoro-form-input-focus-shadow) var(--zoro-form-input-focus-shadow-color);
+}
+
+.zoro-edit-modal input[type="number"]::placeholder {
+  color: var(--text-muted);
+}
+
+/* ─── Form Select Styling ─── */
+.zoro-edit-modal select {
+  padding: var(--zoro-form-select-padding);
+  border: var(--zoro-form-select-border-width) solid var(--zoro-form-select-border-color);
+  border-radius: var(--zoro-form-select-border-radius);
+  font-size: var(--zoro-form-select-font-size);
+  background: var(--zoro-form-select-background);
+  color: var(--text-normal);
+  transition: all var(--zoro-transition-duration) ease;
+  font-family: var(--font-interface);
+  cursor: pointer;
+}
+
+.zoro-edit-modal select:focus {
+  outline: none;
+  border-color: var(--zoro-form-select-focus-border-color);
+  box-shadow: var(--zoro-form-input-focus-shadow) var(--zoro-form-input-focus-shadow-color);
+}
+
+.zoro-edit-modal select option {
+  background: var(--background-primary);
+  color: var(--text-normal);
+  padding: 0.5rem;
+}
+
+/* ─── Quick Progress Buttons ─── */
+.zoro-edit-modal .quick-progress-buttons {
+  display: flex;
+  gap: var(--zoro-quick-progress-gap);
+  margin-top: var(--zoro-quick-progress-margin-top);
+  margin-bottom: var(--zoro-quick-progress-margin-bottom);
+  flex-wrap: wrap;
+}
+
+.zoro-edit-modal .quick-progress-buttons button {
+  padding: var(--zoro-quick-btn-padding);
+  border: var(--zoro-quick-btn-border);
+  border-radius: var(--zoro-quick-btn-border-radius);
+  font-size: var(--zoro-quick-btn-font-size);
+  font-weight: var(--zoro-quick-btn-font-weight);
+  background: var(--zoro-quick-btn-background);
+  color: var(--zoro-quick-btn-color);
+  cursor: pointer;
+  transition: all var(--zoro-transition-duration) ease;
+  font-family: var(--font-interface);
+  flex: 1;
+  min-width: 60px;
+}
+
+.zoro-edit-modal .quick-progress-buttons button:hover {
+  background: var(--zoro-quick-btn-hover-background);
+  transform: translateY(-1px);
+}
+
+.zoro-edit-modal .quick-progress-buttons button:active {
+  transform: translateY(0);
+}
+
+/* ─── Complete Button Special Styling ─── */
+.zoro-edit-modal .quick-progress-buttons button:nth-child(3) {
+  background: var(--zoro-complete-btn-background);
+  color: var(--zoro-complete-btn-color);
+  border-color: var(--zoro-complete-btn-background);
+}
+
+.zoro-edit-modal .quick-progress-buttons button:nth-child(3):hover {
+  background: var(--zoro-complete-btn-hover-background);
+  filter: var(--zoro-complete-btn-hover-filter);
+}
+
+/* ─── Modal Button Container ─── */
+.zoro-modal-buttons {
+  display: flex;
+  gap: var(--zoro-modal-btn-gap);
+  justify-content: flex-end;
+  margin-top: var(--zoro-modal-btn-margin-top);
+  padding-top: 1rem;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+/* ─── Modal Button Styling ─── */
+.zoro-modal-buttons button {
+  padding: var(--zoro-modal-btn-padding);
+  border-radius: var(--zoro-modal-btn-border-radius);
+  font-size: var(--zoro-modal-btn-font-size);
+  font-weight: var(--zoro-modal-btn-font-weight);
+  cursor: pointer;
+  transition: all var(--zoro-transition-duration) ease;
+  font-family: var(--font-interface);
+  border: none;
+  min-width: 90px;
+}
+
+/* ─── Save Button Styling ─── */
+.zoro-modal-buttons button[type="submit"] {
+  background: var(--zoro-save-btn-background);
+  color: var(--zoro-save-btn-color);
+}
+
+.zoro-modal-buttons button[type="submit"]:hover:not(:disabled) {
+  background: var(--zoro-save-btn-hover-background);
+  transform: translateY(-1px);
+}
+
+.zoro-modal-buttons button[type="submit"]:disabled {
+  background: var(--zoro-save-btn-disabled-background);
+  color: var(--zoro-save-btn-disabled-color);
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* ─── Cancel Button Styling ─── */
+.zoro-modal-buttons button[type="button"] {
+  background: var(--zoro-cancel-btn-background);
+  color: var(--zoro-cancel-btn-color);
+  border: var(--zoro-cancel-btn-border);
+}
+
+.zoro-modal-buttons button[type="button"]:hover {
+  background: var(--zoro-cancel-btn-hover-background);
+  transform: translateY(-1px);
+}
+
+/* ─── Loading State for Save Button ─── */
+.zoro-modal-buttons button[type="submit"]:disabled {
+  position: relative;
+  overflow: hidden;
+}
+
+.zoro-modal-buttons button[type="submit"]:disabled::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+  animation: loading-shimmer 1.5s infinite;
+}
+
+@keyframes loading-shimmer {
+  0% { left: -100%; }
+  100% { left: 100%; }
+}
+
+/* ─── Mobile Responsive Styles ─── */
+@media (max-width: 480px) {
+  .zoro-modal-content {
+    width: 95%;
+    max-width: none;
+    margin: 1rem;
+  }
+  
+  .zoro-edit-modal .quick-progress-buttons {
+    flex-direction: column;
+  }
+  
+  .zoro-edit-modal .quick-progress-buttons button {
+    flex: none;
+    width: 100%;
+  }
+  
+  .zoro-modal-buttons {
+    flex-direction: column;
+  }
+  
+  .zoro-modal-buttons button {
+    width: 100%;
+  }
+  
+  .zoro-edit-modal h3 {
+    font-size: 1.1rem;
+  }
+  
+  .zoro-edit-modal label {
+    font-size: 0.85rem;
+  }
+  
+  .zoro-edit-modal input[type="number"],
+  .zoro-edit-modal select {
+    font-size: 0.85rem;
+    padding: 0.625rem 0.875rem;
+  }
+}
+
+/* ─── Dark Mode Enhancements ─── */
+.theme-dark .zoro-edit-modal input[type="number"],
+.theme-dark .zoro-edit-modal select {
+  background: var(--background-primary);
+  border-color: var(--background-modifier-border);
+  color: var(--text-normal);
+}
+
+.theme-dark .zoro-edit-modal input[type="number"]:focus,
+.theme-dark .zoro-edit-modal select:focus {
+  border-color: var(--interactive-accent);
+  box-shadow: var(--zoro-form-input-focus-shadow) var(--interactive-accent-hover);
+}
+
+.theme-dark .zoro-edit-modal select option {
+  background: var(--background-primary);
+  color: var(--text-normal);
+}
+
+/* ─── Accessibility Enhancements ─── */
+.zoro-edit-modal button:focus {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}
+
+.zoro-edit-modal input[type="number"]:focus,
+.zoro-edit-modal select:focus {
+  outline: none;
+}
+
+/* ─── Animation Enhancements ─── */
+.zoro-edit-modal {
+  animation: modal-fade-in 0.3s ease;
+}
+
+@keyframes modal-fade-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.zoro-edit-modal .form-group {
+  animation: form-slide-in 0.4s ease;
+}
+
+@keyframes form-slide-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+
+
+

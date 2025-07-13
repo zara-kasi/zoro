@@ -1315,28 +1315,19 @@ config.search = '';
     });
   }
   
-  async checkIfMediaInList(mediaId, mediaType) {
+  // Add this method to check if media is already in user's list
+async checkIfMediaInList(mediaId, mediaType) {
   if (!this.settings.accessToken) return false;
   
   try {
-    const query = `
-      query ($mediaId: Int, $type: MediaType) {
-        MediaList(mediaId: $mediaId, type: $type) {
-          id
-          status
-          score
-          progress
-        }
-      }
-    `;
-    
-    const variables = {
-      mediaId: parseInt(mediaId),
-      type: mediaType
+    const config = {
+      type: 'single',
+      mediaType: mediaType,
+      mediaId: parseInt(mediaId)
     };
     
-    const response = await this.makeZoroRequest(query, variables);
-    return response.data.MediaList !== null;
+    const response = await this.fetchZoroData(config);
+    return response.MediaList !== null;
   } catch (error) {
     console.warn('Error checking media list status:', error);
     return false;
@@ -1349,126 +1340,378 @@ async addMediaToList(mediaId, updates, mediaType) {
     throw new Error('Authentication required');
   }
   
-  const mutation = `
-    mutation ($mediaId: Int, $status: MediaListStatus, $score: Float, $progress: Int) {
-      SaveMediaListEntry(mediaId: $mediaId, status: $status, score: $score, progress: $progress) {
-        id
-        status
-        score
-        progress
-        media {
-          id
-          title {
-            romaji
-            english
-          }
-        }
-      }
-    }
-  `;
-  
-  const variables = {
-    mediaId: parseInt(mediaId),
-    status: updates.status,
-    score: updates.score,
-    progress: updates.progress
-  };
-  
-  const response = await this.makeZoroRequest(mutation, variables);
-  return response.data.SaveMediaListEntry;
+  // Use the same method as your existing updateMediaListEntry
+  // but for adding new entries instead of updating existing ones
+  return await this.updateMediaListEntry(mediaId, updates);
 }
 
+// Modified renderSearchResults method to include ADD buttons
+renderSearchResults(el, media, config) {
+  el.empty();
   
-  // Render Search Results
-  
-    renderSearchResults(el, media, config) {
-    el.empty();
-    
-    if (media.length === 0) {
-      el.innerHTML = '<div class="zoro-search-message">No results found.</div>';
-      return;
-    }
-    
-    const gridDiv = document.createElement('div');
-    gridDiv.className = 'zoro-cards-grid';
-    gridDiv.style.setProperty('--zoro-grid-columns', this.settings.gridColumns);
-    
-    media.forEach(item => {
-      const title = item.title.english || item.title.romaji;
-      
-      const cardDiv = document.createElement('div');
-      cardDiv.className = 'zoro-card'; // Changed from 'zoro-search-card' to match media list
-      
-      if (this.settings.showCoverImages) {
-        const img = document.createElement('img');
-        img.src = item.coverImage.large;
-        img.alt = title;
-        img.className = 'media-cover'; // Already matches - good!
-        cardDiv.appendChild(img);
-      }
-      
-      const mediaInfoDiv = document.createElement('div');
-      mediaInfoDiv.className = 'media-info'; // Already matches - good!
-      
-      // Create clickable title
-      const titleElement = document.createElement('h4');
-      const titleLink = document.createElement('a');
-      titleLink.href = this.getZoroUrl(item.id, config.mediaType);
-      titleLink.target = '_blank';
-      titleLink.rel = 'noopener noreferrer';
-      titleLink.className = 'anilist-title-link'; // Changed from 'zoro-title-link' to match media list
-      titleLink.textContent = title;
-      titleElement.appendChild(titleLink);
-      mediaInfoDiv.appendChild(titleElement);
-      
-      // Create details div
-      const detailsDiv = document.createElement('div');
-      detailsDiv.className = 'media-details'; // Already matches - good!
-      
-      // Format badge
-      if (item.format) {
-        const formatBadge = document.createElement('span');
-        formatBadge.className = 'format-badge'; // Already matches - good!
-        formatBadge.textContent = item.format;
-        detailsDiv.appendChild(formatBadge);
-      }
-      
-      // Status badge
-      const statusBadge = document.createElement('span');
-      statusBadge.className = `status-badge status-${item.status.toLowerCase()}`; // Already matches - good!
-      statusBadge.textContent = item.status;
-      detailsDiv.appendChild(statusBadge);
-      
-      // Average score
-      if (this.settings.showRatings && item.averageScore) {
-        const scoreSpan = document.createElement('span');
-        scoreSpan.className = 'score'; // Already matches - good!
-        scoreSpan.textContent = `★ ${item.averageScore}`;
-        detailsDiv.appendChild(scoreSpan);
-      }
-      
-      mediaInfoDiv.appendChild(detailsDiv);
-      
-      // Create genres div
-      if (this.settings.showGenres) {
-        const genresDiv = document.createElement('div');
-        genresDiv.className = 'genres'; // Already matches - good!
-        item.genres.slice(0, 3).forEach(genre => {
-          const genreTag = document.createElement('span');
-          genreTag.className = 'genre-tag'; // Already matches - good!
-          genreTag.textContent = genre;
-          genresDiv.appendChild(genreTag);
-        });
-        mediaInfoDiv.appendChild(genresDiv);
-      }
-      
-      cardDiv.appendChild(mediaInfoDiv);
-      gridDiv.appendChild(cardDiv);
-    });
-    
-    el.appendChild(gridDiv);
+  if (media.length === 0) {
+    el.innerHTML = '<div class="zoro-search-message">No results found.</div>';
+    return;
   }
   
+  const gridDiv = document.createElement('div');
+  gridDiv.className = 'zoro-cards-grid';
+  gridDiv.style.setProperty('--zoro-grid-columns', this.settings.gridColumns);
+  
+  media.forEach(async (item) => {
+    const title = item.title.english || item.title.romaji;
+    
+    const cardDiv = document.createElement('div');
+    cardDiv.className = 'zoro-card';
+    
+    if (this.settings.showCoverImages) {
+      const img = document.createElement('img');
+      img.src = item.coverImage.large;
+      img.alt = title;
+      img.className = 'media-cover';
+      cardDiv.appendChild(img);
+    }
+    
+    const mediaInfoDiv = document.createElement('div');
+    mediaInfoDiv.className = 'media-info';
+    
+    // Create clickable title
+    const titleElement = document.createElement('h4');
+    const titleLink = document.createElement('a');
+    titleLink.href = this.getZoroUrl(item.id, config.mediaType);
+    titleLink.target = '_blank';
+    titleLink.rel = 'noopener noreferrer';
+    titleLink.className = 'anilist-title-link';
+    titleLink.textContent = title;
+    titleElement.appendChild(titleLink);
+    mediaInfoDiv.appendChild(titleElement);
+    
+    // Create details div
+    const detailsDiv = document.createElement('div');
+    detailsDiv.className = 'media-details';
+    
+    // Format badge
+    if (item.format) {
+      const formatBadge = document.createElement('span');
+      formatBadge.className = 'format-badge';
+      formatBadge.textContent = item.format;
+      detailsDiv.appendChild(formatBadge);
+    }
+    
+    // Status badge (for media release status)
+    const statusBadge = document.createElement('span');
+    statusBadge.className = `status-badge status-${item.status.toLowerCase()}`;
+    statusBadge.textContent = item.status;
+    detailsDiv.appendChild(statusBadge);
+    
+    // ADD button - styled like status badges but with different functionality
+    const addButton = document.createElement('span');
+    addButton.className = 'status-badge status-planning clickable-status add-to-list-btn';
+    addButton.textContent = 'ADD';
+    addButton.style.cursor = 'pointer';
+    addButton.style.backgroundColor = '#4CAF50';
+    addButton.style.color = 'white';
+    
+    if (this.settings.accessToken) {
+      addButton.title = 'Click to add to your list';
+      addButton.onclick = (e) => this.handleAddClick(e, item, config.mediaType, addButton);
+    } else {
+      addButton.title = 'Click to authenticate';
+      addButton.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.createAuthenticationPrompt();
+      };
+    }
+    
+    detailsDiv.appendChild(addButton);
+    
+    // Average score
+    if (this.settings.showRatings && item.averageScore) {
+      const scoreSpan = document.createElement('span');
+      scoreSpan.className = 'score';
+      scoreSpan.textContent = `★ ${item.averageScore}`;
+      detailsDiv.appendChild(scoreSpan);
+    }
+    
+    mediaInfoDiv.appendChild(detailsDiv);
+    
+    // Create genres div
+    if (this.settings.showGenres && item.genres) {
+      const genresDiv = document.createElement('div');
+      genresDiv.className = 'genres';
+      item.genres.slice(0, 3).forEach(genre => {
+        const genreTag = document.createElement('span');
+        genreTag.className = 'genre-tag';
+        genreTag.textContent = genre;
+        genresDiv.appendChild(genreTag);
+      });
+      mediaInfoDiv.appendChild(genresDiv);
+    }
+    
+    cardDiv.appendChild(mediaInfoDiv);
+    gridDiv.appendChild(cardDiv);
+    
+    // Check if item is already in list and update button accordingly
+    if (this.settings.accessToken) {
+      this.checkIfMediaInList(item.id, config.mediaType).then(inList => {
+        if (inList) {
+          addButton.textContent = 'IN LIST';
+          addButton.style.backgroundColor = '#999';
+          addButton.style.cursor = 'not-allowed';
+          addButton.title = 'Already in your list';
+          addButton.onclick = null;
+        }
+      });
+    }
+  });
+  
+  el.appendChild(gridDiv);
+}
+
+// Handle ADD button click
+handleAddClick(e, mediaItem, mediaType, buttonEl) {
+  e.preventDefault();
+  e.stopPropagation();
+  
+  // Create a mock entry object similar to existing entries
+  const mockEntry = {
+    media: {
+      id: mediaItem.id,
+      title: mediaItem.title,
+      episodes: mediaItem.episodes,
+      chapters: mediaItem.chapters,
+      format: mediaItem.format
+    },
+    status: 'PLANNING', // Default status
+    score: null,
+    progress: 0
+  };
+  
+  this.createAddModal(
+    mockEntry,
+    async (updates) => {
+      try {
+        buttonEl.textContent = 'Adding...';
+        buttonEl.style.backgroundColor = '#ff9800';
+        buttonEl.disabled = true;
+        
+        await this.addMediaToList(mediaItem.id, updates, mediaType);
+        
+        buttonEl.textContent = 'IN LIST';
+        buttonEl.style.backgroundColor = '#999';
+        buttonEl.style.cursor = 'not-allowed';
+        buttonEl.title = 'Already in your list';
+        buttonEl.onclick = null;
+        
+        new Notice('✅ Added to your list!');
+        this.cache.clear();
+      } catch (err) {
+        buttonEl.textContent = 'ADD';
+        buttonEl.style.backgroundColor = '#4CAF50';
+        buttonEl.disabled = false;
+        new Notice(`❌ Failed to add: ${err.message}`);
+      }
+    },
+    () => {
+      new Notice('Add canceled.');
+    }
+  );
+}
+
+// Create Add Modal (similar to edit modal but for adding new items)
+createAddModal(entry, onSave, onCancel) {
+  const modal = document.createElement('div');
+  modal.className = 'zoro-edit-modal';
+
+  const overlay = document.createElement('div');
+  overlay.className = 'zoro-modal-overlay';
+
+  const content = document.createElement('div');
+  content.className = 'zoro-modal-content';
+
+  const form = document.createElement('form');
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    await trySave();
+  };
+
+  const title = document.createElement('h3');
+  title.textContent = `Add: ${entry.media.title.english || entry.media.title.romaji}`;
+
+  // --- Status Field ---
+  const statusGroup = document.createElement('div');
+  statusGroup.className = 'form-group';
+
+  const statusLabel = document.createElement('label');
+  statusLabel.textContent = 'Status';
+  statusLabel.setAttribute('for', 'zoro-add-status');
+
+  const statusSelect = document.createElement('select');
+  statusSelect.id = 'zoro-add-status';
+
+  ['PLANNING', 'CURRENT', 'COMPLETED', 'DROPPED', 'PAUSED', 'REPEATING'].forEach(status => {
+    const option = document.createElement('option');
+    option.value = status;
+    option.textContent = status;
+    if (status === 'PLANNING') option.selected = true; // Default to PLANNING
+    statusSelect.appendChild(option);
+  });
+
+  statusGroup.appendChild(statusLabel);
+  statusGroup.appendChild(statusSelect);
+
+  // --- Score Field ---
+  const scoreGroup = document.createElement('div');
+  scoreGroup.className = 'form-group';
+
+  const scoreLabel = document.createElement('label');
+  scoreLabel.textContent = 'Score (0–10)';
+  scoreLabel.setAttribute('for', 'zoro-add-score');
+
+  const scoreInput = document.createElement('input');
+  scoreInput.type = 'number';
+  scoreInput.id = 'zoro-add-score';
+  scoreInput.min = '0';
+  scoreInput.max = '10';
+  scoreInput.step = '0.1';
+  scoreInput.value = '';
+  scoreInput.placeholder = 'e.g. 8.5';
+
+  scoreGroup.appendChild(scoreLabel);
+  scoreGroup.appendChild(scoreInput);
+
+  // --- Progress Field ---
+  const progressGroup = document.createElement('div');
+  progressGroup.className = 'form-group';
+
+  const progressLabel = document.createElement('label');
+  progressLabel.textContent = 'Progress';
+  progressLabel.setAttribute('for', 'zoro-add-progress');
+
+  const progressInput = document.createElement('input');
+  progressInput.type = 'number';
+  progressInput.id = 'zoro-add-progress';
+  progressInput.min = '0';
+  progressInput.max = entry.media.episodes || entry.media.chapters || 999;
+  progressInput.value = 0;
+  progressInput.placeholder = 'Progress';
+
+  progressGroup.appendChild(progressLabel);
+  progressGroup.appendChild(progressInput);
+
+  // --- Quick Buttons ---
+  const quickProgressDiv = document.createElement('div');
+  quickProgressDiv.className = 'quick-progress-buttons';
+
+  const plusOneBtn = document.createElement('button');
+  plusOneBtn.type = 'button';
+  plusOneBtn.textContent = '+1';
+  plusOneBtn.onclick = () => {
+    const current = parseInt(progressInput.value) || 0;
+    const max = progressInput.max;
+    if (current < max) progressInput.value = current + 1;
+  };
+
+  const minusOneBtn = document.createElement('button');
+  minusOneBtn.type = 'button';
+  minusOneBtn.textContent = '-1';
+  minusOneBtn.onclick = () => {
+    const current = parseInt(progressInput.value) || 0;
+    if (current > 0) progressInput.value = current - 1;
+  };
+
+  const completeBtn = document.createElement('button');
+  completeBtn.type = 'button';
+  completeBtn.textContent = 'Complete & Add';
+  completeBtn.onclick = () => {
+    progressInput.value = entry.media.episodes || entry.media.chapters || 1;
+    statusSelect.value = 'COMPLETED';
+  };
+
+  quickProgressDiv.append(plusOneBtn, minusOneBtn, completeBtn);
+
+  // --- Buttons ---
+  const buttonContainer = document.createElement('div');
+  buttonContainer.className = 'zoro-modal-buttons';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.textContent = 'Add to List';
+  saveBtn.type = 'submit';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.onclick = () => {
+    onCancel();
+    document.body.removeChild(modal);
+  };
+
+  buttonContainer.append(saveBtn, cancelBtn);
+
+  form.append(title, statusGroup, scoreGroup, progressGroup, quickProgressDiv, buttonContainer);
+  content.appendChild(form);
+  modal.append(overlay, content);
+  document.body.appendChild(modal);
+
+  overlay.onclick = () => {
+    onCancel();
+    document.body.removeChild(modal);
+  };
+
+  // Keyboard accessibility
+  document.addEventListener('keydown', escListener);
+  function escListener(e) {
+    if (e.key === 'Escape') {
+      onCancel();
+      document.body.removeChild(modal);
+      document.removeEventListener('keydown', escListener);
+    }
+    if (e.key === 'Enter' && e.ctrlKey) {
+      trySave();
+    }
+  }
+
+  // Save logic
+  let saving = false;
+  async function trySave() {
+    if (saving) return;
+    saving = true;
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Adding...';
+
+    const scoreVal = parseFloat(scoreInput.value);
+    if (scoreInput.value && (isNaN(scoreVal) || scoreVal < 0 || scoreVal > 10)) {
+      alert("⚠ Score must be between 0 and 10.");
+      resetSaveBtn();
+      return;
+    }
+
+    try {
+      await onSave({
+        status: statusSelect.value,
+        score: scoreInput.value === '' ? null : scoreVal,
+        progress: parseInt(progressInput.value) || 0
+      });
+      document.body.removeChild(modal);
+      document.removeEventListener('keydown', escListener);
+    } catch (err) {
+      alert(`❌ Failed to add: ${err.message}`);
+    }
+
+    resetSaveBtn();
+  }
+
+  function resetSaveBtn() {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Add to List';
+    saving = false;
+  }
+}
+  
+
+  
+
   //  render ZoroData
   renderZoroData(el, data, config) {
     el.empty();

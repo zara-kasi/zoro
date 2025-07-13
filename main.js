@@ -1258,232 +1258,179 @@ clearCacheForMedia(mediaId) {
   // Render Search Interface
   renderSearchInterface(el, config) {
     el.empty();
-    
     el.className = 'zoro-search-container';
-
-    // Input container
-    const searchDiv = document.createElement('div');
     
+    // Create search input
+    const searchDiv = document.createElement('div');
     searchDiv.className = 'zoro-search-input-container';
-
+    
     const searchInput = document.createElement('input');
     searchInput.type = 'text';
-    
     searchInput.className = 'zoro-search-input';
     searchInput.placeholder = config.mediaType === 'ANIME' ? 'Search anime...' : 'Search manga...';
-
+    
+    
     searchDiv.appendChild(searchInput);
     el.appendChild(searchDiv);
-
-    // Results container
-    const resultsDiv = document.createElement('div');
     
+    // Create results container
+    const resultsDiv = document.createElement('div');
     resultsDiv.className = 'zoro-search-results';
     el.appendChild(resultsDiv);
-
+    
+    // Add event listeners
     let searchTimeout;
-
+    
     const performSearch = async () => {
       const searchTerm = searchInput.value.trim();
-
+      
       if (searchTerm.length < 3) {
-        // RENAMED from anilist-search-message to zoro-search-message
         resultsDiv.innerHTML = '<div class="zoro-search-message">Type at least 3 characters to search...</div>';
         return;
       }
-
-      resultsDiv.innerHTML = `
-        <div class="zoro-search-loading">
-          🔍 Searching...
-        </div>
-      `;
-
+      
       try {
+        resultsDiv.innerHTML = '<div class="zoro-search-loading">Searching...</div>';
+        
         const searchConfig = {
           ...config,
           search: searchTerm,
           page: 1,
           perPage: 20
         };
-
         
         const data = await this.fetchZoroData(searchConfig);
-
-        if (!data.Page || !data.Page.media || data.Page.media.length === 0) {
-          
-          resultsDiv.innerHTML = '<div class="zoro-search-message">😕 No results found.</div>';
-          return;
-        }
-
         this.renderSearchResults(resultsDiv, data.Page.media, config);
-
-      } catch (error) {
-        console.error('Search error:', error);
         
-        resultsDiv.innerHTML = `<div class="zoro-search-error">❌ ${error.message}</div>`;
+      } catch (error) {
+        this.renderError(resultsDiv, error.message);
       }
     };
-
-    // Event: Input with debounce
+    
     searchInput.addEventListener('input', () => {
       clearTimeout(searchTimeout);
-      searchTimeout = setTimeout(performSearch, 400);
+      searchTimeout = setTimeout(performSearch, 300);
     });
-
-    // Event: Press Enter
+    
+    
     searchInput.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') {
-        clearTimeout(searchTimeout);
         performSearch();
       }
     });
-
-    // Optional: blur/cancel
-    searchInput.addEventListener('blur', () => {
-      clearTimeout(searchTimeout);
-    });
   }
-
-  // Render Search Results - FIXED: Now properly inside the class
+  
+  // Render Search Results
+  
+    
   renderSearchResults(el, media, config) {
     el.empty();
-
-    if (!media || media.length === 0) {
-      // RENAMED from anilist-search-message to zoro-search-message
-      el.innerHTML = '<div class="zoro-search-message">😕 No results found.</div>';
+    
+    if (media.length === 0) {
+      el.innerHTML = '<div class="zoro-search-message">No results found.</div>';
       return;
     }
-
-    const layout = config.layout || 'card';
-    const grid = document.createElement('div');
-    // RENAMED from anilist-results-grid to zoro-results-grid
-    // RENAMED from --anilist-grid-columns to --zoro-grid-columns
-    grid.className = `zoro-results-grid layout-${layout}`;
-    grid.style.setProperty('--zoro-grid-columns', this.settings.gridColumns || 3);
-
+    
+    const gridDiv = document.createElement('div');
+    gridDiv.className = 'zoro-cards-grid';
+    gridDiv.style.setProperty('--zoro-grid-columns', this.settings.gridColumns);
+    
     media.forEach(item => {
-      const title = item.title.english || item.title.romaji || item.title.native || 'Untitled';
-
-      const card = document.createElement('div');
-      // RENAMED from anilist-search-card to zoro-search-card
-      card.className = 'zoro-search-card';
-
-      // Cover image
+      const title = item.title.english || item.title.romaji;
+      
+      const cardDiv = document.createElement('div');
+      cardDiv.className = 'zoro-search-card';
+      
       if (this.settings.showCoverImages) {
         const img = document.createElement('img');
-        img.src = item.coverImage?.large || '';
-        img.alt = `${title} cover`;
+        img.src = item.coverImage.large;
+        img.alt = title;
         img.className = 'media-cover';
-        img.loading = 'lazy';
-        card.appendChild(img);
+        cardDiv.appendChild(img);
       }
-
-      const info = document.createElement('div');
-      info.className = 'media-info';
-
-      // Title
-      const titleEl = document.createElement('h4');
+      
+      const mediaInfoDiv = document.createElement('div');
+      mediaInfoDiv.className = 'media-info';
+      
+      // Create clickable title
+      const titleElement = document.createElement('h4');
       const titleLink = document.createElement('a');
-      // RENAMED from getAniListUrl to getZoroUrl
       titleLink.href = this.getZoroUrl(item.id, config.mediaType);
       titleLink.target = '_blank';
       titleLink.rel = 'noopener noreferrer';
-      titleLink.textContent = title;
-      // RENAMED from anilist-title-link to zoro-title-link
       titleLink.className = 'zoro-title-link';
-      titleEl.appendChild(titleLink);
-      info.appendChild(titleEl);
-
-      // Metadata badges
-      const meta = document.createElement('div');
-      meta.className = 'media-details';
-
-      // Format
+      titleLink.textContent = title;
+      titleElement.appendChild(titleLink);
+      mediaInfoDiv.appendChild(titleElement);
+      
+      // Create details div
+      const detailsDiv = document.createElement('div');
+      detailsDiv.className = 'media-details';
+      
+      // Format badge
       if (item.format) {
-        const format = document.createElement('span');
-        format.className = 'format-badge';
-        format.textContent = item.format;
-        meta.appendChild(format);
+        const formatBadge = document.createElement('span');
+        formatBadge.className = 'format-badge';
+        formatBadge.textContent = item.format;
+        detailsDiv.appendChild(formatBadge);
       }
-
-      // Status
-      if (item.status) {
-        const status = document.createElement('span');
-        status.className = `status-badge status-${item.status.toLowerCase()}`;
-        status.textContent = item.status;
-        meta.appendChild(status);
-      }
-
-      // Score
+      
+      // Status badge
+      const statusBadge = document.createElement('span');
+      statusBadge.className = `status-badge status-${item.status.toLowerCase()}`;
+      statusBadge.textContent = item.status;
+      detailsDiv.appendChild(statusBadge);
+      
+      // Average score
       if (this.settings.showRatings && item.averageScore) {
-        const score = document.createElement('span');
-        score.className = 'score-badge';
-        score.textContent = `★ ${item.averageScore}`;
-        meta.appendChild(score);
+        const scoreSpan = document.createElement('span');
+        scoreSpan.className = 'score';
+        scoreSpan.textContent = `★ ${item.averageScore}`;
+        detailsDiv.appendChild(scoreSpan);
       }
-
-      info.appendChild(meta);
-
-      // Genres
-      if (this.settings.showGenres && item.genres?.length) {
-        const genres = document.createElement('div');
-        genres.className = 'media-genres';
+      
+      mediaInfoDiv.appendChild(detailsDiv);
+      
+      // Create genres div
+      if (this.settings.showGenres) {
+        const genresDiv = document.createElement('div');
+        genresDiv.className = 'genres';
         item.genres.slice(0, 3).forEach(genre => {
-          const tag = document.createElement('span');
-          tag.className = 'genre-tag';
-          tag.textContent = genre;
-          genres.appendChild(tag);
+          const genreTag = document.createElement('span');
+          genreTag.className = 'genre-tag';
+          genreTag.textContent = genre;
+          genresDiv.appendChild(genreTag);
         });
-        info.appendChild(genres);
+        mediaInfoDiv.appendChild(genresDiv);
       }
-
-      card.appendChild(info);
-      grid.appendChild(card);
+      
+      cardDiv.appendChild(mediaInfoDiv);
+      gridDiv.appendChild(cardDiv);
     });
-    el.appendChild(grid);
+    
+    el.appendChild(gridDiv);
   }
 
-
-
-  // RENAMED from renderAniListData to renderZoroData
+  //  render ZoroData
   renderZoroData(el, data, config) {
     el.empty();
     el.className = 'zoro-container';
-
-    try {
-      if (config.type === 'stats') {
-        if (!data?.User) {
-          throw new Error('User statistics not found. Is the username correct?');
-        }
-        this.renderUserStats(el, data.User);
+    
+    if (config.type === 'stats') {
+      this.renderUserStats(el, data.User);
+    } else if (config.type === 'single') {
+      this.renderSingleMedia(el, data.MediaList, config);
+    } else {
+      const entries = data.MediaListCollection.lists.flatMap(list => list.entries);
+      if (config.layout === 'table') {
+        this.renderTableLayout(el, entries);
+      } else {
+        this.renderMediaList(el, entries, config);
       }
-      else if (config.type === 'single') {
-        if (!data?.MediaList) {
-          throw new Error('Media entry not found. Please check the ID or username.');
-        }
-        this.renderSingleMedia(el, data.MediaList, config);
-      }
-      else if (data?.MediaListCollection?.lists?.length) {
-        const entries = data.MediaListCollection.lists.flatMap(list => list.entries || []);
-        const layout = config.layout || this.settings.defaultLayout || 'card';
-
-        if (layout === 'table') {
-          this.renderTableLayout(el, entries, config);
-        } else {
-          this.renderMediaList(el, entries, config);
-        }
-      }
-      else {
-        throw new Error('No media list data found.');
-      }
-    } catch (error) {
-      // RENAMED from Error rendering AniList data to Error rendering Zoro data
-      console.error('Error rendering Zoro data:', error);
-      this.renderError(el, error.message || 'Unknown rendering error');
     }
   }
 
-  // Render User's Stats
+  // Render User's Stats (Need some fixes)
   renderUserStats(el, user) {
     if (!user || !user.statistics) {
       this.renderError(el, 'User statistics unavailable.');
@@ -1547,32 +1494,26 @@ clearCacheForMedia(mediaId) {
 
   // Render Single Media 
   renderSingleMedia(el, mediaList, config) {
-    if (!mediaList || !mediaList.media) {
-      this.renderError(el, 'Media data unavailable.');
-      return;
-    }
-
     const media = mediaList.media;
-    const title = media.title.english || media.title.romaji || 'Untitled';
-
+    const title = media.title.english || media.title.romaji;
+    
     const cardDiv = document.createElement('div');
     cardDiv.className = 'zoro-single-card';
-
-    if (this.settings.showCoverImages && media.coverImage?.large) {
+    
+    if (this.settings.showCoverImages) {
       const img = document.createElement('img');
       img.src = media.coverImage.large;
       img.alt = title;
-      img.className = 'zoro-media-cover';
+      img.className = 'media-cover';
       cardDiv.appendChild(img);
     }
-
+    
     const mediaInfoDiv = document.createElement('div');
-    mediaInfoDiv.className = 'zoro-media-info';
-
-    // Title
+    mediaInfoDiv.className = 'media-info';
+    
+    // Create clickable title
     const titleElement = document.createElement('h3');
     const titleLink = document.createElement('a');
-    // RENAMED from getAniListUrl to getZoroUrl
     titleLink.href = this.getZoroUrl(media.id, config.mediaType);
     titleLink.target = '_blank';
     titleLink.rel = 'noopener noreferrer';
@@ -1580,57 +1521,62 @@ clearCacheForMedia(mediaId) {
     titleLink.textContent = title;
     titleElement.appendChild(titleLink);
     mediaInfoDiv.appendChild(titleElement);
-
-    // Badges
+    
+    // Create details div
     const detailsDiv = document.createElement('div');
-    detailsDiv.className = 'zoro-media-details';
-
+    detailsDiv.className = 'media-details';
+    
+    // Format badge
     if (media.format) {
       const formatBadge = document.createElement('span');
-      formatBadge.className = 'zoro-badge zoro-format';
+      formatBadge.className = 'format-badge';
       formatBadge.textContent = media.format;
       detailsDiv.appendChild(formatBadge);
     }
-
+    
+    // Status badge
     const statusBadge = document.createElement('span');
-    statusBadge.className = `zoro-badge zoro-status status-${mediaList.status?.toLowerCase()}`;
-    statusBadge.textContent = mediaList.status || 'Unknown';
+    statusBadge.className = `status-badge status-${mediaList.status.toLowerCase()}`;
+    statusBadge.textContent = mediaList.status;
     detailsDiv.appendChild(statusBadge);
-
+    
+    // Progress
     if (this.settings.showProgress) {
       const progressSpan = document.createElement('span');
-      progressSpan.className = 'zoro-badge zoro-progress';
-      const total = media.episodes ?? media.chapters ?? '?';
-      progressSpan.textContent = `Progress: ${mediaList.progress}/${total}`;
+      progressSpan.className = 'progress';
+      progressSpan.textContent = `${mediaList.progress}/${media.episodes || media.chapters || '?'}`;
       detailsDiv.appendChild(progressSpan);
     }
-
-    if (this.settings.showRatings && mediaList.score != null) {
+    
+    // Score
+    if (this.settings.showRatings && mediaList.score) {
       const scoreSpan = document.createElement('span');
-      scoreSpan.className = 'zoro-badge zoro-score';
+      scoreSpan.className = 'score';
       scoreSpan.textContent = `★ ${mediaList.score}`;
       detailsDiv.appendChild(scoreSpan);
     }
-
+    
     mediaInfoDiv.appendChild(detailsDiv);
-
-    // Genres
-    if (this.settings.showGenres && Array.isArray(media.genres)) {
+    // Create genres div
+    if (this.settings.showGenres) {
       const genresDiv = document.createElement('div');
-      genresDiv.className = 'zoro-genres';
+      genresDiv.className = 'genres';
       media.genres.slice(0, 3).forEach(genre => {
-        const tag = document.createElement('span');
-        tag.className = 'zoro-genre-tag';
-        tag.textContent = genre;
-        genresDiv.appendChild(tag);
+        const genreTag = document.createElement('span');
+        genreTag.className = 'genre-tag';
+        genreTag.textContent = genre;
+        genresDiv.appendChild(genreTag);
       });
       mediaInfoDiv.appendChild(genresDiv);
     }
-
+    
     cardDiv.appendChild(mediaInfoDiv);
     el.appendChild(cardDiv);
   }
 
+
+  // Render Media Lists
+  
   // Render Media Lists
   renderMediaList(el, entries, config) {
     const gridDiv = document.createElement('div');
@@ -1655,41 +1601,40 @@ clearCacheForMedia(mediaId) {
     const cardDiv = document.createElement('div');
     cardDiv.className = 'zoro-card';
 
-    // Cover
+    // Cover - using old styling class name
     if (this.settings.showCoverImages && media.coverImage?.large) {
       const img = document.createElement('img');
       img.src = media.coverImage.large;
       img.alt = title;
-      img.className = 'zoro-media-cover';
+      img.className = 'media-cover'; // Changed from 'zoro-media-cover' to match old style
       cardDiv.appendChild(img);
     }
 
     const infoDiv = document.createElement('div');
-    infoDiv.className = 'zoro-media-info';
+    infoDiv.className = 'media-info'; // Changed from 'zoro-media-info' to match old style
 
-    // Title
+    // Title - using old styling class name
     const titleElement = document.createElement('h4');
     const titleLink = document.createElement('a');
-    // RENAMED from getAniListUrl to getZoroUrl
     titleLink.href = this.getZoroUrl(media.id, config.mediaType);
     titleLink.target = '_blank';
     titleLink.rel = 'noopener noreferrer';
-    titleLink.className = 'zoro-title-link';
+    titleLink.className = 'anilist-title-link'; // Changed from 'zoro-title-link' to match old style
     titleLink.textContent = title;
     titleElement.appendChild(titleLink);
     infoDiv.appendChild(titleElement);
 
-    // Details
+    // Details - using old styling approach
     const detailsDiv = this.createDetailsRow(entry);
     infoDiv.appendChild(detailsDiv);
 
-    // Genres
+    // Genres - using old styling class name
     if (this.settings.showGenres && media.genres?.length) {
       const genresDiv = document.createElement('div');
-      genresDiv.className = 'zoro-genres';
+      genresDiv.className = 'genres'; // Changed from 'zoro-genres' to match old style
       media.genres.slice(0, 3).forEach(genre => {
         const tag = document.createElement('span');
-        tag.className = 'zoro-genre-tag';
+        tag.className = 'genre-tag'; // Changed from 'zoro-genre-tag' to match old style
         tag.textContent = genre;
         genresDiv.appendChild(tag);
       });
@@ -1703,19 +1648,19 @@ clearCacheForMedia(mediaId) {
   createDetailsRow(entry) {
     const media = entry.media;
     const details = document.createElement('div');
-    details.className = 'zoro-media-details';
+    details.className = 'media-details'; // Changed from 'zoro-media-details' to match old style
 
-    // Format
+    // Format - using old styling class name
     if (media.format) {
       const format = document.createElement('span');
-      format.className = 'zoro-badge zoro-format';
+      format.className = 'format-badge'; // Changed from 'zoro-badge zoro-format' to match old style
       format.textContent = media.format;
       details.appendChild(format);
     }
 
-    // Status
+    // Status - using old styling class name but keeping new functionality
     const status = document.createElement('span');
-    status.className = `zoro-badge zoro-status clickable-status status-${entry.status?.toLowerCase()}`;
+    status.className = `status-badge status-${entry.status?.toLowerCase()} clickable-status`; // Changed from 'zoro-badge zoro-status' to match old style
     status.textContent = entry.status ?? 'Unknown';
     status.style.cursor = 'pointer';
 
@@ -1733,19 +1678,19 @@ clearCacheForMedia(mediaId) {
 
     details.appendChild(status);
 
-    // Progress
+    // Progress - using old styling class name
     if (this.settings.showProgress) {
       const progress = document.createElement('span');
-      progress.className = 'zoro-badge zoro-progress';
+      progress.className = 'progress'; // Changed from 'zoro-badge zoro-progress' to match old style
       const total = media.episodes ?? media.chapters ?? '?';
-      progress.textContent = `Progress: ${entry.progress}/${total}`;
+      progress.textContent = `${entry.progress}/${total}`; // Changed format to match old style
       details.appendChild(progress);
     }
 
-    // Score
+    // Score - using old styling class name
     if (this.settings.showRatings && entry.score != null) {
       const score = document.createElement('span');
-      score.className = 'zoro-badge zoro-score';
+      score.className = 'score'; // Changed from 'zoro-badge zoro-score' to match old style
       score.textContent = `★ ${entry.score}`;
       details.appendChild(score);
     }
@@ -1767,7 +1712,6 @@ clearCacheForMedia(mediaId) {
           const parent = statusEl.closest('.zoro-container');
           if (parent) {
             const block = parent.closest('.markdown-rendered')?.querySelector('code');
-            // RENAMED from processAniListCodeBlock to processZoroCodeBlock
             if (block) this.processZoroCodeBlock(block.textContent, parent, {});
           }
         } catch (err) {
@@ -2668,8 +2612,6 @@ authSetting.addButton(button => {
     await this.handleAuthButtonClick();
   });
 });
-
-containerEl.createEl('hr');
 
     new Setting(containerEl)
       .setName('🧊 Layout')

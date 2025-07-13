@@ -3,7 +3,7 @@
 /* ─── Container Styles ─── */
 .zoro-container {
   margin: 1rem 0;
-  padding: 0 0.1rem;             /* ← horizontal padding off the screen edge */
+  padding: 0 0.1rem;
   font-family: var(--font-interface);
 }
 
@@ -11,14 +11,13 @@
 .zoro-error {
   color: var(--text-error);
   background: var(--background-modifier-error);
-  padding: 0.75rem;            /* slightly smaller */
+  padding: 0.75rem;
   border-radius: 8px;
   border: 1px solid var(--border-color);
   margin: 1rem 0;
 }
 
 /* ─── Card Layout Styles ─── */
-/* 2-column pack, tighter cards, bigger gap */
 .zoro-cards-grid {
   display: grid;
   grid-template-columns: repeat(var(--zoro-grid-columns, 2), minmax(0, 1fr));
@@ -30,7 +29,7 @@
 
 @media (max-width: 480px) {
   .zoro-cards-grid {
-    gap: 0.75rem;              /* slightly smaller on narrow screens */
+    gap: 0.75rem;
   }
 }
 
@@ -48,13 +47,11 @@
   list-style: none;
 }
 
-/* Hover shadow */
 .zoro-card:hover,
 .zoro-single-card:hover {
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
 }
 
-/* Cover image on top, forced 2:3 ratio (original) */
 .zoro-card .media-cover,
 .zoro-single-card .media-cover {
   width: 100%;
@@ -63,20 +60,18 @@
   flex-shrink: 0;
 }
 
-/* Info block under the cover */
 .zoro-card .media-info,
 .zoro-single-card .media-info {
-  padding: 0.5rem 0.75rem;     /* tighter padding */
+  padding: 0.5rem 0.75rem;
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;                 /* smaller internal gaps */
+  gap: 0.3rem;
 }
 
-/* Title styling – clamp to one line */
 .zoro-card h4,
 .zoro-single-card h3 {
   margin: 0;
-  font-size: 0.9rem;           /* smaller font */
+  font-size: 0.9rem;
   font-weight: 600;
   color: var(--text-normal);
   line-height: 1.2;
@@ -85,12 +80,10 @@
   text-overflow: ellipsis;
 }
 
-/* Slight bump on single-card titles */
 .zoro-single-card h3 {
   font-size: 1rem;
 }
 
-/* Media details: status, progress, score */
 .media-details {
   display: flex;
   gap: 0.2rem;
@@ -98,28 +91,26 @@
   flex-wrap: wrap;
 }
 
-/* Format badges */
 .format-badge {
   padding: 0.1rem 0.4rem;
   border-radius: 12px;
-  font-size: 0.1rem;
+  /* FIXED font-size from 0.1rem to 0.7rem */
+  font-size: 0.7rem;
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.1px;
 }
 
-/* Status badges */
 .status-badge {
   padding: 0.1rem 0.4rem;
   border-radius: 12px;
-  font-size: 0.1rem;
+  /* FIXED font-size from 0.1rem to 0.7rem */
+  font-size: 0.7rem;
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.1px;
 }
 
-
-/* Badge colors */
 .status-current   { background: var(--color-green);  color: white; }
 .status-completed { background: var(--color-blue);   color: white; }
 .status-paused    { background: var(--color-yellow); color: var(--text-normal); }
@@ -127,7 +118,6 @@
 .status-planning  { background: var(--color-purple); color: white; }
 .status-repeating { background: var(--color-cyan);   color: white; }
 
-/* Progress and Score pills */
 .progress,
 .score {
   padding: 0.1rem 0.2rem;
@@ -141,7 +131,6 @@
   color: var(--color-orange);
 }
 
-/* Genre tags */
 .genres {
   display: flex;
   gap: 0.2rem;
@@ -158,7 +147,7 @@
   font-weight: 500;
 }
 
-/* ─── Table Layout Styles (unchanged) ─── */
+/* ─── Table Layout ─── */
 .zoro-table {
   width: 100%;
   border-collapse: collapse;
@@ -187,7 +176,7 @@
   background: var(--background-modifier-hover);
 }
 
-/* ─── User Stats Styles (unchanged) ─── */
+/* ─── User Stats ─── */
 .zoro-user-stats {
   background: var(--background-secondary);
   border: 1px solid var(--border-color);
@@ -205,7 +194,7 @@
   border-bottom: 1px solid var(--border-color);
 }
 
-/* ─── Mobile-specific adjustments (unchanged) ─── */
+/* ─── Mobile Adjustments ─── */
 @media (max-width: 480px) {
   .zoro-card,
   .zoro-single-card {
@@ -213,7 +202,7 @@
   }
 }
 
-/* ─── Dark mode (unchanged) ─── */
+/* ─── Dark Mode ─── */
 .theme-dark .zoro-card,
 .theme-dark .zoro-single-card,
 .theme-dark .zoro-user-stats {
@@ -225,7 +214,7 @@
   background: var(--background-secondary);
 }
 
-/* ─── Fade-in animation ─── */
+/* ─── Fade In Animation ─── */
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -241,7 +230,7 @@
   animation: fadeIn 0.3s ease;
 }
 
-/* ─── Responsive text scaling ─── */
+/* ─── Responsive Text ─── */
 @media (max-width: 600px) {
   .zoro-card h4,
   .zoro-single-card h3 {
@@ -250,5 +239,265 @@
 
   .user-header h3 {
     font-size: 1.3rem;
+  }
+}
+
+.zoro-error-box {
+  background: var(--background-modifier-error);
+  border-left: 4px solid var(--color-red);
+  padding: 12px 16px;
+  margin-top: 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text-normal);
+  white-space: pre-wrap;
+}
+
+.zoro-retry-btn {
+  margin-top: 10px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.zoro-retry-btn:hover {
+  background: var(--interactive-accent-hover);
+}
+
+.zoro-edit-modal {
+  position: fixed;
+  z-index: 1000;
+  top: 0; left: 0; width: 100%; height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.zoro-modal-overlay {
+  position: absolute;
+  width: 100%; height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+.zoro-modal-content {
+  background: var(--background-primary);
+  border-radius: 8px;
+  padding: 20px;
+  max-width: 500px;
+  width: 90%;
+  position: relative;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.zoro-auth-title {
+  text-align: center;
+  margin-bottom: 15px;
+  color: var(--text-normal);
+}
+
+.zoro-auth-message {
+  text-align: center;
+  margin-bottom: 20px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.zoro-auth-features {
+  margin-bottom: 20px;
+}
+
+.zoro-auth-features-title {
+  margin-bottom: 10px;
+  color: var(--text-normal);
+}
+
+.zoro-auth-feature-list {
+  padding-left: 20px;
+  color: var(--text-normal);
+}
+
+.zoro-auth-feature-list li {
+  margin-bottom: 5px;
+}
+
+.zoro-modal-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.zoro-auth-button {
+  background: linear-gradient(45deg, #02A9FF, #3B82F6);
+  color: white;
+  font-weight: bold;
+  padding: 10px 20px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+}
+
+.zoro-auth-button:hover {
+  background: linear-gradient(45deg, #0284C7, #2563EB);
+}
+
+.zoro-cancel-button {
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  padding: 10px 20px;
+  border-radius: 4px;
+  border: none;
+  cursor: pointer;
+}
+
+/* Authentication Modal Styles */
+.auth-modal {
+  padding: 2rem;
+  max-width: 450px;
+  margin: 0 auto;
+  background: var(--background-primary);
+  border-radius: 8px;
+}
+
+.auth-modal h2 {
+  margin-bottom: 1rem;
+  text-align: center;
+  color: var(--text-normal);
+  font-size: 1.4rem;
+  font-weight: 600;
+}
+
+.auth-modal-desc {
+  margin-bottom: 1.5rem;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.auth-input-container {
+  margin-bottom: 1.5rem;
+}
+
+.auth-input {
+  width: 100%;
+  padding: 0.875rem 1rem;
+  border: 2px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: 1rem;
+  transition: all 0.2s ease;
+  font-family: var(--font-interface);
+}
+
+.auth-input:focus {
+  outline: none;
+  border-color: var(--interactive-accent);
+  box-shadow: 0 0 0 3px var(--interactive-accent-hover);
+}
+
+.auth-input::placeholder {
+  color: var(--text-muted);
+}
+
+.pin-input {
+  font-family: var(--font-monospace);
+  letter-spacing: 0.5px;
+  text-align: center;
+  font-size: 1.1rem;
+}
+
+.auth-button-container {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+.auth-button {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 90px;
+  font-family: var(--font-interface);
+}
+
+.auth-button:not(.mod-cta) {
+  background: var(--interactive-normal);
+  color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
+}
+
+.auth-button:not(.mod-cta):hover {
+  background: var(--interactive-hover);
+}
+
+.auth-button.mod-cta {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+.auth-button.mod-cta:hover {
+  background: var(--interactive-accent-hover);
+}
+
+.submit-button {
+  position: relative;
+  overflow: hidden;
+}
+
+.submit-button.ready {
+  background: var(--color-green);
+  transform: scale(1.02);
+}
+
+.submit-button.ready:hover {
+  background: var(--color-green);
+  filter: brightness(1.1);
+}
+
+.pin-modal {
+  border: 2px solid var(--interactive-accent);
+}
+
+.pin-modal h2 {
+  color: var(--interactive-accent);
+}
+
+/* Settings button font size fix */
+.setting-item .setting-item-control button {
+  font-size: 0.85rem !important;
+  padding: 0.5rem 1rem !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: 200px !important;
+}
+
+/* Mobile responsive */
+@media (max-width: 480px) {
+  .auth-modal {
+    padding: 1.5rem;
+    max-width: 350px;
+  }
+  
+  .auth-button-container {
+    flex-direction: column;
+  }
+  
+  .auth-button {
+    width: 100%;
+  }
+  
+  .setting-item .setting-item-control button {
+    max-width: 100% !important;
+    font-size: 1rem !important;
   }
 }

@@ -1315,6 +1315,70 @@ config.search = '';
     });
   }
   
+  async checkIfMediaInList(mediaId, mediaType) {
+  if (!this.settings.accessToken) return false;
+  
+  try {
+    const query = `
+      query ($mediaId: Int, $type: MediaType) {
+        MediaList(mediaId: $mediaId, type: $type) {
+          id
+          status
+          score
+          progress
+        }
+      }
+    `;
+    
+    const variables = {
+      mediaId: parseInt(mediaId),
+      type: mediaType
+    };
+    
+    const response = await this.makeZoroRequest(query, variables);
+    return response.data.MediaList !== null;
+  } catch (error) {
+    console.warn('Error checking media list status:', error);
+    return false;
+  }
+}
+
+// Add this method to add new media to list
+async addMediaToList(mediaId, updates, mediaType) {
+  if (!this.settings.accessToken) {
+    throw new Error('Authentication required');
+  }
+  
+  const mutation = `
+    mutation ($mediaId: Int, $status: MediaListStatus, $score: Float, $progress: Int) {
+      SaveMediaListEntry(mediaId: $mediaId, status: $status, score: $score, progress: $progress) {
+        id
+        status
+        score
+        progress
+        media {
+          id
+          title {
+            romaji
+            english
+          }
+        }
+      }
+    }
+  `;
+  
+  const variables = {
+    mediaId: parseInt(mediaId),
+    status: updates.status,
+    score: updates.score,
+    progress: updates.progress
+  };
+  
+  const response = await this.makeZoroRequest(mutation, variables);
+  return response.data.SaveMediaListEntry;
+}
+
+  
   // Render Search Results
   
     renderSearchResults(el, media, config) {

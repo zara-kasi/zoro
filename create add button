@@ -1,0 +1,801 @@
+  // Get Media List Query - FIXED: Now properly inside the class
+  getMediaListQuery(layout = 'card') {
+    const baseFields = `
+      id
+      status
+      score
+      progress
+    `;
+
+    const mediaFields = {
+      compact: `
+        id
+        title {
+          romaji
+        }
+        coverImage {
+          medium
+        }
+      `,
+      card: `
+        id
+        title {
+          romaji
+          english
+          native
+        }
+        coverImage {
+          large
+          medium
+        }
+        format
+        averageScore
+        status
+      `,
+      full: `
+        id
+        title {
+          romaji
+          english
+          native
+        }
+        coverImage {
+          large
+          medium
+        }
+        episodes
+        chapters
+        genres
+        format
+        averageScore
+        status
+        startDate {
+          year
+          month
+          day
+        }
+        endDate {
+          year
+          month
+          day
+        }
+      `
+    };
+
+    const fields = mediaFields[layout] || mediaFields.card;
+
+    return `
+      query ($username: String, $status: MediaListStatus, $type: MediaType) {
+        MediaListCollection(userName: $username, status: $status, type: $type) {
+          lists {
+            entries {
+              ${baseFields}
+              media {
+                ${fields}
+              }
+            }
+          }
+        }
+      }
+    `;
+  }
+
+  // Single Media Query - FIXED: Now properly inside the class
+  getSingleMediaQuery(layout = 'card') {
+    const baseFields = `
+      id
+      status
+      score
+      progress
+    `;
+
+    const mediaFields = {
+      compact: `
+        id
+        title {
+          romaji
+        }
+        coverImage {
+          medium
+        }
+      `,
+      card: `
+        id
+        title {
+          romaji
+          english
+          native
+        }
+        coverImage {
+          large
+          medium
+        }
+        format
+        averageScore
+        status
+      `,
+      full: `
+        id
+        title {
+          romaji
+          english
+          native
+        }
+        coverImage {
+          large
+          medium
+        }
+        episodes
+        chapters
+        genres
+        format
+        averageScore
+        status
+        startDate {
+          year
+          month
+          day
+        }
+        endDate {
+          year
+          month
+          day
+        }
+      `
+    };
+
+    const selectedMediaFields = mediaFields[layout] || mediaFields.card;
+
+    return `
+      query ($username: String, $mediaId: Int, $type: MediaType) {
+        MediaList(userName: $username, mediaId: $mediaId, type: $type) {
+          ${baseFields}
+          media {
+            ${selectedMediaFields}
+          }
+        }
+      }
+    `;
+  }
+
+  // User Stats Query - FIXED: Now properly inside the class
+  getUserStatsQuery({ mediaType = 'ANIME', layout = 'card', useViewer = false } = {}) {
+    const typeKey = mediaType.toLowerCase(); // 'anime' or 'manga'
+
+    const statFields = {
+      compact: `
+        count
+        meanScore
+      `,
+      card: `
+        count
+        meanScore
+        standardDeviation
+      `,
+      full: `
+        count
+        meanScore
+        standardDeviation
+        episodesWatched
+        minutesWatched
+        chaptersRead
+        volumesRead
+      `
+    };
+
+    const selectedFields = statFields[layout] || statFields.card;
+
+    const viewerPrefix = useViewer ? 'Viewer' : `User(name: $username)`;
+
+    return `
+      query ($username: String) {
+        ${viewerPrefix} {
+          id
+          name
+          avatar {
+            large
+            medium
+          }
+          statistics {
+            ${typeKey} {
+              ${selectedFields}
+            }
+          }
+        }
+      }
+    `;
+  }
+
+  // Search Media Query - FIXED: Now properly inside the class
+  getSearchMediaQuery(layout = 'card') {
+    const mediaFields = {
+      compact: `
+        id
+        title {
+          romaji
+        }
+        coverImage {
+          medium
+        }
+      `,
+      card: `
+        id
+        title {
+          romaji
+          english
+          native
+        }
+        coverImage {
+          large
+          medium
+        }
+        format
+        averageScore
+        status
+      `,
+      full: `
+        id
+        title {
+          romaji
+          english
+          native
+        }
+        coverImage {
+          large
+          medium
+        }
+        episodes
+        chapters
+        genres
+        format
+        averageScore
+        status
+        startDate {
+          year
+          month
+          day
+        }
+        endDate {
+          year
+          month
+          day
+        }
+      `
+    };
+
+    const fields = mediaFields[layout] || mediaFields.card;
+
+    return `
+      query ($search: String, $type: MediaType, $page: Int, $perPage: Int) {
+        Page(page: $page, perPage: $perPage) {
+          pageInfo {
+            total
+            currentPage
+            lastPage
+            hasNextPage
+            perPage
+          }
+          media(search: $search, type: $type, sort: POPULARITY_DESC) {
+            ${fields}
+          }
+        }
+      }
+    `;
+  }
+
+renderSearchInterface(el, config) {
+    el.empty();
+    el.className = 'zoro-search-container';
+    
+    // Create search input
+    const searchDiv = document.createElement('div');
+    searchDiv.className = 'zoro-search-input-container';
+    
+    const searchInput = document.createElement('input');
+    searchInput.type = 'text';
+    searchInput.className = 'zoro-search-input';
+    searchInput.placeholder = config.mediaType === 'ANIME' ? 'Search anime...' : 'Search manga...';
+    
+    
+    searchDiv.appendChild(searchInput);
+    el.appendChild(searchDiv);
+    
+    // Create results container
+    const resultsDiv = document.createElement('div');
+    resultsDiv.className = 'zoro-search-results';
+    el.appendChild(resultsDiv);
+    
+    // Add event listeners
+    let searchTimeout;
+    
+    const performSearch = async () => {
+      const searchTerm = searchInput.value.trim();
+      
+      if (searchTerm.length < 3) {
+        resultsDiv.innerHTML = '<div class="zoro-search-message">Type at least 3 characters to search...</div>';
+        return;
+      }
+      
+      try {
+        resultsDiv.innerHTML = '<div class="zoro-search-loading">Searching...</div>';
+        
+        const searchConfig = { ...config,
+          search: searchTerm,
+          page: 1,
+          perPage: 20
+        };
+        
+        const data = await this.fetchZoroData(searchConfig);
+        this.renderSearchResults(resultsDiv, data.Page.media, config);
+        
+      } catch (error) {
+        this.renderError(resultsDiv, error.message);
+      }
+    };
+    
+    searchInput.addEventListener('input', () => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(performSearch, 300);
+    });
+    
+    
+    searchInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') {
+        performSearch();
+      }
+    });
+  }
+  
+  // Render Search Results
+  
+    renderSearchResults(el, media, config) {
+    el.empty();
+    
+    if (media.length === 0) {
+      el.innerHTML = '<div class="zoro-search-message">No results found.</div>';
+      return;
+    }
+    
+    const gridDiv = document.createElement('div');
+    gridDiv.className = 'zoro-cards-grid';
+    gridDiv.style.setProperty('--zoro-grid-columns', this.settings.gridColumns);
+    
+    media.forEach(item => {
+      const title = item.title.english || item.title.romaji;
+      
+      const cardDiv = document.createElement('div');
+      cardDiv.className = 'zoro-card'; // Changed from 'zoro-search-card' to match media list
+      
+      if (this.settings.showCoverImages) {
+        const img = document.createElement('img');
+        img.src = item.coverImage.large;
+        img.alt = title;
+        img.className = 'media-cover'; // Already matches - good!
+        cardDiv.appendChild(img);
+      }
+      
+      const mediaInfoDiv = document.createElement('div');
+      mediaInfoDiv.className = 'media-info'; // Already matches - good!
+      
+      // Create clickable title
+      const titleElement = document.createElement('h4');
+      const titleLink = document.createElement('a');
+      titleLink.href = this.getZoroUrl(item.id, config.mediaType);
+      titleLink.target = '_blank';
+      titleLink.rel = 'noopener noreferrer';
+      titleLink.className = 'anilist-title-link'; // Changed from 'zoro-title-link' to match media list
+      titleLink.textContent = title;
+      titleElement.appendChild(titleLink);
+      mediaInfoDiv.appendChild(titleElement);
+      
+      // Create details div
+      const detailsDiv = document.createElement('div');
+      detailsDiv.className = 'media-details'; // Already matches - good!
+      
+      // Format badge
+      if (item.format) {
+        const formatBadge = document.createElement('span');
+        formatBadge.className = 'format-badge'; // Already matches - good!
+        formatBadge.textContent = item.format;
+        detailsDiv.appendChild(formatBadge);
+      }
+      
+      // Status badge
+      const statusBadge = document.createElement('span');
+      statusBadge.className = `status-badge status-${item.status.toLowerCase()}`; // Already matches - good!
+      statusBadge.textContent = item.status;
+      detailsDiv.appendChild(statusBadge);
+      
+      // Average score
+      if (this.settings.showRatings && item.averageScore) {
+        const scoreSpan = document.createElement('span');
+        scoreSpan.className = 'score'; // Already matches - good!
+        scoreSpan.textContent = `★ ${item.averageScore}`;
+        detailsDiv.appendChild(scoreSpan);
+      }
+      
+      mediaInfoDiv.appendChild(detailsDiv);
+      
+      // Create genres div
+      if (this.settings.showGenres) {
+        const genresDiv = document.createElement('div');
+        genresDiv.className = 'genres'; // Already matches - good!
+        item.genres.slice(0, 3).forEach(genre => {
+          const genreTag = document.createElement('span');
+          genreTag.className = 'genre-tag'; // Already matches - good!
+          genreTag.textContent = genre;
+          genresDiv.appendChild(genreTag);
+        });
+        mediaInfoDiv.appendChild(genresDiv);
+      }
+      
+      cardDiv.appendChild(mediaInfoDiv);
+      gridDiv.appendChild(cardDiv);
+    });
+    
+    el.appendChild(gridDiv);
+  }
+  
+  //  render ZoroData
+  renderZoroData(el, data, config) {
+    el.empty();
+    el.className = 'zoro-container';
+    
+    if (config.type === 'stats') {
+      this.renderUserStats(el, data.User);
+    } else if (config.type === 'single') {
+      this.renderSingleMedia(el, data.MediaList, config);
+    } else {
+      const entries = data.MediaListCollection.lists.flatMap(list => list.entries);
+      if (config.layout === 'table') {
+        this.renderTableLayout(el, entries);
+      } else {
+        this.renderMediaList(el, entries, config);
+      }
+    }
+    
+    renderMediaList(el, entries, config) {
+    const gridDiv = document.createElement('div');
+    gridDiv.className = 'zoro-cards-grid';
+    gridDiv.style.setProperty('--zoro-grid-columns', this.settings.gridColumns);
+
+    entries.forEach(entry => {
+      const card = this.createMediaCard(entry, config);
+      gridDiv.appendChild(card);
+    });
+
+    el.empty();
+    el.appendChild(gridDiv);
+  }
+
+  createMediaCard(entry, config) {
+    const media = entry.media;
+    if (!media) return document.createTextNode('⚠️ Missing media');
+
+    const title = media.title.english || media.title.romaji || 'Untitled';
+
+    const cardDiv = document.createElement('div');
+    cardDiv.className = 'zoro-card';
+
+    // Cover - using old styling class name
+    if (this.settings.showCoverImages && media.coverImage?.large) {
+      const img = document.createElement('img');
+      img.src = media.coverImage.large;
+      img.alt = title;
+      img.className = 'media-cover'; // Changed from 'zoro-media-cover' to match old style
+      cardDiv.appendChild(img);
+    }
+
+    const infoDiv = document.createElement('div');
+    infoDiv.className = 'media-info'; // Changed from 'zoro-media-info' to match old style
+
+    // Title - using old styling class name
+    const titleElement = document.createElement('h4');
+    const titleLink = document.createElement('a');
+    titleLink.href = this.getZoroUrl(media.id, config.mediaType);
+    titleLink.target = '_blank';
+    titleLink.rel = 'noopener noreferrer';
+    titleLink.className = 'anilist-title-link'; // Changed from 'zoro-title-link' to match old style
+    titleLink.textContent = title;
+    titleElement.appendChild(titleLink);
+    infoDiv.appendChild(titleElement);
+
+    // Details - using old styling approach
+    const detailsDiv = this.createDetailsRow(entry);
+    infoDiv.appendChild(detailsDiv);
+
+    // Genres - using old styling class name
+    if (this.settings.showGenres && media.genres?.length) {
+      const genresDiv = document.createElement('div');
+      genresDiv.className = 'genres'; // Changed from 'zoro-genres' to match old style
+      media.genres.slice(0, 3).forEach(genre => {
+        const tag = document.createElement('span');
+        tag.className = 'genre-tag'; // Changed from 'zoro-genre-tag' to match old style
+        tag.textContent = genre;
+        genresDiv.appendChild(tag);
+      });
+      infoDiv.appendChild(genresDiv);
+    }
+
+    cardDiv.appendChild(infoDiv);
+    return cardDiv;
+  }
+
+  createDetailsRow(entry) {
+    const media = entry.media;
+    const details = document.createElement('div');
+    details.className = 'media-details'; // Changed from 'zoro-media-details' to match old style
+
+    // Format - using old styling class name
+    if (media.format) {
+      const format = document.createElement('span');
+      format.className = 'format-badge'; // Changed from 'zoro-badge zoro-format' to match old style
+      format.textContent = media.format;
+      details.appendChild(format);
+    }
+
+    // Status - using old styling class name but keeping new functionality
+    const status = document.createElement('span');
+    status.className = `status-badge status-${entry.status?.toLowerCase()} clickable-status`; // Changed from 'zoro-badge zoro-status' to match old style
+    status.textContent = entry.status ?? 'Unknown';
+    status.style.cursor = 'pointer';
+
+    if (this.settings.accessToken) {
+      status.title = 'Click to edit';
+      status.onclick = e => this.handleEditClick(e, entry, status);
+    } else {
+      status.title = 'Click to authenticate';
+      status.onclick = e => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.createAuthenticationPrompt();
+      };
+    }
+
+    details.appendChild(status);
+
+    // Progress - using old styling class name
+    if (this.settings.showProgress) {
+      const progress = document.createElement('span');
+      progress.className = 'progress'; // Changed from 'zoro-badge zoro-progress' to match old style
+      const total = media.episodes ?? media.chapters ?? '?';
+      progress.textContent = `${entry.progress}/${total}`; // Changed format to match old style
+      details.appendChild(progress);
+    }
+
+    // Score - using old styling class name
+    if (this.settings.showRatings && entry.score != null) {
+      const score = document.createElement('span');
+      score.className = 'score'; // Changed from 'zoro-badge zoro-score' to match old style
+      score.textContent = `★ ${entry.score}`;
+      details.appendChild(score);
+    }
+
+    return details;
+  }
+
+  handleEditClick(e, entry, statusEl) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    this.createEditModal(
+      entry,
+      async updates => {
+        try {
+          await this.updateMediaListEntry(entry.media.id, updates);
+          new Notice('✅ Updated!');
+          this.cache.clear();
+          const parent = statusEl.closest('.zoro-container');
+          if (parent) {
+            const block = parent.closest('.markdown-rendered')?.querySelector('code');
+            if (block) this.processZoroCodeBlock(block.textContent, parent, {});
+          }
+        } catch (err) {
+          new Notice(`❌ Update failed: ${err.message}`);
+        }
+      },
+      () => {
+        new Notice('Edit canceled.');
+      }
+    );
+  }
+  
+    // Create Edit Modal
+  createEditModal(entry, onSave, onCancel) {
+    const modal = document.createElement('div');
+    // RENAMED from anilist-edit-modal to zoro-edit-modal
+    modal.className = 'zoro-edit-modal';
+
+    const overlay = document.createElement('div');
+    // RENAMED from anilist-modal-overlay to zoro-modal-overlay
+    overlay.className = 'zoro-modal-overlay';
+
+    const content = document.createElement('div');
+    // RENAMED from anilist-modal-content to zoro-modal-content
+    content.className = 'zoro-modal-content';
+
+    const form = document.createElement('form');
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      await trySave();
+    };
+
+    const title = document.createElement('h3');
+    title.textContent = entry.media.title.english || entry.media.title.romaji;
+
+    // --- Status Field ---
+    const statusGroup = document.createElement('div');
+    statusGroup.className = 'form-group';
+
+    const statusLabel = document.createElement('label');
+    statusLabel.textContent = 'Status';
+    // RENAMED from anilist-status to zoro-status
+    statusLabel.setAttribute('for', 'zoro-status');
+
+    const statusSelect = document.createElement('select');
+    // RENAMED from anilist-status to zoro-status
+    statusSelect.id = 'zoro-status';
+
+    ['CURRENT', 'PLANNING', 'COMPLETED', 'DROPPED', 'PAUSED', 'REPEATING'].forEach(status => {
+      const option = document.createElement('option');
+      option.value = status;
+      option.textContent = status;
+      if (status === entry.status) option.selected = true;
+      statusSelect.appendChild(option);
+    });
+
+    statusGroup.appendChild(statusLabel);
+    statusGroup.appendChild(statusSelect);
+
+    // --- Score Field ---
+    const scoreGroup = document.createElement('div');
+    scoreGroup.className = 'form-group';
+
+    const scoreLabel = document.createElement('label');
+    scoreLabel.textContent = 'Score (0–5)';
+    // RENAMED from anilist-score to zoro-score
+    scoreLabel.setAttribute('for', 'zoro-score');
+
+    const scoreInput = document.createElement('input');
+    scoreInput.type = 'number';
+    // RENAMED from anilist-score to zoro-score
+    scoreInput.id = 'zoro-score';
+    scoreInput.min = '0';
+    scoreInput.max = '10';
+    scoreInput.step = '0.1';
+    scoreInput.value = entry.score ?? '';
+    scoreInput.placeholder = 'e.g. 8.5';
+
+    scoreGroup.appendChild(scoreLabel);
+    scoreGroup.appendChild(scoreInput);
+
+    // --- Progress Field ---
+    const progressGroup = document.createElement('div');
+    progressGroup.className = 'form-group';
+
+    const progressLabel = document.createElement('label');
+    progressLabel.textContent = 'Progress';
+    // RENAMED from anilist-progress to zoro-progress
+    progressLabel.setAttribute('for', 'zoro-progress');
+
+    const progressInput = document.createElement('input');
+    progressInput.type = 'number';
+    // RENAMED from anilist-progress to zoro-progress
+    progressInput.id = 'zoro-progress';
+    progressInput.min = '0';
+    progressInput.max = entry.media.episodes || entry.media.chapters || 999;
+    progressInput.value = entry.progress || 0;
+    progressInput.placeholder = 'Progress';
+
+    progressGroup.appendChild(progressLabel);
+    progressGroup.appendChild(progressInput);
+
+    // --- Quick Buttons ---
+    const quickProgressDiv = document.createElement('div');
+    quickProgressDiv.className = 'quick-progress-buttons';
+
+    const plusOneBtn = document.createElement('button');
+    plusOneBtn.type = 'button';
+    plusOneBtn.textContent = '+1';
+    plusOneBtn.onclick = () => {
+      const current = parseInt(progressInput.value) || 0;
+      const max = progressInput.max;
+      if (current < max) progressInput.value = current + 1;
+    };
+
+    const minusOneBtn = document.createElement('button');
+    minusOneBtn.type = 'button';
+    minusOneBtn.textContent = '-1';
+    minusOneBtn.onclick = () => {
+      const current = parseInt(progressInput.value) || 0;
+      if (current > 0) progressInput.value = current - 1;
+    };
+
+    const completeBtn = document.createElement('button');
+    completeBtn.type = 'button';
+    completeBtn.textContent = 'Complete';
+    completeBtn.onclick = () => {
+      progressInput.value = entry.media.episodes || entry.media.chapters || 1;
+      statusSelect.value = 'COMPLETED';
+    };
+
+    quickProgressDiv.append(plusOneBtn, minusOneBtn, completeBtn);
+
+    // --- Buttons ---
+    const buttonContainer = document.createElement('div');
+    // RENAMED from anilist-modal-buttons to zoro-modal-buttons
+    buttonContainer.className = 'zoro-modal-buttons';
+
+    const saveBtn = document.createElement('button');
+    saveBtn.textContent = 'Save';
+    saveBtn.type = 'submit';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.type = 'button';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.onclick = () => {
+      onCancel();
+      document.body.removeChild(modal);
+    };
+
+    buttonContainer.append(saveBtn, cancelBtn);
+
+    form.append(title, statusGroup, scoreGroup, progressGroup, quickProgressDiv, buttonContainer);
+    content.appendChild(form);
+    modal.append(overlay, content);
+    document.body.appendChild(modal);
+
+    overlay.onclick = () => {
+      onCancel();
+      document.body.removeChild(modal);
+    };
+
+    // Keyboard accessibility
+    document.addEventListener('keydown', escListener);
+    function escListener(e) {
+      if (e.key === 'Escape') {
+        onCancel();
+        document.body.removeChild(modal);
+        document.removeEventListener('keydown', escListener);
+      }
+      if (e.key === 'Enter' && e.ctrlKey) {
+        trySave();
+      }
+    }
+
+    // Save logic
+    let saving = false;
+    async function trySave() {
+      if (saving) return;
+      saving = true;
+      saveBtn.disabled = true;
+      saveBtn.textContent = 'Saving...';
+
+      const scoreVal = parseFloat(scoreInput.value);
+      if (scoreInput.value && (isNaN(scoreVal) || scoreVal < 0 || scoreVal > 10)) {
+        alert("⚠ Score must be between 0 and 10.");
+        resetSaveBtn();
+        return;
+      }
+
+      try {
+        await onSave({
+          status: statusSelect.value,
+          score: scoreInput.value === '' ? null : scoreVal,
+          progress: parseInt(progressInput.value) || 0
+        });
+        document.body.removeChild(modal);
+        document.removeEventListener('keydown', escListener);
+      } catch (err) {
+        alert(`❌ Failed to save: ${err.message}`);
+      }
+
+      resetSaveBtn();
+    }
+
+    function resetSaveBtn() {
+      saveBtn.disabled = false;
+      saveBtn.textContent = 'Save';
+      saving = false;
+    }
+  }

@@ -581,7 +581,7 @@ if (this.settings.accessToken) {
         type: config.mediaType
       };
     } else if (config.type === 'search') {
-      query = this.getSearchMediaQuery();
+      query = this.getSearchMediaQuery(config.layout);
       variables = {
         search: config.search,
         type: config.mediaType,
@@ -781,10 +781,8 @@ clearCacheForMedia(mediaId) {
   async processZoroSearchCodeBlock(source, el, ctx) {
     try {
       const config = this.parseSearchCodeBlockConfig(source);
-      
-      if (!config.search || config.search.trim().length === 0) {
-        throw new Error('Search query is missing or empty.');
-      }
+config.search = '';
+
 
       if (this.settings.debugMode) {
         console.log('[Zoro] Search block config:', config);
@@ -793,12 +791,7 @@ clearCacheForMedia(mediaId) {
       // Show loading placeholder
       el.createEl('div', { text: '🔍 Searching Zoro...', cls: 'zoro-loading-placeholder' });
       
-      // Optional: track per-block context
-      ctx.addChild({
-        unload: () => {
-          // Cleanup if needed
-        }
-      });
+      
 
       await this.renderSearchInterface(el, config);
     } catch (error) {
@@ -837,7 +830,7 @@ clearCacheForMedia(mediaId) {
     return config;
   }
 
-  // Parse Search Code Block Config - FIXED: Now properly inside the class
+  // Parse Search Code Block Config 
   parseSearchCodeBlockConfig(source) {
     const config = { type: 'search' };
     const lines = source.split('\n').filter(line => line.trim());
@@ -848,6 +841,9 @@ clearCacheForMedia(mediaId) {
         config[key] = value;
       }
     }
+    
+    config.layout = config.layout || this.settings.defaultLayout || 'card';
+
     
     // Default to ANIME if no mediaType specified
     config.mediaType = config.mediaType || 'ANIME';
@@ -1292,8 +1288,7 @@ clearCacheForMedia(mediaId) {
       try {
         resultsDiv.innerHTML = '<div class="zoro-search-loading">Searching...</div>';
         
-        const searchConfig = {
-          ...config,
+        const searchConfig = { ...config,
           search: searchTerm,
           page: 1,
           perPage: 20
@@ -1322,8 +1317,7 @@ clearCacheForMedia(mediaId) {
   
   // Render Search Results
   
-    
-  renderSearchResults(el, media, config) {
+    renderSearchResults(el, media, config) {
     el.empty();
     
     if (media.length === 0) {
@@ -1339,18 +1333,18 @@ clearCacheForMedia(mediaId) {
       const title = item.title.english || item.title.romaji;
       
       const cardDiv = document.createElement('div');
-      cardDiv.className = 'zoro-search-card';
+      cardDiv.className = 'zoro-card'; // Changed from 'zoro-search-card' to match media list
       
       if (this.settings.showCoverImages) {
         const img = document.createElement('img');
         img.src = item.coverImage.large;
         img.alt = title;
-        img.className = 'media-cover';
+        img.className = 'media-cover'; // Already matches - good!
         cardDiv.appendChild(img);
       }
       
       const mediaInfoDiv = document.createElement('div');
-      mediaInfoDiv.className = 'media-info';
+      mediaInfoDiv.className = 'media-info'; // Already matches - good!
       
       // Create clickable title
       const titleElement = document.createElement('h4');
@@ -1358,33 +1352,33 @@ clearCacheForMedia(mediaId) {
       titleLink.href = this.getZoroUrl(item.id, config.mediaType);
       titleLink.target = '_blank';
       titleLink.rel = 'noopener noreferrer';
-      titleLink.className = 'zoro-title-link';
+      titleLink.className = 'anilist-title-link'; // Changed from 'zoro-title-link' to match media list
       titleLink.textContent = title;
       titleElement.appendChild(titleLink);
       mediaInfoDiv.appendChild(titleElement);
       
       // Create details div
       const detailsDiv = document.createElement('div');
-      detailsDiv.className = 'media-details';
+      detailsDiv.className = 'media-details'; // Already matches - good!
       
       // Format badge
       if (item.format) {
         const formatBadge = document.createElement('span');
-        formatBadge.className = 'format-badge';
+        formatBadge.className = 'format-badge'; // Already matches - good!
         formatBadge.textContent = item.format;
         detailsDiv.appendChild(formatBadge);
       }
       
       // Status badge
       const statusBadge = document.createElement('span');
-      statusBadge.className = `status-badge status-${item.status.toLowerCase()}`;
+      statusBadge.className = `status-badge status-${item.status.toLowerCase()}`; // Already matches - good!
       statusBadge.textContent = item.status;
       detailsDiv.appendChild(statusBadge);
       
       // Average score
       if (this.settings.showRatings && item.averageScore) {
         const scoreSpan = document.createElement('span');
-        scoreSpan.className = 'score';
+        scoreSpan.className = 'score'; // Already matches - good!
         scoreSpan.textContent = `★ ${item.averageScore}`;
         detailsDiv.appendChild(scoreSpan);
       }
@@ -1394,10 +1388,10 @@ clearCacheForMedia(mediaId) {
       // Create genres div
       if (this.settings.showGenres) {
         const genresDiv = document.createElement('div');
-        genresDiv.className = 'genres';
+        genresDiv.className = 'genres'; // Already matches - good!
         item.genres.slice(0, 3).forEach(genre => {
           const genreTag = document.createElement('span');
-          genreTag.className = 'genre-tag';
+          genreTag.className = 'genre-tag'; // Already matches - good!
           genreTag.textContent = genre;
           genresDiv.appendChild(genreTag);
         });
@@ -1410,7 +1404,7 @@ clearCacheForMedia(mediaId) {
     
     el.appendChild(gridDiv);
   }
-
+  
   //  render ZoroData
   renderZoroData(el, data, config) {
     el.empty();

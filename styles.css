@@ -273,6 +273,8 @@
 .status-dropped   { background: var(--color-red);    color: white; }
 .status-planning  { background: var(--color-purple); color: white; }
 .status-repeating { background: var(--color-cyan);   color: white; }
+.status-add { background: var(--color-cyan);   color: white; }
+
 
 /* ─── Progress & Score Styles ─── */
 .progress,
@@ -726,4 +728,4 @@
     font-size: 0.9rem;
   }
 }
-}
+

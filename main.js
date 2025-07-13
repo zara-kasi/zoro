@@ -8,7 +8,7 @@ const DEFAULT_SETTINGS = {
   showRatings: true,
   showProgress: true,
   showGenres: false,
-  gridColumns: 3,
+  gridColumns: 2,
   clientId: '',
   clientSecret: '',
   redirectUri: 'https://anilist.co/api/v2/oauth/pin',

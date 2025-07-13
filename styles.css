@@ -232,7 +232,7 @@
   line-height: var(--zoro-title-line-height);
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: clip;
 }
 
 .zoro-single-card h3 {

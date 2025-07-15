@@ -1,3 +1,4 @@
+import { Modal } from 'obsidian';
 class ClientIdModal extends Modal {
   constructor(app, onSubmit) {
     super(app);

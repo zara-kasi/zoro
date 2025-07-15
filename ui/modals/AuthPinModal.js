@@ -1,3 +1,4 @@
+import { Modal } from 'obsidian';
 export class AuthPinModal extends Modal {
   constructor(app, onSubmit) {
     super(app);

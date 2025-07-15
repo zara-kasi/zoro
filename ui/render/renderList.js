@@ -12,7 +12,7 @@ export function renderMediaList(el, entries, config) {
     el.appendChild(gridDiv);
   }
 
-  createMediaCard(entry, config) {
+export function  createMediaCard(entry, config) {
     const media = entry.media;
     if (!media) return document.createTextNode('⚠️ Missing media');
 
@@ -65,7 +65,7 @@ export function renderMediaList(el, entries, config) {
     return cardDiv;
   }
 
-  createDetailsRow(entry) {
+ export function createDetailsRow(entry) {
     const media = entry.media;
     const details = document.createElement('div');
     details.className = 'media-details'; 

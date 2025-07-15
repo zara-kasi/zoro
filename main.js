@@ -58,6 +58,7 @@ import { renderError } from './ui/helpers.js';
 
 import { fetchData, renderZoroData } from './ui/helpers.js';
 
+import { processZoroSearchCodeBlock } from './ui/helpers.js';
 
 
 // Parsers
@@ -160,69 +161,10 @@ class ZoroPlugin extends Plugin {
 
 
   // Process Zoro Search Code Block - FIXED: Removed duplicate and fixed structure
-  async processZoroSearchCodeBlock(source, el, ctx) {
-    try {
-      const config = this.parseSearchCodeBlockConfig(source);
-config.search = '';
+  
 
 
-      if (this.settings.debugMode) {
-        console.log('[Zoro] Search block config:', config);
-      }
-
-      // Show loading placeholder
-      el.createEl('div', { text: '🔍 Searching Zoro...', cls: 'zoro-loading-placeholder' });
-      
-      
-
-      await this.renderSearchInterface(el, config);
-    } catch (error) {
-      console.error('[Zoro] Search block processing error:', error);
-      this.renderError(el, error.message || 'Failed to process Zoro search block.');
-    }
-  }
-
-
-
-  async processInlineLinks(el, ctx) {
-    const inlineLinks = el.querySelectorAll('a[href^="zoro:"]');
-
-    for (const link of inlineLinks) {
-      const href = link.getAttribute('href');
-      
-      // Optional: Show loading shimmer while data loads
-      const placeholder = document.createElement('span');
-      placeholder.textContent = '🔄 Loading Zoro...';
-      link.replaceWith(placeholder);
-
-      try {
-        const config = this.parseInlineLink(href);
-        const data = await this.fetchZoroData(config);
-
-        const container = document.createElement('span');
-        container.className = 'zoro-inline-container';
-        this.renderZoroData(container, data, config);
-
-        placeholder.replaceWith(container);
-
-        // ✅ Cleanup if the block is removed (important for re-render safety)
-        ctx.addChild({
-          unload: () => {
-            container.remove();
-          }
-        });
-
-      } catch (error) {
-        console.warn(`[Zoro] Inline link failed for ${href}:`, error);
-
-        const errorEl = document.createElement('span');
-        errorEl.className = 'zoro-inline-error';
-        errorEl.textContent = `⚠️ ${error.message || 'Failed to load data'}`;
-
-        placeholder.replaceWith(errorEl);
-      }
-    }
-  }
+  
 
   // Plugin unload method
   onunload() {

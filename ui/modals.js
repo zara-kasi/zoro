@@ -1,4 +1,4 @@
-export function createAddModal(entry, onSave, onCancel) {
+export export function createAddModal(entry, onSave, onCancel) {
   const modal = document.createElement('div');
   modal.className = 'zoro-edit-modal';
 

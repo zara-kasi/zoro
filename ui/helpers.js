@@ -82,3 +82,25 @@ export function renderError(el, message, context = '', onRetry = null) {
       }
     }
   }
+  
+  export async function processZoroSearchCodeBlock(source, el, ctx) {
+    try {
+      const config = this.parseSearchCodeBlockConfig(source);
+config.search = '';
+
+
+      if (this.settings.debugMode) {
+        console.log('[Zoro] Search block config:', config);
+      }
+
+      // Show loading placeholder
+      el.createEl('div', { text: '🔍 Searching Zoro...', cls: 'zoro-loading-placeholder' });
+      
+      
+
+      await this.renderSearchInterface(el, config);
+    } catch (error) {
+      console.error('[Zoro] Search block processing error:', error);
+      this.renderError(el, error.message || 'Failed to process Zoro search block.');
+    }
+  }

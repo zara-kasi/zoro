@@ -9,7 +9,8 @@ import { RequestQueue } from './utils/requestQueue.js';
 // caches
 import { pruneCache, getFromCache, setToCache, clearCacheForMedia } from './utils/cache.js';
 
-
+// Authentication 
+import { authenticateUser, exchangeCodeForToken, makeObsidianRequest, testAccessToken, getAuthenticatedUsername } from './api/auth.js';
 
 // Plugin Class 
 class ZoroPlugin extends Plugin { 
@@ -109,8 +110,7 @@ class ZoroPlugin extends Plugin {
   }}
   
 
- // Authentication 
-import { authenticateUser, exchangeCodeForToken, makeObsidianRequest, testAccessToken, getAuthenticatedUsername } from './api/auth.js';
+
 
  
     

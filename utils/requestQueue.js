@@ -1,5 +1,4 @@
-  // Rate limit 
-class RequestQueue {
+export class RequestQueue {
   constructor() {
     this.queue = [];
     this.delay = 730; // ~89 requests/min (AniList limit: 90/min)
@@ -30,4 +29,3 @@ class RequestQueue {
     }
   }
 }
-

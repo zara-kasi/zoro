@@ -1,104 +1,65 @@
-// Authentication Code
-
-class AuthenticationManager {
-  constructor(plugin) {
-    this.plugin = plugin;
-    this.settings = plugin.settings;
-    this.requestQueue = plugin.requestQueue;
-    this.messageHandler = null;
-  }
-
-  // Main authentication method
-  async authenticateUser() {
+export function async authenticateUser() {
     const clientId = this.settings.clientId;
     const redirectUri = this.settings.redirectUri || 'https://anilist.co/api/v2/oauth/pin';
     
-    if (!clientId?.trim()) {
+
+    if (!clientId) {
       new Notice('❌ Please set your Client ID in plugin settings first.', 5000);
-      return false;
+      return;
     }
 
     // Check if already authenticated
     if (this.settings.accessToken) {
-      const reuse = confirm('You are already authenticated. Do you want to re-authenticate?');
-      if (!reuse) return false;
+      const reuse = confirm('Do you want to re-authenticate?');
+      if (!reuse) return;
     }
 
     const authUrl = `https://anilist.co/api/v2/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code`;
 
     try {
       new Notice('🔐 Opening authentication page...', 3000);
-      
-      // Open authentication URL
-      await this.openAuthUrl(authUrl);
-      
-      // Get authorization code from user
-      const code = await this.promptForCode('Paste the PIN code from the authentication page:');
-      
-      if (!code?.trim()) {
-        new Notice('⚠️ No code entered. Authentication cancelled.', 4000);
-        return false;
-      }
 
-      // Exchange code for token
-      await this.exchangeCodeForToken(code.trim(), redirectUri);
+  
+ window.addEventListener('message', this.handleAuthMessage.bind(this));
       
-      // Test the token
-      await this.testAccessToken();
       
-      new Notice('✅ Authenticated successfully!', 4000);
-      return true;
-
-    } catch (error) {
-      console.error('[Zoro] Authentication failed:', error);
-      new Notice(`❌ Authentication error: ${error.message}`, 5000);
-      return false;
-    }
-  }
-
-  // Open authentication URL
-  async openAuthUrl(authUrl) {
-    try {
-      // Try Electron first (desktop app)
       if (window.require) {
         const { shell } = window.require('electron');
         await shell.openExternal(authUrl);
       } else {
-        // Fallback to regular browser
         window.open(authUrl, '_blank');
       }
+
+      const code = await this.promptForCode('Paste the PIN code from the authentication page:');
+
+      if (!code || !code.trim()) {
+        new Notice('⚠️ No code entered. Authentication cancelled.', 4000);
+        return;
+      }
+
+      await this.exchangeCodeForToken(code.trim(), redirectUri);
+      new Notice('✅ Authenticated successfully.', 4000);
     } catch (error) {
-      console.error('[Zoro] Failed to open auth URL:', error);
-      throw new Error('Failed to open authentication page. Please navigate manually to: ' + authUrl);
+      console.error('[Zoro] Authentication failed:', error);
+      new Notice(`❌ Authentication error: ${error.message}`, 5000);
     }
   }
 
-  // Prompt user for authorization code
-  async promptForCode(message) {
+export function async promptForCode(message) {
     return new Promise((resolve) => {
-      // Using setTimeout to avoid blocking the UI
-      setTimeout(() => {
-        const code = prompt(message);
-        resolve(code);
-      }, 100);
+      const code = prompt(message);
+      resolve(code);
     });
-  }
-
-  // Exchange authorization code for access token
-  async exchangeCodeForToken(code, redirectUri) {
+export function async exchangeCodeForToken(code, redirectUri) {
     const clientId = this.settings.clientId;
     const clientSecret = this.settings.clientSecret;
-
-    if (!clientId) {
-      throw new Error('Client ID is required');
-    }
 
     const body = new URLSearchParams({
       grant_type: 'authorization_code',
       code,
       client_id: clientId,
+      client_secret: clientSecret || '', // optional but safe
       redirect_uri: redirectUri,
-      ...(clientSecret && { client_secret: clientSecret })
     });
 
     const headers = {
@@ -108,7 +69,7 @@ class AuthenticationManager {
 
     try {
       const response = await this.requestQueue.add(() => requestUrl({
-        url: 'https://anilist.co/api/v2/oauth/token',
+  url: 'https://anilist.co/api/v2/oauth/token',
         method: 'POST',
         headers,
         body: body.toString(),
@@ -117,44 +78,80 @@ class AuthenticationManager {
       const data = response?.json;
 
       if (!data || typeof data !== 'object') {
-        console.error('[Zoro] Unexpected response:', response);
-        throw new Error('Invalid response from authentication server');
-      }
-
-      if (data.error) {
-        throw new Error(data.error_description || data.error);
+        console.error('[Zoro] Unexpected response from server:', response);
+        throw new Error('⚠️ Invalid response from server.');
       }
 
       if (!data.access_token) {
-        throw new Error('No access token received from server');
+        throw new Error(data.error_description || '❌ No access token returned by server.');
       }
 
-      // Store authentication data
+      // Store auth details
       this.settings.accessToken = data.access_token;
 
-      await this.plugin.saveSettings();
+      // Refresh Token 
       
-    } catch (error) {
-      console.error('[Zoro] Token exchange failed:', error);
-      throw new Error(`Authentication failed: ${error.message}`);
+      if (data.refresh_token) {
+        this.settings.refreshToken = data.refresh_token;
+      }
+
+      if (data.expires_in) {
+        this.settings.tokenExpiry = Date.now() + (data.expires_in * 1000);
+      }
+
+      await this.saveSettings();
+
+      new Notice('✅ Successfully authenticated with the service!', 4000);
+
+      // Optional sanity check
+      if (this.testAccessToken) {
+        await this.testAccessToken();
+      }
+
+    } catch (err) {
+      console.error('[Zoro] Authentication error:', err);
+      new Notice(`❌ Authentication failed: ${err.message}`, 5000);
+      if (this.showManualTokenOption) {
+        this.showManualTokenOption(); // optional UI fallback
+      }
     }
   }
 
+export function async makeObsidianRequest(code, redirectUri) {
+    const body = new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: this.settings.clientId,
+      client_secret: this.settings.clientSecret || '',
+      redirect_uri: redirectUri,
+      code: code
+    });
 
+    const headers = {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json',
+    };
 
-  // Ensure token is valid
-  async ensureValidToken() {
-    return Boolean(this.settings.accessToken);
-  }
+    try {
+      const response = await this.requestQueue.add(() => requestUrl({
+  url: 'https://anilist.co/api/v2/oauth/token',
+        method: 'POST',
+        headers,
+        body: body.toString()
+      }));
 
+      if (!response || typeof response.json !== 'object') {
+        throw new Error('Invalid response structure from AniList.');
+      }
 
+      return response.json;
 
-  // Test access token validity
-  async testAccessToken() {
-    if (!this.settings.accessToken) {
-      throw new Error('No access token available');
+    } catch (err) {
+      console.error('[Zoro] Obsidian requestUrl failed:', err);
+      throw new Error('Failed to authenticate with AniList via Obsidian requestUrl.');
     }
-
+  }
+  
+export function async testAccessToken() {
     const query = `
       query {
         Viewer {
@@ -166,7 +163,7 @@ class AuthenticationManager {
 
     try {
       const response = await this.requestQueue.add(() => requestUrl({
-        url: 'https://graphql.anilist.co',
+  url: 'https://graphql.anilist.co',
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -175,103 +172,63 @@ class AuthenticationManager {
         body: JSON.stringify({ query })
       }));
 
-      const data = response?.json;
-      
-      if (data?.errors) {
-        throw new Error(data.errors[0]?.message || 'GraphQL error');
-      }
-
-      if (!data?.data?.Viewer) {
-        throw new Error('Invalid token or malformed response');
+      const data = response.json;
+      if (!data || !data.data?.Viewer) {
+        throw new Error('Invalid access token or response malformed.');
       }
 
       const username = data.data.Viewer.name;
-      console.log(`[Zoro] Token valid for user: ${username}`);
-      return { valid: true, username };
+      new Notice(`🎉 Welcome, ${username}! Token is valid.`);
+      return true;
 
     } catch (error) {
-      console.error('[Zoro] Token test failed:', error);
-      throw new Error(`Token verification failed: ${error.message}`);
+      console.warn('[Zoro] testAccessToken failed:', error);
+      throw new Error('Token verification failed. Please check your token or re-authenticate.');
     }
   }
 
-  // Get authenticated username
-  async getAuthenticatedUsername() {
-    if (!this.settings.accessToken) {
-      return null;
-    }
+// Authenticated Username 
+export function async getAuthenticatedUsername() {
+  if (!this.settings.accessToken) return null;
 
-    // Ensure token is valid
-    const isValid = await this.ensureValidToken();
-    if (!isValid) {
-      return null;
-    }
+  await this.ensureValidToken();
 
-    const query = `
-      query {
-        Viewer {
-          name
-          id
-        }
+  const headers = {
+    'Content-Type': 'application/json',
+    'Authorization': `Bearer ${this.settings.accessToken}`,
+  };
+
+  const query = `
+    query {
+      Viewer {
+        name
       }
-    `;
+    }
+  `;
 
-    try {
-      const response = await this.requestQueue.add(() => requestUrl({
+  try {
+    const response = await this.requestQueue.add(() =>
+      requestUrl({
         url: 'https://graphql.anilist.co',
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.settings.accessToken}`
-        },
-        body: JSON.stringify({ query })
-      }));
+        headers,
+        body: JSON.stringify({ query }),
+      })
+    );
 
-      const data = response?.json;
+    const data = response.json;
 
-      if (data?.errors) {
-        console.error('[Zoro] GraphQL errors:', data.errors);
-        return null;
-      }
-
-      if (!data?.data?.Viewer?.name) {
-        console.error('[Zoro] No username in response');
-        return null;
-      }
-
-      const username = data.data.Viewer.name;
-      
-      // Cache the username
-      this.settings.authUsername = username;
-      await this.plugin.saveSettings();
-
-      return username;
-
-    } catch (error) {
-      console.error('[Zoro] Failed to get username:', error);
-      return null;
+    if (!data?.data?.Viewer?.name) {
+      throw new Error('Invalid token or no username returned.');
     }
-  }
 
-  // Clear authentication data
-  async clearAuthentication() {
-    this.settings.accessToken = '';
-    this.settings.refreshToken = '';
-    this.settings.tokenExpiry = null;
-    this.settings.authUsername = '';
-    await this.plugin.saveSettings();
-  }
+    this.settings.authUsername = data.data.Viewer.name;
+    await this.saveSettings();
 
-  // Check if user is authenticated
-  isAuthenticated() {
-    return Boolean(this.settings.accessToken);
-  }
+    return data.data.Viewer.name;
 
-  // Cleanup method
-  destroy() {
-    if (this.messageHandler) {
-      window.removeEventListener('message', this.messageHandler);
-      this.messageHandler = null;
-    }
+  } catch (error) {
+    console.warn('[Zoro] getAuthenticatedUsername() failed:', error);
+    return null;
   }
-}
+  }

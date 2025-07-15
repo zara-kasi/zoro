@@ -60,6 +60,8 @@ import { fetchData, renderZoroData } from './ui/helpers.js';
 
 import { processZoroSearchCodeBlock } from './ui/helpers.js';
 
+import { processInlineLinks } from './ui/helpers.js';
+
 
 // Parsers
 import { parseCodeBlockConfig, parseSearchCodeBlockConfig } from './parsers/parseCodeBlock.js';

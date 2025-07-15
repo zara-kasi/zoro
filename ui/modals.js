@@ -492,3 +492,7 @@ export function createAuthenticationPrompt() {
       }
     }
   }
+  
+export { ClientIdModal } from './modals/ClientIdModal.js';
+export { ClientSecretModal } from './modals/ClientSecretModal.js';
+export { AuthPinModal } from './modals/AuthPinModal.js';

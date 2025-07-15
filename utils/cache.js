@@ -1,5 +1,3 @@
-// Prune Cache 
-
 export function pruneCache() {
   const now = Date.now();
   

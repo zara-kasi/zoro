@@ -15,38 +15,12 @@ const DEFAULT_SETTINGS = {
   accessToken: '',
 };
 
-  // Rate limit 
-class RequestQueue {
-  constructor() {
-    this.queue = [];
-    this.delay = 700; // ~85 requests/min (AniList limit: 90/min)
-    this.isProcessing = false;
-  }
+// Rate limit
+import { RequestQueue } from './utils/requestQueue.js';
 
-  add(requestFn) {
-    return new Promise((resolve) => {
-      this.queue.push({ requestFn, resolve });
-      this.process();
-    });
-  }
+// caches
+import { pruneCache, getFromCache, setToCache, clearCacheForMedia } from './utils/cache.js';
 
-  async process() {
-    if (this.isProcessing || !this.queue.length) return;
-
-    this.isProcessing = true;
-    const { requestFn, resolve } = this.queue.shift();
-
-    try {
-      const result = await requestFn();
-      resolve(result);
-    } finally {
-      setTimeout(() => {
-        this.isProcessing = false;
-        this.process();
-      }, this.delay);
-    }
-  }
-}
 
 
 // Plugin Class 
@@ -63,7 +37,7 @@ class ZoroPlugin extends Plugin {
     mediaData: new Map(),    // Individual media items
     searchResults: new Map() // Search queries
   };
-    this.requestQueue = new RequestQueue();
+    this.requestQueue = RequestQueue();
     this.cacheTimeout = 5 * 60 * 1000;
 
   // Add periodic pruning
@@ -2573,8 +2547,6 @@ type: stats
     el.appendChild(wrapper);
   }
   
-// caches
-import { pruneCache, getFromCache, setToCache, clearCacheForMedia } from './utils/cache.js';
 
  
   // Plugin unload method

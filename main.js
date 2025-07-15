@@ -21,13 +21,22 @@ import { getMediaListQuery, getSingleMediaQuery, getUserStatsQuery, getSearchMed
 import { fetchZoroData } from './api/fetchZoroData.js';
 
 // UI 
-import { renderMediaList, createMediaCard, createDetailsRow } from './ui/render/renderList.js';
+import { renderMediaList, createMediaCard, createDetailsRow, renderTableLayout } from './ui/render/renderList.js';
 
 import { renderSingleMedia } from './ui/render/renderSingle.js';
 
 import { renderUserStats } from './ui/render/renderStats.js';
 
+
+
+/// UI modal
 import { createAddModal, createEditModal, createAuthenticationPrompt } from './ui/modals.js';
+
+import {
+  ClientIdModal,
+  ClientSecretModal,
+  AuthPinModal
+} from './ui/modals.js';
 
 import { renderSearchInterface, renderSearchResults, handleAddClick } from './ui/searchInterface.js';
 
@@ -498,100 +507,8 @@ async addMediaToList(mediaId, updates, mediaType) {
   }
 
 
-  // Render Table Layout 
-  renderTableLayout(el, entries, config) {
-    el.empty();
-    
-    const table = document.createElement('table');
-    table.className = 'zoro-table';
-
-    // --- HEADER ---
-    const thead = document.createElement('thead');
-    const headerRow = document.createElement('tr');
-
-    const headers = ['Title', 'Format', 'Status'];
-    if (this.settings.showProgress) headers.push('Progress');
-    if (this.settings.showRatings) headers.push('Score');
-
-    headers.forEach(text => {
-      const th = document.createElement('th');
-      th.textContent = text;
-      headerRow.appendChild(th);
-    });
-
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
-
-    // --- BODY ---
-    const tbody = document.createElement('tbody');
-
-    entries.forEach(entry => {
-      const media = entry.media;
-      if (!media) return; // skip broken
-
-      const row = document.createElement('tr');
-
-      // --- Title ---
-      const titleCell = document.createElement('td');
-      const title = media.title.english || media.title.romaji || 'Untitled';
-      const link = document.createElement('a');
-      // RENAMED from getAniListUrl to getZoroUrl
-      link.href = this.getZoroUrl(media.id, config.mediaType);
-      link.textContent = title;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.className = 'zoro-title-link';
-      titleCell.appendChild(link);
-      row.appendChild(titleCell);
-
-      // --- Format ---
-      const formatCell = document.createElement('td');
-      formatCell.textContent = media.format || '-';
-      row.appendChild(formatCell);
-
-      // --- Status ---
-      const statusCell = document.createElement('td');
-      const status = document.createElement('span');
-      status.textContent = entry.status || '-';
-      status.className = `zoro-badge status-${entry.status?.toLowerCase()} clickable-status`;
-      status.style.cursor = 'pointer';
-
-      if (this.settings.accessToken) {
-        status.title = 'Click to edit';
-        status.onclick = (e) => this.handleEditClick(e, entry, status);
-      } else {
-        status.title = 'Click to authenticate';
-        status.onclick = (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          this.createAuthenticationPrompt();
-        };
-      }
-
-      statusCell.appendChild(status);
-      row.appendChild(statusCell);
-
-      // --- Progress ---
-      if (this.settings.showProgress) {
-        const progressCell = document.createElement('td');
-        const total = media.episodes ?? media.chapters ?? '?';
-        progressCell.textContent = `${entry.progress}/${total}`;
-        row.appendChild(progressCell);
-      }
-
-      // --- Score ---
-      if (this.settings.showRatings) {
-        const scoreCell = document.createElement('td');
-        scoreCell.textContent = entry.score != null ? `★ ${entry.score}` : '-';
-        row.appendChild(scoreCell);
-      }
-
-      tbody.appendChild(row);
-    });
-
-    table.appendChild(tbody);
-    el.appendChild(table);
-  }
+  
+  
 
 
  async createSampleNotes() {
@@ -842,193 +759,6 @@ type: stats
   }
 
 } 
-
-
-/// Class for Client Id Pop up in settings
-
-
-class ClientIdModal extends Modal {
-  constructor(app, onSubmit) {
-    super(app);
-    this.onSubmit = onSubmit;
-  }
-
-  onOpen() {
-    const { contentEl } = this;
-    contentEl.addClass('auth-modal');
-    
-    contentEl.createEl('h2', { text: '🔑 Enter Client ID' });
-    
-    const desc = contentEl.createEl('p');
-    desc.setText('Enter your AniList application Client ID');
-    desc.addClass('auth-modal-desc');
-    
-    const inputContainer = contentEl.createEl('div', { cls: 'auth-input-container' });
-    
-    const input = inputContainer.createEl('input', {
-      type: 'text',
-      placeholder: 'Client ID',
-      cls: 'auth-input'
-    });
-    
-    const buttonContainer = contentEl.createEl('div', { cls: 'auth-button-container' });
-    
-    const submitButton = buttonContainer.createEl('button', {
-      text: 'Save',
-      cls: 'mod-cta auth-button'
-    });
-    
-    const cancelButton = buttonContainer.createEl('button', {
-      text: 'Cancel',
-      cls: 'auth-button'
-    });
-    
-    submitButton.addEventListener('click', () => {
-      const value = input.value.trim();
-      if (value) {
-        this.onSubmit(value);
-        this.close();
-      }
-    });
-    
-    cancelButton.addEventListener('click', () => {
-      this.close();
-    });
-    
-    input.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        submitButton.click();
-      }
-    });
-    
-    setTimeout(() => input.focus(), 100);
-  }
-}
-
-class ClientSecretModal extends Modal {
-  constructor(app, onSubmit) {
-    super(app);
-    this.onSubmit = onSubmit;
-  }
-
-  onOpen() {
-    const { contentEl } = this;
-    contentEl.addClass('auth-modal');
-    
-    contentEl.createEl('h2', { text: '🔐 Enter Client Secret' });
-    
-    const desc = contentEl.createEl('p');
-    desc.setText('Enter your AniList application Client Secret');
-    desc.addClass('auth-modal-desc');
-    
-    const inputContainer = contentEl.createEl('div', { cls: 'auth-input-container' });
-    
-    const input = inputContainer.createEl('input', {
-      type: 'password',
-      placeholder: 'Client Secret',
-      cls: 'auth-input'
-    });
-    
-    const buttonContainer = contentEl.createEl('div', { cls: 'auth-button-container' });
-    
-    const submitButton = buttonContainer.createEl('button', {
-      text: 'Save',
-      cls: 'mod-cta auth-button'
-    });
-    
-    const cancelButton = buttonContainer.createEl('button', {
-      text: 'Cancel',
-      cls: 'auth-button'
-    });
-    
-    submitButton.addEventListener('click', () => {
-      const value = input.value.trim();
-      if (value) {
-        this.onSubmit(value);
-        this.close();
-      }
-    });
-    
-    cancelButton.addEventListener('click', () => {
-      this.close();
-    });
-    
-    input.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        submitButton.click();
-      }
-    });
-    
-    setTimeout(() => input.focus(), 100);
-  }
-}
-
-class AuthPinModal extends Modal {
-  constructor(app, onSubmit) {
-    super(app);
-    this.onSubmit = onSubmit;
-  }
-
-  onOpen() {
-    const { contentEl } = this;
-    contentEl.addClass('auth-modal pin-modal');
-    
-    contentEl.createEl('h2', { text: '🔓 Complete Authentication' });
-    
-    const desc = contentEl.createEl('p');
-    desc.setText('Copy the authorization code from the browser and paste it below');
-    desc.addClass('auth-modal-desc');
-    
-    const inputContainer = contentEl.createEl('div', { cls: 'auth-input-container' });
-    
-    const input = inputContainer.createEl('input', {
-      type: 'text',
-      placeholder: 'Paste authorization code here',
-      cls: 'auth-input pin-input'
-    });
-    
-    const buttonContainer = contentEl.createEl('div', { cls: 'auth-button-container' });
-    
-    const submitButton = buttonContainer.createEl('button', {
-      text: '✅ Complete Authentication',
-      cls: 'mod-cta auth-button submit-button'
-    });
-    
-    const cancelButton = buttonContainer.createEl('button', {
-      text: 'Cancel',
-      cls: 'auth-button'
-    });
-    
-    submitButton.addEventListener('click', () => {
-      const value = input.value.trim();
-      if (value) {
-        this.onSubmit(value);
-        this.close();
-      }
-    });
-    
-    cancelButton.addEventListener('click', () => {
-      this.close();
-    });
-    
-    input.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        submitButton.click();
-      }
-    });
-    
-    input.addEventListener('input', (e) => {
-      const value = e.target.value.trim();
-      if (value) {
-        submitButton.classList.add('ready');
-      } else {
-        submitButton.classList.remove('ready');
-      }
-    });
-    
-    setTimeout(() => input.focus(), 100);
-  }
-}
 
 
 module.exports = {

@@ -5,6 +5,9 @@ import { DEFAULT_SETTINGS } from './settings/defaultSettings.js';
 
 import { ZoroSettingTab } from './settings/settingsTab.js';
 
+import { validateSettings, saveSettings, loadSettings } from './settings/helpers.js';
+
+
 // Caches
 import { pruneCache, getFromCache, setToCache, clearCacheForMedia } from './utils/cache.js';
 
@@ -25,6 +28,7 @@ import { fetchZoroData } from './api/fetchZoroData.js';
 
 import { updateMediaListEntry, checkIfMediaInList, addMediaToList } from './api/listManager.js';
 
+import { handleAuthMessage } from './api/auth.js';
 
 // UI 
 import { renderMediaList, createMediaCard, createDetailsRow, renderTableLayout } from './ui/render/renderList.js';
@@ -52,6 +56,7 @@ import { injectCSS } from './ui/helpers.js';
 
 import { renderError } from './ui/helpers.js';
 
+import { fetchData, renderZoroData } from './ui/helpers.js';
 
 
 
@@ -115,60 +120,9 @@ class ZoroPlugin extends Plugin {
     console.log('[Zoro] Plugin loaded successfully.');
   }
   
-   // Validate Settings 
-  validateSettings(settings) {
-    return {
-      defaultUsername: typeof settings?.defaultUsername === 'string' ? settings.defaultUsername : '',
-      defaultLayout: ['card', 'list'].includes(settings?.defaultLayout) ? settings.defaultLayout : 'card',
-      showCoverImages: !!settings?.showCoverImages,
-      showRatings: !!settings?.showRatings,
-      showProgress: !!settings?.showProgress,
-      showGenres: !!settings?.showGenres,
-      gridColumns: Number.isInteger(settings?.gridColumns) ? settings.gridColumns : 3,
-      clientId: typeof settings?.clientId === 'string' ? settings.clientId : '',
-      clientSecret: typeof settings?.clientSecret === 'string' ? settings.clientSecret : '',
-      redirectUri: typeof settings?.redirectUri === 'string' ? settings.redirectUri : DEFAULT_SETTINGS.redirectUri,
-      accessToken: typeof settings?.accessToken === 'string' ? settings.accessToken : '',
-    };
-  }
-  
-   async saveSettings() {
-    try {
-      const validSettings = this.validateSettings(this.settings);
-      await this.saveData(validSettings);
-      console.log('[Zoro] Settings saved successfully.');
-    } catch (err) {
-      console.error('[Zoro] Failed to save settings:', err);
-      new Notice('⚠️ Failed to save settings. See console for details.');
-    }
-  }
-
-  // Load settings 
-  async loadSettings() {
-    const saved = await this.loadData() || {};
-    const merged = Object.assign({}, DEFAULT_SETTINGS, saved);
-    this.settings = this.validateSettings(merged);
-   
-   // no secret saved...
-   if (!this.settings.clientSecret) {
-    const secret = await this.promptForSecret("Paste your client secret:");
-    this.settings.clientSecret = secret.trim();
-    await this.saveData(this.settings);
-  }}
-  
 
 // Loading indicator 
-async fetchData(config) {
-  this.showLoader();
-  try {
-    // API call
-  } catch (error) {
-    // Handle error
-  } finally {
-    this.hideLoader();
-  }
-}
-  
+
   
   // Process Zoro Code Block - FIXED: Now properly inside the class
   async processZoroCodeBlock(source, el, ctx) {
@@ -270,50 +224,6 @@ config.search = '';
     }
   }
 
-
-
-
-
-
-
-  //  render ZoroData
-  renderZoroData(el, data, config) {
-    el.empty();
-    el.className = 'zoro-container';
-    
-    if (config.type === 'stats') {
-      this.renderUserStats(el, data.User);
-    } else if (config.type === 'single') {
-      this.renderSingleMedia(el, data.MediaList, config);
-    } else {
-      const entries = data.MediaListCollection.lists.flatMap(list => list.entries);
-      if (config.layout === 'table') {
-        this.renderTableLayout(el, entries);
-      } else {
-        this.renderMediaList(el, entries, config);
-      }
-    }
-  }
-
-
-  
-
-  
-  
-
-
- 
-  
-  // Inject Css not ok
-  
-// Implement handler
-  handleAuthMessage(event) {
-  if (event.origin !== 'https://anilist.co') return;
-  this.exchangeCodeForToken(event.data.code);
-}
-
-
- 
   // Plugin unload method
   onunload() {
     console.log('Unloading Zoro Plugin');

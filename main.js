@@ -1,4 +1,11 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal } = require('obsidian');
+import {
+  Plugin,
+  PluginSettingTab,
+  Setting,
+  Notice,
+  requestUrl,
+  Modal
+} from 'obsidian';
 
 // Settings
 import { DEFAULT_SETTINGS } from './settings/defaultSettings.js';
@@ -148,7 +155,5 @@ class ZoroPlugin extends Plugin {
 
 } 
 
-module.exports = {
-  default: ZoroPlugin,
-};
+export default ZoroPlugin;
 

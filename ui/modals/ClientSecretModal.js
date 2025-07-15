@@ -1,4 +1,4 @@
-class ClientSecretModal extends Modal {
+export class ClientSecretModal extends Modal {
   constructor(app, onSubmit) {
     super(app);
     this.onSubmit = onSubmit;

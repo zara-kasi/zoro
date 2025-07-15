@@ -1,4 +1,4 @@
-export function async fetchZoroData(config) {
+export async function fetchZoroData(config) {
   const cacheKey = JSON.stringify(config);
   let cacheType;
 

@@ -232,3 +232,8 @@ export function async getAuthenticatedUsername() {
     return null;
   }
   }
+  
+  export function handleAuthMessage(event) {
+  if (event.origin !== 'https://anilist.co') return;
+  this.exchangeCodeForToken(event.data.code);
+}

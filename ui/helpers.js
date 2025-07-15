@@ -1,25 +1,15 @@
-export function handleEditClick(e, entry, statusEl) {
-    e.preventDefault();
-    e.stopPropagation();
-
-    this.createEditModal(
-      entry,
-      async updates => {
-        try {
-          await this.updateMediaListEntry(entry.media.id, updates);
-          new Notice('✅ Updated!');
-          this.cache.clear();
-          const parent = statusEl.closest('.zoro-container');
-          if (parent) {
-            const block = parent.closest('.markdown-rendered')?.querySelector('code');
-            if (block) this.processZoroCodeBlock(block.textContent, parent, {});
-          }
-        } catch (err) {
-          new Notice(`❌ Update failed: ${err.message}`);
-        }
-      },
-      () => {
-        new Notice('Edit canceled.');
-      }
-    );
-  }
+export function injectCSS() {
+  const styleId = 'zoro-plugin-styles';
+  const existingStyle = document.getElementById(styleId);
+  if (existingStyle) existingStyle.remove();
+  
+  const css = `
+    .zoro-container { /* styles */ }
+    /* add all necessary styles here */
+  `;
+  
+  const style = document.createElement('style');
+  style.id = styleId;
+  style.textContent = css;
+  document.head.appendChild(style);
+}

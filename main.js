@@ -1,3 +1,4 @@
+//  Obsidian API
 import {
   Plugin,
   PluginSettingTab,
@@ -12,32 +13,22 @@ import { DEFAULT_SETTINGS } from './settings/defaultSettings.js';
 
 import { ZoroSettingTab } from './settings/settingsTab.js';
 
-import { validateSettings, saveSettings, loadSettings } from './settings/helpers.js';
-
-
-// Caches
-import { pruneCache, getFromCache, setToCache, clearCacheForMedia } from './utils/cache.js';
-
-// Rate limit
+// Utils 
 import { RequestQueue } from './utils/requestQueue.js';
 
-import { createSampleNotes } from './utils/sampleNotes.js';
+import { pruneCache, getFromCache, setToCache, clearCacheForMedia } from './utils/cache.js';
 
+// API ListManager 
+import { authenticateUser, exchangeCodeForToken, makeObsidianRequest, testAccessToken, getAuthenticatedUsername, handleAuthMessage } from './api/auth.js';
 
-// Authentication 
-import { authenticateUser, exchangeCodeForToken, makeObsidianRequest, testAccessToken, getAuthenticatedUsername } from './api/auth.js';
-
-// Graphql Queries
 import { getMediaListQuery, getSingleMediaQuery, getUserStatsQuery, getSearchMediaQuery, getZoroUrl } from './api/graphql.js';
 
-// Anilist API Fetcher
 import { fetchZoroData } from './api/fetchZoroData.js';
 
 import { updateMediaListEntry, checkIfMediaInList, addMediaToList } from './api/listManager.js';
 
-import { handleAuthMessage } from './api/auth.js';
 
-// UI 
+// UI: Renderers 
 import { renderMediaList, createMediaCard, createDetailsRow, renderTableLayout } from './ui/render/renderList.js';
 
 import { renderSingleMedia } from './ui/render/renderSingle.js';
@@ -45,37 +36,33 @@ import { renderSingleMedia } from './ui/render/renderSingle.js';
 import { renderUserStats } from './ui/render/renderStats.js';
 
 
-
-/// UI modal
-import { createAddModal, createEditModal, createAuthenticationPrompt } from './ui/modals.js';
-
-import {
-  ClientIdModal,
+// UI: Modals 
+import { createAddModal, createEditModal, createAuthenticationPrompt, ClientIdModal,
   ClientSecretModal,
-  AuthPinModal
-} from './ui/modals.js';
-
-import { renderSearchInterface, renderSearchResults, handleAddClick } from './ui/searchInterface.js';
-
-import { handleEditClick } from './ui/helpers.js';
-
-import { injectCSS } from './ui/helpers.js';
-
-import { renderError } from './ui/helpers.js';
-
-import { fetchData, renderZoroData } from './ui/helpers.js';
-
-import { processZoroSearchCodeBlock } from './ui/helpers.js';
-
-import { processInlineLinks } from './ui/helpers.js';
-
-
-// Parsers
+  AuthPinModal } from './ui/modals.js';
+  
+  
+  // UI: Search Interface 
+  import { renderSearchInterface, renderSearchResults, handleAddClick } from './ui/searchInterface.js';
+  
+  
+  // UI: helpers
+  import { handleEditClick, injectCSS, renderError, fetchData, renderZoroData, processZoroSearchCodeBlock, processInlineLinks  } from './ui/helpers.js';
+  
+  
+// Parsers 
 import { parseCodeBlockConfig, parseSearchCodeBlockConfig } from './parsers/parseCodeBlock.js';
 import { parseInlineLink } from './parsers/parseInlineLink.js';
 
-// controllers
+// Controllers 
 import { processZoroCodeBlock } from './controllers/codeBlockProcessor.js';
+
+
+// Additional Featues
+import { validateSettings, saveSettings, loadSettings } from './settings/helpers.js';
+
+import { createSampleNotes } from './utils/sampleNotes.js';
+
 
 
 // Plugin Class 
@@ -95,7 +82,7 @@ class ZoroPlugin extends Plugin {
     this.cacheTimeout = 5 * 60 * 1000;
 
   // Add periodic pruning
-  this.pruneInterval = setInterval(() => this.pruneCache(), this.cacheTimeout);
+  this.pruneInterval = setInterval(() => pruneCache(this.cache), this.cacheTimeout);
   }
   
  // On Load
@@ -156,4 +143,3 @@ class ZoroPlugin extends Plugin {
 } 
 
 export default ZoroPlugin;
-

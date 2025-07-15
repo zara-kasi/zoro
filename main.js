@@ -11,6 +11,9 @@ import { pruneCache, getFromCache, setToCache, clearCacheForMedia } from './util
 // Rate limit
 import { RequestQueue } from './utils/requestQueue.js';
 
+import { createSampleNotes } from './utils/sampleNotes.js';
+
+
 // Authentication 
 import { authenticateUser, exchangeCodeForToken, makeObsidianRequest, testAccessToken, getAuthenticatedUsername } from './api/auth.js';
 
@@ -19,6 +22,9 @@ import { getMediaListQuery, getSingleMediaQuery, getUserStatsQuery, getSearchMed
 
 // Anilist API Fetcher
 import { fetchZoroData } from './api/fetchZoroData.js';
+
+import { updateMediaListEntry, checkIfMediaInList, addMediaToList } from './api/listManager.js';
+
 
 // UI 
 import { renderMediaList, createMediaCard, createDetailsRow, renderTableLayout } from './ui/render/renderList.js';
@@ -39,6 +45,15 @@ import {
 } from './ui/modals.js';
 
 import { renderSearchInterface, renderSearchResults, handleAddClick } from './ui/searchInterface.js';
+
+import { handleEditClick } from './ui/helpers.js';
+
+import { injectCSS } from './ui/helpers.js';
+
+import { renderError } from './ui/helpers.js';
+
+
+
 
 // Parsers
 import { parseCodeBlockConfig, parseSearchCodeBlockConfig } from './parsers/parseCodeBlock.js';
@@ -189,64 +204,6 @@ async fetchData(config) {
     }
   }
 
-// Update Media List 
-    
-    async updateMediaListEntry(mediaId, updates) {
-  try {
-    // Ensure valid token before proceeding
-    if (!this.settings.accessToken || !(await this.ensureValidToken())) {
-      throw new Error('❌ Authentication required to update entries.');
-    }
-
-    const mutation = `
-      mutation ($mediaId: Int, $status: MediaListStatus, $score: Float, $progress: Int) {
-        SaveMediaListEntry(mediaId: $mediaId, status: $status, score: $score, progress: $progress) {
-          id
-          status
-          score
-          progress
-        }
-      }
-    `;
-
-    // Filter out undefined values
-    const variables = {
-      mediaId,
-      ...(updates.status !== undefined && { status: updates.status }),
-      ...(updates.score !== undefined && { score: updates.score }),
-      ...(updates.progress !== undefined && { progress: updates.progress }),
-    };
-
-    
-// Rate Limit  add
-    const response = await this.requestQueue.add(() => requestUrl({
-  url: 'https://graphql.anilist.co',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.settings.accessToken}`
-      },
-      body: JSON.stringify({ query: mutation, variables })
-    }));
-
-    const result = response.json;
-
-    if (!result || result.errors?.length > 0) {
-      const message = result.errors?.[0]?.message || 'Unknown mutation error';
-      throw new Error(`AniList update error: ${message}`);
-    }
-
-    // Targeted cache clearing instead of full clear
-    this.clearCacheForMedia(mediaId);
-    
-    return result.data.SaveMediaListEntry;
-
-  } catch (error) {
-    console.error('[Zoro] updateMediaListEntry failed:', error);
-    throw new Error(`❌ Failed to update entry: ${error.message}`);
-  }
-}
-
 
   // Process Zoro Search Code Block - FIXED: Removed duplicate and fixed structure
   async processZoroSearchCodeBlock(source, el, ctx) {
@@ -316,35 +273,7 @@ config.search = '';
 
 
 
-  
-async checkIfMediaInList(mediaId, mediaType) {
-  if (!this.settings.accessToken) return false;
-  
-  try {
-    const config = {
-      type: 'single',
-      mediaType: mediaType,
-      mediaId: parseInt(mediaId)
-    };
-    
-    const response = await this.fetchZoroData(config);
-    return response.MediaList !== null;
-  } catch (error) {
-    console.warn('Error checking media list status:', error);
-    return false;
-  }
-}
 
-
-async addMediaToList(mediaId, updates, mediaType) {
-  if (!this.settings.accessToken) {
-    throw new Error('Authentication required');
-  }
-  
-  // Use the same method as your existing updateMediaListEntry
-  // but for adding new entries instead of updating existing ones
-  return await this.updateMediaListEntry(mediaId, updates);
-}
 
 
   //  render ZoroData
@@ -367,260 +296,22 @@ async addMediaToList(mediaId, updates, mediaType) {
   }
 
 
-  handleEditClick(e, entry, statusEl) {
-    e.preventDefault();
-    e.stopPropagation();
-
-    this.createEditModal(
-      entry,
-      async updates => {
-        try {
-          await this.updateMediaListEntry(entry.media.id, updates);
-          new Notice('✅ Updated!');
-          this.cache.clear();
-          const parent = statusEl.closest('.zoro-container');
-          if (parent) {
-            const block = parent.closest('.markdown-rendered')?.querySelector('code');
-            if (block) this.processZoroCodeBlock(block.textContent, parent, {});
-          }
-        } catch (err) {
-          new Notice(`❌ Update failed: ${err.message}`);
-        }
-      },
-      () => {
-        new Notice('Edit canceled.');
-      }
-    );
-  }
-
+  
 
   
   
 
 
- async createSampleNotes() {
-  try {
-    let successCount = 0;
-    let errorMessages = [];
-    
-    // **FIRST NOTE CONFIGURATION**
-    
-    const firstNoteTitle = "Anime Dashboard";
-    
-const firstNoteContent =`\`\`\`zoro-search
-mediaType: ANIME
-\`\`\`
-
-# 👀 Watching:
-\`\`\`zoro
-listType: CURRENT
-mediaType: ANIME
-\`\`\`
-
-# 📝 Planning:
-\`\`\`zoro
-listType: PLANNING
-mediaType: ANIME
-\`\`\`
-
-# 🌀 Repeating:
-\`\`\`zoro
-listType: REPEATING
-mediaType: ANIME
-\`\`\`
-
-# ⏸️ On Hold:
-\`\`\`zoro
-listType: PAUSED
-mediaType: ANIME
-\`\`\`
-
-# 🏁 Completed:
-\`\`\`zoro
-listType: COMPLETED
-mediaType: ANIME
-\`\`\`
-
-# 🗑️ Dropped:
-\`\`\`zoro
-listType: DROPPED
-mediaType: ANIME
-\`\`\`
-
-# 📊 Stats:
-\`\`\`zoro
-type: stats
-\`\`\` 
-
-`;
-
- const secondNoteTitle = "Manga Dashboard";
-
-const secondNoteContent =`\`\`\`zoro-search
-mediaType: MANGA
-\`\`\`
-
-# 📖 Reading:
-\`\`\`zoro
-listType: CURRENT
-mediaType: MANGA
-\`\`\`
-
-# 📝 Planning:
-\`\`\`zoro
-listType: PLANNING
-mediaType: MANGA
-\`\`\`
-
-# 🌀 Repeating:
-\`\`\`zoro
-listType: REPEATING
-mediaType: MANGA
-\`\`\`
-
-# ⏸️ On Hold:
-\`\`\`zoro
-listType: PAUSED
-mediaType: MANGA
-\`\`\`
-
-# 🏁 Completed:
-\`\`\`zoro
-listType: COMPLETED
-mediaType: MANGA
-\`\`\`
-
-# 🗑️ Dropped:
-\`\`\`zoro
-listType: DROPPED
-mediaType: MANGA
-\`\`\`
-
-# 📊 Stats:
-\`\`\`zoro
-type: stats
-\`\`\` 
-
-`;
-
-    // Array of notes to create
-
-    const notesToCreate = [
-      { title: firstNoteTitle, content: firstNoteContent },
-      { title: secondNoteTitle, content: secondNoteContent }
-    ];
-
-    // Create each note
-
-    for (const note of notesToCreate) {
-      try {
-        const fileName = `${note.title}.md`;
-        const filePath = fileName;
-
- // This creates the note in the vault root
-        
-        // Checking for if  file already exists
-        const existingFile = this.app.vault.getAbstractFileByPath(filePath);
-        if (existingFile) {
-          errorMessages.push(`"${note.title}" already exists`);
-          continue;
-        }
-        
-        // Create the new note
-        await this.app.vault.create(filePath, note.content);
-        successCount++;
-        
-      } catch (error) {
-        errorMessages.push(`Failed to create "${note.title}": ${error.message}`);
-      }
-    }
-    
-    // Show results
-    if (successCount > 0) {
-      new Notice(`Successfully created ${successCount} note${successCount > 1 ? 's' : ''}!`, 4000);
-      
-      // Open the first successfully created note
-
-      const firstNote = this.app.vault.getAbstractFileByPath(`${firstNoteTitle}.md`);
-      if (firstNote) {
-        await this.app.workspace.openLinkText(`${firstNoteTitle}.md`, '', false);
-      }
-    }
-    
-    if (errorMessages.length > 0) {
-      new Notice(`Issues: ${errorMessages.join(', ')}`, 5000);
-    }
-    
-  } catch (error) {
-    console.error('Error creating notes:', error);
-    new Notice(`Failed to create notes: ${error.message}`, 5000);
-  }
- }
-
+ 
   
   // Inject Css not ok
-  injectCSS() {
-  const styleId = 'zoro-plugin-styles';
-  const existingStyle = document.getElementById(styleId);
-  if (existingStyle) existingStyle.remove();
   
-  const css = `
-    .zoro-container { /* styles */ }
-    /* add all necessary styles here */
-  `;
-  
-  const style = document.createElement('style');
-  style.id = styleId;
-  style.textContent = css;
-  document.head.appendChild(style);
-}
-
 // Implement handler
   handleAuthMessage(event) {
   if (event.origin !== 'https://anilist.co') return;
   this.exchangeCodeForToken(event.data.code);
 }
 
-  // Render Errors
-  renderError(el, message, context = '', onRetry = null) {
-    el.empty?.(); // clear if Obsidian's `el` object has `.empty()` method
-    el.classList.add('zoro-error-container');
-
-    const wrapper = document.createElement('div');
-    wrapper.className = 'zoro-error-box';
-
-    const title = document.createElement('strong');
-    title.textContent = `❌ ${context || 'Something went wrong'}`;
-    wrapper.appendChild(title);
-
-    const msg = document.createElement('pre');
-    msg.textContent = message; // safe, no innerHTML
-    wrapper.appendChild(msg);
-
-    // Optional Retry button
-    if (this.settings?.accessToken) {
-      const retryBtn = document.createElement('button');
-      retryBtn.className = 'zoro-retry-btn';
-      retryBtn.textContent = '🔄 Retry';
-      retryBtn.onclick = () => {
-        // You might re-call the source renderer here
-        new Notice('Retry not implemented yet');
-      };
-      wrapper.appendChild(retryBtn);
-    }
-
-    // FIXED: Added onRetry functionality
-    if (typeof onRetry === 'function') {
-      const retryBtn = document.createElement('button');
-      retryBtn.className = 'zoro-retry-btn';
-      retryBtn.textContent = '🔄 Retry';
-      retryBtn.onclick = onRetry;
-      wrapper.appendChild(retryBtn);
-    }
-
-    el.appendChild(wrapper);
-  }
-  
 
  
   // Plugin unload method

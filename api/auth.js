@@ -1,4 +1,4 @@
-export function async authenticateUser() {
+export async function authenticateUser() {
     const clientId = this.settings.clientId;
     const redirectUri = this.settings.redirectUri || 'https://anilist.co/api/v2/oauth/pin';
     
@@ -45,12 +45,12 @@ export function async authenticateUser() {
     }
   }
 
-export function async promptForCode(message) {
+export async function promptForCode(message) {
     return new Promise((resolve) => {
       const code = prompt(message);
       resolve(code);
     });}
-export function async exchangeCodeForToken(code, redirectUri) {
+export async function exchangeCodeForToken(code, redirectUri) {
     const clientId = this.settings.clientId;
     const clientSecret = this.settings.clientSecret;
 
@@ -117,7 +117,7 @@ export function async exchangeCodeForToken(code, redirectUri) {
     }
   }
 
-export function async makeObsidianRequest(code, redirectUri) {
+export async function makeObsidianRequest(code, redirectUri) {
     const body = new URLSearchParams({
       grant_type: 'authorization_code',
       client_id: this.settings.clientId,
@@ -151,7 +151,7 @@ export function async makeObsidianRequest(code, redirectUri) {
     }
   }
   
-export function async testAccessToken() {
+export async function testAccessToken() {
     const query = `
       query {
         Viewer {
@@ -188,7 +188,7 @@ export function async testAccessToken() {
   }
 
 // Authenticated Username 
-export function async getAuthenticatedUsername() {
+export async function getAuthenticatedUsername() {
   if (!this.settings.accessToken) return null;
 
   await this.ensureValidToken();

@@ -49,7 +49,7 @@ export function async promptForCode(message) {
     return new Promise((resolve) => {
       const code = prompt(message);
       resolve(code);
-    });
+    });}
 export function async exchangeCodeForToken(code, redirectUri) {
     const clientId = this.settings.clientId;
     const clientSecret = this.settings.clientSecret;

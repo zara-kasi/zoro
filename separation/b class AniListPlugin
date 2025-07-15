@@ -1,6 +1,0 @@
-class ZoroPlugin extends Plugin { // ....
-}
-
-module.exports = {
-  default: ZoroPlugin
-};

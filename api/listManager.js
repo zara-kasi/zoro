@@ -1,4 +1,4 @@
-export async updateMediaListEntry(mediaId, updates) {
+export function async updateMediaListEntry(mediaId, updates) {
   try {
     // Ensure valid token before proceeding
     if (!this.settings.accessToken || !(await this.ensureValidToken())) {
@@ -53,4 +53,33 @@ export async updateMediaListEntry(mediaId, updates) {
     throw new Error(`❌ Failed to update entry: ${error.message}`);
   }
 }
+
+export function  
+async  checkIfMediaInList(mediaId, mediaType) {
+  if (!this.settings.accessToken) return false;
+  
+  try {
+    const config = {
+      type: 'single',
+      mediaType: mediaType,
+      mediaId: parseInt(mediaId)
+    };
+    
+    const response = await this.fetchZoroData(config);
+    return response.MediaList !== null;
+  } catch (error) {
+    console.warn('Error checking media list status:', error);
+    return false;
+  }
+}
+
+export function async addMediaToList(mediaId, updates, mediaType) {
+  if (!this.settings.accessToken) {
+    throw new Error('Authentication required');
+  }
+  
+
+  return await this.updateMediaListEntry(mediaId, updates);
+}
+
 

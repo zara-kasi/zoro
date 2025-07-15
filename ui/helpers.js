@@ -53,3 +53,32 @@ export function renderError(el, message, context = '', onRetry = null) {
     el.appendChild(wrapper);
   }
   
+  export async function fetchData(config) {
+  this.showLoader();
+  try {
+    // API call
+  } catch (error) {
+    // Handle error
+  } finally {
+    this.hideLoader();
+  }
+}
+  
+  
+ export function renderZoroData(el, data, config) {
+    el.empty();
+    el.className = 'zoro-container';
+    
+    if (config.type === 'stats') {
+      this.renderUserStats(el, data.User);
+    } else if (config.type === 'single') {
+      this.renderSingleMedia(el, data.MediaList, config);
+    } else {
+      const entries = data.MediaListCollection.lists.flatMap(list => list.entries);
+      if (config.layout === 'table') {
+        this.renderTableLayout(el, entries);
+      } else {
+        this.renderMediaList(el, entries, config);
+      }
+    }
+  }

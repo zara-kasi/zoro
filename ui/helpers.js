@@ -13,3 +13,43 @@ export function injectCSS() {
   style.textContent = css;
   document.head.appendChild(style);
 }
+
+export function renderError(el, message, context = '', onRetry = null) {
+    el.empty?.(); // clear if Obsidian's `el` object has `.empty()` method
+    el.classList.add('zoro-error-container');
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'zoro-error-box';
+
+    const title = document.createElement('strong');
+    title.textContent = `❌ ${context || 'Something went wrong'}`;
+    wrapper.appendChild(title);
+
+    const msg = document.createElement('pre');
+    msg.textContent = message; // safe, no innerHTML
+    wrapper.appendChild(msg);
+
+    // Optional Retry button
+    if (this.settings?.accessToken) {
+      const retryBtn = document.createElement('button');
+      retryBtn.className = 'zoro-retry-btn';
+      retryBtn.textContent = '🔄 Retry';
+      retryBtn.onclick = () => {
+        // You might re-call the source renderer here
+        new Notice('Retry not implemented yet');
+      };
+      wrapper.appendChild(retryBtn);
+    }
+
+    // FIXED: Added onRetry functionality
+    if (typeof onRetry === 'function') {
+      const retryBtn = document.createElement('button');
+      retryBtn.className = 'zoro-retry-btn';
+      retryBtn.textContent = '🔄 Retry';
+      retryBtn.onclick = onRetry;
+      wrapper.appendChild(retryBtn);
+    }
+
+    el.appendChild(wrapper);
+  }
+  

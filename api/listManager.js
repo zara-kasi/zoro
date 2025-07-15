@@ -1,4 +1,4 @@
-export function async updateMediaListEntry(mediaId, updates) {
+export async function updateMediaListEntry(mediaId, updates) {
   try {
     // Ensure valid token before proceeding
     if (!this.settings.accessToken || !(await this.ensureValidToken())) {
@@ -54,8 +54,7 @@ export function async updateMediaListEntry(mediaId, updates) {
   }
 }
 
-export function  
-async  checkIfMediaInList(mediaId, mediaType) {
+export async function checkIfMediaInList(mediaId, mediaType) {
   if (!this.settings.accessToken) return false;
   
   try {
@@ -73,7 +72,7 @@ async  checkIfMediaInList(mediaId, mediaType) {
   }
 }
 
-export function async addMediaToList(mediaId, updates, mediaType) {
+export async function addMediaToList(mediaId, updates, mediaType) {
   if (!this.settings.accessToken) {
     throw new Error('Authentication required');
   }

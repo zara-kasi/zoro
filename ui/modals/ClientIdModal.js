@@ -1,5 +1,6 @@
 import { Modal } from 'obsidian';
-class ClientIdModal extends Modal {
+
+export class ClientIdModal extends Modal {
   constructor(app, onSubmit) {
     super(app);
     this.onSubmit = onSubmit;

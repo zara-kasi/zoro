@@ -1,4 +1,4 @@
-class AuthPinModal extends Modal {
+export class AuthPinModal extends Modal {
   constructor(app, onSubmit) {
     super(app);
     this.onSubmit = onSubmit;

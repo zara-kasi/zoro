@@ -39,7 +39,6 @@ import { parseInlineLink } from './parsers/parseInlineLink.js';
 // Plugin Class 
 class ZoroPlugin extends Plugin { 
 
-
   // Constructor 
   constructor(app, manifest) {
     super(app, manifest);

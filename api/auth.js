@@ -37,7 +37,7 @@ export async function authenticateUser() {
         return;
       }
 
-      await this.exchangeCodeForToken(code.trim(), redirectUri);
+      await exchangeCodeForToken.bind(this)(code.trim(), redirectUri);
       new Notice('✅ Authenticated successfully.', 4000);
     } catch (error) {
       console.error('[Zoro] Authentication failed:', error);
@@ -235,5 +235,5 @@ export async function getAuthenticatedUsername() {
   
   export function handleAuthMessage(event) {
   if (event.origin !== 'https://anilist.co') return;
-  this.exchangeCodeForToken(event.data.code);
+  exchangeCodeForToken.bind(this)(event.data.code);
 }

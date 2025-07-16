@@ -91,7 +91,7 @@ export function  createMediaCard(entry, config) {
       status.onclick = e => {
         e.preventDefault();
         e.stopPropagation();
-        this.createAuthenticationPrompt();
+        createAuthenticationPrompt.bind(this)();
       };
     }
 
@@ -182,7 +182,7 @@ export function  createMediaCard(entry, config) {
         status.onclick = (e) => {
           e.preventDefault();
           e.stopPropagation();
-          this.createAuthenticationPrompt();
+          createAuthenticationPrompt.bind(this)();
         };
       }
 
@@ -210,3 +210,4 @@ export function  createMediaCard(entry, config) {
     table.appendChild(tbody);
     el.appendChild(table);
   }
+  

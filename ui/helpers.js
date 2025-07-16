@@ -116,3 +116,91 @@ config.search = '';
   }
 
 
+ export function injectCSS() {
+  const styleId = 'zoro-plugin-styles';
+  const existingStyle = document.getElementById(styleId);
+  if (existingStyle) existingStyle.remove();
+  
+  const css = `
+    .zoro-container { /* styles */ }
+    /* add all necessary styles here */
+  `;
+  
+  const style = document.createElement('style');
+  style.id = styleId;
+  style.textContent = css;
+  document.head.appendChild(style);
+}
+
+export async function processZoroCodeBlock(source, el, ctx) {
+    try {
+      const config = this.parseCodeBlockConfig(source) || {};
+
+      // Debug: Log raw config
+      console.log('[Zoro] Code block config:', config);
+
+      // Handle authenticated user resolution
+      if (config.useAuthenticatedUser) {
+        const authUsername = await this.getAuthenticatedUsername();
+        if (!authUsername) {
+          throw new Error('❌ Could not retrieve authenticated username. Check your authentication setup or set a username manually.');
+        }
+        config.username = authUsername;
+      }
+
+      if (!config.username) {
+        throw new Error('❌ No username provided. Set `username:` in your code block or enable `useAuthenticatedUser`.');
+      }
+
+      const data = await this.fetchZoroData(config);
+
+      if (!data || (Array.isArray(data) && data.length === 0)) {
+        throw new Error('⚠️ No data returned from Zoro API.');
+      }
+
+      this.renderZoroData(el, data, config);
+    } catch (error) {
+      console.error('[Zoro] Code block processing error:', error);
+      this.renderError(el, error.message || 'Unknown error occurred.');
+    }
+  }
+
+export async function processInlineLinks(el, ctx) {
+    const inlineLinks = el.querySelectorAll('a[href^="zoro:"]');
+
+    for (const link of inlineLinks) {
+      const href = link.getAttribute('href');
+      
+      // Optional: Show loading shimmer while data loads
+      const placeholder = document.createElement('span');
+      placeholder.textContent = '🔄 Loading Zoro...';
+      link.replaceWith(placeholder);
+
+      try {
+        const config = this.parseInlineLink(href);
+        const data = await this.fetchZoroData(config);
+
+        const container = document.createElement('span');
+        container.className = 'zoro-inline-container';
+        this.renderZoroData(container, data, config);
+
+        placeholder.replaceWith(container);
+
+        // ✅ Cleanup if the block is removed (important for re-render safety)
+        ctx.addChild({
+          unload: () => {
+            container.remove();
+          }
+        });
+
+      } catch (error) {
+        console.warn(`[Zoro] Inline link failed for ${href}:`, error);
+
+        const errorEl = document.createElement('span');
+        errorEl.className = 'zoro-inline-error';
+        errorEl.textContent = `⚠️ ${error.message || 'Failed to load data'}`;
+
+        placeholder.replaceWith(errorEl);
+      }
+    }
+  }

@@ -41,10 +41,10 @@ export function renderSearchInterface(el, config) {
         };
         
         const data = await fetchZoroData.bind(this)(searchConfig);
-        this.renderSearchResults(resultsDiv, data.Page.media, config);
+        renderSearchResults.bind(this)(resultsDiv, data.Page.media, config);
         
       } catch (error) {
-        this.renderError(resultsDiv, error.message);
+        renderError.bind(this)(resultsDiv, error.message);
       }
     };
     
@@ -128,13 +128,13 @@ export function renderSearchResults(el, media, config) {
     
     if (this.settings.accessToken) {
       addButton.title = 'Click to add to your list';
-      addButton.onclick = (e) => this.handleAddClick(e, item, config.mediaType, addButton);
+      addButton.onclick = (e) => handleAddClick.bind(this)(e, item, config.mediaType, addButton);
     } else {
       addButton.title = 'Click to authenticate';
       addButton.onclick = (e) => {
         e.preventDefault();
         e.stopPropagation();
-        this.createAuthenticationPrompt();
+        createAuthenticationPrompt.bind(this)();
       };
     }
     
@@ -202,7 +202,7 @@ export function handleAddClick(e, mediaItem, mediaType, buttonEl) {
     progress: 0
   };
   
-  this.createAddModal(
+  createAddModal.bind(this)(
     mockEntry,
     async (updates) => {
       try {

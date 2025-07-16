@@ -61,7 +61,7 @@ class ZoroPlugin extends Plugin {
     this.cacheTimeout = 5 * 60 * 1000;
 
   // periodic pruning
-  this.pruneInterval = setInterval(() => pruneCache(this.cache), this.cacheTimeout);
+  this.pruneCache = pruneCache.bind(this); this.pruneInterval = setInterval(() => this.pruneCache(), this.cacheTimeout);
   }
   
 
@@ -76,7 +76,7 @@ class ZoroPlugin extends Plugin {
 
     // Load settings
     try {
-      await this.loadSettings();
+      await loadSettings.bind(this)();
       console.log('[Zoro] Settings loaded.');
     } catch (err) {
       console.error('[Zoro] Failed to load settings:', err);

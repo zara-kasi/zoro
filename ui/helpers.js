@@ -111,7 +111,7 @@ config.search = '';
       await this.renderSearchInterface(el, config);
     } catch (error) {
       console.error('[Zoro] Search block processing error:', error);
-      this.renderError(el, error.message || 'Failed to process Zoro search block.');
+      renderError.bind(this)(el, error.message || 'Failed to process Zoro search block.');
     }
   }
 
@@ -161,7 +161,7 @@ export async function processZoroCodeBlock(source, el, ctx) {
       this.renderZoroData(el, data, config);
     } catch (error) {
       console.error('[Zoro] Code block processing error:', error);
-      this.renderError(el, error.message || 'Unknown error occurred.');
+      renderError.bind(this)(el, error.message || 'Unknown error occurred.');
     }
   }
 

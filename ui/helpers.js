@@ -152,7 +152,7 @@ export async function processZoroCodeBlock(source, el, ctx) {
         throw new Error('❌ No username provided. Set `username:` in your code block or enable `useAuthenticatedUser`.');
       }
 
-      const data = await this.fetchZoroData(config);
+      const data = await fetchZoroData.bind(this)(config);
 
       if (!data || (Array.isArray(data) && data.length === 0)) {
         throw new Error('⚠️ No data returned from Zoro API.');
@@ -178,7 +178,7 @@ export async function processInlineLinks(el, ctx) {
 
       try {
         const config = this.parseInlineLink(href);
-        const data = await this.fetchZoroData(config);
+        const data = await fetchZoroData.bind(this)(config);
 
         const container = document.createElement('span');
         container.className = 'zoro-inline-container';

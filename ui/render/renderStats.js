@@ -1,6 +1,6 @@
 export function renderUserStats(el, user) {
     if (!user || !user.statistics) {
-      this.renderError(el, 'User statistics unavailable.');
+      renderError.bind(this)(el, 'User statistics unavailable.');
       return;
     }
     

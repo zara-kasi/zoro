@@ -2,17 +2,17 @@ export function handleEditClick(e, entry, statusEl) {
     e.preventDefault();
     e.stopPropagation();
 
-    this.createEditModal(
+    createEditModal.bind(this)(
       entry,
       async updates => {
         try {
-          await this.updateMediaListEntry(entry.media.id, updates);
+          await updateMediaListEntry.bind(this)(entry.media.id, updates);
           new Notice('✅ Updated!');
           this.cache.clear();
           const parent = statusEl.closest('.zoro-container');
           if (parent) {
             const block = parent.closest('.markdown-rendered')?.querySelector('code');
-            if (block) this.processZoroCodeBlock(block.textContent, parent, {});
+            if (block) processZoroCodeBlock.bind(this)(block.textContent, parent, {});
           }
         } catch (err) {
           new Notice(`❌ Update failed: ${err.message}`);
@@ -95,7 +95,7 @@ export function renderError(el, message, context = '', onRetry = null) {
   
   export async function processZoroSearchCodeBlock(source, el, ctx) {
     try {
-      const config = this.parseSearchCodeBlockConfig(source);
+      const config = parseSearchCodeBlockConfig.bind(this)(source);
 config.search = '';
 
 
@@ -108,7 +108,7 @@ config.search = '';
       
       
 
-      await this.renderSearchInterface(el, config);
+      await renderSearchInterface.bind(this)(el, config);
     } catch (error) {
       console.error('[Zoro] Search block processing error:', error);
       renderError.bind(this)(el, error.message || 'Failed to process Zoro search block.');
@@ -134,7 +134,7 @@ config.search = '';
 
 export async function processZoroCodeBlock(source, el, ctx) {
     try {
-      const config = this.parseCodeBlockConfig(source) || {};
+      const config = parseCodeBlockConfig.bind(this)(source) || {};
 
       // Debug: Log raw config
       console.log('[Zoro] Code block config:', config);
@@ -158,7 +158,7 @@ export async function processZoroCodeBlock(source, el, ctx) {
         throw new Error('⚠️ No data returned from Zoro API.');
       }
 
-      this.renderZoroData(el, data, config);
+      renderZoroData.bind(this)(el, data, config);
     } catch (error) {
       console.error('[Zoro] Code block processing error:', error);
       renderError.bind(this)(el, error.message || 'Unknown error occurred.');
@@ -177,12 +177,12 @@ export async function processInlineLinks(el, ctx) {
       link.replaceWith(placeholder);
 
       try {
-        const config = this.parseInlineLink(href);
+        const config = parseInlineLink.bind(this)(href);
         const data = await fetchZoroData.bind(this)(config);
 
         const container = document.createElement('span');
         container.className = 'zoro-inline-container';
-        this.renderZoroData(container, data, config);
+        renderZoroData.bind(this)(container, data, config);
 
         placeholder.replaceWith(container);
 

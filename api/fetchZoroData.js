@@ -108,3 +108,4 @@ if (this.settings.accessToken) {
       throw error;
     }
   }
+  

@@ -38,14 +38,12 @@ import { createAddModal, createEditModal, createAuthenticationPrompt, ClientIdMo
   import { renderSearchInterface, renderSearchResults, handleAddClick } from './ui/searchInterface.js';
   
   // UI: helpers
-  import { handleEditClick, injectCSS, renderError, fetchData, renderZoroData, processZoroSearchCodeBlock, processInlineLinks  } from './ui/helpers.js';
+  import { handleEditClick, renderError, fetchData, renderZoroData, processZoroSearchCodeBlock, processInlineLinks  } from './ui/helpers.js';
   
 // Parsers 
 import { parseCodeBlockConfig, parseSearchCodeBlockConfig } from './parsers/parseCodeBlock.js';
 import { parseInlineLink } from './parsers/parseInlineLink.js';
 
-// Controllers 
-import { processZoroCodeBlock } from './controllers/codeBlockProcessor.js';
 
 // Plugin Class 
 class ZoroPlugin extends Plugin { 
@@ -89,6 +87,56 @@ async loadSettings() {
     this.settings.clientSecret = secret.trim();
     await this.saveData(this.settings);
   }}
+  
+  export function injectCSS() {
+  const styleId = 'zoro-plugin-styles';
+  const existingStyle = document.getElementById(styleId);
+  if (existingStyle) existingStyle.remove();
+  
+  const css = `
+    .zoro-container { /* styles */ }
+    /* add all necessary styles here */
+  `;
+  
+  const style = document.createElement('style');
+  style.id = styleId;
+  style.textContent = css;
+  document.head.appendChild(style);
+}
+
+async processZoroCodeBlock(source, el, ctx) {
+    try {
+      const config = this.parseCodeBlockConfig(source) || {};
+
+      // Debug: Log raw config
+      console.log('[Zoro] Code block config:', config);
+
+      // Handle authenticated user resolution
+      if (config.useAuthenticatedUser) {
+        const authUsername = await this.getAuthenticatedUsername();
+        if (!authUsername) {
+          throw new Error('❌ Could not retrieve authenticated username. Check your authentication setup or set a username manually.');
+        }
+        config.username = authUsername;
+      }
+
+      if (!config.username) {
+        throw new Error('❌ No username provided. Set `username:` in your code block or enable `useAuthenticatedUser`.');
+      }
+
+      const data = await this.fetchZoroData(config);
+
+      if (!data || (Array.isArray(data) && data.length === 0)) {
+        throw new Error('⚠️ No data returned from Zoro API.');
+      }
+
+      this.renderZoroData(el, data, config);
+    } catch (error) {
+      console.error('[Zoro] Code block processing error:', error);
+      this.renderError(el, error.message || 'Unknown error occurred.');
+    }
+  }
+
 
   async onload() {
     console.log('[Zoro] Plugin loading...');

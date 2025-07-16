@@ -64,7 +64,7 @@ export async function checkIfMediaInList(mediaId, mediaType) {
       mediaId: parseInt(mediaId)
     };
     
-    const response = await this.fetchZoroData(config);
+    const response = await fetchZoroData.bind(this)(config);
     return response.MediaList !== null;
   } catch (error) {
     console.warn('Error checking media list status:', error);

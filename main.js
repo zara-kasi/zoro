@@ -38,7 +38,7 @@ import { createAddModal, createEditModal, createAuthenticationPrompt, ClientIdMo
   import { renderSearchInterface, renderSearchResults, handleAddClick } from './ui/searchInterface.js';
   
   // UI: helpers
-  import { handleEditClick, renderError, fetchData, renderZoroData, processZoroSearchCodeBlock, processInlineLinks  } from './ui/helpers.js';
+  import { handleEditClick, renderError, fetchData, renderZoroData, processZoroSearchCodeBlock } from './ui/helpers.js';
   
 // Parsers 
 import { parseCodeBlockConfig, parseSearchCodeBlockConfig } from './parsers/parseCodeBlock.js';
@@ -88,7 +88,7 @@ async loadSettings() {
     await this.saveData(this.settings);
   }}
   
-  export function injectCSS() {
+  injectCSS() {
   const styleId = 'zoro-plugin-styles';
   const existingStyle = document.getElementById(styleId);
   if (existingStyle) existingStyle.remove();
@@ -137,6 +137,45 @@ async processZoroCodeBlock(source, el, ctx) {
     }
   }
 
+async processInlineLinks(el, ctx) {
+    const inlineLinks = el.querySelectorAll('a[href^="zoro:"]');
+
+    for (const link of inlineLinks) {
+      const href = link.getAttribute('href');
+      
+      // Optional: Show loading shimmer while data loads
+      const placeholder = document.createElement('span');
+      placeholder.textContent = '🔄 Loading Zoro...';
+      link.replaceWith(placeholder);
+
+      try {
+        const config = this.parseInlineLink(href);
+        const data = await this.fetchZoroData(config);
+
+        const container = document.createElement('span');
+        container.className = 'zoro-inline-container';
+        this.renderZoroData(container, data, config);
+
+        placeholder.replaceWith(container);
+
+        // ✅ Cleanup if the block is removed (important for re-render safety)
+        ctx.addChild({
+          unload: () => {
+            container.remove();
+          }
+        });
+
+      } catch (error) {
+        console.warn(`[Zoro] Inline link failed for ${href}:`, error);
+
+        const errorEl = document.createElement('span');
+        errorEl.className = 'zoro-inline-error';
+        errorEl.textContent = `⚠️ ${error.message || 'Failed to load data'}`;
+
+        placeholder.replaceWith(errorEl);
+      }
+    }
+  }
 
   async onload() {
     console.log('[Zoro] Plugin loading...');
@@ -171,25 +210,36 @@ async processZoroCodeBlock(source, el, ctx) {
   }
 
   onunload() {
-    console.log('Unloading Zoro Plugin');
+  console.log('Unloading Zoro Plugin');
 
-    const styleId = 'zoro-plugin-styles';
-    const existingStyle = document.getElementById(styleId);
-    if (existingStyle) {
-      existingStyle.remove();
-      console.log(`Removed style element with ID: ${styleId}`);
-       // Clear pruning interval
+  // Clean up CSS
+  const styleId = 'zoro-plugin-styles';
+  const existingStyle = document.getElementById(styleId);
+  if (existingStyle) {
+    existingStyle.remove();
+    console.log(`Removed style element with ID: ${styleId}`);
+  }
+  
+  // Clear pruning interval (independent of CSS)
   if (this.pruneInterval) {
     clearInterval(this.pruneInterval);
+    console.log('Cleared cache pruning interval');
   }
       
-  // Clear all caches
-  this.cache.userData.clear();
-  this.cache.mediaData.clear();
-  this.cache.searchResults.clear();
-      
-    }
+  // Clear all caches (independent of CSS)
+  if (this.cache) {
+    this.cache.userData.clear();
+    this.cache.mediaData.clear();
+    this.cache.searchResults.clear();
+    console.log('Cleared all caches');
   }
+
+  // Clear request queue if it exists
+  if (this.requestQueue && typeof this.requestQueue.clear === 'function') {
+    this.requestQueue.clear();
+    console.log('Cleared request queue');
+  }
+}
 } 
 
 export default ZoroPlugin;

@@ -13,7 +13,7 @@ export async function fetchZoroData(config) {
     cacheType = 'userData'; // Default for lists
   }
 
-  const cached = this.getFromCache(cacheType, cacheKey);
+  const cached = getFromCache.bind(this)(cacheType, cacheKey);
   if (cached) return cached;
 
     if (cached && Date.now() - cached.timestamp < this.cacheTimeout) {

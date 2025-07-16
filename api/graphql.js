@@ -290,4 +290,3 @@ export function getZoroUrl(mediaId, mediaType = 'ANIME') {
 
     return `https://anilist.co/${urlType}/${mediaId}`;
   }
-

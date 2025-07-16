@@ -11,7 +11,7 @@ import {
 // Settings
 import { DEFAULT_SETTINGS } from './settings/defaultSettings.js';
 import { ZoroSettingTab } from './settings/settingsTab.js';
-import { validateSettings } from './settings/helpers.js';
+import { validateSettings, saveSettings, loadSettings } from './settings/helpers.js';
 import { createSampleNotes } from './utils/sampleNotes.js';
 
 // Utils 
@@ -38,7 +38,7 @@ import { createAddModal, createEditModal, createAuthenticationPrompt, ClientIdMo
   import { renderSearchInterface, renderSearchResults, handleAddClick } from './ui/searchInterface.js';
   
   // UI: helpers
-  import { handleEditClick, renderError, fetchData, renderZoroData, processZoroSearchCodeBlock } from './ui/helpers.js';
+  import { handleEditClick, renderError, fetchData, renderZoroData, processZoroSearchCodeBlock, injectCSS, processZoroCodeBlock, processInlineLinks } from './ui/helpers.js';
   
 // Parsers 
 import { parseCodeBlockConfig, parseSearchCodeBlockConfig } from './parsers/parseCodeBlock.js';
@@ -64,118 +64,12 @@ class ZoroPlugin extends Plugin {
   this.pruneInterval = setInterval(() => pruneCache(this.cache), this.cacheTimeout);
   }
   
-async saveSettings() {
-    try {
-      const validSettings = this.validateSettings(this.settings);
-      await this.saveData(validSettings);
-      console.log('[Zoro] Settings saved successfully.');
-    } catch (err) {
-      console.error('[Zoro] Failed to save settings:', err);
-      new Notice('⚠️ Failed to save settings. See console for details.');
-    }
-  }
 
 
-async loadSettings() {
-    const saved = await this.loadData() || {};
-    const merged = Object.assign({}, DEFAULT_SETTINGS, saved);
-    this.settings = this.validateSettings(merged);
-   
-   // no secret saved...
-   if (!this.settings.clientSecret) {
-    const secret = await this.promptForSecret("Paste your client secret:");
-    this.settings.clientSecret = secret.trim();
-    await this.saveData(this.settings);
-  }}
+
+
   
-  injectCSS() {
-  const styleId = 'zoro-plugin-styles';
-  const existingStyle = document.getElementById(styleId);
-  if (existingStyle) existingStyle.remove();
-  
-  const css = `
-    .zoro-container { /* styles */ }
-    /* add all necessary styles here */
-  `;
-  
-  const style = document.createElement('style');
-  style.id = styleId;
-  style.textContent = css;
-  document.head.appendChild(style);
-}
 
-async processZoroCodeBlock(source, el, ctx) {
-    try {
-      const config = this.parseCodeBlockConfig(source) || {};
-
-      // Debug: Log raw config
-      console.log('[Zoro] Code block config:', config);
-
-      // Handle authenticated user resolution
-      if (config.useAuthenticatedUser) {
-        const authUsername = await this.getAuthenticatedUsername();
-        if (!authUsername) {
-          throw new Error('❌ Could not retrieve authenticated username. Check your authentication setup or set a username manually.');
-        }
-        config.username = authUsername;
-      }
-
-      if (!config.username) {
-        throw new Error('❌ No username provided. Set `username:` in your code block or enable `useAuthenticatedUser`.');
-      }
-
-      const data = await this.fetchZoroData(config);
-
-      if (!data || (Array.isArray(data) && data.length === 0)) {
-        throw new Error('⚠️ No data returned from Zoro API.');
-      }
-
-      this.renderZoroData(el, data, config);
-    } catch (error) {
-      console.error('[Zoro] Code block processing error:', error);
-      this.renderError(el, error.message || 'Unknown error occurred.');
-    }
-  }
-
-async processInlineLinks(el, ctx) {
-    const inlineLinks = el.querySelectorAll('a[href^="zoro:"]');
-
-    for (const link of inlineLinks) {
-      const href = link.getAttribute('href');
-      
-      // Optional: Show loading shimmer while data loads
-      const placeholder = document.createElement('span');
-      placeholder.textContent = '🔄 Loading Zoro...';
-      link.replaceWith(placeholder);
-
-      try {
-        const config = this.parseInlineLink(href);
-        const data = await this.fetchZoroData(config);
-
-        const container = document.createElement('span');
-        container.className = 'zoro-inline-container';
-        this.renderZoroData(container, data, config);
-
-        placeholder.replaceWith(container);
-
-        // ✅ Cleanup if the block is removed (important for re-render safety)
-        ctx.addChild({
-          unload: () => {
-            container.remove();
-          }
-        });
-
-      } catch (error) {
-        console.warn(`[Zoro] Inline link failed for ${href}:`, error);
-
-        const errorEl = document.createElement('span');
-        errorEl.className = 'zoro-inline-error';
-        errorEl.textContent = `⚠️ ${error.message || 'Failed to load data'}`;
-
-        placeholder.replaceWith(errorEl);
-      }
-    }
-  }
 
   async onload() {
     console.log('[Zoro] Plugin loading...');

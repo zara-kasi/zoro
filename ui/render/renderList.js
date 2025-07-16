@@ -85,7 +85,7 @@ export function  createMediaCard(entry, config) {
 
     if (this.settings.accessToken) {
       status.title = 'Click to edit';
-      status.onclick = e => this.handleEditClick(e, entry, status);
+      status.onclick = e => handleEditClick.bind(this)(e, entry, status);
     } else {
       status.title = 'Click to authenticate';
       status.onclick = e => {
@@ -176,7 +176,7 @@ export function  createMediaCard(entry, config) {
 
       if (this.settings.accessToken) {
         status.title = 'Click to edit';
-        status.onclick = (e) => this.handleEditClick(e, entry, status);
+        status.onclick = (e) => handleEditClick.bind(this)(e, entry, status);
       } else {
         status.title = 'Click to authenticate';
         status.onclick = (e) => {

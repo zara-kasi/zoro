@@ -11,7 +11,7 @@ import {
 // Settings
 import { DEFAULT_SETTINGS } from './settings/defaultSettings.js';
 import { ZoroSettingTab } from './settings/settingsTab.js';
-import { validateSettings, saveSettings, loadSettings } from './settings/helpers.js';
+import { validateSettings } from './settings/helpers.js';
 import { createSampleNotes } from './utils/sampleNotes.js';
 
 // Utils 
@@ -65,6 +65,30 @@ class ZoroPlugin extends Plugin {
   // periodic pruning
   this.pruneInterval = setInterval(() => pruneCache(this.cache), this.cacheTimeout);
   }
+  
+async saveSettings() {
+    try {
+      const validSettings = this.validateSettings(this.settings);
+      await this.saveData(validSettings);
+      console.log('[Zoro] Settings saved successfully.');
+    } catch (err) {
+      console.error('[Zoro] Failed to save settings:', err);
+      new Notice('⚠️ Failed to save settings. See console for details.');
+    }
+  }
+
+
+async loadSettings() {
+    const saved = await this.loadData() || {};
+    const merged = Object.assign({}, DEFAULT_SETTINGS, saved);
+    this.settings = this.validateSettings(merged);
+   
+   // no secret saved...
+   if (!this.settings.clientSecret) {
+    const secret = await this.promptForSecret("Paste your client secret:");
+    this.settings.clientSecret = secret.trim();
+    await this.saveData(this.settings);
+  }}
 
   async onload() {
     console.log('[Zoro] Plugin loading...');

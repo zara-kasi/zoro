@@ -141,7 +141,7 @@ export async function processZoroCodeBlock(source, el, ctx) {
 
       // Handle authenticated user resolution
       if (config.useAuthenticatedUser) {
-        const authUsername = await this.getAuthenticatedUsername();
+        const authUsername = await getAuthenticatedUsername.bind(this)();
         if (!authUsername) {
           throw new Error('❌ Could not retrieve authenticated username. Check your authentication setup or set a username manually.');
         }

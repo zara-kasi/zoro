@@ -44,7 +44,7 @@ export async function updateMediaListEntry(mediaId, updates) {
     }
 
     // Targeted cache clearing instead of full clear
-    this.clearCacheForMedia(mediaId);
+    clearCacheForMedia.bind(this)(mediaId);
     
     return result.data.SaveMediaListEntry;
 

@@ -84,18 +84,18 @@ class ZoroPlugin extends Plugin {
 
     // Inject custom CSS
     try {
-      this.injectCSS();
+      injectCSS.bind(this)();
       console.log('[Zoro] CSS injected.');
     } catch (err) {
       console.error('[Zoro] Failed to inject CSS:', err);
     }
 
     // Register Markdown code block processors
-    this.registerMarkdownCodeBlockProcessor('zoro', this.processZoroCodeBlock.bind(this));
-    this.registerMarkdownCodeBlockProcessor('zoro-search', this.processZoroSearchCodeBlock.bind(this));
+    this.registerMarkdownCodeBlockProcessor('zoro', processZoroCodeBlock.bind(this).bind(this));
+    this.registerMarkdownCodeBlockProcessor('zoro-search', processZoroSearchCodeBlock.bind(this).bind(this));
 
     // Process inline links
-    this.registerMarkdownPostProcessor(this.processInlineLinks.bind(this));
+    this.registerMarkdownPostProcessor(processInlineLinks.bind(this).bind(this));
 
     // Add plugin settings tab
     this.addSettingTab(new ZoroSettingTab(this.app, this));

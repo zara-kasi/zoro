@@ -59,7 +59,7 @@ class ZoroPlugin extends Plugin {
     mediaData: new Map(),    // Individual media items
     searchResults: new Map() // Search queries
   };
-    this.requestQueue = RequestQueue();
+    this.requestQueue = new RequestQueue();
     this.cacheTimeout = 5 * 60 * 1000;
 
   // periodic pruning

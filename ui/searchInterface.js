@@ -40,7 +40,7 @@ export function renderSearchInterface(el, config) {
           perPage: 20
         };
         
-        const data = await this.fetchZoroData(searchConfig);
+        const data = await fetchZoroData.bind(this)(searchConfig);
         this.renderSearchResults(resultsDiv, data.Page.media, config);
         
       } catch (error) {

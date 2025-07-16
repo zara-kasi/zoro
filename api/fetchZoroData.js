@@ -98,7 +98,7 @@ if (this.settings.accessToken) {
       }
 
        // Save to cache
-  this.setToCache(cacheType, cacheKey, result.data);
+  setToCache.bind(this)(cacheType, cacheKey, result.data);
   return result.data;
     
 

@@ -168,7 +168,7 @@ export function renderSearchResults(el, media, config) {
     
     // Check if item is already in list and update button accordingly
     if (this.settings.accessToken) {
-      this.checkIfMediaInList(item.id, config.mediaType).then(inList => {
+      checkIfMediaInList.bind(this)(item.id, config.mediaType).then(inList => {
         if (inList) {
           addButton.textContent = 'IN LIST';
           addButton.style.backgroundColor = '#999';

@@ -210,7 +210,7 @@ export function handleAddClick(e, mediaItem, mediaType, buttonEl) {
         buttonEl.style.backgroundColor = '#ff9800';
         buttonEl.disabled = true;
         
-        await this.addMediaToList(mediaItem.id, updates, mediaType);
+        await addMediaToList.bind(this)(mediaItem.id, updates, mediaType);
         
         buttonEl.textContent = 'IN LIST';
         buttonEl.style.backgroundColor = '#999';

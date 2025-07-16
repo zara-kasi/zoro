@@ -99,7 +99,7 @@ export async function exchangeCodeForToken(code, redirectUri) {
         this.settings.tokenExpiry = Date.now() + (data.expires_in * 1000);
       }
 
-      await this.saveSettings();
+      await saveSettings.bind(this)();
 
       new Notice('✅ Successfully authenticated with the service!', 4000);
 
@@ -223,7 +223,7 @@ export async function getAuthenticatedUsername() {
     }
 
     this.settings.authUsername = data.data.Viewer.name;
-    await this.saveSettings();
+    await saveSettings.bind(this)();
 
     return data.data.Viewer.name;
 

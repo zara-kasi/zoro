@@ -20,7 +20,7 @@ export async function authenticateUser() {
       new Notice('🔐 Opening authentication page...', 3000);
 
   
- window.addEventListener('message', this.handleAuthMessage.bind(this));
+ window.addEventListener('message', handleAuthMessage.bind(this));
       
       
       if (window.require) {

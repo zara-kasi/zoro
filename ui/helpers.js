@@ -24,22 +24,6 @@ export function handleEditClick(e, entry, statusEl) {
     );
   }
 
-export function injectCSS() {
-  const styleId = 'zoro-plugin-styles';
-  const existingStyle = document.getElementById(styleId);
-  if (existingStyle) existingStyle.remove();
-  
-  const css = `
-    .zoro-container { /* styles */ }
-    /* add all necessary styles here */
-  `;
-  
-  const style = document.createElement('style');
-  style.id = styleId;
-  style.textContent = css;
-  document.head.appendChild(style);
-}
-
 export function renderError(el, message, context = '', onRetry = null) {
     el.empty?.(); // clear if Obsidian's `el` object has `.empty()` method
     el.classList.add('zoro-error-container');

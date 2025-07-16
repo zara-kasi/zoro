@@ -78,7 +78,7 @@ export async function addMediaToList(mediaId, updates, mediaType) {
   }
   
 
-  return await this.updateMediaListEntry(mediaId, updates);
+  return await updateMediaListEntry.bind(this)(mediaId, updates);
 }
 
 

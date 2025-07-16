@@ -48,4 +48,3 @@ export function parseCodeBlockConfig(source) {
     
     return config;
   }
-

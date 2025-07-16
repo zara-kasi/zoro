@@ -1,4 +1,4 @@
-// Function to get appropriate grid columns based on screen size
+  // Function to get appropriate grid columns based on screen size
 function getDefaultGridColumns() {
   // Check if we're in a browser environment (Obsidian desktop/mobile)
   if (typeof window !== 'undefined') {

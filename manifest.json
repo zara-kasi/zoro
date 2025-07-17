@@ -1,11 +1,10 @@
 {
   "id": "zoro",
   "name": "Zoro",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "minAppVersion": "0.15.0",
-  "description": "Zoro brings AniList anime and manga integration to Obsidian with inline links, code blocks, and clean visual embeds.",
-  "author": "zara-kasi",
+  "description": "Just enter a username to view  public AniList data — profile, lists, stats, and more. Authenticate only if you want to edit your list or access private info.",
+  "author": "Zarakasi",
   "authorUrl": "https://github.com/zara-kasi",
-  "fundingUrl": "",
   "isDesktopOnly": false
 }

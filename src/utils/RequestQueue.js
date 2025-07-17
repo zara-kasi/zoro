@@ -1,7 +1,7 @@
-export default class RequestQueue {
-  constructor() {
+class RequestQueue {
+  constructor(delay = 700) {
     this.queue = [];
-    this.delay = 700; // ~85 req/min
+    this.delay = delay;
     this.isProcessing = false;
   }
 
@@ -17,8 +17,7 @@ export default class RequestQueue {
     this.isProcessing = true;
     const { requestFn, resolve } = this.queue.shift();
     try {
-      const result = await requestFn();
-      resolve(result);
+      resolve(await requestFn());
     } finally {
       setTimeout(() => {
         this.isProcessing = false;
@@ -27,3 +26,5 @@ export default class RequestQueue {
     }
   }
 }
+
+module.exports.RequestQueue = RequestQueue;

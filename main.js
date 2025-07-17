@@ -298,13 +298,7 @@ setToCache(type, key, value) {
 
       // Store auth details
       this.settings.accessToken = data.access_token;
-
-      // Refresh Token 
       
-      if (data.refresh_token) {
-        this.settings.refreshToken = data.refresh_token;
-      }
-
       if (data.expires_in) {
         this.settings.tokenExpiry = Date.now() + (data.expires_in * 1000);
       }
@@ -327,88 +321,11 @@ setToCache(type, key, value) {
     }
   }
 
-  // Refresh Token
 
-  async refreshToken() {
-  if (!this.settings.refreshToken) {
-    throw new Error('No refresh token available');
-  }
-
-  try {
-    const body = new URLSearchParams({
-      grant_type: 'refresh_token',
-      refresh_token: this.settings.refreshToken,
-      client_id: this.settings.clientId,
-      client_secret: this.settings.clientSecret || '',
-    });
-
-    const headers = {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Accept': 'application/json',
-    };
-
-    const response = await this.requestQueue.add(() => requestUrl({
-      url: 'https://anilist.co/api/v2/oauth/token',
-      method: 'POST',
-      headers,
-      body: body.toString(),
-    }));
-
-    const data = response?.json;
-
-    if (!data?.access_token) {
-      throw new Error(data?.error_description || 'Invalid token response');
-    }
-
-    this.settings.accessToken = data.access_token;
-
-    if (data.refresh_token) {
-      this.settings.refreshToken = data.refresh_token;
-    }
-
-    if (data.expires_in) {
-      this.settings.tokenExpiry = Date.now() + data.expires_in * 1000;
-    }
-
-    await this.saveSettings();
-    return true;
-
-  } catch (error) {
-    console.error('[Zoro] Token refresh failed:', error);
-    this.settings.accessToken = '';
-    this.settings.refreshToken = '';
-    await this.saveSettings();
-    throw new Error('Token refresh failed. Please re-authenticate.');
-  }
+  // Token Validation 
+async ensureValidToken() {
+  return !!this.settings.accessToken;
 }
-
-
-  // Refresh Token Validation 
-  async ensureValidToken() {
-  if (!this.settings.accessToken) return false;
-  
-  // Check if token is expired or near expiration (5 minute buffer)
-  const isExpired = this.settings.tokenExpiry 
-    && (Date.now() + 300000) >= this.settings.tokenExpiry;
-  
-  if (isExpired) {
-    try {
-      await this.refreshToken();
-      new Notice('🔁 Token refreshed successfully');
-      return true;
-    } catch (error) {
-      new Notice('⚠️ Token refresh failed: ' + error.message);
-      return false;
-    }
-  }
-  return true;
-  }
-
-  // Token Expiry 
-  isTokenExpired() {
-    const expiry = this.settings.tokenExpiry;
-    return !expiry || Date.now() >= expiry;
-  }
 
   
   // Make Obsidian Request 
@@ -586,10 +503,10 @@ if (this.settings.accessToken) {
         search: config.search,
         type: config.mediaType,
         page: config.page || 1,
-        perPage: config.perPage || 20
+        perPage: config.perPage || 5 
       };
     } else {
-      query = this.getMediaListQuery();
+      query = this.getMediaListQuery(config.layout);
       variables = {
         username: config.username,
         status: config.listType,
@@ -985,6 +902,9 @@ config.search = '';
         format
         averageScore
         status
+        genres
+        episodes
+        chapters
       `,
       full: `
         id
@@ -1067,6 +987,9 @@ config.search = '';
         format
         averageScore
         status
+        genres
+        episodes
+        chapters
       `,
       full: `
         id
@@ -1186,6 +1109,9 @@ config.search = '';
         format
         averageScore
         status
+        genres
+        episodes
+        chapters
       `,
       full: `
         id
@@ -1291,11 +1217,14 @@ config.search = '';
         const searchConfig = { ...config,
           search: searchTerm,
           page: 1,
-          perPage: 20
+          perPage: 5 
         };
         
         const data = await this.fetchZoroData(searchConfig);
-        this.renderSearchResults(resultsDiv, data.Page.media, config);
+        
+this.renderSearchResults(resultsDiv, data.Page.media, config);
+
+
         
       } catch (error) {
         this.renderError(resultsDiv, error.message);
@@ -1404,27 +1333,61 @@ renderSearchResults(el, media, config) {
     statusBadge.textContent = item.status;
     detailsDiv.appendChild(statusBadge);
     
-    // ADD button - styled like status badges but with different functionality
-    const addButton = document.createElement('span');
-    addButton.className = 'status-badge status-planning clickable-status add-to-list-btn';
-    addButton.textContent = 'ADD';
-    addButton.style.cursor = 'pointer';
-    addButton.style.backgroundColor = '#4CAF50';
-    addButton.style.color = 'white';
+    // ADD button
     
-    if (this.settings.accessToken) {
-      addButton.title = 'Click to add to your list';
-      addButton.onclick = (e) => this.handleAddClick(e, item, config.mediaType, addButton);
-    } else {
-      addButton.title = 'Click to authenticate';
-      addButton.onclick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this.createAuthenticationPrompt();
-      };
-    }
+const addBadge = document.createElement('span');
+addBadge.textContent = 'ADD';
+addBadge.className = 'status-badge status-planning clickable-status';
+addBadge.onclick = (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  this.createEditModal(
+    {
+      media: {
+        id: item.id,
+        title: item.title,
+        episodes: item.episodes,
+        chapters: item.chapters,
+        format: item.format,
+      },
+      status: 'PLANNING',
+      score: null,
+      progress: 0,
+    },
+    async (updates) => {
+      addBadge.onclick = async (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  try {
+    badge.textContent = 'Adding…';
+    badge.style.pointerEvents = 'none';
+
+    await this.addMediaToList(item.id, updates, config.mediaType);
+
+    // success
+    badge.className = `status-badge status-${updates.status.toLowerCase()} clickable-status`;
+    badge.textContent = updates.status;
+    badge.onclick = null;
+    new Notice('✅ Added!');
+  } catch (err) {
+    console.error('[Zoro] Add failed:', err);
+    new Notice(`❌ ${err.message}`);
+    badge.textContent = 'ADD';
+    badge.style.pointerEvents = '';
+  }
+};
+
+      addBadge.className = `status-badge status-${updates.status.toLowerCase()} clickable-status`;
+      addBadge.textContent = updates.status;
+      addBadge.onclick = null; // disable after add
+      new Notice('✅ Added!');
+    },
+    () => new Notice('Add cancelled.')
+  );
+};
     
-    detailsDiv.appendChild(addButton);
+    detailsDiv.appendChild(addBadge);
+
     
     // Average score
     if (this.settings.showRatings && item.averageScore) {
@@ -1469,246 +1432,7 @@ renderSearchResults(el, media, config) {
   el.appendChild(gridDiv);
 }
 
-// Handle ADD button click
-handleAddClick(e, mediaItem, mediaType, buttonEl) {
-  e.preventDefault();
-  e.stopPropagation();
-  
-  // Create a mock entry object similar to existing entries
-  const mockEntry = {
-    media: {
-      id: mediaItem.id,
-      title: mediaItem.title,
-      episodes: mediaItem.episodes,
-      chapters: mediaItem.chapters,
-      format: mediaItem.format
-    },
-    status: 'PLANNING', // Default status
-    score: null,
-    progress: 0
-  };
-  
-  this.createAddModal(
-    mockEntry,
-    async (updates) => {
-      try {
-        buttonEl.textContent = 'Adding...';
-        buttonEl.style.backgroundColor = '#ff9800';
-        buttonEl.disabled = true;
-        
-        await this.addMediaToList(mediaItem.id, updates, mediaType);
-        
-        buttonEl.textContent = 'IN LIST';
-        buttonEl.style.backgroundColor = '#999';
-        buttonEl.style.cursor = 'not-allowed';
-        buttonEl.title = 'Already in your list';
-        buttonEl.onclick = null;
-        
-        new Notice('✅ Added to your list!');
-        this.cache.clear();
-      } catch (err) {
-        buttonEl.textContent = 'ADD';
-        buttonEl.style.backgroundColor = '#4CAF50';
-        buttonEl.disabled = false;
-        new Notice(`❌ Failed to add: ${err.message}`);
-      }
-    },
-    () => {
-      new Notice('Add canceled.');
-    }
-  );
-}
 
-// Create Add Modal (similar to edit modal but for adding new items)
-createAddModal(entry, onSave, onCancel) {
-  const modal = document.createElement('div');
-  modal.className = 'zoro-edit-modal';
-
-  const overlay = document.createElement('div');
-  overlay.className = 'zoro-modal-overlay';
-
-  const content = document.createElement('div');
-  content.className = 'zoro-modal-content';
-
-  const form = document.createElement('form');
-  form.onsubmit = async (e) => {
-    e.preventDefault();
-    await trySave();
-  };
-
-  const title = document.createElement('h3');
-  title.textContent = `Add: ${entry.media.title.english || entry.media.title.romaji}`;
-
-  // --- Status Field ---
-  const statusGroup = document.createElement('div');
-  statusGroup.className = 'form-group';
-
-  const statusLabel = document.createElement('label');
-  statusLabel.textContent = 'Status';
-  statusLabel.setAttribute('for', 'zoro-add-status');
-
-  const statusSelect = document.createElement('select');
-  statusSelect.id = 'zoro-add-status';
-
-  ['PLANNING', 'CURRENT', 'COMPLETED', 'DROPPED', 'PAUSED', 'REPEATING'].forEach(status => {
-    const option = document.createElement('option');
-    option.value = status;
-    option.textContent = status;
-    if (status === 'PLANNING') option.selected = true; // Default to PLANNING
-    statusSelect.appendChild(option);
-  });
-
-  statusGroup.appendChild(statusLabel);
-  statusGroup.appendChild(statusSelect);
-
-  // --- Score Field ---
-  const scoreGroup = document.createElement('div');
-  scoreGroup.className = 'form-group';
-
-  const scoreLabel = document.createElement('label');
-  scoreLabel.textContent = 'Score (0–10)';
-  scoreLabel.setAttribute('for', 'zoro-add-score');
-
-  const scoreInput = document.createElement('input');
-  scoreInput.type = 'number';
-  scoreInput.id = 'zoro-add-score';
-  scoreInput.min = '0';
-  scoreInput.max = '10';
-  scoreInput.step = '0.1';
-  scoreInput.value = '';
-  scoreInput.placeholder = 'e.g. 8.5';
-
-  scoreGroup.appendChild(scoreLabel);
-  scoreGroup.appendChild(scoreInput);
-
-  // --- Progress Field ---
-  const progressGroup = document.createElement('div');
-  progressGroup.className = 'form-group';
-
-  const progressLabel = document.createElement('label');
-  progressLabel.textContent = 'Progress';
-  progressLabel.setAttribute('for', 'zoro-add-progress');
-
-  const progressInput = document.createElement('input');
-  progressInput.type = 'number';
-  progressInput.id = 'zoro-add-progress';
-  progressInput.min = '0';
-  progressInput.max = entry.media.episodes || entry.media.chapters || 999;
-  progressInput.value = 0;
-  progressInput.placeholder = 'Progress';
-
-  progressGroup.appendChild(progressLabel);
-  progressGroup.appendChild(progressInput);
-
-  // --- Quick Buttons ---
-  const quickProgressDiv = document.createElement('div');
-  quickProgressDiv.className = 'quick-progress-buttons';
-
-  const plusOneBtn = document.createElement('button');
-  plusOneBtn.type = 'button';
-  plusOneBtn.textContent = '+1';
-  plusOneBtn.onclick = () => {
-    const current = parseInt(progressInput.value) || 0;
-    const max = progressInput.max;
-    if (current < max) progressInput.value = current + 1;
-  };
-
-  const minusOneBtn = document.createElement('button');
-  minusOneBtn.type = 'button';
-  minusOneBtn.textContent = '-1';
-  minusOneBtn.onclick = () => {
-    const current = parseInt(progressInput.value) || 0;
-    if (current > 0) progressInput.value = current - 1;
-  };
-
-  const completeBtn = document.createElement('button');
-  completeBtn.type = 'button';
-  completeBtn.textContent = 'Complete & Add';
-  completeBtn.onclick = () => {
-    progressInput.value = entry.media.episodes || entry.media.chapters || 1;
-    statusSelect.value = 'COMPLETED';
-  };
-
-  quickProgressDiv.append(plusOneBtn, minusOneBtn, completeBtn);
-
-  // --- Buttons ---
-  const buttonContainer = document.createElement('div');
-  buttonContainer.className = 'zoro-modal-buttons';
-
-  const saveBtn = document.createElement('button');
-  saveBtn.textContent = 'Add to List';
-  saveBtn.type = 'submit';
-
-  const cancelBtn = document.createElement('button');
-  cancelBtn.type = 'button';
-  cancelBtn.textContent = 'Cancel';
-  cancelBtn.onclick = () => {
-    onCancel();
-    document.body.removeChild(modal);
-  };
-
-  buttonContainer.append(saveBtn, cancelBtn);
-
-  form.append(title, statusGroup, scoreGroup, progressGroup, quickProgressDiv, buttonContainer);
-  content.appendChild(form);
-  modal.append(overlay, content);
-  document.body.appendChild(modal);
-
-  overlay.onclick = () => {
-    onCancel();
-    document.body.removeChild(modal);
-  };
-
-  // Keyboard accessibility
-  document.addEventListener('keydown', escListener);
-  function escListener(e) {
-    if (e.key === 'Escape') {
-      onCancel();
-      document.body.removeChild(modal);
-      document.removeEventListener('keydown', escListener);
-    }
-    if (e.key === 'Enter' && e.ctrlKey) {
-      trySave();
-    }
-  }
-
-  // Save logic
-  let saving = false;
-  async function trySave() {
-    if (saving) return;
-    saving = true;
-    saveBtn.disabled = true;
-    saveBtn.textContent = 'Adding...';
-
-    const scoreVal = parseFloat(scoreInput.value);
-    if (scoreInput.value && (isNaN(scoreVal) || scoreVal < 0 || scoreVal > 10)) {
-      alert("⚠ Score must be between 0 and 10.");
-      resetSaveBtn();
-      return;
-    }
-
-    try {
-      await onSave({
-        status: statusSelect.value,
-        score: scoreInput.value === '' ? null : scoreVal,
-        progress: parseInt(progressInput.value) || 0
-      });
-      document.body.removeChild(modal);
-      document.removeEventListener('keydown', escListener);
-    } catch (err) {
-      alert(`❌ Failed to add: ${err.message}`);
-    }
-
-    resetSaveBtn();
-  }
-
-  function resetSaveBtn() {
-    saveBtn.disabled = false;
-    saveBtn.textContent = 'Add to List';
-    saving = false;
-  }
-}
-  
 
   
 
@@ -1724,7 +1448,7 @@ createAddModal(entry, onSave, onCancel) {
     } else {
   const entries = data.MediaListCollection.lists.flatMap(list => list.entries);
   if (config.layout === 'table') {
-    this.renderTableLayout(el, entries, config);   // <-- fixed: pass config
+    this.renderTableLayout(el, entries, config);   
   } else {
     this.renderMediaList(el, entries, config);
   }
@@ -2010,7 +1734,10 @@ createAddModal(entry, onSave, onCancel) {
         try {
           await this.updateMediaListEntry(entry.media.id, updates);
           new Notice('✅ Updated!');
-          this.cache.clear();
+ this.cache.userData.clear();
+ this.cache.mediaData.clear();
+ this.cache.searchResults.clear();
+
           const parent = statusEl.closest('.zoro-container');
           if (parent) {
             const block = parent.closest('.markdown-rendered')?.querySelector('code');
@@ -2041,6 +1768,7 @@ createAddModal(entry, onSave, onCancel) {
     const headers = ['Title', 'Format', 'Status'];
     if (this.settings.showProgress) headers.push('Progress');
     if (this.settings.showRatings) headers.push('Score');
+  if (this.settings.showGenres) headers.push('Genres');
 
     headers.forEach(text => {
       const th = document.createElement('th');
@@ -2064,7 +1792,7 @@ createAddModal(entry, onSave, onCancel) {
       const titleCell = document.createElement('td');
       const title = media.title.english || media.title.romaji || 'Untitled';
       const link = document.createElement('a');
-      // RENAMED from getAniListUrl to getZoroUrl
+      
       link.href = this.getZoroUrl(media.id, config.mediaType);
       link.textContent = title;
       link.target = '_blank';
@@ -2101,12 +1829,14 @@ createAddModal(entry, onSave, onCancel) {
       row.appendChild(statusCell);
 
       // --- Progress ---
+            // --- Progress ---
       if (this.settings.showProgress) {
         const progressCell = document.createElement('td');
         const total = media.episodes ?? media.chapters ?? '?';
-        progressCell.textContent = `${entry.progress}/${total}`;
+        progressCell.textContent = `${entry.progress ?? 0}/${total}`;
         row.appendChild(progressCell);
       }
+
 
       // --- Score ---
       if (this.settings.showRatings) {
@@ -2114,9 +1844,16 @@ createAddModal(entry, onSave, onCancel) {
         scoreCell.textContent = entry.score != null ? `★ ${entry.score}` : '-';
         row.appendChild(scoreCell);
       }
+      // --- Genres ---
+      if (this.settings.showGenres) {
+        const genreCell = document.createElement('td');
+        genreCell.textContent = (media.genres || []).slice(0, 3).join(', ') || '-';
+        row.appendChild(genreCell);
+      }
 
       tbody.appendChild(row);
     });
+
 
     table.appendChild(tbody);
     el.appendChild(table);
@@ -2653,7 +2390,122 @@ type: stats
     el.appendChild(wrapper);
   }
   
+// Export 
+async exportUnifiedListsToCSV() {
+  // decide which username to use
+  let username = this.settings.authUsername;
+  if (!username) username = this.settings.defaultUsername;
+  if (!username) {
+    new Notice('Set a default username in settings first.', 4000);
+    return;
+  }
 
+  const useAuth = !!this.settings.accessToken;
+  const query = `
+    query ($userName: String) {
+      MediaListCollection(userName: $userName, type: ANIME) {
+        lists {
+          name
+          entries {
+            status progress score(format: POINT_10_DECIMAL) repeat
+            startedAt { year month day } completedAt { year month day }
+            media {
+              id type format
+              title { romaji english native }
+              episodes chapters volumes
+              startDate { year month day } endDate { year month day }
+              averageScore genres
+              studios(isMain: true) { nodes { name } }
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  new Notice(`${useAuth ? '📥 Full' : '📥 Public'} export started…`, 4000);
+
+  const fetchType = async type => {
+    const headers = { 'Content-Type': 'application/json' };
+    if (useAuth) {
+      await this.ensureValidToken();
+      headers['Authorization'] = `Bearer ${this.settings.accessToken}`;
+    }
+
+    const res = await this.requestQueue.add(() =>
+      requestUrl({
+        url: 'https://graphql.anilist.co',
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          query: query.replace('type: ANIME', `type: ${type}`),
+          variables: { userName: username }
+        })
+      })
+    );
+    return res.json.data?.MediaListCollection?.lists || [];
+  };
+
+  const [animeLists, mangaLists] = await Promise.all([fetchType('ANIME'), fetchType('MANGA')]);
+  const lists = [...animeLists, ...mangaLists];
+
+  if (!lists.flatMap(l => l.entries).length) {
+    new Notice('No lists found (private or empty).', 4000);
+    return;
+  }
+
+  const rows = [];
+  const headers = [
+    'ListName', 'Status', 'Progress', 'Score', 'Repeat',
+    'StartedAt', 'CompletedAt', 'MediaID', 'Type', 'Format',
+    'TitleRomaji', 'TitleEnglish', 'TitleNative',
+    'Episodes', 'Chapters', 'Volumes',
+    'MediaStart', 'MediaEnd', 'AverageScore', 'Genres', 'MainStudio', 'URL'
+  ];
+  rows.push(headers.join(','));
+
+  for (const list of lists) {
+    for (const e of list.entries) {
+      const m = e.media;
+      const row = [
+        list.name, e.status, e.progress ?? 0, e.score ?? '', e.repeat ?? 0,
+        this.dateToString(e.startedAt), this.dateToString(e.completedAt),
+        m.id, m.type, m.format,
+        this.csvEscape(m.title.romaji), this.csvEscape(m.title.english), this.csvEscape(m.title.native),
+        m.episodes ?? '', m.chapters ?? '', m.volumes ?? '',
+        this.dateToString(m.startDate), this.dateToString(m.endDate),
+        m.averageScore ?? '', this.csvEscape((m.genres || []).join(';')),
+        this.csvEscape(m.studios?.nodes?.[0]?.name || ''),
+        this.csvEscape(this.getZoroUrl(m.id, m.type))
+      ];
+      rows.push(row.join(','));
+    }
+  }
+
+  const csv = rows.join('\n');
+  const suffix = useAuth ? '' : '_PUBLIC';
+  
+      const folder = 'Zoro exports';               // any vault-relative folder
+    await this.app.vault.createFolder(folder).catch(() => {}); // create if missing
+    const fileName = `${folder}/AniList_${username}${suffix}_${new Date().toISOString().slice(0, 10)}.csv`;
+  await this.app.vault.create(fileName, csv);
+  new Notice(`✅ CSV saved to vault: ${fileName}`, 4000);
+  await this.app.workspace.openLinkText(fileName, '', false);
+}
+
+
+  dateToString(dateObj) {
+    if (!dateObj || !dateObj.year) return '';
+    return `${dateObj.year}-${String(dateObj.month || 0).padStart(2, '0')}-${String(dateObj.day || 0).padStart(2, '0')}`;
+  }
+
+  csvEscape(str = '') {
+    if (typeof str !== 'string') str = String(str);
+    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  }
  
   // Plugin unload method
   onunload() {
@@ -2915,6 +2767,8 @@ authSetting.addButton(button => {
   });
 });
 
+
+
     new Setting(containerEl)
       .setName('🧊 Layout')
       .setDesc('Choose the default layout for media lists')
@@ -2989,6 +2843,23 @@ authSetting.addButton(button => {
         .onClick(() => {
           window.open('https://github.com/zara-kasi/zoro/blob/main/README.md', '_blank');
         }));
+        
+/* ---- Unified Export button (always shown) ---- */
+new Setting(containerEl)
+  .setName('📤 Export Lists to CSV')
+  .setDesc('Downloads your lists (full if authenticated, public otherwise).')
+  .addButton(btn => btn
+    .setButtonText('Export Now')
+    .setClass('mod-cta')
+    .onClick(async () => {
+      try {
+        await this.plugin.exportUnifiedListsToCSV();
+      } catch (err) {
+        new Notice(`❌ Export failed: ${err.message}`, 6000);
+      }
+    })
+  );
+
   }
   //  Dynamic Update of Auth button
 updateAuthButton() {
@@ -3013,6 +2884,7 @@ updateAuthButton() {
     this.authButton.setButtonText(`✅  Acccount Connected`);
     this.authButton.setCta();
   }
+  
 }
 
 async handleAuthButtonClick() {
@@ -3044,6 +2916,9 @@ async handleAuthButtonClick() {
 }
 
 }
+
+
+
 
 module.exports = {
   default: ZoroPlugin,

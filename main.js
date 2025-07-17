@@ -1722,13 +1722,14 @@ createAddModal(entry, onSave, onCancel) {
     } else if (config.type === 'single') {
       this.renderSingleMedia(el, data.MediaList, config);
     } else {
-      const entries = data.MediaListCollection.lists.flatMap(list => list.entries);
-      if (config.layout === 'table') {
-        this.renderTableLayout(el, entries);
-      } else {
-        this.renderMediaList(el, entries, config);
-      }
-    }
+  const entries = data.MediaListCollection.lists.flatMap(list => list.entries);
+  if (config.layout === 'table') {
+    this.renderTableLayout(el, entries, config);   // <-- fixed: pass config
+  } else {
+    this.renderMediaList(el, entries, config);
+  }
+}
+
   }
 
   // Render User's Stats (Need some fixes)

@@ -215,7 +215,8 @@ setToCache(type, key, value) {
       defaultUsername: typeof settings?.defaultUsername === 'string' ? settings.defaultUsername : '',
       defaultLayout: ['card', 'list'].includes(settings?.defaultLayout) ? settings.defaultLayout : 'card',
       gridColumns: Number.isInteger(settings?.gridColumns) ? settings.gridColumns : 3,
-      defaultSortField:  (typeof settings?.defaultSortField === 'string' && SORT_FIELDS[settings.defaultSortField]) ? settings.defaultSortField : '',
+   defaultSortField: (typeof settings?.defaultSortField === 'string' && (settings.defaultSortField === '' || SORT_FIELDS[settings.defaultSortField])) ? settings.defaultSortField : '',
+
       defaultSortDir:    ['asc','desc',''].includes(settings?.defaultSortDir) ? settings.defaultSortDir : '',
       showCoverImages: !!settings?.showCoverImages,
       showRatings: !!settings?.showRatings,
@@ -2900,7 +2901,7 @@ new Setting(UI)
   .setName('Sort direction')
   .addDropdown(drop =>
     drop
-      .addOption('', '— API Default —')
+      .addOption('', 'Default')
       .addOption('asc', 'Ascending ↑')
       .addOption('desc', 'Descending ↓')
       .setValue(this.plugin.settings.defaultSortDir)          // ← already validated

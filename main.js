@@ -2,9 +2,10 @@ const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal } = require
 
 // Default settings constant ok
 const DEFAULT_SETTINGS = {
-  sampleNotesCreated: false,
   defaultUsername: '',
   defaultLayout: 'card',
+  defaultSortField: '',
+  defaultSortDir:   '', 
   showCoverImages: true,
   showRatings: true,
   showProgress: true,
@@ -15,6 +16,50 @@ const DEFAULT_SETTINGS = {
   redirectUri: 'https://anilist.co/api/v2/oauth/pin',
   accessToken: '',
 };
+
+// Sort Engine 
+// 1-A  fields + labels
+const SORT_FIELDS = {
+  title:        { label: 'Title' },
+  startDate:    { label: 'Release Date' },
+  completedAt:  { label: 'Completed At' },
+  updatedAt:    { label: 'Recently Updated' },
+  score:        { label: 'User Score' },
+  popularity:   { label: 'Popularity' },
+  trending:     { label: 'Trending' },
+  favourites:   { label: 'Favorites' }
+};
+
+// 1-B  stable pure sort
+  function sortEntries(entries, { field = '', dir = '' } = {}) {
+  if (!field) return entries;
+  const d = dir === 'desc' ? -1 : 1;
+
+  const key = (e) => {
+    const m = e.media || e;
+    switch (field) {
+      case 'title':       return (m.title?.english || m.title?.romaji || '').toLowerCase();
+      case 'startDate':   return m.startDate?.year || 0;
+      case 'completedAt': return e.completedAt?.year || 0;
+      case 'updatedAt':   return e.updatedAt || 0;
+      case 'score':       return e.score ?? -1;
+      case 'popularity':  return m.popularity ?? 0;
+      case 'trending':    return m.trending ?? 0;
+      case 'favourites':  return m.favourites ?? 0;
+      default:            return m.id || 0;
+    }
+  };
+  return [...entries].sort((a, b) => {
+    const ka = key(a), kb = key(b);
+    if (ka < kb) return -d;
+    if (ka > kb) return  d;
+    const ta = (a.media?.title?.english || a.media?.title?.romaji || '').toLowerCase();
+    const tb = (b.media?.title?.english || b.media?.title?.romaji || '').toLowerCase();
+    if (ta < tb) return -1;
+    if (ta > tb) return  1;
+    return (a.media?.id || 0) - (b.media?.id || 0);
+  });
+}
 
   // Rate limit 
 class RequestQueue {
@@ -160,7 +205,7 @@ setToCache(type, key, value) {
     this.addSettingTab(new ZoroSettingTab(this.app, this));
 
     console.log('[Zoro] Plugin loaded successfully.');
-this.detectSampleNotesIfNeeded(); // Help detect sample note
+
 
   }
   
@@ -169,11 +214,13 @@ this.detectSampleNotesIfNeeded(); // Help detect sample note
     return {
       defaultUsername: typeof settings?.defaultUsername === 'string' ? settings.defaultUsername : '',
       defaultLayout: ['card', 'list'].includes(settings?.defaultLayout) ? settings.defaultLayout : 'card',
+      gridColumns: Number.isInteger(settings?.gridColumns) ? settings.gridColumns : 3,
+      defaultSortField:  (typeof settings?.defaultSortField === 'string' && SORT_FIELDS[settings.defaultSortField]) ? settings.defaultSortField : '',
+      defaultSortDir:    ['asc','desc',''].includes(settings?.defaultSortDir) ? settings.defaultSortDir : '',
       showCoverImages: !!settings?.showCoverImages,
       showRatings: !!settings?.showRatings,
       showProgress: !!settings?.showProgress,
       showGenres: !!settings?.showGenres,
-      gridColumns: Number.isInteger(settings?.gridColumns) ? settings.gridColumns : 3,
       clientId: typeof settings?.clientId === 'string' ? settings.clientId : '',
       clientSecret: typeof settings?.clientSecret === 'string' ? settings.clientSecret : '',
       redirectUri: typeof settings?.redirectUri === 'string' ? settings.redirectUri : DEFAULT_SETTINGS.redirectUri,
@@ -636,12 +683,13 @@ async fetchData(config) {
     `;
 
     // Filter out undefined values
-    const variables = {
-      mediaId,
-      ...(updates.status !== undefined && { status: updates.status }),
-      ...(updates.score !== undefined && { score: updates.score }),
-      ...(updates.progress !== undefined && { progress: updates.progress }),
-    };
+const variables = {
+  mediaId,
+  ...(updates.status !== undefined && { status: updates.status }),
+  ...(updates.score !== undefined && updates.score !== null && { score: updates.score }),
+  ...(updates.progress !== undefined && { progress: updates.progress }),
+};
+
 
     
 // Rate Limit  add
@@ -747,6 +795,17 @@ config.search = '';
     config.layout = config.layout || this.settings.defaultLayout;
     config.mediaType = config.mediaType || 'ANIME';
     
+    const sortRaw = (config.sort || '').trim().toLowerCase();
+const [field = this.plugin.settings.defaultSortField,
+       dir   = this.plugin.settings.defaultSortDir] =
+  sortRaw === '' ? ['', ''] :             // ← respect empty override
+  sortRaw.includes('-')
+    ? [sortRaw.split('-')[0], 'desc']
+    : [sortRaw, 'asc'];
+config.sortOptions = { field, dir };
+
+
+    
     return config;
   }
 
@@ -768,6 +827,15 @@ config.search = '';
     // Default to ANIME if no mediaType specified
     config.mediaType = config.mediaType || 'ANIME';
     config.layout = config.layout || this.settings.defaultLayout;
+    
+    const sortRaw = (config.sort || '').trim().toLowerCase();
+const [field = this.plugin.settings.defaultSortField,
+       dir   = this.plugin.settings.defaultSortDir] =
+  sortRaw.includes('-')
+    ? [sortRaw.split('-')[0], 'desc']
+    : [sortRaw, 'asc'];
+config.sortOptions = { field, dir };
+
     
     return config;
   }
@@ -1286,11 +1354,12 @@ renderSearchResults(el, media, config) {
     return;
   }
   
+  const sorted = sortEntries(media, config.sortOptions);
   const gridDiv = document.createElement('div');
   gridDiv.className = 'zoro-cards-grid';
   gridDiv.style.setProperty('--zoro-grid-columns', this.settings.gridColumns);
   
-  media.forEach(async (item) => {
+  sorted.forEach(async (item) => {
     const title = item.title.english || item.title.romaji;
     
     const cardDiv = document.createElement('div');
@@ -1341,54 +1410,27 @@ renderSearchResults(el, media, config) {
 const addBadge = document.createElement('span');
 addBadge.textContent = 'ADD';
 addBadge.className = 'status-badge status-planning clickable-status';
-addBadge.onclick = (e) => {
+
+addBadge.onclick = async (e) => {
   e.preventDefault();
   e.stopPropagation();
-  this.createEditModal(
-    {
-      media: {
-        id: item.id,
-        title: item.title,
-        episodes: item.episodes,
-        chapters: item.chapters,
-        format: item.format,
-      },
-      status: 'PLANNING',
-      score: null,
-      progress: 0,
-    },
-    async (updates) => {
-      addBadge.onclick = async (e) => {
-  e.preventDefault();
-  e.stopPropagation();
+
+  addBadge.textContent = 'Adding…';
+  addBadge.style.pointerEvents = 'none';
+
   try {
-    badge.textContent = 'Adding…';
-    badge.style.pointerEvents = 'none';
-
-    await this.addMediaToList(item.id, updates, config.mediaType);
-
-    // success
-    badge.className = `status-badge status-${updates.status.toLowerCase()} clickable-status`;
-    badge.textContent = updates.status;
-    badge.onclick = null;
+    await this.addMediaToList(item.id, { status: 'PLANNING', progress: 0 }, config.mediaType);
+    addBadge.className = `status-badge status-planning`;
+    addBadge.textContent = 'PLANNING';
+    addBadge.onclick = null;
     new Notice('✅ Added!');
   } catch (err) {
-    console.error('[Zoro] Add failed:', err);
     new Notice(`❌ ${err.message}`);
-    badge.textContent = 'ADD';
-    badge.style.pointerEvents = '';
+    addBadge.textContent = 'ADD';
+    addBadge.style.pointerEvents = '';
   }
 };
 
-      addBadge.className = `status-badge status-${updates.status.toLowerCase()} clickable-status`;
-      addBadge.textContent = updates.status;
-      addBadge.onclick = null; // disable after add
-      new Notice('✅ Added!');
-    },
-    () => new Notice('Add cancelled.')
-  );
-};
-    
     detailsDiv.appendChild(addBadge);
 
     
@@ -1608,15 +1650,15 @@ addBadge.onclick = (e) => {
   
   // Render Media Lists
   renderMediaList(el, entries, config) {
+    const sorted = sortEntries(entries, config.sortOptions);
     const gridDiv = document.createElement('div');
     gridDiv.className = 'zoro-cards-grid';
     gridDiv.style.setProperty('--zoro-grid-columns', this.settings.gridColumns);
 
-    entries.forEach(entry => {
+    sorted.forEach(entry => {
       const card = this.createMediaCard(entry, config);
       gridDiv.appendChild(card);
     });
-
     el.empty();
     el.appendChild(gridDiv);
   }
@@ -1760,7 +1802,7 @@ addBadge.onclick = (e) => {
   // Render Table Layout 
   renderTableLayout(el, entries, config) {
     el.empty();
-    
+const sorted = sortEntries(entries, config.sortOptions);
     const table = document.createElement('table');
     table.className = 'zoro-table';
 
@@ -1785,7 +1827,7 @@ addBadge.onclick = (e) => {
     // --- BODY ---
     const tbody = document.createElement('tbody');
 
-    entries.forEach(entry => {
+    sorted.forEach(entry => {
       const media = entry.media;
       if (!media) return; // skip broken
 
@@ -2312,9 +2354,6 @@ type: stats
       new Notice(`Successfully created ${successCount} note${successCount > 1 ? 's' : ''}!`, 4000);
       
       
-      // For DEFAULT_SETTINGS to detect note creation
-      this.settings.sampleNotesCreated = true;
-await this.saveSettings();
 
       // Open the first successfully created note
 
@@ -2334,19 +2373,7 @@ await this.saveSettings();
   }
  }
 
-async detectSampleNotesIfNeeded() {
-  // 1. Respect the flag if it’s already true
-  if (this.settings.sampleNotesCreated) return;
 
-  // 2. Check if either dashboard note exists
-  const animeFile = this.app.vault.getAbstractFileByPath('Anime Dashboard.md');
-  const mangaFile = this.app.vault.getAbstractFileByPath('Manga Dashboard.md');
-
-  if (animeFile || mangaFile) {
-    this.settings.sampleNotesCreated = true;
-    await this.saveSettings();
-  }
-}
 
   
   // Inject Css not ok
@@ -2773,7 +2800,7 @@ class ZoroSettingTab extends PluginSettingTab {
     containerEl.empty()
     
         const section = (title, startOpen = false) => {
-      const head = containerEl.createEl('h4', { text: title });
+      const head = containerEl.createEl('h2', { text: title });
       head.style.cursor = 'pointer';
       head.style.userSelect = 'none';
       head.style.margin = '1.2em 0 0.4em 0';
@@ -2790,7 +2817,7 @@ class ZoroSettingTab extends PluginSettingTab {
         const Account  = section('Account', true);   // opens by default
     const UI = section('Appearance');
     const Data = section('Your Data');
-    const Guide = section('Help');
+    const Guide = section('Guide');
 
     
     new Setting(Account)
@@ -2820,23 +2847,17 @@ authSetting.addButton(button => {
   });
 });
 
- if (!this.plugin.settings.sampleNotesCreated) {
-  new Setting(Guide)
-    .setName('➕ Sample Notes')
-    .setDesc('Creates notes to view your anime and manga data.')
-    .addButton(button => button
-      .setButtonText('Create Note')
-      .setTooltip('Click to create sample notes in your vault')
-      .onClick(async () => {
-        await this.plugin.createSampleNotes();
-        this.display(); // re-render immediately hides the button
-      })
-    );
+if (this.plugin.settings.accessToken) {
+  new Setting(Account)
+  .addButton(btn => btn
+    .setButtonText('Sign out')
+    .setWarning()
+    .onClick(async () => {
+      await this.plugin.logOut();
+      this.updateAuthButton();
+    })
+  );
 }
-
-
-
-
 
     new Setting(UI)
       .setName('🧊 Layout')
@@ -2849,6 +2870,46 @@ authSetting.addButton(button => {
           this.plugin.settings.defaultLayout = value;
           await this.plugin.saveSettings();
         }));
+        
+        new Setting(UI)
+      .setName('🔲 Grid Columns')
+      .setDesc('Number of columns in card grid layout')
+      .addSlider(slider => slider
+        .setLimits(1, 6, 1)
+        .setValue(this.plugin.settings.gridColumns)
+        .setDynamicTooltip()
+        .onChange(async (value) => {
+          this.plugin.settings.gridColumns = value;
+          await this.plugin.saveSettings();
+        }));
+        
+      /* ----------  existing ZoroSettingTab.display()  ---------- */
+
+new Setting(UI)
+  .setName('Sort by')
+  .addDropdown(drop =>
+    Object.entries(SORT_FIELDS).forEach(([k, { label }]) => drop.addOption(k, label))
+    && drop.setValue(this.plugin.settings.defaultSortField)   // ← already validated
+           .onChange(async v => {
+             this.plugin.settings.defaultSortField = v;
+             await this.plugin.saveSettings();
+           })
+  );
+
+new Setting(UI)
+  .setName('Sort direction')
+  .addDropdown(drop =>
+    drop
+      .addOption('', '— API Default —')
+      .addOption('asc', 'Ascending ↑')
+      .addOption('desc', 'Descending ↓')
+      .setValue(this.plugin.settings.defaultSortDir)          // ← already validated
+      .onChange(async v => {
+        this.plugin.settings.defaultSortDir = v;
+        await this.plugin.saveSettings();
+      })
+  );
+
 
     new Setting(UI)
       .setName('🌆 Cover')
@@ -2890,19 +2951,8 @@ authSetting.addButton(button => {
           await this.plugin.saveSettings();
         }));
 
-    new Setting(UI)
-      .setName('🔲 Grid Columns')
-      .setDesc('Number of columns in card grid layout')
-      .addSlider(slider => slider
-        .setLimits(1, 6, 1)
-        .setValue(this.plugin.settings.gridColumns)
-        .setDynamicTooltip()
-        .onChange(async (value) => {
-          this.plugin.settings.gridColumns = value;
-          await this.plugin.saveSettings();
-        }));
-        
-      
+    
+
 
     
         
@@ -2921,17 +2971,19 @@ new Setting(Data)
   );
   
   
-  if (this.plugin.settings.accessToken) {
-  new Setting(Acccount)
-  .addButton(btn => btn
-    .setButtonText('Sign out')
-    .setWarning()
-    .onClick(async () => {
-      await this.plugin.logOut();
-      this.updateAuthButton();
-    })
-  );
-}
+  
+
+new Setting(Guide)
+    .setName('➕ Sample Notes')
+    .setDesc('Creates notes to view your anime and manga data.')
+    .addButton(button => button
+      .setButtonText('Create Note')
+      .setTooltip('Click to create sample notes in your vault')
+      .onClick(async () => {
+        await this.plugin.createSampleNotes();
+        this.display(); // re-render immediately hides the button
+      })
+    );
 
 new Setting(Guide)
       .addButton(button => button

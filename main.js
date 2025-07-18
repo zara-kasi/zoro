@@ -2,6 +2,7 @@ const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal } = require
 
 // Default settings constant ok
 const DEFAULT_SETTINGS = {
+  sampleNotesCreated: false,
   defaultUsername: '',
   defaultLayout: 'card',
   showCoverImages: true,
@@ -159,6 +160,8 @@ setToCache(type, key, value) {
     this.addSettingTab(new ZoroSettingTab(this.app, this));
 
     console.log('[Zoro] Plugin loaded successfully.');
+this.detectSampleNotesIfNeeded(); // Help detect sample note
+
   }
   
    // Validate Settings 
@@ -2308,6 +2311,11 @@ type: stats
     if (successCount > 0) {
       new Notice(`Successfully created ${successCount} note${successCount > 1 ? 's' : ''}!`, 4000);
       
+      
+      // For DEFAULT_SETTINGS to detect note creation
+      this.settings.sampleNotesCreated = true;
+await this.saveSettings();
+
       // Open the first successfully created note
 
       const firstNote = this.app.vault.getAbstractFileByPath(`${firstNoteTitle}.md`);
@@ -2325,6 +2333,20 @@ type: stats
     new Notice(`Failed to create notes: ${error.message}`, 5000);
   }
  }
+
+async detectSampleNotesIfNeeded() {
+  // 1. Respect the flag if it’s already true
+  if (this.settings.sampleNotesCreated) return;
+
+  // 2. Check if either dashboard note exists
+  const animeFile = this.app.vault.getAbstractFileByPath('Anime Dashboard.md');
+  const mangaFile = this.app.vault.getAbstractFileByPath('Manga Dashboard.md');
+
+  if (animeFile || mangaFile) {
+    this.settings.sampleNotesCreated = true;
+    await this.saveSettings();
+  }
+}
 
   
   // Inject Css not ok
@@ -2506,6 +2528,23 @@ async exportUnifiedListsToCSV() {
     }
     return str;
   }
+ 
+ async logOut() {
+  this.settings.accessToken = '';
+  this.settings.tokenExpiry = 0;
+  this.settings.authUsername = '';
+  this.settings.clientId = '';        // <-- NEW
+  this.settings.clientSecret = '';    // <-- NEW
+  await this.saveSettings();
+
+  this.cache.userData.clear();
+  this.cache.mediaData.clear();
+  this.cache.searchResults.clear();
+
+  new Notice('✅ Logged out & cleared credentials.', 3000);
+}
+
+ 
  
   // Plugin unload method
   onunload() {
@@ -2727,21 +2766,34 @@ class ZoroSettingTab extends PluginSettingTab {
   
 
   display() { 
+    
+    
     const { containerEl } = this;
-    // This will clear the Setting's tab each time you open it 
+    
     containerEl.empty()
     
- new Setting(containerEl)
-      .setName('➕ Sample Notes')
-      .setDesc('Creates notes to view your anime and manga data.')
-      .addButton(button => button
-        .setButtonText('Create Note')
-        .setTooltip('Click to create a sample note in your vault')
-        .onClick(async () => {
-          await this.plugin.createSampleNotes();
-        }));
+        const section = (title, startOpen = false) => {
+      const head = containerEl.createEl('h4', { text: title });
+      head.style.cursor = 'pointer';
+      head.style.userSelect = 'none';
+      head.style.margin = '1.2em 0 0.4em 0';
+      const body = containerEl.createDiv();
+      body.style.marginLeft = '1em';
+      body.style.display = startOpen ? 'block' : 'none';
+      head.addEventListener('click', () => {
+        body.style.display = body.style.display === 'none' ? 'block' : 'none';
+      });
+      return body;
+    };
 
-    new Setting(containerEl)
+// variables For headers
+        const Account  = section('Account', true);   // opens by default
+    const UI = section('Appearance');
+    const Data = section('Your Data');
+    const Guide = section('Help');
+
+    
+    new Setting(Account)
       .setName('👤 Username')
       .setDesc('Lets you access your public profile and stats — that’s it.')
       .addText(text => text
@@ -2754,7 +2806,8 @@ class ZoroSettingTab extends PluginSettingTab {
         
         // Dynamic Authentication button
 
-const authSetting = new Setting(containerEl)
+const authSetting = new Setting(
+  Account)
   .setName('🔓 Optional Login')
   .setDesc('Lets you peek at your private profile and actually change stuff.');
 
@@ -2767,9 +2820,25 @@ authSetting.addButton(button => {
   });
 });
 
+ if (!this.plugin.settings.sampleNotesCreated) {
+  new Setting(Guide)
+    .setName('➕ Sample Notes')
+    .setDesc('Creates notes to view your anime and manga data.')
+    .addButton(button => button
+      .setButtonText('Create Note')
+      .setTooltip('Click to create sample notes in your vault')
+      .onClick(async () => {
+        await this.plugin.createSampleNotes();
+        this.display(); // re-render immediately hides the button
+      })
+    );
+}
 
 
-    new Setting(containerEl)
+
+
+
+    new Setting(UI)
       .setName('🧊 Layout')
       .setDesc('Choose the default layout for media lists')
       .addDropdown(dropdown => dropdown
@@ -2781,7 +2850,7 @@ authSetting.addButton(button => {
           await this.plugin.saveSettings();
         }));
 
-    new Setting(containerEl)
+    new Setting(UI)
       .setName('🌆 Cover')
       .setDesc('Display cover images for anime/manga')
       .addToggle(toggle => toggle
@@ -2791,7 +2860,7 @@ authSetting.addButton(button => {
           await this.plugin.saveSettings();
         }));
 
-    new Setting(containerEl)
+    new Setting(UI)
       .setName('⭐ Ratings')
       .setDesc('Display user ratings/scores')
       .addToggle(toggle => toggle
@@ -2801,7 +2870,7 @@ authSetting.addButton(button => {
           await this.plugin.saveSettings();
         }));
 
-    new Setting(containerEl)
+    new Setting(UI)
       .setName('📈 Progress')
       .setDesc('Display progress information')
       .addToggle(toggle => toggle
@@ -2811,7 +2880,7 @@ authSetting.addButton(button => {
           await this.plugin.saveSettings();
         }));
 
-    new Setting(containerEl)
+    new Setting(UI)
       .setName('🎭 Genres')
       .setDesc('Display genre tags')
       .addToggle(toggle => toggle
@@ -2821,7 +2890,7 @@ authSetting.addButton(button => {
           await this.plugin.saveSettings();
         }));
 
-    new Setting(containerEl)
+    new Setting(UI)
       .setName('🔲 Grid Columns')
       .setDesc('Number of columns in card grid layout')
       .addSlider(slider => slider
@@ -2835,21 +2904,12 @@ authSetting.addButton(button => {
         
       
 
-    new Setting(containerEl)
-      .setName('🪤 Hidden Settings ')
-      .setDesc('Yes, there’s an authentication guide. Click it.')
-      .addButton(button => button
-        .setButtonText('View Documentation')
-        .onClick(() => {
-          window.open('https://github.com/zara-kasi/zoro/blob/main/README.md', '_blank');
-        }));
+    
         
 /* ---- Unified Export button (always shown) ---- */
-new Setting(containerEl)
-  .setName('📤 Export Lists to CSV')
-  .setDesc('Downloads your lists (full if authenticated, public otherwise).')
+new Setting(Data)
   .addButton(btn => btn
-    .setButtonText('Export Now')
+    .setButtonText('Export Data')
     .setClass('mod-cta')
     .onClick(async () => {
       try {
@@ -2859,7 +2919,26 @@ new Setting(containerEl)
       }
     })
   );
+  
+  
+  if (this.plugin.settings.accessToken) {
+  new Setting(Acccount)
+  .addButton(btn => btn
+    .setButtonText('Sign out')
+    .setWarning()
+    .onClick(async () => {
+      await this.plugin.logOut();
+      this.updateAuthButton();
+    })
+  );
+}
 
+new Setting(Guide)
+      .addButton(button => button
+        .setButtonText('Help & feedback')
+        .onClick(() => {
+          window.open('https://github.com/zara-kasi/zoro/blob/main/README.md', '_blank');
+        }));
   }
   //  Dynamic Update of Auth button
 updateAuthButton() {

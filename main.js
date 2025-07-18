@@ -17,8 +17,6 @@ const DEFAULT_SETTINGS = {
   accessToken: '',
 };
 
-// Sort Engine 
-// 1-A  fields + labels
 const SORT_FIELDS = {
   title:        { label: 'Title' },
   startDate:    { label: 'Release Date' },
@@ -29,10 +27,23 @@ const SORT_FIELDS = {
   trending:     { label: 'Trending' },
   favourites:   { label: 'Favorites' }
 };
+const ANILIST_SEARCH_SORT_MAP = {
+  title:       'TITLE_ROMAJI',
+  startDate:   'START_DATE',
+  updatedAt:   'UPDATED_AT',
+  score:       'SCORE',
+  popularity:  'POPULARITY',
+  trending:    'TRENDING',
+  favourites:  'FAVOURITES'
+};
+
+
+
+
 
 // 1-B  stable pure sort
   function sortEntries(entries, { field = '', dir = '' } = {}) {
-  if (!field) return entries;
+  if (field === '') return entries;
   const d = dir === 'desc' ? -1 : 1;
 
   const key = (e) => {
@@ -65,7 +76,7 @@ const SORT_FIELDS = {
 class RequestQueue {
   constructor() {
     this.queue = [];
-    this.delay = 700; // ~85 requests/min (AniList limit: 90/min)
+    this.delay = 730; // ~86 requests/min (AniList limit: 90/min)
     this.isProcessing = false;
   }
 
@@ -81,11 +92,14 @@ class RequestQueue {
 
     this.isProcessing = true;
     const { requestFn, resolve } = this.queue.shift();
+    
+const note = new Notice('⏳ Loading…', 0);   // 0 = stay until dismissed
 
     try {
       const result = await requestFn();
       resolve(result);
     } finally {
+      note.hide(); // Hide Loading
       setTimeout(() => {
         this.isProcessing = false;
         this.process();
@@ -193,6 +207,8 @@ setToCache(type, key, value) {
     } catch (err) {
       console.error('[Zoro] Failed to inject CSS:', err);
     }
+    
+    
 
     // Register Markdown code block processors
     this.registerMarkdownCodeBlockProcessor('zoro', this.processZoroCodeBlock.bind(this));
@@ -554,14 +570,16 @@ if (this.settings.accessToken) {
         search: config.search,
         type: config.mediaType,
         page: config.page || 1,
-        perPage: config.perPage || 5 
+        perPage: config.perPage || 5 ,
+        sort:    config.sortOptions?.anilistSort ? [config.sortOptions.anilistSort] : null,
       };
     } else {
       query = this.getMediaListQuery(config.layout);
       variables = {
         username: config.username,
         status: config.listType,
-        type: config.mediaType || 'ANIME'
+        type: config.mediaType || 'ANIME',
+        sort:     config.sortOptions?.anilistSort ? [config.sortOptions.anilistSort] : null,
       };
     }
 
@@ -722,6 +740,8 @@ const variables = {
   }
 }
 
+
+
 clearCacheForMedia(mediaId) {
   // Clear media-specific cache
   for (const [key] of this.cache.mediaData) {
@@ -750,7 +770,6 @@ clearCacheForMedia(mediaId) {
   async processZoroSearchCodeBlock(source, el, ctx) {
     try {
       const config = this.parseSearchCodeBlockConfig(source);
-config.search = '';
 
 
       if (this.settings.debugMode) {
@@ -795,17 +814,16 @@ config.search = '';
     config.listType = config.listType || 'CURRENT';
     config.layout = config.layout || this.settings.defaultLayout;
     config.mediaType = config.mediaType || 'ANIME';
-    
-    const sortRaw = (config.sort || '').trim().toLowerCase();
-const [field = this.plugin.settings.defaultSortField,
-       dir   = this.plugin.settings.defaultSortDir] =
-  sortRaw === '' ? ['', ''] :             // ← respect empty override
-  sortRaw.includes('-')
-    ? [sortRaw.split('-')[0], 'desc']
-    : [sortRaw, 'asc'];
-config.sortOptions = { field, dir };
-
-
+  
+   const sortRaw = (config.sort || '').trim();
+    if (!sortRaw) {
+      // no explicit sort in block → use global defaults
+      config.sortOptions = this._buildSortOptions(
+        `${this.settings.defaultSortField}-${this.settings.defaultSortDir}`
+      );
+    } else {
+      config.sortOptions = this._buildSortOptions(sortRaw);
+    }
     
     return config;
   }
@@ -829,13 +847,17 @@ config.sortOptions = { field, dir };
     config.mediaType = config.mediaType || 'ANIME';
     config.layout = config.layout || this.settings.defaultLayout;
     
-    const sortRaw = (config.sort || '').trim().toLowerCase();
-const [field = this.plugin.settings.defaultSortField,
-       dir   = this.plugin.settings.defaultSortDir] =
-  sortRaw.includes('-')
-    ? [sortRaw.split('-')[0], 'desc']
-    : [sortRaw, 'asc'];
-config.sortOptions = { field, dir };
+
+    const sortRaw = (config.sort || '').trim();
+    if (!sortRaw) {
+      config.sortOptions = this._buildSortOptions(
+        `${this.settings.defaultSortField}-${this.settings.defaultSortDir}`
+      );
+   } else {
+      config.sortOptions = this._buildSortOptions(sortRaw);
+    }
+
+
 
     
     return config;
@@ -1011,8 +1033,8 @@ config.sortOptions = { field, dir };
     const fields = mediaFields[layout] || mediaFields.card;
 
     return `
-      query ($username: String, $status: MediaListStatus, $type: MediaType) {
-        MediaListCollection(userName: $username, status: $status, type: $type) {
+        query ($username: String, $status: MediaListStatus, $type: MediaType, $sort: [MediaListSort]) {
+  MediaListCollection(userName: $username, status: $status, type: $type, sort: $sort) {
           lists {
             entries {
               ${baseFields}
@@ -1218,16 +1240,9 @@ config.sortOptions = { field, dir };
     const fields = mediaFields[layout] || mediaFields.card;
 
     return `
-      query ($search: String, $type: MediaType, $page: Int, $perPage: Int) {
-        Page(page: $page, perPage: $perPage) {
-          pageInfo {
-            total
-            currentPage
-            lastPage
-            hasNextPage
-            perPage
-          }
-          media(search: $search, type: $type, sort: POPULARITY_DESC) {
+        query ($search: String, $type: MediaType, $page: Int, $perPage: Int, $sort: [MediaSort]) {
+  Page(page: $page, perPage: $perPage) {
+    media(search: $search, type: $type, sort: $sort) {
             ${fields}
           }
         }
@@ -1907,6 +1922,8 @@ const sorted = sortEntries(entries, config.sortOptions);
 
   // Create Edit Modal
   createEditModal(entry, onSave, onCancel) {
+    const self = this;   // so we can use `self` inside handlers
+
     const modal = document.createElement('div');
     // RENAMED from anilist-edit-modal to zoro-edit-modal
     modal.className = 'zoro-edit-modal';
@@ -2042,11 +2059,118 @@ const sorted = sortEntries(entries, config.sortOptions);
       onCancel();
       document.body.removeChild(modal);
     };
+    
+    // ❤️ Favorite toggle
+const favBtn = document.createElement('button');
+favBtn.type = 'button';
+favBtn.title = 'Toggle Favorite';
+favBtn.textContent = '🤍';          // will flip to ❤️ once we know state
+favBtn.style.marginRight = 'auto';  // pushes it to the left
+favBtn.style.fontSize = '1.2em';
 
-    buttonContainer.append(saveBtn, cancelBtn);
+// 🗑️ Remove button
+const removeBtn = document.createElement('button');
+removeBtn.type = 'button';
+removeBtn.textContent = 'Remove';
+
+
+favBtn.onclick = async () => {
+  favBtn.disabled = true;
+  favBtn.textContent = '⏳';
+  try {
+    const mutation = `
+      mutation ($mediaId: Int) {
+        ToggleFavourite(animeId: $mediaId) {
+          anime { isFavourite }
+        }
+      }`;
+    await self.requestQueue.add(() =>
+      requestUrl({
+        url: 'https://graphql.anilist.co',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${self.settings.accessToken}`
+        },
+        body: JSON.stringify({ query: mutation, variables: { mediaId: entry.media.id } })
+      })
+    );
+    // flip the heart
+    const wasFav = favBtn.textContent === '❤️';
+    favBtn.textContent = wasFav ? '🤍' : '❤️';
+  } catch (e) {
+    new Notice('❌ Could not toggle favorite');
+  } finally {
+    favBtn.disabled = false;
+  }
+};
+
+removeBtn.onclick = async () => {
+  if (!confirm('Remove this entry?')) return;
+  removeBtn.disabled = true;
+  removeBtn.textContent = '⏳';
+  try {
+    const mutation = `
+      mutation ($id: Int) {
+        DeleteMediaListEntry(id: $id) { deleted }
+      }`;
+    await self.requestQueue.add(() =>
+      requestUrl({
+        url: 'https://graphql.anilist.co',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${self.settings.accessToken}`
+        },
+        body: JSON.stringify({ query: mutation, variables: { id: entry.id } })
+      })
+    );
+    // close modal & refresh view
+    document.body.removeChild(modal);
+    self.clearCacheForMedia(entry.media.id);
+    // trigger re-render of the block that owns this entry
+    const parentContainer = document.querySelector('.zoro-container');
+    if (parentContainer) {
+      const block = parentContainer.closest('.markdown-rendered')?.querySelector('code');
+      if (block) {
+        self.processZoroCodeBlock(block.textContent, parentContainer, {});
+      }
+    }
+    new Notice('✅ Removed');
+  } catch (e) {
+    new Notice('❌ Could not remove');
+  }
+};
+
+
+    buttonContainer.append(favBtn, removeBtn, saveBtn, cancelBtn);
 
     form.append(title, statusGroup, scoreGroup, progressGroup, quickProgressDiv, buttonContainer);
     content.appendChild(form);
+    (async () => {
+  try {
+    const query = `
+      query ($mediaId: Int) {
+        Media(id: $mediaId) { isFavourite }
+      }`;
+    const res = await self.requestQueue.add(() =>
+      requestUrl({
+        url: 'https://graphql.anilist.co',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${self.settings.accessToken}`
+        },
+        body: JSON.stringify({ query, variables: { mediaId: entry.media.id } })
+      })
+    );
+    const fav = res.json.data?.Media?.isFavourite;
+    favBtn.textContent = fav ? '❤️' : '🤍';
+  } catch (e) {
+    console.warn('Could not fetch favorite', e);
+  }
+})();
+
     modal.append(overlay, content);
     document.body.appendChild(modal);
 
@@ -2168,12 +2292,12 @@ const sorted = sortEntries(entries, config.sortOptions);
     const authenticateBtn = document.createElement('button');
     authenticateBtn.className = 'zoro-auth-button';
     
-    authenticateBtn.textContent = '🔑 Authenticate with AniList';
+    authenticateBtn.textContent = '🔑 Authenticate';
     authenticateBtn.onclick = () => {
       closeModal();
       this.app.setting.open();
       this.app.setting.openTabById(this.manifest.id);
-      new Notice('📝 Please configure authentication in the plugin settings');
+      new Notice('📝 Please use optional login to authenticate');
     };
 
     const cancelBtn = document.createElement('button');
@@ -2535,9 +2659,8 @@ async exportUnifiedListsToCSV() {
   const csv = rows.join('\n');
   const suffix = useAuth ? '' : '_PUBLIC';
   
-      const folder = 'Zoro exports';               // any vault-relative folder
-    await this.app.vault.createFolder(folder).catch(() => {}); // create if missing
-    const fileName = `${folder}/AniList_${username}${suffix}_${new Date().toISOString().slice(0, 10)}.csv`;
+      
+    const fileName = `AniList_${username}${suffix}_${new Date().toISOString().slice(0, 10)}.csv`;
   await this.app.vault.create(fileName, csv);
   new Notice(`✅ CSV saved to vault: ${fileName}`, 4000);
   await this.app.workspace.openLinkText(fileName, '', false);
@@ -2572,7 +2695,39 @@ async exportUnifiedListsToCSV() {
   new Notice('✅ Logged out & cleared credentials.', 3000);
 }
 
- 
+ // ---------- inside ZoroPlugin ----------
+_buildSortOptions(raw) {
+  let field = '', dir = '';
+
+  // 1. Decide the field & dir
+  if (!raw || raw.trim() === '') {
+    // fall back to global defaults
+    field = this.settings.defaultSortField || '';
+    dir   = this.settings.defaultSortDir   || '';
+  } else {
+    // explicit block value
+    const [f, d = 'asc'] = raw.split('-', 2);
+    field = f.trim();
+    dir   = d.trim().toLowerCase();
+  }
+
+  // 2. Validate
+  if (!SORT_FIELDS[field]) field = '';
+  if (!['asc', 'desc', ''].includes(dir)) dir = 'asc';
+
+  if (!field) return { field: '', dir: '', anilistSort: null };
+
+  // 3. Build AniList sort key (list vs search)
+  const isSearch = arguments[1]?.type === 'search';
+  const map      = isSearch ? ANILIST_SEARCH_SORT_MAP : ANILIST_SORT_MAP;
+
+  const key = map[field];
+  if (!key) return { field: '', dir: '', anilistSort: null };
+
+  const suffix = dir === 'desc' ? '_DESC' : '_ASC';
+  return { field, dir, anilistSort: key + suffix };
+}
+
  
   // Plugin unload method
   onunload() {
@@ -2815,14 +2970,17 @@ class ZoroSettingTab extends PluginSettingTab {
     };
 
 // variables For headers
-        const Account  = section('Account', true);   // opens by default
-    const UI = section('Appearance');
-    const Data = section('Your Data');
-    const Guide = section('Guide');
+        const Account  = section('👤 Account', true);   // opens by default
+    const UI = section('🎨 Appearance');
+    const Theme = section('🌌 Theme');
+    const Data = section('📤 Your Data');
+    const Guide = section('🧭 Guide');
+    const More = section('✨ More');
+    
 
     
     new Setting(Account)
-      .setName('👤 Username')
+      .setName('🆔 Username')
       .setDesc('Lets you access your public profile and stats — that’s it.')
       .addText(text => text
         .setPlaceholder('Enter your AniList username')
@@ -2959,8 +3117,10 @@ new Setting(UI)
         
 /* ---- Unified Export button (always shown) ---- */
 new Setting(Data)
+.setName('🧾 Export your data')
+  .setDesc('Everything you’ve watched, rated, and maybe ghosted — neatly exported into a CSV.')
   .addButton(btn => btn
-    .setButtonText('Export Data')
+    .setButtonText('Export')
     .setClass('mod-cta')
     .onClick(async () => {
       try {
@@ -3048,8 +3208,6 @@ async handleAuthButtonClick() {
 }
 
 }
-
-
 
 
 module.exports = {

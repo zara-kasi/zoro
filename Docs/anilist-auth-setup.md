@@ -35,4 +35,4 @@ After saving, you'll see:
 - 
 Paste these into the Zoro Optional login settings inside Obsidian and hit **Authenticate**.
 
-That’s it! 🎉 You’re now connected to AniList.
+That’s it! 🎉 

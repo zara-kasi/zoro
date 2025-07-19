@@ -1,7 +1,7 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal } = require('obsidian');
-
-// Default settings constant ok
-const DEFAULT_SETTINGS = {
+// Obsidian API
+  const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal } = require('obsidian');
+// Default settings
+  const DEFAULT_SETTINGS = {
   defaultUsername: '',
   defaultLayout: 'card',
   defaultSortField: '',
@@ -16,8 +16,8 @@ const DEFAULT_SETTINGS = {
   redirectUri: 'https://anilist.co/api/v2/oauth/pin',
   accessToken: '',
 };
-
-const SORT_FIELDS = {
+// SORT FIELDS
+  const SORT_FIELDS = {
   title:        { label: 'Title' },
   startDate:    { label: 'Release Date' },
   completedAt:  { label: 'Completed At' },
@@ -27,7 +27,8 @@ const SORT_FIELDS = {
   trending:     { label: 'Trending' },
   favourites:   { label: 'Favorites' }
 };
-const ANILIST_SEARCH_SORT_MAP = {
+// Sort Map 
+  const ANILIST_SEARCH_SORT_MAP = {
   title:       'TITLE_ROMAJI',
   startDate:   'START_DATE',
   updatedAt:   'UPDATED_AT',
@@ -36,18 +37,12 @@ const ANILIST_SEARCH_SORT_MAP = {
   trending:    'TRENDING',
   favourites:  'FAVOURITES'
 };
-
-
-
-
-
-// 1-B  stable pure sort
+// Sort Entries
   function sortEntries(entries, { field = '', dir = '' } = {}) {
-  if (field === '') return entries;
+   if (field === '') return entries;
   const d = dir === 'desc' ? -1 : 1;
-
   const key = (e) => {
-    const m = e.media || e;
+  const m = e.media || e;
     switch (field) {
       case 'title':       return (m.title?.english || m.title?.romaji || '').toLowerCase();
       case 'startDate':   return m.startDate?.year || 0;
@@ -71,104 +66,87 @@ const ANILIST_SEARCH_SORT_MAP = {
     return (a.media?.id || 0) - (b.media?.id || 0);
   });
 }
-
-  // Rate limit 
-class RequestQueue {
+// Request Queue
+ class RequestQueue {
   constructor() {
     this.queue = [];
-    this.delay = 730; // ~86 requests/min (AniList limit: 90/min)
+    this.delay = 700; // ~85 requests/min (AniList limit: 90/min)
     this.isProcessing = false;
-  }
-
-  add(requestFn) {
-    return new Promise((resolve) => {
-      this.queue.push({ requestFn, resolve });
+  } add(requestFn) {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ requestFn, resolve, reject });
       this.process();
     });
   }
-
   async process() {
-    if (this.isProcessing || !this.queue.length) return;
+  if (this.isProcessing || !this.queue.length) return;
+  this.isProcessing = true;
+  const { requestFn, resolve, reject } = this.queue.shift(); // ✅ Fixed: Get reject from queue
+  const loader = document.createElement('div');
+loader.textContent = '⏳';
+loader.style.cssText = 'position:fixed;bottom:10px;left:10px;background:rgba(0,0,0,0.7);color:white;padding:5px 8px;border-radius:4px;font-size:12px;z-index:9999;';
+document.body.appendChild(loader);
 
-    this.isProcessing = true;
-    const { requestFn, resolve } = this.queue.shift();
-    
-const note = new Notice('⏳ Loading…', 0);   // 0 = stay until dismissed
-
-    try {
-      const result = await requestFn();
-      resolve(result);
-    } finally {
-      note.hide(); // Hide Loading
-      setTimeout(() => {
-        this.isProcessing = false;
-        this.process();
-      }, this.delay);
-    }
-  }
+try {
+  const result = await requestFn();
+  resolve(result);
+} catch (err) {
+  reject(err);  
+} finally {
+  document.body.removeChild(loader); // Remove loading indicator
+  setTimeout(() => {
+    this.isProcessing = false;
+    this.process();
+  }, this.delay);
+}
+}
 }
 
-
 // Plugin Class 
-class ZoroPlugin extends Plugin { 
-
-
-  // Constructor 
+class ZoroPlugin extends Plugin {
   constructor(app, manifest) {
     super(app, manifest);
-    
   // Initialize separate caches
   this.cache = {
-    userData: new Map(),     // User stats and lists
-    mediaData: new Map(),    // Individual media items
-    searchResults: new Map() // Search queries
+    userData: new Map(),
+    mediaData: new Map(),
+    searchResults: new Map() 
   };
     this.requestQueue = new RequestQueue();
-    this.cacheTimeout = 5 * 60 * 1000;
-
-  // Add periodic pruning
+    this.cacheTimeout = 4 * 60 * 1000; // 4 min
+// Add periodic pruning
+// Add periodic pruning
   this.pruneInterval = setInterval(() => this.pruneCache(), this.cacheTimeout);
   }
-   
-
 // Prune Cache 
-
 pruneCache() {
   const now = Date.now();
-  
   // Prune user data cache
   for (const [key, entry] of this.cache.userData) {
     if (now - entry.timestamp > this.cacheTimeout) {
       this.cache.userData.delete(key);
     }
   }
-  
   // Prune media data cache
   for (const [key, entry] of this.cache.mediaData) {
     if (now - entry.timestamp > this.cacheTimeout) {
       this.cache.mediaData.delete(key);
     }
   }
-  
   // Prune search results cache
   for (const [key, entry] of this.cache.searchResults) {
     if (now - entry.timestamp > this.cacheTimeout) {
       this.cache.searchResults.delete(key);
     }
   }
-  
   console.log('[Zoro] Cache pruned');
 }
-
-      // Get from cache 
-
+ // Get from cache 
   getFromCache(type, key) {
   const cacheMap = this.cache[type];
   if (!cacheMap) return null;
-  
   const entry = cacheMap.get(key);
   if (!entry) return null;
-
   // Auto-prune expired entries on access
   if ((Date.now() - entry.timestamp) > this.cacheTimeout) {
     cacheMap.delete(key);
@@ -176,7 +154,6 @@ pruneCache() {
   }
   return entry.value;
 }
-
 setToCache(type, key, value) {
   const cacheMap = this.cache[type];
   if (!cacheMap) return;
@@ -186,12 +163,8 @@ setToCache(type, key, value) {
     timestamp: Date.now()
   });
 }
-
-
-  // On Load  ok
   async onload() {
     console.log('[Zoro] Plugin loading...');
-
     // Load settings
     try {
       await this.loadSettings();
@@ -199,7 +172,6 @@ setToCache(type, key, value) {
     } catch (err) {
       console.error('[Zoro] Failed to load settings:', err);
     }
-
     // Inject custom CSS
     try {
       this.injectCSS();
@@ -207,24 +179,16 @@ setToCache(type, key, value) {
     } catch (err) {
       console.error('[Zoro] Failed to inject CSS:', err);
     }
-    
-    
-
-    // Register Markdown code block processors
+    // Processors
+    /// Markdown code block processors
     this.registerMarkdownCodeBlockProcessor('zoro', this.processZoroCodeBlock.bind(this));
     this.registerMarkdownCodeBlockProcessor('zoro-search', this.processZoroSearchCodeBlock.bind(this));
-
-    // Process inline links (e.g., [[Zoro:ID]])
+    /// Process inline links (e.g., [[Zoro:ID]])
     this.registerMarkdownPostProcessor(this.processInlineLinks.bind(this));
-
     // Add plugin settings tab
     this.addSettingTab(new ZoroSettingTab(this.app, this));
-
     console.log('[Zoro] Plugin loaded successfully.');
-
-
   }
-  
    // Validate Settings 
   validateSettings(settings) {
     return {
@@ -631,22 +595,6 @@ if (this.settings.accessToken) {
       throw error;
     }
   }
-
-
-
-// Loading indicator 
-async fetchData(config) {
-  this.showLoader();
-  try {
-    // API call
-  } catch (error) {
-    // Handle error
-  } finally {
-    this.hideLoader();
-  }
-}
-  
-  
   // Process Zoro Code Block - FIXED: Now properly inside the class
   async processZoroCodeBlock(source, el, ctx) {
     try {
@@ -1661,9 +1609,6 @@ addBadge.onclick = async (e) => {
     el.appendChild(cardDiv);
   }
 
-
-  // Render Media Lists
-  
   // Render Media Lists
   renderMediaList(el, entries, config) {
     const sorted = sortEntries(entries, config.sortOptions);
@@ -1706,7 +1651,7 @@ addBadge.onclick = async (e) => {
     titleLink.href = this.getZoroUrl(media.id, config.mediaType);
     titleLink.target = '_blank';
     titleLink.rel = 'noopener noreferrer';
-    titleLink.className = 'anilist-title-link'; // Changed from 'zoro-title-link' to match old style
+    titleLink.className = 'anilist-title-link'; 
     titleLink.textContent = title;
     titleElement.appendChild(titleLink);
     infoDiv.appendChild(titleElement);
@@ -1745,7 +1690,7 @@ addBadge.onclick = async (e) => {
       details.appendChild(format);
     }
 
-    // Status - using old styling class name but keeping new functionality
+    // Status 
     const status = document.createElement('span');
     status.className = `status-badge status-${entry.status?.toLowerCase()} clickable-status`; // Changed from 'zoro-badge zoro-status' to match old style
     status.textContent = entry.status ?? 'Unknown';
@@ -1925,15 +1870,13 @@ const sorted = sortEntries(entries, config.sortOptions);
     const self = this;   // so we can use `self` inside handlers
 
     const modal = document.createElement('div');
-    // RENAMED from anilist-edit-modal to zoro-edit-modal
     modal.className = 'zoro-edit-modal';
 
     const overlay = document.createElement('div');
-    // RENAMED from anilist-modal-overlay to zoro-modal-overlay
+    
     overlay.className = 'zoro-modal-overlay';
 
     const content = document.createElement('div');
-    // RENAMED from anilist-modal-content to zoro-modal-content
     content.className = 'zoro-modal-content';
 
     const form = document.createElement('form');
@@ -1951,11 +1894,9 @@ const sorted = sortEntries(entries, config.sortOptions);
 
     const statusLabel = document.createElement('label');
     statusLabel.textContent = 'Status';
-    // RENAMED from anilist-status to zoro-status
     statusLabel.setAttribute('for', 'zoro-status');
 
     const statusSelect = document.createElement('select');
-    // RENAMED from anilist-status to zoro-status
     statusSelect.id = 'zoro-status';
 
     ['CURRENT', 'PLANNING', 'COMPLETED', 'DROPPED', 'PAUSED', 'REPEATING'].forEach(status => {
@@ -1975,12 +1916,10 @@ const sorted = sortEntries(entries, config.sortOptions);
 
     const scoreLabel = document.createElement('label');
     scoreLabel.textContent = 'Score (0–5)';
-    // RENAMED from anilist-score to zoro-score
     scoreLabel.setAttribute('for', 'zoro-score');
 
     const scoreInput = document.createElement('input');
     scoreInput.type = 'number';
-    // RENAMED from anilist-score to zoro-score
     scoreInput.id = 'zoro-score';
     scoreInput.min = '0';
     scoreInput.max = '10';
@@ -1997,12 +1936,10 @@ const sorted = sortEntries(entries, config.sortOptions);
 
     const progressLabel = document.createElement('label');
     progressLabel.textContent = 'Progress';
-    // RENAMED from anilist-progress to zoro-progress
     progressLabel.setAttribute('for', 'zoro-progress');
 
     const progressInput = document.createElement('input');
     progressInput.type = 'number';
-    // RENAMED from anilist-progress to zoro-progress
     progressInput.id = 'zoro-progress';
     progressInput.min = '0';
     progressInput.max = entry.media.episodes || entry.media.chapters || 999;
@@ -2045,7 +1982,6 @@ const sorted = sortEntries(entries, config.sortOptions);
 
     // --- Buttons ---
     const buttonContainer = document.createElement('div');
-    // RENAMED from anilist-modal-buttons to zoro-modal-buttons
     buttonContainer.className = 'zoro-modal-buttons';
 
     const saveBtn = document.createElement('button');
@@ -2077,14 +2013,53 @@ removeBtn.textContent = 'Remove';
 favBtn.onclick = async () => {
   favBtn.disabled = true;
   favBtn.textContent = '⏳';
+  
   try {
+    // Use the stored media type, or fall back to detection
+    let mediaType = favBtn.dataset.mediaType;
+    if (!mediaType) {
+      // Fallback detection - check for type field first, then episodes
+      mediaType = entry.media.type || (entry.media.episodes ? 'ANIME' : 'MANGA');
+    }
+    
+    const isAnime = mediaType === 'ANIME';
+    
+    new Notice(`Toggling favorite for ${mediaType}`, 3000);
+    
+    // Alternative simpler mutation - uncomment if the above doesn't work
+    // const mutation = `
+    //   mutation ToggleFav($animeId: Int, $mangaId: Int) {
+    //     ToggleFavourite(animeId: $animeId, mangaId: $mangaId) {
+    //       anime { pageInfo { total } }
+    //       manga { pageInfo { total } }
+    //     }
+    //   }`;
+    
     const mutation = `
-      mutation ($mediaId: Int) {
-        ToggleFavourite(animeId: $mediaId) {
-          anime { isFavourite }
+      mutation ToggleFav($animeId: Int, $mangaId: Int) {
+        ToggleFavourite(animeId: $animeId, mangaId: $mangaId) {
+          anime {
+            nodes {
+              id
+            }
+          }
+          manga {
+            nodes {
+              id
+            }
+          }
         }
       }`;
-    await self.requestQueue.add(() =>
+      
+    // Only include the relevant ID, don't pass null values
+    const variables = {};
+    if (isAnime) {
+      variables.animeId = entry.media.id;
+    } else {
+      variables.mangaId = entry.media.id;
+    }
+
+    const res = await self.requestQueue.add(() =>
       requestUrl({
         url: 'https://graphql.anilist.co',
         method: 'POST',
@@ -2092,14 +2067,32 @@ favBtn.onclick = async () => {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${self.settings.accessToken}`
         },
-        body: JSON.stringify({ query: mutation, variables: { mediaId: entry.media.id } })
+        body: JSON.stringify({ query: mutation, variables })
       })
     );
-    // flip the heart
-    const wasFav = favBtn.textContent === '❤️';
-    favBtn.textContent = wasFav ? '🤍' : '❤️';
+    
+    if (res.json.errors) {
+      new Notice(`API Error: ${res.json.errors[0].message}`, 8000);
+      console.error('AniList API Error:', res.json.errors);
+      throw new Error(res.json.errors[0].message);
+    }
+    
+    // Check if the media is now in favorites by looking at the response
+    const toggleResult = res.json.data?.ToggleFavourite;
+    let isFav = false;
+    
+    if (isAnime && toggleResult?.anime?.nodes) {
+      isFav = toggleResult.anime.nodes.some(node => node.id === entry.media.id);
+    } else if (!isAnime && toggleResult?.manga?.nodes) {
+      isFav = toggleResult.manga.nodes.some(node => node.id === entry.media.id);
+    }
+    
+    favBtn.textContent = isFav ? '❤️' : '🤍';
+    new Notice(`${isFav ? 'Added to' : 'Removed from'} favorites!`, 3000);
+    
   } catch (e) {
-    new Notice('❌ Could not toggle favorite');
+    new Notice(`❌ Error: ${e.message || 'Unknown error'}`, 8000);
+    console.error('Favorite toggle error:', e);
   } finally {
     favBtn.disabled = false;
   }
@@ -2147,11 +2140,14 @@ removeBtn.onclick = async () => {
 
     form.append(title, statusGroup, scoreGroup, progressGroup, quickProgressDiv, buttonContainer);
     content.appendChild(form);
-    (async () => {
+(async () => {
   try {
     const query = `
       query ($mediaId: Int) {
-        Media(id: $mediaId) { isFavourite }
+        Media(id: $mediaId) { 
+          isFavourite 
+          type
+        }
       }`;
     const res = await self.requestQueue.add(() =>
       requestUrl({
@@ -2164,8 +2160,12 @@ removeBtn.onclick = async () => {
         body: JSON.stringify({ query, variables: { mediaId: entry.media.id } })
       })
     );
-    const fav = res.json.data?.Media?.isFavourite;
+    const mediaData = res.json.data?.Media;
+    const fav = mediaData?.isFavourite;
     favBtn.textContent = fav ? '❤️' : '🤍';
+    
+    // Store the media type for later use
+    favBtn.dataset.mediaType = mediaData?.type;
   } catch (e) {
     console.warn('Could not fetch favorite', e);
   }
@@ -2489,7 +2489,7 @@ type: stats
     }
     
     if (errorMessages.length > 0) {
-      new Notice(`Issues: ${errorMessages.join(', ')}`, 5000);
+      new Notice(`Note: ${errorMessages.join(', ')}`, 5000);
     }
     
   } catch (error) {
@@ -3009,7 +3009,7 @@ authSetting.addButton(button => {
 if (this.plugin.settings.accessToken) {
   new Setting(Account)
   .addButton(btn => btn
-    .setButtonText('Sign out')
+    .setButtonText('Log out')
     .setWarning()
     .onClick(async () => {
       await this.plugin.logOut();
@@ -3135,8 +3135,8 @@ new Setting(Data)
   
 
 new Setting(Guide)
-    .setName('➕ Sample Notes')
-    .setDesc('Creates notes to view your anime and manga data.')
+    .setName('🍜 Sample Notes')
+    .setDesc('Builds two notes for you — anime and manga — with everything pre-filled: lists, search, stats. Like instant noodles, but for your library.')
     .addButton(button => button
       .setButtonText('Create Note')
       .setTooltip('Click to create sample notes in your vault')
@@ -3145,6 +3145,15 @@ new Setting(Guide)
         this.display(); // re-render immediately hides the button
       })
     );
+    
+    new Setting(Guide)
+     .setName('🗝️ Need a Client ID?')
+    .setDesc('Click here to open the step-by-step guide for generating your AniList Client ID & Secret. Takes less than a minute—no typing, just copy and paste.')
+      .addButton(button => button
+        .setButtonText('Setup Guide')
+        .onClick(() => {
+          window.open('https://github.com/zara-kasi/zoro/blob/main/Docs/anilist-auth-setup.md', '_blank');
+        }));
 
 new Setting(Guide)
       .addButton(button => button
@@ -3173,7 +3182,7 @@ updateAuthButton() {
       month: 'short', 
       day: 'numeric' 
     });
-    this.authButton.setButtonText(`✅  Acccount Connected`);
+    this.authButton.setButtonText(`✅`);
     this.authButton.setCta();
   }
   

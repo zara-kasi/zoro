@@ -1,8 +1,5 @@
-/* =============================================
-   ZORO PLUGIN STYLES
-   ============================================= */
-
-/* ─── CSS Custom Properties (Variables) ─── */
+/* Default Theme */
+ /*CSS Custom Properties*/
 :root {
   /* === Container & Layout === */
   --zoro-container-margin: 1rem 0;
@@ -727,5 +724,171 @@
   .media-info h4 {
     font-size: 0.9rem;
   }
+}
+
+/* keep the layout unchanged, just push the *content* of the inputs to the right */
+.zoro-form-input {
+  text-align: right;
+}
+
+/* 
+   EDIT MODAL THEME */
+
+/* ---------- 1. Modal shell ---------- */
+.zoro-edit-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+.zoro-modal-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, .55);
+  backdrop-filter: blur(5px);
+}
+
+.zoro-modal-content {
+  background: #fff;
+  color: #222;
+  border-radius: 8px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .25);
+  width: 340px;
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 24px;
+}
+
+/* ---------- 2. Form layout ---------- */
+.zoro-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.zoro-modal-title {
+  margin: 0 0 12px;
+  font-size: 1.25rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.zoro-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.zoro-form-label {
+  font-size: .875rem;
+  font-weight: 500;
+  color: #333;
+}
+
+.zoro-form-input,
+.zoro-status-select {
+  padding: 8px 10px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  font-size: 1rem;
+  transition: border-color .2s;
+  text-align: left;          /* ← numbers flush-right */
+}
+
+.zoro-form-input:focus,
+.zoro-status-select:focus {
+  border-color: #0077ff;
+  outline: none;
+}
+
+/* ---------- 3. Quick-progress buttons ---------- */
+.zoro-quick-progress-buttons {
+  display: flex;
+  gap: 6px;
+  align-items: right;
+  justify-content: flex-end;
+}
+
+.zoro-quick-btn {
+  background: #f1f1f1;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: .875rem;
+  cursor: pointer;
+}
+
+.zoro-quick-btn:hover {
+  background: #e5e5e5;
+}
+
+/* ---------- 4. Bottom action bar ---------- */
+.zoro-modal-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.zoro-modal-btn {
+  padding: 8px 14px;
+  font-size: .875rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.zoro-save-btn {
+  background: #0077ff;
+  color: #fff;
+}
+
+.zoro-remove-btn {
+  background: #ff3b30;
+  color: #fff;
+}
+
+.zoro-cancel-btn {
+  background: #e5e5ea;
+  color: #222;
+}
+
+.zoro-fav-btn {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  padding: 0 6px;
+  cursor: pointer;
+  align-items: left;
+}
+
+/* ---------- 5. Dark-mode overrides (optional) ---------- */
+@media (prefers-color-scheme: dark) {
+  .zoro-modal-content {
+    background: #2e2e2e;
+    color: #e5e5e5;
+  }
+
+  .zoro-form-input,
+  .zoro-status-select {
+    background: #3a3a3a;
+    border-color: #555;
+    color: #e5e5e5;
+  }
+
+  .zoro-quick-btn,
+  .zoro-cancel-btn {
+    background: #3a3a3a;
+    border-color: #555;
+    color: #e5e5e5;
+  }
+
+  .zoro-save-btn   { background: #0a84ff; }
+  .zoro-remove-btn { background: #ff453a; }
 }
 

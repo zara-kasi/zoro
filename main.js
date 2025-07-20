@@ -11,7 +11,7 @@
   showProgress: true,
   showGenres: false,
   gridColumns: 2,
-  selectedTheme: '',
+  theme: '',  
   clientId: '',
   clientSecret: '',
   redirectUri: 'https://anilist.co/api/v2/oauth/pin',
@@ -180,8 +180,9 @@ setToCache(type, key, value) {
     } catch (err) {
       console.error('[Zoro] Failed to inject CSS:', err);
     }
-    await this.initializeThemeSystem();
-    
+    // Apply saved theme (if any)
+await this.applyTheme(this.settings.theme);
+
     // Processors
     /// Markdown code block processors
     this.registerMarkdownCodeBlockProcessor('zoro', this.processZoroCodeBlock.bind(this));
@@ -198,7 +199,7 @@ setToCache(type, key, value) {
       defaultUsername: typeof settings?.defaultUsername === 'string' ? settings.defaultUsername : '',
       defaultLayout: ['card', 'list'].includes(settings?.defaultLayout) ? settings.defaultLayout : 'card',
       gridColumns: Number.isInteger(settings?.gridColumns) ? settings.gridColumns : 3,
-      selectedTheme: typeof settings?.selectedTheme === 'string' ? settings.selectedTheme : '',
+      theme: typeof settings?.theme === 'string' ? settings.theme : '',
    defaultSortField: (typeof settings?.defaultSortField === 'string' && (settings.defaultSortField === '' || SORT_FIELDS[settings.defaultSortField])) ? settings.defaultSortField : '',
 
       defaultSortDir:    ['asc','desc',''].includes(settings?.defaultSortDir) ? settings.defaultSortDir : '',
@@ -2731,137 +2732,49 @@ _buildSortOptions(raw) {
   return { field, dir, anilistSort: key + suffix };
 }
 
-async initializeThemeSystem() {
-    // Create themes directory if it doesn't exist
-    const themesDir = `${this.manifest.dir}/themes`;
-    const adapter = this.app.vault.adapter;
-    
-    try {
-        if (!await adapter.exists(themesDir)) {
-            await adapter.mkdir(themesDir);
-        }
-    } catch (error) {
-        console.error('Failed to create themes directory:', error);
-    }
-    
-    // Apply saved theme if any
-    if (this.settings.selectedTheme) {
-        await this.applyTheme(this.settings.selectedTheme);
-    }
-}
-
+ /**
+ * Return an array of theme file names (without .css).
+ */
 async getAvailableThemes() {
+  try {
     const themesDir = `${this.manifest.dir}/themes`;
-    const adapter = this.app.vault.adapter;
-    
-    try {
-        const files = await adapter.list(themesDir);
-        // Filter for .css files and remove extension for display
-        return files.files
-            .filter(file => file.endsWith('.css'))
-            .map(file => {
-                const fileName = file.split('/').pop();
-                return {
-                    name: fileName.replace('.css', ''),
-                    fileName: fileName,
-                    path: file
-                };
-            });
-    } catch (error) {
-        console.error('Failed to load themes:', error);
-        return [];
-    }
+    const { files } = await this.app.vault.adapter.list(themesDir);
+    return files
+      .filter(f => f.endsWith('.css'))
+      .map(f => f.split('/').pop().replace('.css', ''));
+  } catch {
+    return [];
+  }
 }
 
+/**
+ * Apply or remove a theme.
+ * @param {string} themeName  file name without .css, or "" to disable
+ */
 async applyTheme(themeName) {
-    // Remove any existing theme
-    this.removeCurrentTheme();
-    
-    if (!themeName || themeName === 'none') {
-        this.settings.selectedTheme = '';
-        await this.saveSettings();
-        return;
-    }
-    
-    const themePath = `${this.manifest.dir}/themes/${themeName}.css`;
-    const adapter = this.app.vault.adapter;
-    
-    try {
-        // Check if theme file exists
-        if (!await adapter.exists(themePath)) {
-            console.warn(`Theme file not found: ${themePath}`);
-            return;
-        }
-        
-        // Read the CSS content
-        const cssContent = await adapter.read(themePath);
-        
-        // Create and inject style element
-        const styleEl = document.createElement('style');
-        styleEl.id = 'zoro-plugin-theme';
-        styleEl.setAttribute('data-theme', themeName);
-        
-        // Scope the CSS to your plugin's UI elements
-        // Adjust the selector to match your plugin's main container class
-        const scopedCSS = this.scopeThemeCSS(cssContent);
-        styleEl.textContent = scopedCSS;
-        
-        document.head.appendChild(styleEl);
-        
-        // Save the selection
-        this.settings.selectedTheme = themeName;
-        await this.saveSettings();
-        
-        console.log(`Applied theme: ${themeName}`);
-    } catch (error) {
-        console.error(`Failed to apply theme ${themeName}:`, error);
-    }
+  // Remove old <style>
+  const old = document.getElementById('zoro-theme');
+  if (old) old.remove();
+
+  if (!themeName) return;
+
+  try {
+    const cssPath = `${this.manifest.dir}/themes/${themeName}.css`;
+    const css = await this.app.vault.adapter.read(cssPath);
+    const style = document.createElement('style');
+    style.id = 'zoro-theme';
+    style.textContent = css;
+    document.head.appendChild(style);
+  } catch (e) {
+    console.warn('[Zoro] Could not load theme', themeName, e);
+    new Notice(`❌ Theme “${themeName}” not found`);
+  }
 }
 
-scopeThemeCSS(cssContent) {
-    // This method scopes the theme CSS to only apply to your plugin's UI
-    // Replace '.zoro-plugin' with your plugin's main container class
-    const pluginScope = '.zoro-plugin';
-    
-    // Simple CSS scoping - prepend your plugin class to each rule
-    return cssContent
-        .split('}')
-        .map(rule => {
-            rule = rule.trim();
-            if (!rule) return '';
-            
-            // Skip @import, @keyframes, etc.
-            if (rule.startsWith('@')) return rule + '}';
-            
-            // Split selector and declaration
-            const parts = rule.split('{');
-            if (parts.length !== 2) return rule + '}';
-            
-            const selectors = parts[0].trim();
-            const declaration = parts[1].trim();
-            
-            // Scope each selector
-            const scopedSelectors = selectors
-                .split(',')
-                .map(selector => `${pluginScope} ${selector.trim()}`)
-                .join(', ');
-            
-            return `${scopedSelectors} { ${declaration} }`;
-        })
-        .join('\n');
-}
-
-removeCurrentTheme() {
-    const existingStyle = document.getElementById('zoro-plugin-theme');
-    if (existingStyle) {
-        existingStyle.remove();
-    }
-}
- 
   // Plugin unload method
   onunload() {
     console.log('Unloading Zoro Plugin');
-this.removeCurrentTheme();
+
     const styleId = 'zoro-plugin-styles';
     const existingStyle = document.getElementById(styleId);
     if (existingStyle) {
@@ -3102,13 +3015,12 @@ class ZoroSettingTab extends PluginSettingTab {
         const Account  = section('👤 Account', true);   // opens by default
     const UI = section('🎨 Appearance');
     const Theme = section('🌌 Theme');
-    this.createThemeSelector(Theme);
-    
     const Data = section('📤 Your Data');
     const Guide = section('🧭 Guide');
     const More = section('✨ More');
     
 
+    
     new Setting(Account)
       .setName('🆔 Username')
       .setDesc('Lets you access your public profile and stats — that’s it.')
@@ -3261,7 +3173,28 @@ new Setting(Data)
   );
   
   
-  
+
+
+new Setting(Theme)
+  .setName('Select Theme')
+  .setDesc('Pick a custom CSS file from the themes folder')
+  .addDropdown(async dropdown => {
+    // Populate
+    dropdown.addOption('', 'None (built-in)');
+    const themes = await this.plugin.getAvailableThemes();
+    themes.forEach(t => dropdown.addOption(t, t));
+
+    // Pre-select saved value
+    dropdown.setValue(this.plugin.settings.theme);
+
+    // On change: apply + save
+    dropdown.onChange(async value => {
+      this.plugin.settings.theme = value;
+      await this.plugin.saveSettings();
+      await this.plugin.applyTheme(value);
+    });
+  });
+
 
 new Setting(Guide)
     .setName('🍜 Sample Notes')
@@ -3291,99 +3224,6 @@ new Setting(Guide)
           window.open('https://github.com/zara-kasi/zoro/blob/main/README.md', '_blank');
         }));
   }
-  
-  createThemeSelector(parentElement) {
-    // Use the provided parent element instead of containerEl
-    const container = parentElement || this.containerEl;
-    
-    // Create theme section manually to work with your collapsible sections
-    const themeSection = container.createDiv('setting-item');
-    
-    // Theme selector label
-    const themeInfo = themeSection.createDiv('setting-item-info');
-    themeInfo.createDiv('setting-item-name').setText('🎨 Theme Selector');
-    themeInfo.createDiv('setting-item-description').setText('Choose a custom theme for the plugin interface');
-    
-    // Theme selector control
-    const themeControl = themeSection.createDiv('setting-item-control');
-    const themeSelect = themeControl.createEl('select');
-    themeSelect.style.minWidth = '150px';
-    themeSelect.style.marginRight = '8px';
-    
-    // Add default "No theme" option
-    const defaultOption = themeSelect.createEl('option');
-    defaultOption.value = 'none';
-    defaultOption.text = 'No theme';
-    
-    // Set current selection to current theme
-    themeSelect.value = this.plugin.settings.selectedTheme || 'none';
-    
-    // Load available themes asynchronously
-    this.plugin.getAvailableThemes().then(availableThemes => {
-        // Add theme options
-        availableThemes.forEach(theme => {
-            const option = themeSelect.createEl('option');
-            option.value = theme.name;
-            option.text = this.formatThemeName(theme.name);
-        });
-        
-        // Restore current selection after options are loaded
-        themeSelect.value = this.plugin.settings.selectedTheme || 'none';
-    });
-    
-    // Handle theme selection
-    themeSelect.addEventListener('change', async (event) => {
-        const selectedTheme = event.target.value;
-        await this.plugin.applyTheme(selectedTheme === 'none' ? '' : selectedTheme);
-        
-        // Show confirmation
-        this.showThemeChangeNotice(selectedTheme === 'none' ? 'No theme' : selectedTheme);
-    });
-    
-    // Add refresh button to reload theme list
-    const refreshButton = themeControl.createEl('button');
-    refreshButton.textContent = '↻';
-    refreshButton.title = 'Refresh theme list';
-    refreshButton.style.padding = '4px 8px';
-    refreshButton.addEventListener('click', () => {
-        this.refreshThemeSelector(themeSelect);
-    });
-    
-    // Store reference for refresh functionality
-    this.themeSelect = themeSelect;
-}
-formatThemeName(themeName) {
-    // Convert theme file names to readable format
-    return themeName
-        .split('-')
-        .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-        .join(' ');
-}
-
-refreshThemeSelector(selectElement) {
-    // Clear existing options except the default
-    while (selectElement.options.length > 1) {
-        selectElement.remove(1);
-    }
-    
-    // Reload themes asynchronously
-    this.plugin.getAvailableThemes().then(availableThemes => {
-        // Add theme options
-        availableThemes.forEach(theme => {
-            const option = selectElement.createEl('option');
-            option.value = theme.name;
-            option.text = this.formatThemeName(theme.name);
-        });
-        
-        // Restore current selection
-        selectElement.value = this.plugin.settings.selectedTheme || 'none';
-    });
-}
-showThemeChangeNotice(themeName) {
-    // Show a notice when theme changes
-    new Notice(`Theme changed to: ${themeName}`);
-}
-
   //  Dynamic Update of Auth button
 updateAuthButton() {
   if (!this.authButton) return;

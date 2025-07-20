@@ -2747,29 +2747,67 @@ async getAvailableThemes() {
   }
 }
 
+
+
 /**
  * Apply or remove a theme.
  * @param {string} themeName  file name without .css, or "" to disable
  */
-async applyTheme(themeName) {
-  // Remove old <style>
-  const old = document.getElementById('zoro-theme');
-  if (old) old.remove();
+  async applyTheme(themeName) {
+    // 1. Remove any previous scoped theme
+    const old = document.getElementById('zoro-theme');
+    if (old) old.remove();
 
-  if (!themeName) return;
+    // 2. If user chose “None”, stop here
+    if (!themeName) return;
 
-  try {
+    // 3. Read the CSS file
     const cssPath = `${this.manifest.dir}/themes/${themeName}.css`;
-    const css = await this.app.vault.adapter.read(cssPath);
+    let rawCss;
+    try {
+      rawCss = await this.app.vault.adapter.read(cssPath);
+    } catch (err) {
+      console.warn('Zoro: theme file missing:', themeName, err);
+      new Notice(`❌ Theme “${themeName}” not found`);
+      return;
+    }
+
+    // 4. Fully scope the CSS
+    const scopedCss = this.scopeCss(rawCss);
+
+    // 5. Inject the scoped style
     const style = document.createElement('style');
     style.id = 'zoro-theme';
-    style.textContent = css;
+    style.textContent = scopedCss;
     document.head.appendChild(style);
-  } catch (e) {
-    console.warn('[Zoro] Could not load theme', themeName, e);
-    new Notice(`❌ Theme “${themeName}” not found`);
   }
-}
+
+ /**
+   * Scope raw CSS so every rule only targets `.zoro-container`.
+   * - `:root` → `.zoro-container`
+   * - Every normal selector → prefixed with `.zoro-container `
+   */
+  scopeCss(rawCss, scope = '.zoro-container') {
+    // 1. Move CSS variables from :root to the plugin container
+    let css = rawCss.replace(/:root\b/g, scope);
+
+    // 2. Prefix every selector (outside @-rules)
+    css = css.replace(
+      /(^|})(\s*)([^{@}][^{}]*?)\s*\{/g,
+      (_, prefix, ws, selectorText) => {
+        const scoped = selectorText
+          .split(',')
+          .map(s => {
+            const sel = s.trim();
+            return sel.startsWith(scope) ? sel : `${scope} ${sel}`;
+          })
+          .join(', ');
+        return `${prefix}${ws}${scoped} {`;
+      }
+    );
+
+    return css;
+  }
 
   // Plugin unload method
   onunload() {

@@ -198,6 +198,7 @@ setToCache(type, key, value) {
       defaultUsername: typeof settings?.defaultUsername === 'string' ? settings.defaultUsername : '',
       defaultLayout: ['card', 'list'].includes(settings?.defaultLayout) ? settings.defaultLayout : 'card',
       gridColumns: Number.isInteger(settings?.gridColumns) ? settings.gridColumns : 3,
+      selectedTheme: typeof settings?.selectedTheme === 'string' ? settings.selectedTheme : '',
    defaultSortField: (typeof settings?.defaultSortField === 'string' && (settings.defaultSortField === '' || SORT_FIELDS[settings.defaultSortField])) ? settings.defaultSortField : '',
 
       defaultSortDir:    ['asc','desc',''].includes(settings?.defaultSortDir) ? settings.defaultSortDir : '',

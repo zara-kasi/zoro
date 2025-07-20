@@ -1,6 +1,7 @@
 // Obsidian API
   const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal } = require('obsidian');
-// Default settings
+  
+// Default Setting
   const DEFAULT_SETTINGS = {
   defaultUsername: '',
   defaultLayout: 'card',
@@ -17,7 +18,8 @@
   redirectUri: 'https://anilist.co/api/v2/oauth/pin',
   accessToken: '',
 };
-// SORT FIELDS
+
+//Sort
   const SORT_FIELDS = {
   title:        { label: 'Title' },
   startDate:    { label: 'Release Date' },
@@ -28,7 +30,6 @@
   trending:     { label: 'Trending' },
   favourites:   { label: 'Favorites' }
 };
-// Sort Map 
   const ANILIST_SEARCH_SORT_MAP = {
   title:       'TITLE_ROMAJI',
   startDate:   'START_DATE',
@@ -38,7 +39,6 @@
   trending:    'TRENDING',
   favourites:  'FAVOURITES'
 };
-// Sort Entries
   function sortEntries(entries, { field = '', dir = '' } = {}) {
    if (field === '') return entries;
   const d = dir === 'desc' ? -1 : 1;
@@ -67,6 +67,7 @@
     return (a.media?.id || 0) - (b.media?.id || 0);
   });
 }
+
 // Request Queue
  class RequestQueue {
   constructor() {
@@ -103,12 +104,14 @@ try {
 }
 }
 
-// Plugin Class 
+// Plugin
 class ZoroPlugin extends Plugin {
   constructor(app, manifest) {
     super(app, manifest);
     
     this.auth = new Authentication(this);
+    this.export = new Export(this);
+    this.note = new Note(this);
   // Initialize separate caches
   this.cache = {
     userData: new Map(),
@@ -168,6 +171,7 @@ setToCache(type, key, value) {
 }
   async onload() {
     console.log('[Zoro] Plugin loading...');
+    this.render = new Render(this);
     // Load settings
     try {
       await this.loadSettings();
@@ -239,21 +243,7 @@ await this.applyTheme(this.settings.theme);
     this.settings.clientSecret = secret.trim();
     await this.saveData(this.settings);
   }}
-  
-
- // Authentication 
-  
-
-  
-  // Exchange code for token 
-  
-  
-  // Token Validation 
-async ensureValidToken() {
-  return !!this.settings.accessToken;
-}
-
-  
+ 
   // Make Obsidian Request 
   async makeObsidianRequest(code, redirectUri) {
     const body = new URLSearchParams({
@@ -288,61 +278,7 @@ async ensureValidToken() {
       throw new Error('Failed to authenticate with AniList via Obsidian requestUrl.');
     }
   }
-
-  // Test access token 
-  
-// Authenticated Username 
-  async getAuthenticatedUsername() {
-  if (!this.settings.accessToken) return null;
-
-  await this.ensureValidToken();
-
-  const headers = {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${this.settings.accessToken}`,
-  };
-
-  const query = `
-    query {
-      Viewer {
-        name
-      }
-    }
-  `;
-
-  try {
-    const response = await this.requestQueue.add(() =>
-      requestUrl({
-        url: 'https://graphql.anilist.co',
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ query }),
-      })
-    );
-
-    const data = response.json;
-
-    if (!data?.data?.Viewer?.name) {
-      throw new Error('Invalid token or no username returned.');
-    }
-
-    this.settings.authUsername = data.data.Viewer.name;
-    await this.saveSettings();
-
-    return data.data.Viewer.name;
-
-  } catch (error) {
-    console.warn('[Zoro] getAuthenticatedUsername() failed:', error);
-    return null;
-  }
-  }
-  
- 
-    
-    /// *Fetching*
-
   // Fetch Zoro Data 
-    
     async fetchZoroData(config) {
   const cacheKey = JSON.stringify(config);
   let cacheType;
@@ -373,7 +309,7 @@ async ensureValidToken() {
       };
       
 if (this.settings.accessToken) {
-  await this.ensureValidToken();
+  await this.auth.ensureValidToken();
   
   headers['Authorization'] = `Bearer ${this.settings.accessToken}`;
 }
@@ -482,7 +418,8 @@ if (this.settings.accessToken) {
         throw new Error('⚠️ No data returned from Zoro API.');
       }
 
-      this.renderZoroData(el, data, config);
+      if (config.type === 'stats') {         this.render.renderUserStats(el, data.User);       } else if (config.type === 'single') {         this.render.renderSingleMedia(el, data.MediaList, config);       } else {         const entries = data.MediaListCollection.lists.flatMap(list => list.entries);         this.render.renderMediaList(el, entries, config);       }
+      
     } catch (error) {
       console.error('[Zoro] Code block processing error:', error);
       this.renderError(el, error.message || 'Unknown error occurred.');
@@ -490,11 +427,10 @@ if (this.settings.accessToken) {
   }
 
 // Update Media List 
-    
     async updateMediaListEntry(mediaId, updates) {
   try {
     // Ensure valid token before proceeding
-    if (!this.settings.accessToken || !(await this.ensureValidToken())) {
+    if (!this.settings.accessToken || !(await this.auth.ensureValidToken())) {
       throw new Error('❌ Authentication required to update entries.');
     }
 
@@ -548,8 +484,6 @@ const variables = {
   }
 }
 
-
-
 clearCacheForMedia(mediaId) {
   // Clear media-specific cache
   for (const [key] of this.cache.mediaData) {
@@ -572,9 +506,6 @@ clearCacheForMedia(mediaId) {
   console.log(`[Zoro] Cleared cache for media ${mediaId}`);
 }
 
-   
-
-  // Process Zoro Search Code Block - FIXED: Removed duplicate and fixed structure
   async processZoroSearchCodeBlock(source, el, ctx) {
     try {
       const config = this.parseSearchCodeBlockConfig(source);
@@ -589,7 +520,7 @@ clearCacheForMedia(mediaId) {
       
       
 
-      await this.renderSearchInterface(el, config);
+      await this.render.renderSearchInterface(el, config);
     } catch (error) {
       console.error('[Zoro] Search block processing error:', error);
       this.renderError(el, error.message || 'Failed to process Zoro search block.');
@@ -689,7 +620,7 @@ clearCacheForMedia(mediaId) {
 
         const container = document.createElement('span');
         container.className = 'zoro-inline-container';
-        this.renderZoroData(container, data, config);
+        if (config.type === 'stats') {           this.render.renderUserStats(container, data.User);         } else if (config.type === 'single') {           this.render.renderSingleMedia(container, data.MediaList, config);         } else {           const entries = data.MediaListCollection.lists.flatMap(list => list.entries);           this.render.renderMediaList(container, entries, config);         }
 
         placeholder.replaceWith(container);
 
@@ -1072,73 +1003,6 @@ clearCacheForMedia(mediaId) {
     return `https://anilist.co/${urlType}/${mediaId}`;
   }
 
-  // Render Search Interface
-  renderSearchInterface(el, config) {
-    el.empty();
-    el.className = 'zoro-search-container';
-    
-    // Create search input
-    const searchDiv = document.createElement('div');
-    searchDiv.className = 'zoro-search-input-container';
-    
-    const searchInput = document.createElement('input');
-    searchInput.type = 'text';
-    searchInput.className = 'zoro-search-input';
-    searchInput.placeholder = config.mediaType === 'ANIME' ? 'Search anime...' : 'Search manga...';
-    
-    
-    searchDiv.appendChild(searchInput);
-    el.appendChild(searchDiv);
-    
-    // Create results container
-    const resultsDiv = document.createElement('div');
-    resultsDiv.className = 'zoro-search-results';
-    el.appendChild(resultsDiv);
-    
-    // Add event listeners
-    let searchTimeout;
-    
-    const performSearch = async () => {
-      const searchTerm = searchInput.value.trim();
-      
-      if (searchTerm.length < 3) {
-        resultsDiv.innerHTML = '<div class="zoro-search-message">Type at least 3 characters to search...</div>';
-        return;
-      }
-      
-      try {
-        resultsDiv.innerHTML = '<div class="zoro-search-loading">Searching...</div>';
-        
-        const searchConfig = { ...config,
-          search: searchTerm,
-          page: 1,
-          perPage: 5 
-        };
-        
-        const data = await this.fetchZoroData(searchConfig);
-        
-this.renderSearchResults(resultsDiv, data.Page.media, config);
-
-
-        
-      } catch (error) {
-        this.renderError(resultsDiv, error.message);
-      }
-    };
-    
-    searchInput.addEventListener('input', () => {
-      clearTimeout(searchTimeout);
-      searchTimeout = setTimeout(performSearch, 300);
-    });
-    
-    
-    searchInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        performSearch();
-      }
-    });
-  }
-  
   // Add this method to check if media is already in user's list
 async checkIfMediaInList(mediaId, mediaType) {
   if (!this.settings.accessToken) return false;
@@ -1169,427 +1033,6 @@ async addMediaToList(mediaId, updates, mediaType) {
   return await this.updateMediaListEntry(mediaId, updates);
 }
 
-// Modified renderSearchResults method to include ADD buttons
-renderSearchResults(el, media, config) {
-  el.empty();
-  
-  if (media.length === 0) {
-    el.innerHTML = '<div class="zoro-search-message">No results found.</div>';
-    return;
-  }
-  
-  const sorted = sortEntries(media, config.sortOptions);
-  const gridDiv = document.createElement('div');
-  gridDiv.className = 'zoro-cards-grid';
-  gridDiv.style.setProperty('--zoro-grid-columns', this.settings.gridColumns);
-  
-  sorted.forEach(async (item) => {
-    const title = item.title.english || item.title.romaji;
-    
-    const cardDiv = document.createElement('div');
-    cardDiv.className = 'zoro-card';
-    
-    if (this.settings.showCoverImages) {
-      const img = document.createElement('img');
-      img.src = item.coverImage.large;
-      img.alt = title;
-      img.className = 'media-cover';
-      cardDiv.appendChild(img);
-    }
-    
-    const mediaInfoDiv = document.createElement('div');
-    mediaInfoDiv.className = 'media-info';
-    
-    // Create clickable title
-    const titleElement = document.createElement('h4');
-    const titleLink = document.createElement('a');
-    titleLink.href = this.getZoroUrl(item.id, config.mediaType);
-    titleLink.target = '_blank';
-    titleLink.rel = 'noopener noreferrer';
-    titleLink.className = 'anilist-title-link';
-    titleLink.textContent = title;
-    titleElement.appendChild(titleLink);
-    mediaInfoDiv.appendChild(titleElement);
-    
-    // Create details div
-    const detailsDiv = document.createElement('div');
-    detailsDiv.className = 'media-details';
-    
-    // Format badge
-    if (item.format) {
-      const formatBadge = document.createElement('span');
-      formatBadge.className = 'format-badge';
-      formatBadge.textContent = item.format;
-      detailsDiv.appendChild(formatBadge);
-    }
-    
-    // Status badge (for media release status)
-    const statusBadge = document.createElement('span');
-    statusBadge.className = `status-badge status-${item.status.toLowerCase()}`;
-    statusBadge.textContent = item.status;
-    detailsDiv.appendChild(statusBadge);
-    
-    // ADD button
-    
-const addBadge = document.createElement('span');
-addBadge.textContent = 'ADD';
-addBadge.className = 'status-badge status-planning clickable-status';
-
-addBadge.onclick = async (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-
-  addBadge.textContent = 'Adding…';
-  addBadge.style.pointerEvents = 'none';
-
-  try {
-    await this.addMediaToList(item.id, { status: 'PLANNING', progress: 0 }, config.mediaType);
-    addBadge.className = `status-badge status-planning`;
-    addBadge.textContent = 'PLANNING';
-    addBadge.onclick = null;
-    new Notice('✅ Added!');
-  } catch (err) {
-    new Notice(`❌ ${err.message}`);
-    addBadge.textContent = 'ADD';
-    addBadge.style.pointerEvents = '';
-  }
-};
-
-    detailsDiv.appendChild(addBadge);
-
-    
-    // Average score
-    if (this.settings.showRatings && item.averageScore) {
-      const scoreSpan = document.createElement('span');
-      scoreSpan.className = 'score';
-      scoreSpan.textContent = `★ ${item.averageScore}`;
-      detailsDiv.appendChild(scoreSpan);
-    }
-    
-    mediaInfoDiv.appendChild(detailsDiv);
-    
-    // Create genres div
-    if (this.settings.showGenres && item.genres) {
-      const genresDiv = document.createElement('div');
-      genresDiv.className = 'genres';
-      item.genres.slice(0, 3).forEach(genre => {
-        const genreTag = document.createElement('span');
-        genreTag.className = 'genre-tag';
-        genreTag.textContent = genre;
-        genresDiv.appendChild(genreTag);
-      });
-      mediaInfoDiv.appendChild(genresDiv);
-    }
-    
-    cardDiv.appendChild(mediaInfoDiv);
-    gridDiv.appendChild(cardDiv);
-    
-    // Check if item is already in list and update button accordingly
-    if (this.settings.accessToken) {
-      this.checkIfMediaInList(item.id, config.mediaType).then(inList => {
-        if (inList) {
-          addButton.textContent = 'IN LIST';
-          addButton.style.backgroundColor = '#999';
-          addButton.style.cursor = 'not-allowed';
-          addButton.title = 'Already in your list';
-          addButton.onclick = null;
-        }
-      });
-    }
-  });
-  
-  el.appendChild(gridDiv);
-}
-
-
-
-  
-
-  //  render ZoroData
-  renderZoroData(el, data, config) {
-    el.empty();
-    el.className = 'zoro-container';
-    
-    if (config.type === 'stats') {
-      this.renderUserStats(el, data.User);
-    } else if (config.type === 'single') {
-      this.renderSingleMedia(el, data.MediaList, config);
-    } else {
-  const entries = data.MediaListCollection.lists.flatMap(list => list.entries);
-  if (config.layout === 'table') {
-    this.renderTableLayout(el, entries, config);   
-  } else {
-    this.renderMediaList(el, entries, config);
-  }
-}
-
-  }
-
-  // Render User's Stats (Need some fixes)
-  renderUserStats(el, user) {
-    if (!user || !user.statistics) {
-      this.renderError(el, 'User statistics unavailable.');
-      return;
-    }
-    
-
-    const safe = (val, fallback = '—') => (val != null ? val : fallback);
-
-    const createStatItem = (label, value) => {
-      const item = document.createElement('div');
-      item.className = 'zoro-stat-item';
-      item.innerHTML = `<span>${label}:</span><span>${safe(value)}</span>`;
-      return item;
-    };
-
-    const createStatSection = (title, stats) => {
-      const section = document.createElement('div');
-      section.className = 'zoro-stat-section';
-
-      const heading = document.createElement('h4');
-      heading.textContent = title;
-      section.appendChild(heading);
-
-      for (const [key, label] of Object.entries({
-        count: 'Count',
-        episodesWatched: 'Episodes',
-        minutesWatched: 'Minutes',
-        meanScore: 'Mean Score',
-        chaptersRead: 'Chapters',
-        volumesRead: 'Volumes'
-      })) {
-        if (stats[key] !== undefined) {
-          section.appendChild(createStatItem(label, stats[key].toLocaleString?.() || stats[key]));
-        }
-      }
-
-      return section;
-    };
-
-    const container = document.createElement('div');
-    container.className = 'zoro-user-stats';
-
-    const header = document.createElement('div');
-    header.className = 'zoro-user-header';
-    header.innerHTML = `
-      <img src="${safe(user.avatar?.medium, '')}" alt="${safe(user.name)}" class="zoro-user-avatar">
-      <h3>${safe(user.name)}</h3>
-    `;
-
-    const statsGrid = document.createElement('div');
-    statsGrid.className = 'zoro-stats-grid';
-
-    statsGrid.appendChild(createStatSection('Anime', user.statistics.anime || {}));
-    statsGrid.appendChild(createStatSection('Manga', user.statistics.manga || {}));
-
-    container.appendChild(header);
-    container.appendChild(statsGrid);
-    el.appendChild(container);
-  }
-
-  // Render Single Media 
-  renderSingleMedia(el, mediaList, config) {
-    const media = mediaList.media;
-    const title = media.title.english || media.title.romaji;
-    
-    const cardDiv = document.createElement('div');
-    cardDiv.className = 'zoro-single-card';
-    
-    if (this.settings.showCoverImages) {
-      const img = document.createElement('img');
-      img.src = media.coverImage.large;
-      img.alt = title;
-      img.className = 'media-cover';
-      cardDiv.appendChild(img);
-    }
-    
-    const mediaInfoDiv = document.createElement('div');
-    mediaInfoDiv.className = 'media-info';
-    
-    // Create clickable title
-    const titleElement = document.createElement('h3');
-    const titleLink = document.createElement('a');
-    titleLink.href = this.getZoroUrl(media.id, config.mediaType);
-    titleLink.target = '_blank';
-    titleLink.rel = 'noopener noreferrer';
-    titleLink.className = 'zoro-title-link';
-    titleLink.textContent = title;
-    titleElement.appendChild(titleLink);
-    mediaInfoDiv.appendChild(titleElement);
-    
-    // Create details div
-    const detailsDiv = document.createElement('div');
-    detailsDiv.className = 'media-details';
-    
-    // Format badge
-    if (media.format) {
-      const formatBadge = document.createElement('span');
-      formatBadge.className = 'format-badge';
-      formatBadge.textContent = media.format;
-      detailsDiv.appendChild(formatBadge);
-    }
-    
-    // Status badge
-    const statusBadge = document.createElement('span');
-    statusBadge.className = `status-badge status-${mediaList.status.toLowerCase()}`;
-    statusBadge.textContent = mediaList.status;
-    detailsDiv.appendChild(statusBadge);
-    
-    // Progress
-    if (this.settings.showProgress) {
-      const progressSpan = document.createElement('span');
-      progressSpan.className = 'progress';
-      progressSpan.textContent = `${mediaList.progress}/${media.episodes || media.chapters || '?'}`;
-      detailsDiv.appendChild(progressSpan);
-    }
-    
-    // Score
-    if (this.settings.showRatings && mediaList.score) {
-      const scoreSpan = document.createElement('span');
-      scoreSpan.className = 'score';
-      scoreSpan.textContent = `★ ${mediaList.score}`;
-      detailsDiv.appendChild(scoreSpan);
-    }
-    
-    mediaInfoDiv.appendChild(detailsDiv);
-    // Create genres div
-    if (this.settings.showGenres) {
-      const genresDiv = document.createElement('div');
-      genresDiv.className = 'genres';
-      media.genres.slice(0, 3).forEach(genre => {
-        const genreTag = document.createElement('span');
-        genreTag.className = 'genre-tag';
-        genreTag.textContent = genre;
-        genresDiv.appendChild(genreTag);
-      });
-      mediaInfoDiv.appendChild(genresDiv);
-    }
-    
-    cardDiv.appendChild(mediaInfoDiv);
-    el.appendChild(cardDiv);
-  }
-
-  // Render Media Lists
-  renderMediaList(el, entries, config) {
-    const sorted = sortEntries(entries, config.sortOptions);
-    const gridDiv = document.createElement('div');
-    gridDiv.className = 'zoro-cards-grid';
-    gridDiv.style.setProperty('--zoro-grid-columns', this.settings.gridColumns);
-
-    sorted.forEach(entry => {
-      const card = this.createMediaCard(entry, config);
-      gridDiv.appendChild(card);
-    });
-    el.empty();
-    el.appendChild(gridDiv);
-  }
-
-  createMediaCard(entry, config) {
-    const media = entry.media;
-    if (!media) return document.createTextNode('⚠️ Missing media');
-
-    const title = media.title.english || media.title.romaji || 'Untitled';
-
-    const cardDiv = document.createElement('div');
-    cardDiv.className = 'zoro-card';
-
-    // Cover - using old styling class name
-    if (this.settings.showCoverImages && media.coverImage?.large) {
-      const img = document.createElement('img');
-      img.src = media.coverImage.large;
-      img.alt = title;
-      img.className = 'media-cover'; // Changed from 'zoro-media-cover' to match old style
-      cardDiv.appendChild(img);
-    }
-
-    const infoDiv = document.createElement('div');
-    infoDiv.className = 'media-info'; // Changed from 'zoro-media-info' to match old style
-
-    // Title - using old styling class name
-    const titleElement = document.createElement('h4');
-    const titleLink = document.createElement('a');
-    titleLink.href = this.getZoroUrl(media.id, config.mediaType);
-    titleLink.target = '_blank';
-    titleLink.rel = 'noopener noreferrer';
-    titleLink.className = 'anilist-title-link'; 
-    titleLink.textContent = title;
-    titleElement.appendChild(titleLink);
-    infoDiv.appendChild(titleElement);
-
-    // Details - using old styling approach
-    const detailsDiv = this.createDetailsRow(entry);
-    infoDiv.appendChild(detailsDiv);
-
-    // Genres - using old styling class name
-    if (this.settings.showGenres && media.genres?.length) {
-      const genresDiv = document.createElement('div');
-      genresDiv.className = 'genres'; // Changed from 'zoro-genres' to match old style
-      media.genres.slice(0, 3).forEach(genre => {
-        const tag = document.createElement('span');
-        tag.className = 'genre-tag'; // Changed from 'zoro-genre-tag' to match old style
-        tag.textContent = genre;
-        genresDiv.appendChild(tag);
-      });
-      infoDiv.appendChild(genresDiv);
-    }
-
-    cardDiv.appendChild(infoDiv);
-    return cardDiv;
-  }
-
-  createDetailsRow(entry) {
-    const media = entry.media;
-    const details = document.createElement('div');
-    details.className = 'media-details'; // Changed from 'zoro-media-details' to match old style
-
-    // Format - using old styling class name
-    if (media.format) {
-      const format = document.createElement('span');
-      format.className = 'format-badge'; // Changed from 'zoro-badge zoro-format' to match old style
-      format.textContent = media.format;
-      details.appendChild(format);
-    }
-
-    // Status 
-    const status = document.createElement('span');
-    status.className = `status-badge status-${entry.status?.toLowerCase()} clickable-status`; // Changed from 'zoro-badge zoro-status' to match old style
-    status.textContent = entry.status ?? 'Unknown';
-    status.style.cursor = 'pointer';
-
-    if (this.settings.accessToken) {
-      status.title = 'Click to edit';
-      status.onclick = e => this.handleEditClick(e, entry, status);
-    } else {
-      status.title = 'Click to authenticate';
-      status.onclick = e => {
-        e.preventDefault();
-        e.stopPropagation();
-        this.createAuthenticationPrompt();
-      };
-    }
-
-    details.appendChild(status);
-
-    // Progress - using old styling class name
-    if (this.settings.showProgress) {
-      const progress = document.createElement('span');
-      progress.className = 'progress'; // Changed from 'zoro-badge zoro-progress' to match old style
-      const total = media.episodes ?? media.chapters ?? '?';
-      progress.textContent = `${entry.progress}/${total}`; // Changed format to match old style
-      details.appendChild(progress);
-    }
-
-    // Score - using old styling class name
-    if (this.settings.showRatings && entry.score != null) {
-      const score = document.createElement('span');
-      score.className = 'score'; // Changed from 'zoro-badge zoro-score' to match old style
-      score.textContent = `★ ${entry.score}`;
-      details.appendChild(score);
-    }
-
-    return details;
-  }
-
   handleEditClick(e, entry, statusEl) {
     e.preventDefault();
     e.stopPropagation();
@@ -1616,112 +1059,6 @@ addBadge.onclick = async (e) => {
       () => {
       }
     );
-  }
-
-
-  // Render Table Layout 
-  renderTableLayout(el, entries, config) {
-    el.empty();
-const sorted = sortEntries(entries, config.sortOptions);
-    const table = document.createElement('table');
-    table.className = 'zoro-table';
-
-    // --- HEADER ---
-    const thead = document.createElement('thead');
-    const headerRow = document.createElement('tr');
-
-    const headers = ['Title', 'Format', 'Status'];
-    if (this.settings.showProgress) headers.push('Progress');
-    if (this.settings.showRatings) headers.push('Score');
-  if (this.settings.showGenres) headers.push('Genres');
-
-    headers.forEach(text => {
-      const th = document.createElement('th');
-      th.textContent = text;
-      headerRow.appendChild(th);
-    });
-
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
-
-    // --- BODY ---
-    const tbody = document.createElement('tbody');
-
-    sorted.forEach(entry => {
-      const media = entry.media;
-      if (!media) return; // skip broken
-
-      const row = document.createElement('tr');
-
-      // --- Title ---
-      const titleCell = document.createElement('td');
-      const title = media.title.english || media.title.romaji || 'Untitled';
-      const link = document.createElement('a');
-      
-      link.href = this.getZoroUrl(media.id, config.mediaType);
-      link.textContent = title;
-      link.target = '_blank';
-      link.rel = 'noopener noreferrer';
-      link.className = 'zoro-title-link';
-      titleCell.appendChild(link);
-      row.appendChild(titleCell);
-
-      // --- Format ---
-      const formatCell = document.createElement('td');
-      formatCell.textContent = media.format || '-';
-      row.appendChild(formatCell);
-
-      // --- Status ---
-      const statusCell = document.createElement('td');
-      const status = document.createElement('span');
-      status.textContent = entry.status || '-';
-      status.className = `zoro-badge status-${entry.status?.toLowerCase()} clickable-status`;
-      status.style.cursor = 'pointer';
-
-      if (this.settings.accessToken) {
-        status.title = 'Click to edit';
-        status.onclick = (e) => this.handleEditClick(e, entry, status);
-      } else {
-        status.title = 'Click to authenticate';
-        status.onclick = (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          this.createAuthenticationPrompt();
-        };
-      }
-
-      statusCell.appendChild(status);
-      row.appendChild(statusCell);
-
-      // --- Progress ---
-            // --- Progress ---
-      if (this.settings.showProgress) {
-        const progressCell = document.createElement('td');
-        const total = media.episodes ?? media.chapters ?? '?';
-        progressCell.textContent = `${entry.progress ?? 0}/${total}`;
-        row.appendChild(progressCell);
-      }
-
-
-      // --- Score ---
-      if (this.settings.showRatings) {
-        const scoreCell = document.createElement('td');
-        scoreCell.textContent = entry.score != null ? `★ ${entry.score}` : '-';
-        row.appendChild(scoreCell);
-      }
-      // --- Genres ---
-      if (this.settings.showGenres) {
-        const genreCell = document.createElement('td');
-        genreCell.textContent = (media.genres || []).slice(0, 3).join(', ') || '-';
-        row.appendChild(genreCell);
-      }
-
-      tbody.appendChild(row);
-    });
-
-
-    table.appendChild(tbody);
-    el.appendChild(table);
   }
 
   // Create Edit Modal
@@ -2196,170 +1533,7 @@ const sorted = sortEntries(entries, config.sortOptions);
     }
   }
 
- async createSampleNotes() {
-  try {
-    let successCount = 0;
-    let errorMessages = [];
-    
-    // **FIRST NOTE CONFIGURATION**
-    
-    const firstNoteTitle = "Anime Dashboard";
-    
-const firstNoteContent =`\`\`\`zoro-search
-mediaType: ANIME
-\`\`\`
-
-# 👀 Watching:
-\`\`\`zoro
-listType: CURRENT
-mediaType: ANIME
-\`\`\`
-
-# 📝 Planning:
-\`\`\`zoro
-listType: PLANNING
-mediaType: ANIME
-\`\`\`
-
-# 🌀 Repeating:
-\`\`\`zoro
-listType: REPEATING
-mediaType: ANIME
-\`\`\`
-
-# ⏸️ On Hold:
-\`\`\`zoro
-listType: PAUSED
-mediaType: ANIME
-\`\`\`
-
-# 🏁 Completed:
-\`\`\`zoro
-listType: COMPLETED
-mediaType: ANIME
-\`\`\`
-
-# 🗑️ Dropped:
-\`\`\`zoro
-listType: DROPPED
-mediaType: ANIME
-\`\`\`
-
-# 📊 Stats:
-\`\`\`zoro
-type: stats
-\`\`\` 
-
-`;
-
- const secondNoteTitle = "Manga Dashboard";
-
-const secondNoteContent =`\`\`\`zoro-search
-mediaType: MANGA
-\`\`\`
-
-# 📖 Reading:
-\`\`\`zoro
-listType: CURRENT
-mediaType: MANGA
-\`\`\`
-
-# 📝 Planning:
-\`\`\`zoro
-listType: PLANNING
-mediaType: MANGA
-\`\`\`
-
-# 🌀 Repeating:
-\`\`\`zoro
-listType: REPEATING
-mediaType: MANGA
-\`\`\`
-
-# ⏸️ On Hold:
-\`\`\`zoro
-listType: PAUSED
-mediaType: MANGA
-\`\`\`
-
-# 🏁 Completed:
-\`\`\`zoro
-listType: COMPLETED
-mediaType: MANGA
-\`\`\`
-
-# 🗑️ Dropped:
-\`\`\`zoro
-listType: DROPPED
-mediaType: MANGA
-\`\`\`
-
-# 📊 Stats:
-\`\`\`zoro
-type: stats
-\`\`\` 
-
-`;
-
-    // Array of notes to create
-
-    const notesToCreate = [
-      { title: firstNoteTitle, content: firstNoteContent },
-      { title: secondNoteTitle, content: secondNoteContent }
-    ];
-
-    // Create each note
-
-    for (const note of notesToCreate) {
-      try {
-        const fileName = `${note.title}.md`;
-        const filePath = fileName;
-
- // This creates the note in the vault root
-        
-        // Checking for if  file already exists
-        const existingFile = this.app.vault.getAbstractFileByPath(filePath);
-        if (existingFile) {
-          errorMessages.push(`"${note.title}" already exists`);
-          continue;
-        }
-        
-        // Create the new note
-        await this.app.vault.create(filePath, note.content);
-        successCount++;
-        
-      } catch (error) {
-        errorMessages.push(`Failed to create "${note.title}": ${error.message}`);
-      }
-    }
-    
-    // Show results
-    if (successCount > 0) {
-      new Notice(`Successfully created ${successCount} note${successCount > 1 ? 's' : ''}!`, 4000);
-      
-      
-
-      // Open the first successfully created note
-
-      const firstNote = this.app.vault.getAbstractFileByPath(`${firstNoteTitle}.md`);
-      if (firstNote) {
-        await this.app.workspace.openLinkText(`${firstNoteTitle}.md`, '', false);
-      }
-    }
-    
-    if (errorMessages.length > 0) {
-      new Notice(`Note: ${errorMessages.join(', ')}`, 5000);
-    }
-    
-  } catch (error) {
-    console.error('Error creating notes:', error);
-    new Notice(`Failed to create notes: ${error.message}`, 5000);
-  }
- }
-
-
-
-  
+ 
   // Inject Css not ok
   injectCSS() {
   const styleId = 'zoro-plugin-styles';
@@ -2422,124 +1596,6 @@ type: stats
 
     el.appendChild(wrapper);
   }
-  
-// Export 
-async exportUnifiedListsToCSV() {
-  // decide which username to use
-  let username = this.settings.authUsername;
-  if (!username) username = this.settings.defaultUsername;
-  if (!username) {
-    new Notice('Set a default username in settings first.', 4000);
-    return;
-  }
-
-  const useAuth = !!this.settings.accessToken;
-  const query = `
-    query ($userName: String) {
-      MediaListCollection(userName: $userName, type: ANIME) {
-        lists {
-          name
-          entries {
-            status progress score(format: POINT_10_DECIMAL) repeat
-            startedAt { year month day } completedAt { year month day }
-            media {
-              id type format
-              title { romaji english native }
-              episodes chapters volumes
-              startDate { year month day } endDate { year month day }
-              averageScore genres
-              studios(isMain: true) { nodes { name } }
-            }
-          }
-        }
-      }
-    }
-  `;
-
-  new Notice(`${useAuth ? '📥 Full' : '📥 Public'} export started…`, 4000);
-
-  const fetchType = async type => {
-    const headers = { 'Content-Type': 'application/json' };
-    if (useAuth) {
-      await this.ensureValidToken();
-      headers['Authorization'] = `Bearer ${this.settings.accessToken}`;
-    }
-
-    const res = await this.requestQueue.add(() =>
-      requestUrl({
-        url: 'https://graphql.anilist.co',
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          query: query.replace('type: ANIME', `type: ${type}`),
-          variables: { userName: username }
-        })
-      })
-    );
-    return res.json.data?.MediaListCollection?.lists || [];
-  };
-
-  const [animeLists, mangaLists] = await Promise.all([fetchType('ANIME'), fetchType('MANGA')]);
-  const lists = [...animeLists, ...mangaLists];
-
-  if (!lists.flatMap(l => l.entries).length) {
-    new Notice('No lists found (private or empty).', 4000);
-    return;
-  }
-
-  const rows = [];
-  const headers = [
-    'ListName', 'Status', 'Progress', 'Score', 'Repeat',
-    'StartedAt', 'CompletedAt', 'MediaID', 'Type', 'Format',
-    'TitleRomaji', 'TitleEnglish', 'TitleNative',
-    'Episodes', 'Chapters', 'Volumes',
-    'MediaStart', 'MediaEnd', 'AverageScore', 'Genres', 'MainStudio', 'URL'
-  ];
-  rows.push(headers.join(','));
-
-  for (const list of lists) {
-    for (const e of list.entries) {
-      const m = e.media;
-      const row = [
-        list.name, e.status, e.progress ?? 0, e.score ?? '', e.repeat ?? 0,
-        this.dateToString(e.startedAt), this.dateToString(e.completedAt),
-        m.id, m.type, m.format,
-        this.csvEscape(m.title.romaji), this.csvEscape(m.title.english), this.csvEscape(m.title.native),
-        m.episodes ?? '', m.chapters ?? '', m.volumes ?? '',
-        this.dateToString(m.startDate), this.dateToString(m.endDate),
-        m.averageScore ?? '', this.csvEscape((m.genres || []).join(';')),
-        this.csvEscape(m.studios?.nodes?.[0]?.name || ''),
-        this.csvEscape(this.getZoroUrl(m.id, m.type))
-      ];
-      rows.push(row.join(','));
-    }
-  }
-
-  const csv = rows.join('\n');
-  const suffix = useAuth ? '' : '_PUBLIC';
-  
-      
-    const fileName = `AniList_${username}${suffix}_${new Date().toISOString().slice(0, 10)}.csv`;
-  await this.app.vault.create(fileName, csv);
-  new Notice(`✅ CSV saved to vault: ${fileName}`, 4000);
-  await this.app.workspace.openLinkText(fileName, '', false);
-}
-
-
-  dateToString(dateObj) {
-    if (!dateObj || !dateObj.year) return '';
-    return `${dateObj.year}-${String(dateObj.month || 0).padStart(2, '0')}-${String(dateObj.day || 0).padStart(2, '0')}`;
-  }
-
-  csvEscape(str = '') {
-    if (typeof str !== 'string') str = String(str);
-    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-      return `"${str.replace(/"/g, '""')}"`;
-    }
-    return str;
-  }
- 
- 
 
  // ---------- inside ZoroPlugin ----------
 _buildSortOptions(raw) {
@@ -2674,15 +1730,8 @@ async getAvailableThemes() {
   }
 
 } 
-/**
- * Authentication
- 
- * Single-responsibility wrapper around:
- *  - Client-ID / Secret storage
- *  - OAuth flow
- *  - Token storage & expiry
- *  - Login / logout helpers
- */
+
+// Authentication
 class Authentication {
   constructor(plugin) {
     this.plugin = plugin;        // gives us access to plugin.settings & requestQueue
@@ -2830,11 +1879,6 @@ class Authentication {
     return name;
   }
 }
-
-
-/// Class for Client Id Pop up in settings
-
-
 class ClientIdModal extends Modal {
   constructor(app, onSubmit) {
     super(app);
@@ -2892,7 +1936,6 @@ class ClientIdModal extends Modal {
     setTimeout(() => input.focus(), 100);
   }
 }
-
 class ClientSecretModal extends Modal {
   constructor(app, onSubmit) {
     super(app);
@@ -2950,7 +1993,6 @@ class ClientSecretModal extends Modal {
     setTimeout(() => input.focus(), 100);
   }
 }
-
 class AuthPinModal extends Modal {
   constructor(app, onSubmit) {
     super(app);
@@ -3018,7 +2060,529 @@ class AuthPinModal extends Modal {
   }
 }
 
-// Settings Menu 
+// Render
+class Render {
+  constructor(plugin) {
+    this.plugin = plugin;
+  }
+
+  /* ----------  SEARCH  ---------- */
+  renderSearchInterface(el, config) {
+    el.empty();
+    el.className = 'zoro-search-container';
+
+    const searchDiv = el.createDiv({ cls: 'zoro-search-input-container' });
+    const input = searchDiv.createEl('input', { type: 'text', cls: 'zoro-search-input' });
+    input.placeholder = config.mediaType === 'ANIME' ? 'Search anime…' : 'Search manga…';
+
+    const resultsDiv = el.createDiv({ cls: 'zoro-search-results' });
+    let timeout;
+    const doSearch = async () => {
+      const term = input.value.trim();
+      if (term.length < 3) { resultsDiv.innerHTML = '<div class="zoro-search-message">Type at least 3 characters…</div>'; return; }
+      try {
+        resultsDiv.innerHTML = '<div class="zoro-search-loading">Searching…</div>';
+        const data = await this.plugin.fetchZoroData({ ...config, search: term, page: 1, perPage: 5 });
+        this.renderSearchResults(resultsDiv, data.Page.media, config);
+      } catch (e) { this.plugin.renderError(resultsDiv, e.message); }
+    };
+    input.addEventListener('input', () => { clearTimeout(timeout); timeout = setTimeout(doSearch, 300); });
+    input.addEventListener('keypress', e => { if (e.key === 'Enter') doSearch(); });
+  }
+
+  renderSearchResults(el, media, config) {
+  el.empty();
+  if (media.length === 0) {
+    el.innerHTML = '<div class="zoro-search-message">No results found.</div>';
+    return;
+  }
+
+  const sorted = sortEntries(media, config.sortOptions);
+  const gridDiv = document.createElement('div');
+  gridDiv.className = 'zoro-cards-grid';
+  gridDiv.style.setProperty('--zoro-grid-columns', this.plugin.settings.gridColumns);
+
+  sorted.forEach(async (item) => {
+    const title = item.title.english || item.title.romaji;
+
+    const cardDiv = document.createElement('div');
+    cardDiv.className = 'zoro-card';
+
+    if (this.plugin.settings.showCoverImages) {
+      const img = document.createElement('img');
+      img.src = item.coverImage.large;
+      img.alt = title;
+      img.className = 'media-cover';
+      cardDiv.appendChild(img);
+    }
+
+    const mediaInfoDiv = document.createElement('div');
+    mediaInfoDiv.className = 'media-info';
+
+    const titleElement = document.createElement('h4');
+    const titleLink = document.createElement('a');
+    titleLink.href = this.plugin.getZoroUrl(item.id, config.mediaType);
+    titleLink.target = '_blank';
+    titleLink.rel = 'noopener noreferrer';
+    titleLink.className = 'anilist-title-link';
+    titleLink.textContent = title;
+    titleElement.appendChild(titleLink);
+    mediaInfoDiv.appendChild(titleElement);
+
+    const detailsDiv = document.createElement('div');
+    detailsDiv.className = 'media-details';
+
+    if (item.format) {
+      const formatBadge = document.createElement('span');
+      formatBadge.className = 'format-badge';
+      formatBadge.textContent = item.format;
+      detailsDiv.appendChild(formatBadge);
+    }
+
+    const statusBadge = document.createElement('span');
+    statusBadge.className = `status-badge status-${item.status.toLowerCase()}`;
+    statusBadge.textContent = item.status;
+    detailsDiv.appendChild(statusBadge);
+
+    const addBadge = document.createElement('span');
+    addBadge.textContent = 'ADD';
+    addBadge.className = 'status-badge status-planning clickable-status';
+
+    addBadge.onclick = async (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  addBadge.textContent = 'Adding…';
+  addBadge.style.pointerEvents = 'none';
+
+  try {
+    await this.plugin.addMediaToList(item.id, { status: 'PLANNING', progress: 0 }, config.mediaType);
+    addBadge.className = 'status-badge status-planning';
+    addBadge.textContent = 'PLANNING';
+    addBadge.onclick = null;
+    new Notice('✅ Added!');
+  } catch (err) {
+    new Notice(`❌ ${err.message}`);
+    addBadge.textContent = 'ADD';
+    addBadge.style.pointerEvents = '';
+  }
+};
+
+    
+    detailsDiv.appendChild(addBadge);
+
+    if (this.plugin.settings.showRatings && item.averageScore) {
+      const scoreSpan = document.createElement('span');
+      scoreSpan.className = 'score';
+      scoreSpan.textContent = `★ ${item.averageScore}`;
+      detailsDiv.appendChild(scoreSpan);
+    }
+
+    mediaInfoDiv.appendChild(detailsDiv);
+
+    if (this.plugin.settings.showGenres && item.genres) {
+      const genresDiv = document.createElement('div');
+      genresDiv.className = 'genres';
+      item.genres.slice(0, 3).forEach(genre => {
+        const genreTag = document.createElement('span');
+        genreTag.className = 'genre-tag';
+        genreTag.textContent = genre;
+        genresDiv.appendChild(genreTag);
+      });
+      mediaInfoDiv.appendChild(genresDiv);
+    }
+
+    cardDiv.appendChild(mediaInfoDiv);
+    gridDiv.appendChild(cardDiv);
+
+    
+  });
+
+  el.appendChild(gridDiv);
+}
+
+
+  /* ----------  MEDIA LIST  ---------- */
+  renderMediaList(el, entries, config) {
+    const sorted = sortEntries(entries, config.sortOptions);
+    el.empty();
+    el.className = 'zoro-container';
+    if (config.layout === 'table') {
+      this.renderTableLayout(el, sorted, config);
+    } else {
+      const grid = el.createDiv({ cls: 'zoro-cards-grid' });
+      grid.style.setProperty('--zoro-grid-columns', this.plugin.settings.gridColumns);
+      sorted.forEach(entry => grid.appendChild(this.createMediaCard(entry, config)));
+    }
+  }
+
+  renderTableLayout(el, sorted, config) {
+    const table = el.createEl('table', { cls: 'zoro-table' });
+    const headers = ['Title', 'Format', 'Status'];
+    if (this.plugin.settings.showProgress) headers.push('Progress');
+    if (this.plugin.settings.showRatings) headers.push('Score');
+    if (this.plugin.settings.showGenres) headers.push('Genres');
+
+    table.createTHead().createEl('tr', null, tr => headers.forEach(h => tr.createEl('th', { text: h })));
+
+    const tbody = table.createTBody();
+    sorted.forEach(entry => {
+      const m = entry.media;
+      const tr = tbody.createEl('tr');
+      tr.createEl('td', null, td => td.createEl('a', { text: m.title.english || m.title.romaji, href: this.plugin.getZoroUrl(m.id, config.mediaType), cls: 'zoro-title-link', target: '_blank' }));
+      tr.createEl('td', { text: m.format || '-' });
+      tr.createEl('td', null, td => {
+        const s = td.createEl('span', { text: entry.status, cls: `status-badge status-${entry.status.toLowerCase()} clickable-status` });
+        if (this.plugin.settings.accessToken) s.onclick = e => this.plugin.handleEditClick(e, entry, s);
+      });
+      if (this.plugin.settings.showProgress) tr.createEl('td', { text: `${entry.progress ?? 0}/${m.episodes ?? m.chapters ?? '?'}` });
+      if (this.plugin.settings.showRatings) tr.createEl('td', { text: entry.score != null ? `★ ${entry.score}` : '-' });
+      if (this.plugin.settings.showGenres) tr.createEl('td', { text: (m.genres || []).slice(0, 3).join(', ') || '-' });
+    });
+  }
+
+  /* ----------  SINGLE MEDIA  ---------- */
+  renderSingleMedia(el, mediaList, config) {
+    const m = mediaList.media;
+    el.empty(); el.className = 'zoro-container';
+    const card = el.createDiv({ cls: 'zoro-single-card' });
+
+    if (this.plugin.settings.showCoverImages) {
+      card.createEl('img', { cls: 'media-cover', attr: { src: m.coverImage.large, alt: m.title.english || m.title.romaji } });
+    }
+    const info = card.createDiv({ cls: 'media-info' });
+    info.createEl('h3', null, h => {
+      h.createEl('a', { text: m.title.english || m.title.romaji, href: this.plugin.getZoroUrl(m.id, config.mediaType), cls: 'zoro-title-link', target: '_blank' });
+    });
+
+    const details = info.createDiv({ cls: 'media-details' });
+    if (m.format) details.createEl('span', { text: m.format, cls: 'format-badge' });
+    details.createEl('span', { text: mediaList.status, cls: `status-badge status-${mediaList.status.toLowerCase()}` });
+    if (this.plugin.settings.showProgress) details.createEl('span', { text: `${mediaList.progress}/${m.episodes || m.chapters || '?'}`, cls: 'progress' });
+    if (this.plugin.settings.showRatings && mediaList.score != null) details.createEl('span', { text: `★ ${mediaList.score}`, cls: 'score' });
+
+    if (this.plugin.settings.showGenres && m.genres?.length) {
+      const g = info.createDiv({ cls: 'genres' });
+      m.genres.slice(0, 3).forEach(genre => g.createEl('span', { text: genre, cls: 'genre-tag' }));
+    }
+  }
+
+  /* ----------  USER STATS  ---------- */
+  renderUserStats(el, user) {
+    el.empty(); el.className = 'zoro-container';
+    if (!user?.statistics) { el.createDiv({ cls: 'zoro-error-box', text: 'Stats unavailable' }); return; }
+
+    const container = el.createDiv({ cls: 'zoro-user-stats' });
+    container.createDiv({ cls: 'zoro-user-header' }, div => {
+      div.createEl('img', { cls: 'zoro-user-avatar', attr: { src: user.avatar?.medium || '', alt: user.name } });
+      div.createEl('h3', { text: user.name });
+    });
+
+    const grid = container.createDiv({ cls: 'zoro-stats-grid' });
+    ['anime', 'manga'].forEach(type => {
+      const stats = user.statistics[type];
+      if (!stats) return;
+      const sec = grid.createDiv({ cls: 'zoro-stat-section' });
+      sec.createEl('h4', { text: type.charAt(0).toUpperCase() + type.slice(1) });
+      ['count', 'meanScore', 'episodesWatched', 'chaptersRead'].forEach(k => {
+        if (stats[k] != null) sec.createDiv({ cls: 'zoro-stat-item', text: `${k}: ${stats[k].toLocaleString?.() ?? stats[k]}` });
+      });
+    });
+  }
+
+  /* ----------  SHARED CARD FACTORY  ---------- */
+  createMediaCard(obj, config, isSearch = false) {
+    const media = obj.media || obj; // search returns raw media
+    const title = media.title.english || media.title.romaji;
+    const card = document.createElement('div');
+    card.className = 'zoro-card';
+
+    if (this.plugin.settings.showCoverImages && media.coverImage?.large) {
+      card.createEl('img', { cls: 'media-cover', attr: { src: media.coverImage.large, alt: title } });
+    }
+
+    const info = card.createDiv({ cls: 'media-info' });
+    info.createEl('h4', null, h => {
+      h.createEl('a', { text: title, href: this.plugin.getZoroUrl(media.id, config.mediaType), cls: 'anilist-title-link', target: '_blank' });
+    });
+
+    if (!isSearch) {
+      const details = info.createDiv({ cls: 'media-details' });
+      if (media.format) details.createEl('span', { text: media.format, cls: 'format-badge' });
+      const status = details.createEl('span', { text: obj.status, cls: `status-badge status-${obj.status.toLowerCase()} clickable-status` });
+      if (this.plugin.settings.accessToken) status.onclick = e => this.plugin.handleEditClick(e, obj, status);
+      if (this.plugin.settings.showProgress) details.createEl('span', { text: `${obj.progress}/${media.episodes ?? media.chapters ?? '?'}`, cls: 'progress' });
+      if (this.plugin.settings.showRatings && obj.score != null) details.createEl('span', { text: `★ ${obj.score}`, cls: 'score' });
+    }
+    if (this.plugin.settings.showGenres && media.genres?.length) {
+      const genres = info.createDiv({ cls: 'genres' });
+      media.genres.slice(0, 3).forEach(g => genres.createEl('span', { text: g, cls: 'genre-tag' }));
+    }
+    return card;
+  }
+
+  /* ----------  UTILITIES  ---------- */
+  clear(el) { el.empty?.(); }
+}
+/* ------------------------------------------------------------------
+   Export
+   ------------------------------------------------------------------ */
+class Export {
+  constructor(plugin) {
+    this.plugin = plugin;
+  }
+
+  async exportUnifiedListsToCSV() {
+    // decide which username to use
+    let username = this.plugin.settings.authUsername;
+    if (!username) username = this.plugin.settings.defaultUsername;
+    if (!username) {
+      new Notice('Set a default username in settings first.', 4000);
+      return;
+    }
+
+    const useAuth = !!this.plugin.settings.accessToken;
+    const query = `
+      query ($userName: String) {
+        MediaListCollection(userName: $userName, type: ANIME) {
+          lists {
+            name
+            entries {
+              status progress score(format: POINT_10_DECIMAL) repeat
+              startedAt { year month day } completedAt { year month day }
+              media {
+                id type format
+                title { romaji english native }
+                episodes chapters volumes
+                startDate { year month day } endDate { year month day }
+                averageScore genres
+                studios(isMain: true) { nodes { name } }
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    new Notice(`${useAuth ? '📥 Full' : '📥 Public'} export started…`, 4000);
+
+    const fetchType = async type => {
+      const headers = { 'Content-Type': 'application/json' };
+      if (useAuth) {
+        await this.plugin.auth.ensureValidToken();
+        headers['Authorization'] = `Bearer ${this.plugin.settings.accessToken}`;
+      }
+
+      const res = await this.plugin.requestQueue.add(() =>
+        requestUrl({
+          url: 'https://graphql.anilist.co',
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            query: query.replace('type: ANIME', `type: ${type}`),
+            variables: { userName: username }
+          })
+        })
+      );
+      return res.json.data?.MediaListCollection?.lists || [];
+    };
+
+    const [animeLists, mangaLists] = await Promise.all([fetchType('ANIME'), fetchType('MANGA')]);
+    const lists = [...animeLists, ...mangaLists];
+
+    if (!lists.flatMap(l => l.entries).length) {
+      new Notice('No lists found (private or empty).', 4000);
+      return;
+    }
+
+    const rows = [];
+    const headers = [
+      'ListName', 'Status', 'Progress', 'Score', 'Repeat',
+      'StartedAt', 'CompletedAt', 'MediaID', 'Type', 'Format',
+      'TitleRomaji', 'TitleEnglish', 'TitleNative',
+      'Episodes', 'Chapters', 'Volumes',
+      'MediaStart', 'MediaEnd', 'AverageScore', 'Genres', 'MainStudio', 'URL'
+    ];
+    rows.push(headers.join(','));
+
+    for (const list of lists) {
+      for (const e of list.entries) {
+        const m = e.media;
+        const row = [
+          list.name, e.status, e.progress ?? 0, e.score ?? '', e.repeat ?? 0,
+          this.dateToString(e.startedAt), this.dateToString(e.completedAt),
+          m.id, m.type, m.format,
+          this.csvEscape(m.title.romaji), this.csvEscape(m.title.english), this.csvEscape(m.title.native),
+          m.episodes ?? '', m.chapters ?? '', m.volumes ?? '',
+          this.dateToString(m.startDate), this.dateToString(m.endDate),
+          m.averageScore ?? '', this.csvEscape((m.genres || []).join(';')),
+          this.csvEscape(m.studios?.nodes?.[0]?.name || ''),
+          this.csvEscape(this.plugin.getZoroUrl(m.id, m.type))
+        ];
+        rows.push(row.join(','));
+      }
+    }
+
+    const csv = rows.join('\n');
+    const suffix = useAuth ? '' : '_PUBLIC';
+    const fileName = `AniList_${username}${suffix}_${new Date().toISOString().slice(0, 10)}.csv`;
+    await this.plugin.app.vault.create(fileName, csv);
+    new Notice(`✅ CSV saved to vault: ${fileName}`, 4000);
+    await this.plugin.app.workspace.openLinkText(fileName, '', false);
+  }
+
+  /* ---------- helpers ---------- */
+  dateToString(dateObj) {
+    if (!dateObj || !dateObj.year) return '';
+    return `${dateObj.year}-${String(dateObj.month || 0).padStart(2, '0')}-${String(dateObj.day || 0).padStart(2, '0')}`;
+  }
+
+  csvEscape(str = '') {
+    if (typeof str !== 'string') str = String(str);
+    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  }
+}
+/* ------------------------------------------------------------------
+   Note
+   ------------------------------------------------------------------ */
+class Note {
+  constructor(plugin) {
+    this.plugin = plugin;
+  }
+
+  async createSampleNotes() {
+    try {
+      let successCount = 0;
+      const errorMessages = [];
+
+      const firstNoteTitle  = 'Anime Dashboard';
+      const firstNoteContent = `\`\`\`zoro-search
+mediaType: ANIME
+\`\`\`
+
+# 👀 Watching:
+\`\`\`zoro
+listType: CURRENT
+mediaType: ANIME
+\`\`\`
+
+# 📝 Planning:
+\`\`\`zoro
+listType: PLANNING
+mediaType: ANIME
+\`\`\`
+
+# 🌀 Repeating:
+\`\`\`zoro
+listType: REPEATING
+mediaType: ANIME
+\`\`\`
+
+# ⏸️ On Hold:
+\`\`\`zoro
+listType: PAUSED
+mediaType: ANIME
+\`\`\`
+
+# 🏁 Completed:
+\`\`\`zoro
+listType: COMPLETED
+mediaType: ANIME
+\`\`\`
+
+# 🗑️ Dropped:
+\`\`\`zoro
+listType: DROPPED
+mediaType: ANIME
+\`\`\`
+
+# 📊 Stats:
+\`\`\`zoro
+type: stats
+\`\`\` 
+`;
+
+      const secondNoteTitle  = 'Manga Dashboard';
+      const secondNoteContent = `\`\`\`zoro-search
+mediaType: MANGA
+\`\`\`
+
+# 📖 Reading:
+\`\`\`zoro
+listType: CURRENT
+mediaType: MANGA
+\`\`\`
+
+# 📝 Planning:
+\`\`\`zoro
+listType: PLANNING
+mediaType: MANGA
+\`\`\`
+
+# 🌀 Repeating:
+\`\`\`zoro
+listType: REPEATING
+mediaType: MANGA
+\`\`\`
+
+# ⏸️ On Hold:
+\`\`\`zoro
+listType: PAUSED
+mediaType: MANGA
+\`\`\`
+
+# 🏁 Completed:
+\`\`\`zoro
+listType: COMPLETED
+mediaType: MANGA
+\`\`\`
+
+# 🗑️ Dropped:
+\`\`\`zoro
+listType: DROPPED
+mediaType: MANGA
+\`\`\`
+
+# 📊 Stats:
+\`\`\`zoro
+type: stats
+\`\`\` 
+`;
+
+      const notes = [
+        { title: firstNoteTitle, content: firstNoteContent },
+        { title: secondNoteTitle, content: secondNoteContent }
+      ];
+
+      for (const note of notes) {
+        const filePath = `${note.title}.md`;
+        const existing = this.plugin.app.vault.getAbstractFileByPath(filePath);
+        if (existing) {
+          errorMessages.push(`"${note.title}" already exists`);
+          continue;
+        }
+
+        await this.plugin.app.vault.create(filePath, note.content);
+        successCount++;
+      }
+
+      if (successCount) {
+        new Notice(`Created ${successCount} note${successCount > 1 ? 's' : ''}`, 4000);
+        const first = this.plugin.app.vault.getAbstractFileByPath(`${firstNoteTitle}.md`);
+        if (first) await this.plugin.app.workspace.openLinkText(firstNoteTitle, '', false);
+      }
+      if (errorMessages.length) new Notice(`Note: ${errorMessages.join(', ')}`, 5000);
+
+    } catch (err) {
+      console.error('Error creating notes:', err);
+      new Notice(`Failed to create notes: ${err.message}`, 5000);
+    }
+  }
+}
+
+// Settings
 class ZoroSettingTab extends PluginSettingTab { 
   constructor(app, plugin) { 
     super(app, plugin); 
@@ -3201,7 +2765,7 @@ new Setting(Data)
     .setClass('mod-cta')
     .onClick(async () => {
       try {
-        await this.plugin.exportUnifiedListsToCSV();
+        await this.plugin.export.exportUnifiedListsToCSV();
       } catch (err) {
         new Notice(`❌ Export failed: ${err.message}`, 6000);
       }
@@ -3239,7 +2803,7 @@ new Setting(Guide)
       .setButtonText('Create Note')
       .setTooltip('Click to create sample notes in your vault')
       .onClick(async () => {
-        await this.plugin.createSampleNotes();
+        await this.plugin.note.createSampleNotes();
         this.display(); // re-render immediately hides the button
       })
     );
@@ -3315,8 +2879,6 @@ async handleAuthButtonClick() {
 }
 
 }
-
-
 module.exports = {
   default: ZoroPlugin,
 };

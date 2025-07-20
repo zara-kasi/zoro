@@ -107,6 +107,8 @@ try {
 class ZoroPlugin extends Plugin {
   constructor(app, manifest) {
     super(app, manifest);
+    
+    this.auth = new Authentication(this);
   // Initialize separate caches
   this.cache = {
     userData: new Map(),
@@ -240,124 +242,12 @@ await this.applyTheme(this.settings.theme);
   
 
  // Authentication 
-  async authenticateUser() {
-    const clientId = this.settings.clientId;
-    const redirectUri = this.settings.redirectUri || 'https://anilist.co/api/v2/oauth/pin';
-    
-
-    if (!clientId) {
-      new Notice('❌ Please set your Client ID in plugin settings first.', 5000);
-      return;
-    }
-
-    // Check if already authenticated
-    if (this.settings.accessToken) {
-      const reuse = confirm('Do you want to re-authenticate?');
-      if (!reuse) return;
-    }
-
-    const authUrl = `https://anilist.co/api/v2/oauth/authorize?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code`;
-
-    try {
-      new Notice('🔐 Opening authentication page...', 3000);
+  
 
   
- window.addEventListener('message', this.handleAuthMessage.bind(this));
-      
-      
-      if (window.require) {
-        const { shell } = window.require('electron');
-        await shell.openExternal(authUrl);
-      } else {
-        window.open(authUrl, '_blank');
-      }
-
-      const code = await this.promptForCode('Paste the PIN code from the authentication page:');
-
-      if (!code || !code.trim()) {
-        new Notice('⚠️ No code entered. Authentication cancelled.', 4000);
-        return;
-      }
-
-      await this.exchangeCodeForToken(code.trim(), redirectUri);
-      new Notice('✅ Authenticated successfully.', 4000);
-    } catch (error) {
-      console.error('[Zoro] Authentication failed:', error);
-      new Notice(`❌ Authentication error: ${error.message}`, 5000);
-    }
-  }
-
-  async promptForCode(message) {
-    return new Promise((resolve) => {
-      const code = prompt(message);
-      resolve(code);
-    });
-  }
-
-
   // Exchange code for token 
-  async exchangeCodeForToken(code, redirectUri) {
-    const clientId = this.settings.clientId;
-    const clientSecret = this.settings.clientSecret;
-
-    const body = new URLSearchParams({
-      grant_type: 'authorization_code',
-      code,
-      client_id: clientId,
-      client_secret: clientSecret || '', // optional but safe
-      redirect_uri: redirectUri,
-    });
-
-    const headers = {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Accept': 'application/json',
-    };
-
-    try {
-      const response = await this.requestQueue.add(() => requestUrl({
-  url: 'https://anilist.co/api/v2/oauth/token',
-        method: 'POST',
-        headers,
-        body: body.toString(),
-      }));
-
-      const data = response?.json;
-
-      if (!data || typeof data !== 'object') {
-        console.error('[Zoro] Unexpected response from server:', response);
-        throw new Error('⚠️ Invalid response from server.');
-      }
-
-      if (!data.access_token) {
-        throw new Error(data.error_description || '❌ No access token returned by server.');
-      }
-
-      // Store auth details
-      this.settings.accessToken = data.access_token;
-      
-      if (data.expires_in) {
-        this.settings.tokenExpiry = Date.now() + (data.expires_in * 1000);
-      }
-
-      await this.saveSettings();
-
-      new Notice('✅ Successfully authenticated with the service!', 4000);
-
-      // Optional sanity check
-      if (this.testAccessToken) {
-        await this.testAccessToken();
-      }
-
-    } catch (err) {
-      console.error('[Zoro] Authentication error:', err);
-      new Notice(`❌ Authentication failed: ${err.message}`, 5000);
-      if (this.showManualTokenOption) {
-        this.showManualTokenOption(); // optional UI fallback
-      }
-    }
-  }
-
-
+  
+  
   // Token Validation 
 async ensureValidToken() {
   return !!this.settings.accessToken;
@@ -400,42 +290,7 @@ async ensureValidToken() {
   }
 
   // Test access token 
-  async testAccessToken() {
-    const query = `
-      query {
-        Viewer {
-          id
-          name
-        }
-      }
-    `;
-
-    try {
-      const response = await this.requestQueue.add(() => requestUrl({
-  url: 'https://graphql.anilist.co',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.settings.accessToken}`
-        },
-        body: JSON.stringify({ query })
-      }));
-
-      const data = response.json;
-      if (!data || !data.data?.Viewer) {
-        throw new Error('Invalid access token or response malformed.');
-      }
-
-      const username = data.data.Viewer.name;
-      new Notice(`🎉 Welcome, ${username}! Token is valid.`);
-      return true;
-
-    } catch (error) {
-      console.warn('[Zoro] testAccessToken failed:', error);
-      throw new Error('Token verification failed. Please check your token or re-authenticate.');
-    }
-  }
-
+  
 // Authenticated Username 
   async getAuthenticatedUsername() {
   if (!this.settings.accessToken) return null;
@@ -610,7 +465,7 @@ if (this.settings.accessToken) {
 
       // Handle authenticated user resolution
       if (config.useAuthenticatedUser) {
-        const authUsername = await this.getAuthenticatedUsername();
+        const authUsername = await this.auth.getAuthenticatedUsername();
         if (!authUsername) {
           throw new Error('❌ Could not retrieve authenticated username. Check your authentication setup or set a username manually.');
         }
@@ -2684,20 +2539,7 @@ async exportUnifiedListsToCSV() {
     return str;
   }
  
- async logOut() {
-  this.settings.accessToken = '';
-  this.settings.tokenExpiry = 0;
-  this.settings.authUsername = '';
-  this.settings.clientId = '';        // <-- NEW
-  this.settings.clientSecret = '';    // <-- NEW
-  await this.saveSettings();
-
-  this.cache.userData.clear();
-  this.cache.mediaData.clear();
-  this.cache.searchResults.clear();
-
-  new Notice('✅ Logged out & cleared credentials.', 3000);
-}
+ 
 
  // ---------- inside ZoroPlugin ----------
 _buildSortOptions(raw) {
@@ -2832,6 +2674,162 @@ async getAvailableThemes() {
   }
 
 } 
+/**
+ * Authentication
+ 
+ * Single-responsibility wrapper around:
+ *  - Client-ID / Secret storage
+ *  - OAuth flow
+ *  - Token storage & expiry
+ *  - Login / logout helpers
+ */
+class Authentication {
+  constructor(plugin) {
+    this.plugin = plugin;        // gives us access to plugin.settings & requestQueue
+  }
+
+  /* ---------- constants ---------- */
+  static ANILIST_AUTH_URL  = 'https://anilist.co/api/v2/oauth/authorize';
+  static ANILIST_TOKEN_URL = 'https://anilist.co/api/v2/oauth/token';
+  static REDIRECT_URI      = 'https://anilist.co/api/v2/oauth/pin';
+
+  /* ---------- public getter ---------- */
+  get isLoggedIn() {
+    return Boolean(this.plugin.settings.accessToken);
+  }
+
+  /* ---------- OAuth helpers ---------- */
+  async loginWithFlow() {
+    // 1. Ensure we have client credentials
+    if (!this.plugin.settings.clientId) {
+      new Notice('❌ Please enter your Client ID first.', 5000);
+      return;
+    }
+
+    // 2. Build auth url
+    const { clientId } = this.plugin.settings;
+    const authUrl =
+      `${Authentication.ANILIST_AUTH_URL}?` +
+      new URLSearchParams({
+        client_id:     clientId,
+        redirect_uri:  Authentication.REDIRECT_URI,
+        response_type: 'code'
+      }).toString();
+
+    // 3. Open browser
+    new Notice('🔐 Opening AniList login page…', 3000);
+    if (window.require) {
+      const { shell } = window.require('electron');
+      await shell.openExternal(authUrl);
+    } else {
+      window.open(authUrl, '_blank');
+    }
+
+    // 4. Prompt for pin
+    const pin = await this._promptModal('Paste the PIN code from the browser:');
+    if (!pin) return;
+
+    // 5. Exchange pin → token
+    await this._exchangePin(pin);
+  }
+
+  async logout() {
+    this.plugin.settings.accessToken  = '';
+    this.plugin.settings.tokenExpiry  = 0;
+    this.plugin.settings.authUsername = '';
+    this.plugin.settings.clientId     = '';
+    this.plugin.settings.clientSecret = '';
+    await this.plugin.saveSettings();
+
+    // Clear caches
+    this.plugin.cache.userData.clear();
+    this.plugin.cache.mediaData.clear();
+    this.plugin.cache.searchResults.clear();
+
+    new Notice('✅ Logged out & cleared credentials.', 3000);
+  }
+
+  /* ---------- internal helpers ---------- */
+  async _exchangePin(pin) {
+    const body = new URLSearchParams({
+      grant_type:    'authorization_code',
+      code:          pin.trim(),
+      client_id:     this.plugin.settings.clientId,
+      client_secret: this.plugin.settings.clientSecret || '',
+      redirect_uri:  Authentication.REDIRECT_URI
+    });
+
+    const headers = {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Accept:         'application/json'
+    };
+
+    try {
+      const res = await this.plugin.requestQueue.add(() =>
+        requestUrl({
+          url:    Authentication.ANILIST_TOKEN_URL,
+          method: 'POST',
+          headers,
+          body:   body.toString()
+        })
+      );
+
+      const data = res.json;
+      if (!data?.access_token) {
+        throw new Error(data.error_description || 'No token returned');
+      }
+
+      this.plugin.settings.accessToken = data.access_token;
+      if (data.expires_in) {
+        this.plugin.settings.tokenExpiry = Date.now() + data.expires_in * 1000;
+      }
+      await this.plugin.saveSettings();
+
+      new Notice('✅ Authenticated successfully!', 4000);
+    } catch (err) {
+      new Notice(`❌ Auth failed: ${err.message}`, 5000);
+      throw err;
+    }
+  }
+
+  async _promptModal(message) {
+    // Simple synchronous prompt (works in Obsidian)
+    return new Promise((res) => {
+      const val = prompt(message);
+      res(val ? val.trim() : null);
+    });
+  }
+
+  /* ---------- high-level wrappers ---------- */
+  async ensureValidToken() {
+    if (!this.isLoggedIn) throw new Error('Not authenticated');
+    // TODO: check expiry and refresh if needed
+    return true;
+  }
+
+  async getAuthenticatedUsername() {
+    await this.ensureValidToken();
+
+    const query = `query { Viewer { name } }`;
+    const res = await this.plugin.requestQueue.add(() =>
+      requestUrl({
+        url:     'https://graphql.anilist.co',
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          Authorization:   `Bearer ${this.plugin.settings.accessToken}`
+        },
+        body: JSON.stringify({ query })
+      })
+    );
+
+    const name = res.json?.data?.Viewer?.name;
+    if (!name) throw new Error('Could not fetch username');
+    this.plugin.settings.authUsername = name;
+    await this.plugin.saveSettings();
+    return name;
+  }
+}
 
 
 /// Class for Client Id Pop up in settings
@@ -3091,7 +3089,7 @@ authSetting.addButton(button => {
     .setButtonText('Log out')
     .setWarning()
     .onClick(async () => {
-      await this.plugin.logOut();
+      await this.plugin.auth.logout();
       this.updateAuthButton();
     })
   );
@@ -3310,9 +3308,9 @@ async handleAuthButtonClick() {
     });
     modal.open();
   } else if (!settings.accessToken) {
-    await this.plugin.authenticateUser();
+    await this.plugin.auth.loginWithFlow();
   } else {
-    await this.plugin.authenticateUser();
+    await this.plugin.auth.loginWithFlow();
   }
 }
 

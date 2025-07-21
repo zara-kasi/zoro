@@ -110,6 +110,7 @@ class ZoroPlugin extends Plugin {
     super(app, manifest);
     
     this.auth = new Authentication(this);
+    this.edit = new Edit(this);
     this.export = new Export(this);
     this.sample = new Sample(this);
   // Initialize separate caches
@@ -1037,7 +1038,7 @@ async addMediaToList(mediaId, updates, mediaType) {
     e.preventDefault();
     e.stopPropagation();
 
-    this.createEditModal(
+    this.edit.createEditModal(
       entry,
       async updates => {
         try {
@@ -1059,372 +1060,6 @@ async addMediaToList(mediaId, updates, mediaType) {
       () => {
       }
     );
-  }
-
-
-
-  // Create Edit Modal
-  createEditModal(entry, onSave, onCancel) {
-    const self = this;   // so we can use `self` inside handlers
-
-    const modal = document.createElement('div');
-    modal.className = 'zoro-edit-modal';
-
-    const overlay = document.createElement('div');
-    overlay.className = 'zoro-modal-overlay';
-
-    const content = document.createElement('div');
-    content.className = 'zoro-modal-content';
-
-    const form = document.createElement('form');
-    form.className = 'zoro-edit-form';
-    form.onsubmit = async (e) => {
-      e.preventDefault();
-      await trySave();
-    };
-
-    const title = document.createElement('h3');
-    title.className = 'zoro-modal-title';
-    title.textContent = entry.media.title.english || entry.media.title.romaji;
-
-    // --- Status Field ---
-    const statusGroup = document.createElement('div');
-    statusGroup.className = 'zoro-form-group zoro-status-group';
-
-    const statusLabel = document.createElement('label');
-    statusLabel.className = 'zoro-form-label zoro-status-label';
-    statusLabel.textContent = '🧿 Status';
-    statusLabel.setAttribute('for', 'zoro-status');
-
-    const statusSelect = document.createElement('select');
-    statusSelect.className = 'zoro-form-input zoro-status-select';
-    statusSelect.id = 'zoro-status';
-
-    ['CURRENT', 'PLANNING', 'COMPLETED', 'DROPPED', 'PAUSED', 'REPEATING'].forEach(status => {
-      const option = document.createElement('option');
-      option.value = status;
-      option.textContent = status;
-      if (status === entry.status) option.selected = true;
-      statusSelect.appendChild(option);
-    });
-
-    statusGroup.appendChild(statusLabel);
-    statusGroup.appendChild(statusSelect);
-
-    // --- Score Field ---
-    const scoreGroup = document.createElement('div');
-    scoreGroup.className = 'zoro-form-group zoro-score-group';
-
-    const scoreLabel = document.createElement('label');
-    scoreLabel.className = 'zoro-form-label zoro-score-label';
-    scoreLabel.textContent = '⭐ Score (0–10)';
-    scoreLabel.setAttribute('for', 'zoro-score');
-
-    const scoreInput = document.createElement('input');
-    scoreInput.className = 'zoro-form-input zoro-score-input';
-    scoreInput.type = 'number';
-    scoreInput.id = 'zoro-score';
-    scoreInput.min = '0';
-    scoreInput.max = '10';
-    scoreInput.step = '0.1';
-    scoreInput.value = entry.score ?? '';
-    scoreInput.placeholder = 'e.g. 8.5';
-
-    scoreGroup.appendChild(scoreLabel);
-    scoreGroup.appendChild(scoreInput);
-
-    // --- Progress Field ---
-    const progressGroup = document.createElement('div');
-    progressGroup.className = 'zoro-form-group zoro-progress-group';
-
-    const progressLabel = document.createElement('label');
-    progressLabel.className = 'zoro-form-label zoro-progress-label';
-    progressLabel.textContent = '📊 Progress';
-    progressLabel.setAttribute('for', 'zoro-progress');
-
-    const progressInput = document.createElement('input');
-    progressInput.className = 'zoro-form-input zoro-progress-input';
-    progressInput.type = 'number';
-    progressInput.id = 'zoro-progress';
-    progressInput.min = '0';
-    progressInput.max = entry.media.episodes || entry.media.chapters || 999;
-    progressInput.value = entry.progress || 0;
-    progressInput.placeholder = 'Progress';
-
-    progressGroup.appendChild(progressLabel);
-    progressGroup.appendChild(progressInput);
-
-    // --- Quick Buttons ---
-    const quickProgressDiv = document.createElement('div');
-    quickProgressDiv.className = 'zoro-quick-progress-buttons';
-
-    const plusOneBtn = document.createElement('button');
-    plusOneBtn.className = 'zoro-quick-btn zoro-plus-btn';
-    plusOneBtn.type = 'button';
-    plusOneBtn.textContent = '+1';
-    plusOneBtn.onclick = () => {
-      const current = parseInt(progressInput.value) || 0;
-      const max = progressInput.max;
-      if (current < max) progressInput.value = current + 1;
-    };
-
-    const minusOneBtn = document.createElement('button');
-    minusOneBtn.className = 'zoro-quick-btn zoro-minus-btn';
-    minusOneBtn.type = 'button';
-    minusOneBtn.textContent = '-1';
-    minusOneBtn.onclick = () => {
-      const current = parseInt(progressInput.value) || 0;
-      if (current > 0) progressInput.value = current - 1;
-    };
-
-    const completeBtn = document.createElement('button');
-    completeBtn.className = 'zoro-quick-btn zoro-complete-btn';
-    completeBtn.type = 'button';
-    completeBtn.textContent = 'Complete';
-    completeBtn.onclick = () => {
-      progressInput.value = entry.media.episodes || entry.media.chapters || 1;
-      statusSelect.value = 'COMPLETED';
-    };
-
-    quickProgressDiv.append(plusOneBtn, minusOneBtn, completeBtn);
-
-    // --- Buttons ---
-    const buttonContainer = document.createElement('div');
-    buttonContainer.className = 'zoro-modal-buttons';
-
-    // ❤️ Favorite toggle
-    const favBtn = document.createElement('button');
-    favBtn.className = 'zoro-modal-btn zoro-fav-btn';
-    favBtn.type = 'button';
-    favBtn.title = 'Toggle Favorite';
-    favBtn.textContent = '🤍';
-
-    favBtn.onclick = async () => {
-      favBtn.disabled = true;
-      favBtn.textContent = '⏳';
-      
-      try {
-        // Use the stored media type, or fall back to detection
-        let mediaType = favBtn.dataset.mediaType;
-        if (!mediaType) {
-          // Fallback detection - check for type field first, then episodes
-          mediaType = entry.media.type || (entry.media.episodes ? 'ANIME' : 'MANGA');
-        }
-        
-        const isAnime = mediaType === 'ANIME';
-        
-        const mutation = `
-          mutation ToggleFav($animeId: Int, $mangaId: Int) {
-            ToggleFavourite(animeId: $animeId, mangaId: $mangaId) {
-              anime {
-                nodes {
-                  id
-                }
-              }
-              manga {
-                nodes {
-                  id
-                }
-              }
-            }
-          }`;
-          
-        // Only include the relevant ID, don't pass null values
-        const variables = {};
-        if (isAnime) {
-          variables.animeId = entry.media.id;
-        } else {
-          variables.mangaId = entry.media.id;
-        }
-
-        const res = await self.requestQueue.add(() =>
-          requestUrl({
-            url: 'https://graphql.anilist.co',
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${self.settings.accessToken}`
-            },
-            body: JSON.stringify({ query: mutation, variables })
-          })
-        );
-        
-        if (res.json.errors) {
-          new Notice(`API Error: ${res.json.errors[0].message}`, 8000);
-          console.error('AniList API Error:', res.json.errors);
-          throw new Error(res.json.errors[0].message);
-        }
-        
-        // Check if the media is now in favorites by looking at the response
-        const toggleResult = res.json.data?.ToggleFavourite;
-        let isFav = false;
-        
-        if (isAnime && toggleResult?.anime?.nodes) {
-          isFav = toggleResult.anime.nodes.some(node => node.id === entry.media.id);
-        } else if (!isAnime && toggleResult?.manga?.nodes) {
-          isFav = toggleResult.manga.nodes.some(node => node.id === entry.media.id);
-        }
-        
-        favBtn.textContent = isFav ? '❤️' : '🤍';
-        new Notice(`${isFav ? 'Added to' : 'Removed from'} favorites!`, 3000);
-        
-      } catch (e) {
-        new Notice(`❌ Error: ${e.message || 'Unknown error'}`, 8000);
-        console.error('Favorite toggle error:', e);
-      } finally {
-        favBtn.disabled = false;
-      }
-    };
-
-    const saveBtn = document.createElement('button');
-    saveBtn.className = 'zoro-modal-btn zoro-save-btn';
-    saveBtn.textContent = 'Save';
-    saveBtn.type = 'submit';
-
-    const removeBtn = document.createElement('button');
-    removeBtn.className = 'zoro-modal-btn zoro-remove-btn';
-    removeBtn.type = 'button';
-    removeBtn.textContent = '🗑️';
-
-    removeBtn.onclick = async () => {
-      if (!confirm('Remove this entry?')) return;
-      removeBtn.disabled = true;
-      removeBtn.textContent = '⏳';
-      try {
-        const mutation = `
-          mutation ($id: Int) {
-            DeleteMediaListEntry(id: $id) { deleted }
-          }`;
-        await self.requestQueue.add(() =>
-          requestUrl({
-            url: 'https://graphql.anilist.co',
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${self.settings.accessToken}`
-            },
-            body: JSON.stringify({ query: mutation, variables: { id: entry.id } })
-          })
-        );
-        // close modal & refresh view
-        document.body.removeChild(modal);
-        self.clearCacheForMedia(entry.media.id);
-        // trigger re-render of the block that owns this entry
-        const parentContainer = document.querySelector('.zoro-container');
-        if (parentContainer) {
-          const block = parentContainer.closest('.markdown-rendered')?.querySelector('code');
-          if (block) {
-            self.processZoroCodeBlock(block.textContent, parentContainer, {});
-          }
-        }
-        new Notice('✅ Removed');
-      } catch (e) {
-        new Notice('❌ Could not remove');
-      }
-    };
-
-    const cancelBtn = document.createElement('button');
-    cancelBtn.className = 'zoro-modal-btn zoro-cancel-btn';
-    cancelBtn.type = 'button';
-    cancelBtn.textContent = 'Cancel';
-    cancelBtn.onclick = () => {
-      onCancel();
-      document.body.removeChild(modal);
-    };
-
-    buttonContainer.append( removeBtn, favBtn, saveBtn, cancelBtn);
-
-    form.append(title, statusGroup, scoreGroup, progressGroup, quickProgressDiv, buttonContainer);
-    content.appendChild(form);
-
-    // Get favorite status
-    (async () => {
-      try {
-        const query = `
-          query ($mediaId: Int) {
-            Media(id: $mediaId) { 
-              isFavourite 
-              type
-            }
-          }`;
-        const res = await self.requestQueue.add(() =>
-          requestUrl({
-            url: 'https://graphql.anilist.co',
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${self.settings.accessToken}`
-            },
-            body: JSON.stringify({ query, variables: { mediaId: entry.media.id } })
-          })
-        );
-        const mediaData = res.json.data?.Media;
-        const fav = mediaData?.isFavourite;
-        favBtn.textContent = fav ? '❤️' : '🤍';
-        
-        // Store the media type for later use
-        favBtn.dataset.mediaType = mediaData?.type;
-      } catch (e) {
-        console.warn('Could not fetch favorite', e);
-      }
-    })();
-
-    modal.append(overlay, content);
-    document.body.appendChild(modal);
-
-    overlay.onclick = () => {
-      onCancel();
-      document.body.removeChild(modal);
-    };
-
-    // Keyboard accessibility
-    document.addEventListener('keydown', escListener);
-    function escListener(e) {
-      if (e.key === 'Escape') {
-        onCancel();
-        document.body.removeChild(modal);
-        document.removeEventListener('keydown', escListener);
-      }
-      if (e.key === 'Enter' && e.ctrlKey) {
-        trySave();
-      }
-    }
-
-    // Save logic
-    let saving = false;
-    async function trySave() {
-      if (saving) return;
-      saving = true;
-      saveBtn.disabled = true;
-      saveBtn.textContent = 'Saving...';
-
-      const scoreVal = parseFloat(scoreInput.value);
-      if (scoreInput.value && (isNaN(scoreVal) || scoreVal < 0 || scoreVal > 10)) {
-        alert("⚠ Score must be between 0 and 10.");
-        resetSaveBtn();
-        return;
-      }
-
-      try {
-        await onSave({
-          status: statusSelect.value,
-          score: scoreInput.value === '' ? null : scoreVal,
-          progress: parseInt(progressInput.value) || 0
-        });
-        document.body.removeChild(modal);
-        document.removeEventListener('keydown', escListener);
-      } catch (err) {
-        alert(`❌ Failed to save: ${err.message}`);
-      }
-
-      resetSaveBtn();
-    }
-
-    function resetSaveBtn() {
-      saveBtn.disabled = false;
-      saveBtn.textContent = 'Save';
-      saving = false;
-    }
   }
 
   // Create Authentication Prompt 
@@ -2325,6 +1960,427 @@ class Render {
   /* ----------  UTILITIES  ---------- */
   clear(el) { el.empty?.(); }
 }
+
+class Edit {
+  constructor(plugin) {
+    this.plugin = plugin;
+  }
+
+  createEditModal(entry, onSave, onCancel) {
+    const modal = document.createElement('div');
+    modal.className = 'zoro-edit-modal';
+
+    const overlay = document.createElement('div');
+    overlay.className = 'zoro-modal-overlay';
+
+    const content = document.createElement('div');
+    content.className = 'zoro-modal-content';
+
+    const form = document.createElement('form');
+    form.className = 'zoro-edit-form';
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      await this.trySave(entry, onSave, saveBtn, statusSelect, scoreInput, progressInput, modal, escListener);
+    };
+
+    const title = document.createElement('h3');
+    title.className = 'zoro-modal-title';
+    title.textContent = entry.media.title.english || entry.media.title.romaji;
+
+    // --- Status Field ---
+    const statusGroup = this.createStatusField(entry);
+    const statusSelect = statusGroup.querySelector('.zoro-status-select');
+
+    // --- Score Field ---
+    const scoreGroup = this.createScoreField(entry);
+    const scoreInput = scoreGroup.querySelector('.zoro-score-input');
+
+    // --- Progress Field ---
+    const progressGroup = this.createProgressField(entry);
+    const progressInput = progressGroup.querySelector('.zoro-progress-input');
+
+    // --- Quick Buttons ---
+    const quickProgressDiv = this.createQuickProgressButtons(entry, progressInput, statusSelect);
+
+    // --- Buttons ---
+    const buttonContainer = this.createButtonContainer(entry, onSave, onCancel, modal);
+    const saveBtn = buttonContainer.querySelector('.zoro-save-btn');
+    const removeBtn = buttonContainer.querySelector('.zoro-remove-btn');
+
+    // Setup remove button functionality
+    this.setupRemoveButton(removeBtn, entry, modal);
+
+    form.append(title, statusGroup, scoreGroup, progressGroup, quickProgressDiv, buttonContainer);
+    content.appendChild(form);
+
+    modal.append(overlay, content);
+    document.body.appendChild(modal);
+
+    // Setup modal interactions
+    this.setupModalInteractions(modal, overlay, onCancel);
+
+    // Keyboard accessibility
+    const escListener = this.createEscapeListener(onCancel, modal, () => {
+      this.trySave(entry, onSave, saveBtn, statusSelect, scoreInput, progressInput, modal, escListener);
+    });
+    document.addEventListener('keydown', escListener);
+
+    // Get and set favorite status
+    this.setFavoriteStatus(entry, buttonContainer.querySelector('.zoro-fav-btn'));
+  }
+
+  createStatusField(entry) {
+    const statusGroup = document.createElement('div');
+    statusGroup.className = 'zoro-form-group zoro-status-group';
+
+    const statusLabel = document.createElement('label');
+    statusLabel.className = 'zoro-form-label zoro-status-label';
+    statusLabel.textContent = '🧿 Status';
+    statusLabel.setAttribute('for', 'zoro-status');
+
+    const statusSelect = document.createElement('select');
+    statusSelect.className = 'zoro-form-input zoro-status-select';
+    statusSelect.id = 'zoro-status';
+
+    ['CURRENT', 'PLANNING', 'COMPLETED', 'DROPPED', 'PAUSED', 'REPEATING'].forEach(status => {
+      const option = document.createElement('option');
+      option.value = status;
+      option.textContent = status;
+      if (status === entry.status) option.selected = true;
+      statusSelect.appendChild(option);
+    });
+
+    statusGroup.appendChild(statusLabel);
+    statusGroup.appendChild(statusSelect);
+    return statusGroup;
+  }
+
+  createScoreField(entry) {
+    const scoreGroup = document.createElement('div');
+    scoreGroup.className = 'zoro-form-group zoro-score-group';
+
+    const scoreLabel = document.createElement('label');
+    scoreLabel.className = 'zoro-form-label zoro-score-label';
+    scoreLabel.textContent = '⭐ Score (0–10)';
+    scoreLabel.setAttribute('for', 'zoro-score');
+
+    const scoreInput = document.createElement('input');
+    scoreInput.className = 'zoro-form-input zoro-score-input';
+    scoreInput.type = 'number';
+    scoreInput.id = 'zoro-score';
+    scoreInput.min = '0';
+    scoreInput.max = '10';
+    scoreInput.step = '0.1';
+    scoreInput.value = entry.score ?? '';
+    scoreInput.placeholder = 'e.g. 8.5';
+
+    scoreGroup.appendChild(scoreLabel);
+    scoreGroup.appendChild(scoreInput);
+    return scoreGroup;
+  }
+
+  createProgressField(entry) {
+    const progressGroup = document.createElement('div');
+    progressGroup.className = 'zoro-form-group zoro-progress-group';
+
+    const progressLabel = document.createElement('label');
+    progressLabel.className = 'zoro-form-label zoro-progress-label';
+    progressLabel.textContent = '📊 Progress';
+    progressLabel.setAttribute('for', 'zoro-progress');
+
+    const progressInput = document.createElement('input');
+    progressInput.className = 'zoro-form-input zoro-progress-input';
+    progressInput.type = 'number';
+    progressInput.id = 'zoro-progress';
+    progressInput.min = '0';
+    progressInput.max = entry.media.episodes || entry.media.chapters || 999;
+    progressInput.value = entry.progress || 0;
+    progressInput.placeholder = 'Progress';
+
+    progressGroup.appendChild(progressLabel);
+    progressGroup.appendChild(progressInput);
+    return progressGroup;
+  }
+
+  createQuickProgressButtons(entry, progressInput, statusSelect) {
+    const quickProgressDiv = document.createElement('div');
+    quickProgressDiv.className = 'zoro-quick-progress-buttons';
+
+    const plusOneBtn = document.createElement('button');
+    plusOneBtn.className = 'zoro-quick-btn zoro-plus-btn';
+    plusOneBtn.type = 'button';
+    plusOneBtn.textContent = '+1';
+    plusOneBtn.onclick = () => {
+      const current = parseInt(progressInput.value) || 0;
+      const max = progressInput.max;
+      if (current < max) progressInput.value = current + 1;
+    };
+
+    const minusOneBtn = document.createElement('button');
+    minusOneBtn.className = 'zoro-quick-btn zoro-minus-btn';
+    minusOneBtn.type = 'button';
+    minusOneBtn.textContent = '-1';
+    minusOneBtn.onclick = () => {
+      const current = parseInt(progressInput.value) || 0;
+      if (current > 0) progressInput.value = current - 1;
+    };
+
+    const completeBtn = document.createElement('button');
+    completeBtn.className = 'zoro-quick-btn zoro-complete-btn';
+    completeBtn.type = 'button';
+    completeBtn.textContent = 'Complete';
+    completeBtn.onclick = () => {
+      progressInput.value = entry.media.episodes || entry.media.chapters || 1;
+      statusSelect.value = 'COMPLETED';
+    };
+
+    quickProgressDiv.append(plusOneBtn, minusOneBtn, completeBtn);
+    return quickProgressDiv;
+  }
+
+  createButtonContainer(entry, onSave, onCancel, modal) {
+    const buttonContainer = document.createElement('div');
+    buttonContainer.className = 'zoro-modal-buttons';
+
+    // ❤️ Favorite toggle
+    const favBtn = document.createElement('button');
+    favBtn.className = 'zoro-modal-btn zoro-fav-btn';
+    favBtn.type = 'button';
+    favBtn.title = 'Toggle Favorite';
+    favBtn.textContent = '🤍';
+
+    favBtn.onclick = async () => {
+      await this.toggleFavorite(entry, favBtn);
+    };
+
+    const saveBtn = document.createElement('button');
+    saveBtn.className = 'zoro-modal-btn zoro-save-btn';
+    saveBtn.textContent = 'Save';
+    saveBtn.type = 'submit';
+
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'zoro-modal-btn zoro-remove-btn';
+    removeBtn.type = 'button';
+    removeBtn.textContent = '🗑️';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'zoro-modal-btn zoro-cancel-btn';
+    cancelBtn.type = 'button';
+    cancelBtn.textContent = 'Cancel';
+    cancelBtn.onclick = () => {
+      onCancel();
+      document.body.removeChild(modal);
+    };
+
+    buttonContainer.append(removeBtn, favBtn, saveBtn, cancelBtn);
+    return buttonContainer;
+  }
+
+  setupRemoveButton(removeBtn, entry, modal) {
+    removeBtn.onclick = async () => {
+      if (!confirm('Remove this entry?')) return;
+      removeBtn.disabled = true;
+      removeBtn.textContent = '⏳';
+      try {
+        const mutation = `
+          mutation ($id: Int) {
+            DeleteMediaListEntry(id: $id) { deleted }
+          }`;
+        await this.plugin.requestQueue.add(() =>
+          requestUrl({
+            url: 'https://graphql.anilist.co',
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${this.plugin.settings.accessToken}`
+            },
+            body: JSON.stringify({ query: mutation, variables: { id: entry.id } })
+          })
+        );
+        // close modal & refresh view
+        document.body.removeChild(modal);
+        this.plugin.clearCacheForMedia(entry.media.id);
+        // trigger re-render of the block that owns this entry
+        const parentContainer = document.querySelector('.zoro-container');
+        if (parentContainer) {
+          const block = parentContainer.closest('.markdown-rendered')?.querySelector('code');
+          if (block) {
+            this.plugin.processZoroCodeBlock(block.textContent, parentContainer, {});
+          }
+        }
+        new Notice('✅ Removed');
+      } catch (e) {
+        new Notice('❌ Could not remove');
+      }
+    };
+  }
+
+  setupModalInteractions(modal, overlay, onCancel) {
+    overlay.onclick = () => {
+      onCancel();
+      document.body.removeChild(modal);
+    };
+  }
+
+  createEscapeListener(onCancel, modal, saveFunction) {
+    return function escListener(e) {
+      if (e.key === 'Escape') {
+        onCancel();
+        document.body.removeChild(modal);
+        document.removeEventListener('keydown', escListener);
+      }
+      if (e.key === 'Enter' && e.ctrlKey) {
+        saveFunction();
+      }
+    };
+  }
+
+  async setFavoriteStatus(entry, favBtn) {
+    try {
+      const query = `
+        query ($mediaId: Int) {
+          Media(id: $mediaId) { 
+            isFavourite 
+            type
+          }
+        }`;
+      const res = await this.plugin.requestQueue.add(() =>
+        requestUrl({
+          url: 'https://graphql.anilist.co',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.plugin.settings.accessToken}`
+          },
+          body: JSON.stringify({ query, variables: { mediaId: entry.media.id } })
+        })
+      );
+      const mediaData = res.json.data?.Media;
+      const fav = mediaData?.isFavourite;
+      favBtn.textContent = fav ? '❤️' : '🤍';
+      
+      // Store the media type for later use
+      favBtn.dataset.mediaType = mediaData?.type;
+    } catch (e) {
+      console.warn('Could not fetch favorite', e);
+    }
+  }
+
+  async toggleFavorite(entry, favBtn) {
+    favBtn.disabled = true;
+    favBtn.textContent = '⏳';
+    
+    try {
+      // Use the stored media type, or fall back to detection
+      let mediaType = favBtn.dataset.mediaType;
+      if (!mediaType) {
+        // Fallback detection - check for type field first, then episodes
+        mediaType = entry.media.type || (entry.media.episodes ? 'ANIME' : 'MANGA');
+      }
+      
+      const isAnime = mediaType === 'ANIME';
+      
+      const mutation = `
+        mutation ToggleFav($animeId: Int, $mangaId: Int) {
+          ToggleFavourite(animeId: $animeId, mangaId: $mangaId) {
+            anime {
+              nodes {
+                id
+              }
+            }
+            manga {
+              nodes {
+                id
+              }
+            }
+          }
+        }`;
+        
+      // Only include the relevant ID, don't pass null values
+      const variables = {};
+      if (isAnime) {
+        variables.animeId = entry.media.id;
+      } else {
+        variables.mangaId = entry.media.id;
+      }
+
+      const res = await this.plugin.requestQueue.add(() =>
+        requestUrl({
+          url: 'https://graphql.anilist.co',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.plugin.settings.accessToken}`
+          },
+          body: JSON.stringify({ query: mutation, variables })
+        })
+      );
+      
+      if (res.json.errors) {
+        new Notice(`API Error: ${res.json.errors[0].message}`, 8000);
+        console.error('AniList API Error:', res.json.errors);
+        throw new Error(res.json.errors[0].message);
+      }
+      
+      // Check if the media is now in favorites by looking at the response
+      const toggleResult = res.json.data?.ToggleFavourite;
+      let isFav = false;
+      
+      if (isAnime && toggleResult?.anime?.nodes) {
+        isFav = toggleResult.anime.nodes.some(node => node.id === entry.media.id);
+      } else if (!isAnime && toggleResult?.manga?.nodes) {
+        isFav = toggleResult.manga.nodes.some(node => node.id === entry.media.id);
+      }
+      
+      favBtn.textContent = isFav ? '❤️' : '🤍';
+      new Notice(`${isFav ? 'Added to' : 'Removed from'} favorites!`, 3000);
+      
+    } catch (e) {
+      new Notice(`❌ Error: ${e.message || 'Unknown error'}`, 8000);
+      console.error('Favorite toggle error:', e);
+    } finally {
+      favBtn.disabled = false;
+    }
+  }
+
+  // Save logic
+  async trySave(entry, onSave, saveBtn, statusSelect, scoreInput, progressInput, modal, escListener) {
+    if (this.saving) return;
+    this.saving = true;
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+
+    const scoreVal = parseFloat(scoreInput.value);
+    if (scoreInput.value && (isNaN(scoreVal) || scoreVal < 0 || scoreVal > 10)) {
+      alert("⚠ Score must be between 0 and 10.");
+      this.resetSaveBtn(saveBtn);
+      return;
+    }
+
+    try {
+      await onSave({
+        status: statusSelect.value,
+        score: scoreInput.value === '' ? null : scoreVal,
+        progress: parseInt(progressInput.value) || 0
+      });
+      document.body.removeChild(modal);
+      document.removeEventListener('keydown', escListener);
+    } catch (err) {
+      alert(`❌ Failed to save: ${err.message}`);
+    }
+
+    this.resetSaveBtn(saveBtn);
+  }
+
+  resetSaveBtn(saveBtn) {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save';
+    this.saving = false;
+  }
+}
+
+// Updated main plugin class constructor should include:
+// this.edit = new Edit(this);
 /* ------------------------------------------------------------------
    Export
    ------------------------------------------------------------------ */

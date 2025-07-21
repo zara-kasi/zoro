@@ -111,7 +111,7 @@ class ZoroPlugin extends Plugin {
     
     this.auth = new Authentication(this);
     this.export = new Export(this);
-    this.note = new Note(this);
+    this.sample = new Sample(this);
   // Initialize separate caches
   this.cache = {
     userData: new Map(),
@@ -1060,6 +1060,8 @@ async addMediaToList(mediaId, updates, mediaType) {
       }
     );
   }
+
+
 
   // Create Edit Modal
   createEditModal(entry, onSave, onCancel) {
@@ -2447,11 +2449,10 @@ class Export {
 /* ------------------------------------------------------------------
    Note
    ------------------------------------------------------------------ */
-class Note {
+class Sample {
   constructor(plugin) {
     this.plugin = plugin;
   }
-
   async createSampleNotes() {
     try {
       let successCount = 0;
@@ -2580,6 +2581,189 @@ type: stats
       new Notice(`Failed to create notes: ${err.message}`, 5000);
     }
   }
+
+  async createSampleFolders() {
+  const { vault, workspace } = this.plugin.app;
+  const dashboards = [
+    {
+      folder: 'Anime Dashboard',
+      notes: [
+        {
+          name: 'Watching',
+          content: `\`\`\`zoro-search
+mediaType: ANIME
+\`\`\`
+
+\`\`\`zoro
+listType: CURRENT
+mediaType: ANIME
+\`\`\``
+        },
+        {
+          name: 'Planning',
+          content: `\`\`\`zoro-search
+mediaType: ANIME
+\`\`\`
+
+\`\`\`zoro
+listType: PLANNING
+mediaType: ANIME
+\`\`\``
+        },
+        {
+          name: 'Repeating',
+          content: `\`\`\`zoro-search
+mediaType: ANIME
+\`\`\`
+
+\`\`\`zoro
+listType: REPEATING
+mediaType: ANIME
+\`\`\``
+        },
+        {
+          name: 'On Hold',
+          content: `\`\`\`zoro-search
+mediaType: ANIME
+\`\`\`
+
+\`\`\`zoro
+listType: PAUSED
+mediaType: ANIME
+\`\`\``
+        },
+        {
+          name: 'Completed',
+          content: `\`\`\`zoro-search
+mediaType: ANIME
+\`\`\`
+
+\`\`\`zoro
+listType: COMPLETED
+mediaType: ANIME
+\`\`\``
+        },
+        {
+          name: 'Dropped',
+          content: `\`\`\`zoro-search
+mediaType: ANIME
+\`\`\`
+
+\`\`\`zoro
+listType: DROPPED
+mediaType: ANIME
+\`\`\``
+        },
+        {
+          name: 'Stats',
+          content: `\`\`\`zoro
+type: stats
+\`\`\``
+        }
+      ]
+    },
+    {
+      folder: 'Manga Dashboard',
+      notes: [
+        {
+          name: 'Reading',
+          content: `\`\`\`zoro-search
+mediaType: MANGA
+\`\`\`
+
+\`\`\`zoro
+listType: CURRENT
+mediaType: MANGA
+\`\`\``
+        },
+        {
+          name: 'Planning',
+          content: `\`\`\`zoro-search
+mediaType: MANGA
+\`\`\`
+
+\`\`\`zoro
+listType: PLANNING
+mediaType: MANGA
+\`\`\``
+        },
+        {
+          name: 'Repeating',
+          content: `\`\`\`zoro-search
+mediaType: MANGA
+\`\`\`
+
+\`\`\`zoro
+listType: REPEATING
+mediaType: MANGA
+\`\`\``
+        },
+        {
+          name: 'On Hold',
+          content: `\`\`\`zoro-search
+mediaType: MANGA
+\`\`\`
+
+\`\`\`zoro
+listType: PAUSED
+mediaType: MANGA
+\`\`\``
+        },
+        {
+          name: 'Completed',
+          content: `\`\`\`zoro-search
+mediaType: MANGA
+\`\`\`
+
+\`\`\`zoro
+listType: COMPLETED
+mediaType: MANGA
+\`\`\``
+        },
+        {
+          name: 'Dropped',
+          content: `\`\`\`zoro-search
+mediaType: MANGA
+\`\`\`
+
+\`\`\`zoro
+listType: DROPPED
+mediaType: MANGA
+\`\`\``
+        },
+        {
+          name: 'Stats',
+          content: `\`\`\`zoro
+type: stats
+\`\`\``
+        }
+      ]
+    }
+  ];
+
+  for (const { folder, notes } of dashboards) {
+    try {
+      // Create folder if missing
+      if (!vault.getAbstractFileByPath(folder)) {
+        await vault.createFolder(folder);
+      }
+      // Create notes within it
+      for (const { name, content } of notes) {
+        const path = `${folder}/${name}.md`;
+        if (!vault.getAbstractFileByPath(path)) {
+          await vault.create(path, content);
+        }
+      }
+      // Open the first note
+      await workspace.openLinkText(notes[0].name, folder, false);
+    } catch (err) {
+      console.error(`[Zoro] Error creating "${folder}":`, err);
+      new Notice(`❌ Failed creating ${folder}: ${err.message}`, 5000);
+    }
+  }
+
+  new Notice('✅ Dashboards generated!', 4000);
+}
 }
 
 // Settings
@@ -2612,12 +2796,15 @@ class ZoroSettingTab extends PluginSettingTab {
     };
 
 // variables For headers
-        const Account  = section('👤 Account', true);   // opens by default
-    const UI = section('🎨 Appearance');
+        const Account  = section('👤 Account', true);
+    const UI = section('📺 Display');
     const Theme = section('🌌 Theme');
-    const Data = section('📤 Your Data');
     const Guide = section('🧭 Guide');
-    const More = section('✨ More');
+    const More = section('✨  More');
+    const Data = section('📤 Data');
+    const Cache = section('🔄 Cache');
+    const Exit = section('🔚 Exit');
+    const About = section('ℹ️ About');
     
 
     
@@ -2647,17 +2834,6 @@ authSetting.addButton(button => {
     await this.handleAuthButtonClick();
   });
 });
-
-  new Setting(Account)
-  .addButton(btn => btn
-    .setButtonText('Log out')
-    .setWarning()
-    .onClick(async () => {
-      await this.plugin.auth.logout();
-      this.updateAuthButton();
-    })
-  );
-
 
     new Setting(UI)
       .setName('🧊 Layout')
@@ -2795,7 +2971,16 @@ new Setting(Theme)
     });
   });
 
-
+new Setting(Guide)
+  .setName('⚡ Sample Folders')
+  .setDesc('Builds two folders for you — anime and manga — with everything pre-filled: notes, lists, search, stats. (Recommended)')
+  .addButton(button =>
+    button
+      .setButtonText('Create Sample Folders')
+      .onClick(async () => {
+       await this.plugin.sample.createSampleFolders();
+      })
+  );
 new Setting(Guide)
     .setName('🍜 Sample Notes')
     .setDesc('Builds two notes for you — anime and manga — with everything pre-filled: lists, search, stats. Like instant noodles, but for your library.')
@@ -2803,8 +2988,8 @@ new Setting(Guide)
       .setButtonText('Create Note')
       .setTooltip('Click to create sample notes in your vault')
       .onClick(async () => {
-        await this.plugin.note.createSampleNotes();
-        this.display(); // re-render immediately hides the button
+        await this.plugin.sample.createSampleNotes();
+        this.display();
       })
     );
     
@@ -2816,13 +3001,42 @@ new Setting(Guide)
         .onClick(() => {
           window.open('https://github.com/zara-kasi/zoro/blob/main/Docs/anilist-auth-setup.md', '_blank');
         }));
+        
+        new Setting(About)
+  .setName('Author')
+  .setDesc(this.plugin.manifest.author);
+  new Setting(About)
+  .setName('Version')
+  .setDesc(this.plugin.manifest.version);
+new Setting(About)
+  .setName('Description')
+  .setDesc(this.plugin.manifest.description);
+new Setting(About)
+  .setName('Privacy')
+  .setDesc('Zoro only talks to the AniList API to fetch your media data. Nothing else is sent or shared—your data stays local.');
 
-new Setting(Guide)
-      .addButton(button => button
-        .setButtonText('Help & feedback')
-        .onClick(() => {
-          window.open('https://github.com/zara-kasi/zoro/blob/main/README.md', '_blank');
-        }));
+new Setting(About)
+  .setName('GitHub')
+  .setDesc('Get more info or report an issue.')
+  .addButton(button =>
+    button
+    .setClass('mod-cta')
+      .setButtonText('Open GitHub')
+      .onClick(() => {
+        window.open('https://github.com/zara-kasi/zoro', '_blank');
+      })
+  );
+  
+  new Setting(Exit)
+  .setDesc('This will clear all saved credentials and sign you out from the plugin.')
+  .addButton(btn => btn
+    .setButtonText('Sign out')
+    .setWarning()
+    .onClick(async () => {
+      await this.plugin.auth.logout();
+      this.updateAuthButton();
+    })
+  );
   }
   //  Dynamic Update of Auth button
 updateAuthButton() {

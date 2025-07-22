@@ -657,6 +657,99 @@ class Api {
   }
 }
 
+// Theme
+class Theme {
+  constructor(plugin) {
+    this.plugin = plugin;
+    this.themeStyleId = 'zoro-theme';
+  }
+
+  /**
+   * Return an array of theme file names (without .css).
+   */
+  async getAvailableThemes() {
+    try {
+      const themesDir = `${this.plugin.manifest.dir}/themes`;
+      const { files } = await this.plugin.app.vault.adapter.list(themesDir);
+      return files
+        .filter(f => f.endsWith('.css'))
+        .map(f => f.split('/').pop().replace('.css', ''));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Apply or remove a theme.
+   * @param {string} themeName  file name without .css, or "" to disable
+   */
+  async applyTheme(themeName) {
+    // 1. Remove any previous scoped theme
+    const old = document.getElementById(this.themeStyleId);
+    if (old) old.remove();
+
+    // 2. If user chose "None", stop here
+    if (!themeName) return;
+
+    // 3. Read the CSS file
+    const cssPath = `${this.plugin.manifest.dir}/themes/${themeName}.css`;
+    let rawCss;
+    try {
+      rawCss = await this.plugin.app.vault.adapter.read(cssPath);
+    } catch (err) {
+      console.warn('Zoro: theme file missing:', themeName, err);
+      new Notice(`❌ Theme "${themeName}" not found`);
+      return;
+    }
+
+    // 4. Fully scope the CSS
+    const scopedCss = this.scopeCss(rawCss);
+
+    // 5. Inject the scoped style
+    const style = document.createElement('style');
+    style.id = this.themeStyleId;
+    style.textContent = scopedCss;
+    document.head.appendChild(style);
+  }
+
+  /**
+   * Scope raw CSS so every rule only targets `.zoro-container`.
+   * - `:root` → `.zoro-container`
+   * - Every normal selector → prefixed with `.zoro-container `
+   */
+  scopeCss(rawCss, scope = '.zoro-container') {
+    // 1. Move CSS variables from :root to the plugin container
+    let css = rawCss.replace(/:root\b/g, scope);
+
+    // 2. Prefix every selector (outside @-rules)
+    css = css.replace(
+      /(^|})(\s*)([^{@}][^{}]*?)\s*\{/g,
+      (_, prefix, ws, selectorText) => {
+        const scoped = selectorText
+          .split(',')
+          .map(s => {
+            const sel = s.trim();
+            return sel.startsWith(scope) ? sel : `${scope} ${sel}`;
+          })
+          .join(', ');
+        return `${prefix}${ws}${scoped} {`;
+      }
+    );
+
+    return css;
+  }
+
+  /**
+   * Remove the theme styles from the DOM
+   */
+  removeTheme() {
+    const existingStyle = document.getElementById(this.themeStyleId);
+    if (existingStyle) {
+      existingStyle.remove();
+      console.log(`Removed theme style element with ID: ${this.themeStyleId}`);
+    }
+  }
+}
 // Plugin
 class ZoroPlugin extends Plugin {
   constructor(app, manifest) {
@@ -675,6 +768,7 @@ class ZoroPlugin extends Plugin {
   this.pruneInterval = setInterval(() => this.pruneCache(), this.cacheTimeout);
   this.api = new Api(this);
     this.auth = new Authentication(this);
+    this.theme = new Theme(this);
     this.edit = new Edit(this);
     this.export = new Export(this);
     this.sample = new Sample(this);
@@ -748,7 +842,7 @@ setToCache(type, key, value) {
       console.error('[Zoro] Failed to inject CSS:', err);
     }
     // Apply saved theme (if any)
-await this.applyTheme(this.settings.theme);
+await this.theme.applyTheme(this.settings.theme);
 
     // Processors
     /// Markdown code block processors
@@ -1186,90 +1280,10 @@ _buildSortOptions(raw) {
   const suffix = dir === 'desc' ? '_DESC' : '_ASC';
   return { field, dir, anilistSort: key + suffix };
 }
-
- /**
- * Return an array of theme file names (without .css).
- */
-async getAvailableThemes() {
-  try {
-    const themesDir = `${this.manifest.dir}/themes`;
-    const { files } = await this.app.vault.adapter.list(themesDir);
-    return files
-      .filter(f => f.endsWith('.css'))
-      .map(f => f.split('/').pop().replace('.css', ''));
-  } catch {
-    return [];
-  }
-}
-
-
-
-/**
- * Apply or remove a theme.
- * @param {string} themeName  file name without .css, or "" to disable
- */
-  async applyTheme(themeName) {
-    // 1. Remove any previous scoped theme
-    const old = document.getElementById('zoro-theme');
-    if (old) old.remove();
-
-    // 2. If user chose “None”, stop here
-    if (!themeName) return;
-
-    // 3. Read the CSS file
-    const cssPath = `${this.manifest.dir}/themes/${themeName}.css`;
-    let rawCss;
-    try {
-      rawCss = await this.app.vault.adapter.read(cssPath);
-    } catch (err) {
-      console.warn('Zoro: theme file missing:', themeName, err);
-      new Notice(`❌ Theme “${themeName}” not found`);
-      return;
-    }
-
-    // 4. Fully scope the CSS
-    const scopedCss = this.scopeCss(rawCss);
-
-    // 5. Inject the scoped style
-    const style = document.createElement('style');
-    style.id = 'zoro-theme';
-    style.textContent = scopedCss;
-    document.head.appendChild(style);
-  }
-
- /**
-   * Scope raw CSS so every rule only targets `.zoro-container`.
-   * - `:root` → `.zoro-container`
-   * - Every normal selector → prefixed with `.zoro-container `
-   */
-  scopeCss(rawCss, scope = '.zoro-container') {
-    // 1. Move CSS variables from :root to the plugin container
-    let css = rawCss.replace(/:root\b/g, scope);
-
-    // 2. Prefix every selector (outside @-rules)
-    css = css.replace(
-      /(^|})(\s*)([^{@}][^{}]*?)\s*\{/g,
-      (_, prefix, ws, selectorText) => {
-        const scoped = selectorText
-          .split(',')
-          .map(s => {
-            const sel = s.trim();
-            return sel.startsWith(scope) ? sel : `${scope} ${sel}`;
-          })
-          .join(', ');
-        return `${prefix}${ws}${scoped} {`;
-      }
-    );
-
-    return css;
-  }
-
-
-
   // Plugin unload method
   onunload() {
     console.log('Unloading Zoro Plugin');
-
+   this.theme.removeTheme();
     const styleId = 'zoro-plugin-styles';
     const existingStyle = document.getElementById(styleId);
     if (existingStyle) {
@@ -3077,7 +3091,7 @@ new Setting(Theme)
   .addDropdown(async dropdown => {
     // Populate
     dropdown.addOption('', 'None (built-in)');
-    const themes = await this.plugin.getAvailableThemes();
+    const themes = await this.plugin.theme.getAvailableThemes();
     themes.forEach(t => dropdown.addOption(t, t));
 
     // Pre-select saved value
@@ -3087,7 +3101,7 @@ new Setting(Theme)
     dropdown.onChange(async value => {
       this.plugin.settings.theme = value;
       await this.plugin.saveSettings();
-      await this.plugin.applyTheme(value);
+      await this.plugin.theme.applyTheme(value);
     });
   });
 

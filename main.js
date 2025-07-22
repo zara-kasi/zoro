@@ -104,16 +104,564 @@ try {
 }
 }
 
+// API 
+class Api {
+  constructor(plugin) {
+    this.plugin = plugin;
+    this.requestQueue = plugin.requestQueue;
+    this.cache = plugin.cache;
+    this.cacheTimeout = plugin.cacheTimeout;
+  }
+
+  /**
+   * Make OAuth token request to AniList via Obsidian's requestUrl
+   */
+  async makeObsidianRequest(code, redirectUri) {
+    const body = new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: this.plugin.settings.clientId,
+      client_secret: this.plugin.settings.clientSecret || '',
+      redirect_uri: redirectUri,
+      code: code
+    });
+
+    const headers = {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json',
+    };
+
+    try {
+      const response = await this.requestQueue.add(() => requestUrl({
+        url: 'https://anilist.co/api/v2/oauth/token',
+        method: 'POST',
+        headers,
+        body: body.toString()
+      }));
+
+      if (!response || typeof response.json !== 'object') {
+        throw new Error('Invalid response structure from AniList.');
+      }
+
+      return response.json;
+
+    } catch (err) {
+      console.error('[Zoro] Obsidian requestUrl failed:', err);
+      throw new Error('Failed to authenticate with AniList via Obsidian requestUrl.');
+    }
+  }
+
+  /**
+   * Main method to fetch data from AniList GraphQL API
+   */
+  async fetchZoroData(config) {
+    const cacheKey = JSON.stringify(config);
+    let cacheType;
+
+    // Determine cache type based on request
+    if (config.type === 'stats') {
+      cacheType = 'userData';
+    } else if (config.type === 'single') {
+      cacheType = 'mediaData';
+    } else if (config.type === 'search') {
+      cacheType = 'searchResults';
+    } else {
+      cacheType = 'userData'; // Default for lists
+    }
+
+    const cached = this.plugin.getFromCache(cacheType, cacheKey);
+    if (cached) return cached;
+
+    let query, variables;
+    try {
+      const headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      };
+      
+      if (this.plugin.settings.accessToken) {
+        await this.plugin.auth.ensureValidToken();
+        headers['Authorization'] = `Bearer ${this.plugin.settings.accessToken}`;
+      }
+
+      // Build query and variables based on config type
+      if (config.type === 'stats') {
+        query = this.getUserStatsQuery();
+        variables = { username: config.username };
+      } else if (config.type === 'single') {
+        query = this.getSingleMediaQuery();
+        variables = {
+          username: config.username,
+          mediaId: parseInt(config.mediaId),
+          type: config.mediaType
+        };
+      } else if (config.type === 'search') {
+        query = this.getSearchMediaQuery(config.layout);
+        variables = {
+          search: config.search,
+          type: config.mediaType,
+          page: config.page || 1,
+          perPage: config.perPage || 5,
+          sort: config.sortOptions?.anilistSort ? [config.sortOptions.anilistSort] : null,
+        };
+      } else {
+        query = this.getMediaListQuery(config.layout);
+        variables = {
+          username: config.username,
+          status: config.listType,
+          type: config.mediaType || 'ANIME',
+          sort: config.sortOptions?.anilistSort ? [config.sortOptions.anilistSort] : null,
+        };
+      }
+
+      // Make the GraphQL request with rate limiting
+      const response = await this.requestQueue.add(() => requestUrl({
+        url: 'https://graphql.anilist.co',
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ query, variables })
+      }));
+
+      const result = response.json;
+
+      if (!result) throw new Error('Empty response from AniList.');
+
+      if (result.errors && result.errors.length > 0) {
+        const firstError = result.errors[0];
+        const isPrivate = firstError.message?.includes('Private') || firstError.message?.includes('permission');
+
+        if (isPrivate) {
+          if (this.plugin.settings.accessToken) {
+            throw new Error('🚫 List is private and this token has no permission.');
+          } else {
+            throw new Error('🔒 List is private. Please authenticate to access it.');
+          }
+        }
+
+        throw new Error(firstError.message || 'AniList returned an unknown error.');
+      }
+
+      if (!result.data) {
+        throw new Error('AniList returned no data.');
+      }
+
+      // Save to cache
+      this.plugin.setToCache(cacheType, cacheKey, result.data);
+      return result.data;
+
+    } catch (error) {
+      console.error('[Zoro] fetchZoroData() failed:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Update a media list entry via GraphQL mutation
+   */
+  async updateMediaListEntry(mediaId, updates) {
+    try {
+      // Ensure valid token before proceeding
+      if (!this.plugin.settings.accessToken || !(await this.plugin.auth.ensureValidToken())) {
+        throw new Error('❌ Authentication required to update entries.');
+      }
+
+      const mutation = `
+        mutation ($mediaId: Int, $status: MediaListStatus, $score: Float, $progress: Int) {
+          SaveMediaListEntry(mediaId: $mediaId, status: $status, score: $score, progress: $progress) {
+            id
+            status
+            score
+            progress
+          }
+        }
+      `;
+
+      // Filter out undefined values
+      const variables = {
+        mediaId,
+        ...(updates.status !== undefined && { status: updates.status }),
+        ...(updates.score !== undefined && updates.score !== null && { score: updates.score }),
+        ...(updates.progress !== undefined && { progress: updates.progress }),
+      };
+
+      // Make mutation request with rate limiting
+      const response = await this.requestQueue.add(() => requestUrl({
+        url: 'https://graphql.anilist.co',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.plugin.settings.accessToken}`
+        },
+        body: JSON.stringify({ query: mutation, variables })
+      }));
+
+      const result = response.json;
+
+      if (!result || result.errors?.length > 0) {
+        const message = result.errors?.[0]?.message || 'Unknown mutation error';
+        throw new Error(`AniList update error: ${message}`);
+      }
+
+      // Targeted cache clearing instead of full clear
+      this.plugin.clearCacheForMedia(mediaId);
+      
+      return result.data.SaveMediaListEntry;
+
+    } catch (error) {
+      console.error('[Zoro] updateMediaListEntry failed:', error);
+      throw new Error(`❌ Failed to update entry: ${error.message}`);
+    }
+  }
+
+  /**
+   * Check if media is already in user's list
+   */
+  async checkIfMediaInList(mediaId, mediaType) {
+    if (!this.plugin.settings.accessToken) return false;
+    
+    try {
+      const config = {
+        type: 'single',
+        mediaType: mediaType,
+        mediaId: parseInt(mediaId)
+      };
+      
+     const response = await this.fetchZoroData(config);
+      return response.MediaList !== null;
+    } catch (error) {
+      console.warn('Error checking media list status:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Add new media to user's list
+   */
+  async addMediaToList(mediaId, updates, mediaType) {
+    if (!this.plugin.settings.accessToken) {
+      throw new Error('Authentication required');
+    }
+    
+    // Use the same method as updateMediaListEntry for adding new entries
+    return await this.updateMediaListEntry(mediaId, updates);
+  }
+
+  // ========== GraphQL Query Builders ==========
+
+  /**
+   * Get media list query with different detail levels
+   */
+  getMediaListQuery(layout = 'card') {
+    const baseFields = `
+      id
+      status
+      score
+      progress
+    `;
+
+    const mediaFields = {
+      compact: `
+        id
+        title {
+          romaji
+        }
+        coverImage {
+          medium
+        }
+      `,
+      card: `
+        id
+        title {
+          romaji
+          english
+          native
+        }
+        coverImage {
+          large
+          medium
+        }
+        format
+        averageScore
+        status
+        genres
+        episodes
+        chapters
+      `,
+      full: `
+        id
+        title {
+          romaji
+          english
+          native
+        }
+        coverImage {
+          large
+          medium
+        }
+        episodes
+        chapters
+        genres
+        format
+        averageScore
+        status
+        startDate {
+          year
+          month
+          day
+        }
+        endDate {
+          year
+          month
+          day
+        }
+      `
+    };
+
+    const fields = mediaFields[layout] || mediaFields.card;
+
+    return `
+      query ($username: String, $status: MediaListStatus, $type: MediaType, $sort: [MediaListSort]) {
+        MediaListCollection(userName: $username, status: $status, type: $type, sort: $sort) {
+          lists {
+            entries {
+              ${baseFields}
+              media {
+                ${fields}
+              }
+            }
+          }
+        }
+      }
+    `;
+  }
+
+  /**
+   * Get single media query
+   */
+  getSingleMediaQuery(layout = 'card') {
+    const baseFields = `
+      id
+      status
+      score
+      progress
+    `;
+
+    const mediaFields = {
+      compact: `
+        id
+        title {
+          romaji
+        }
+        coverImage {
+          medium
+        }
+      `,
+      card: `
+        id
+        title {
+          romaji
+          english
+          native
+        }
+        coverImage {
+          large
+          medium
+        }
+        format
+        averageScore
+        status
+        genres
+        episodes
+        chapters
+      `,
+      full: `
+        id
+        title {
+          romaji
+          english
+          native
+        }
+        coverImage {
+          large
+          medium
+        }
+        episodes
+        chapters
+        genres
+        format
+        averageScore
+        status
+        startDate {
+          year
+          month
+          day
+        }
+        endDate {
+          year
+          month
+          day
+        }
+      `
+    };
+
+    const selectedMediaFields = mediaFields[layout] || mediaFields.card;
+
+    return `
+      query ($username: String, $mediaId: Int, $type: MediaType) {
+        MediaList(userName: $username, mediaId: $mediaId, type: $type) {
+          ${baseFields}
+          media {
+            ${selectedMediaFields}
+          }
+        }
+      }
+    `;
+  }
+
+  /**
+   * Get user stats query
+   */
+  getUserStatsQuery({ mediaType = 'ANIME', layout = 'card', useViewer = false } = {}) {
+    const typeKey = mediaType.toLowerCase(); // 'anime' or 'manga'
+
+    const statFields = {
+      compact: `
+        count
+        meanScore
+      `,
+      card: `
+        count
+        meanScore
+        standardDeviation
+      `,
+      full: `
+        count
+        meanScore
+        standardDeviation
+        episodesWatched
+        minutesWatched
+        chaptersRead
+        volumesRead
+      `
+    };
+
+    const selectedFields = statFields[layout] || statFields.card;
+    const viewerPrefix = useViewer ? 'Viewer' : `User(name: $username)`;
+
+    return `
+      query ($username: String) {
+        ${viewerPrefix} {
+          id
+          name
+          avatar {
+            large
+            medium
+          }
+          statistics {
+            ${typeKey} {
+              ${selectedFields}
+            }
+          }
+        }
+      }
+    `;
+  }
+
+  /**
+   * Get search media query
+   */
+  getSearchMediaQuery(layout = 'card') {
+    const mediaFields = {
+      compact: `
+        id
+        title {
+          romaji
+        }
+        coverImage {
+          medium
+        }
+      `,
+      card: `
+        id
+        title {
+          romaji
+          english
+          native
+        }
+        coverImage {
+          large
+          medium
+        }
+        format
+        averageScore
+        status
+        genres
+        episodes
+        chapters
+      `,
+      full: `
+        id
+        title {
+          romaji
+          english
+          native
+        }
+        coverImage {
+          large
+          medium
+        }
+        episodes
+        chapters
+        genres
+        format
+        averageScore
+        status
+        startDate {
+          year
+          month
+          day
+        }
+        endDate {
+          year
+          month
+          day
+        }
+      `
+    };
+
+    const fields = mediaFields[layout] || mediaFields.card;
+
+    return `
+      query ($search: String, $type: MediaType, $page: Int, $perPage: Int, $sort: [MediaSort]) {
+        Page(page: $page, perPage: $perPage) {
+          media(search: $search, type: $type, sort: $sort) {
+            ${fields}
+          }
+        }
+      }
+    `;
+  }
+
+  /**
+   * Generate AniList URL for a given media
+   */
+  getZoroUrl(mediaId, mediaType = 'ANIME') {
+    if (!mediaId || typeof mediaId !== 'number') {
+      throw new Error(`Invalid mediaId: ${mediaId}`);
+    }
+
+    const type = String(mediaType).toUpperCase();
+    const validTypes = ['ANIME', 'MANGA'];
+    const urlType = validTypes.includes(type) ? type.toLowerCase() : 'anime'; // fallback
+
+    return `https://anilist.co/${urlType}/${mediaId}`;
+  }
+}
+
 // Plugin
 class ZoroPlugin extends Plugin {
   constructor(app, manifest) {
     super(app, manifest);
     
-    this.auth = new Authentication(this);
-    this.edit = new Edit(this);
-    this.export = new Export(this);
-    this.sample = new Sample(this);
-    this.prompt = new Prompt(this);
   // Initialize separate caches
   this.cache = {
     userData: new Map(),
@@ -125,7 +673,18 @@ class ZoroPlugin extends Plugin {
 // Add periodic pruning
 // Add periodic pruning
   this.pruneInterval = setInterval(() => this.pruneCache(), this.cacheTimeout);
+  this.api = new Api(this);
+    this.auth = new Authentication(this);
+    this.edit = new Edit(this);
+    this.export = new Export(this);
+    this.sample = new Sample(this);
+    this.prompt = new Prompt(this);
   }
+
+getZoroUrl(mediaId, mediaType = 'ANIME') {
+  return this.api.getZoroUrl(mediaId, mediaType);
+}
+
 // Prune Cache 
 pruneCache() {
   const now = Date.now();
@@ -246,153 +805,8 @@ await this.applyTheme(this.settings.theme);
     await this.saveData(this.settings);
   }}
  
-  // Make Obsidian Request 
-  async makeObsidianRequest(code, redirectUri) {
-    const body = new URLSearchParams({
-      grant_type: 'authorization_code',
-      client_id: this.settings.clientId,
-      client_secret: this.settings.clientSecret || '',
-      redirect_uri: redirectUri,
-      code: code
-    });
-
-    const headers = {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Accept': 'application/json',
-    };
-
-    try {
-      const response = await this.requestQueue.add(() => requestUrl({
-  url: 'https://anilist.co/api/v2/oauth/token',
-        method: 'POST',
-        headers,
-        body: body.toString()
-      }));
-
-      if (!response || typeof response.json !== 'object') {
-        throw new Error('Invalid response structure from AniList.');
-      }
-
-      return response.json;
-
-    } catch (err) {
-      console.error('[Zoro] Obsidian requestUrl failed:', err);
-      throw new Error('Failed to authenticate with AniList via Obsidian requestUrl.');
-    }
-  }
-  // Fetch Zoro Data 
-    async fetchZoroData(config) {
-  const cacheKey = JSON.stringify(config);
-  let cacheType;
-
-  // Determine cache type based on request
-  if (config.type === 'stats') {
-    cacheType = 'userData';
-  } else if (config.type === 'single') {
-    cacheType = 'mediaData';
-  } else if (config.type === 'search') {
-    cacheType = 'searchResults';
-  } else {
-    cacheType = 'userData'; // Default for lists
-  }
-
-  const cached = this.getFromCache(cacheType, cacheKey);
-  if (cached) return cached;
-
-    if (cached && Date.now() - cached.timestamp < this.cacheTimeout) {
-      return cached.data;
-    }
-
-    let query, variables;
-     try {
-      const headers = {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      };
-      
-if (this.settings.accessToken) {
-  await this.auth.ensureValidToken();
-  
-  headers['Authorization'] = `Bearer ${this.settings.accessToken}`;
-}
-
-    if (config.type === 'stats') {
-      query = this.getUserStatsQuery();
-      variables = { username: config.username };
-    } else if (config.type === 'single') {
-      query = this.getSingleMediaQuery();
-      variables = {
-        username: config.username,
-        mediaId: parseInt(config.mediaId),
-        type: config.mediaType
-      };
-    } else if (config.type === 'search') {
-      query = this.getSearchMediaQuery(config.layout);
-      variables = {
-        search: config.search,
-        type: config.mediaType,
-        page: config.page || 1,
-        perPage: config.perPage || 5 ,
-        sort:    config.sortOptions?.anilistSort ? [config.sortOptions.anilistSort] : null,
-      };
-    } else {
-      query = this.getMediaListQuery(config.layout);
-      variables = {
-        username: config.username,
-        status: config.listType,
-        type: config.mediaType || 'ANIME',
-        sort:     config.sortOptions?.anilistSort ? [config.sortOptions.anilistSort] : null,
-      };
-    }
-
-   
-
-      if (this.settings.accessToken) {
-        headers['Authorization'] = `Bearer ${this.settings.accessToken}`;
-      }
-      // Rate limit add
-      const response = await this.requestQueue.add(() => requestUrl({
-  url: 'https://graphql.anilist.co',
-
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ query, variables })
-      }));
-
-      const result = response.json;
-
-      if (!result) throw new Error('Empty response from AniList.');
-
-      if (result.errors && result.errors.length > 0) {
-        const firstError = result.errors[0];
-        const isPrivate = firstError.message?.includes('Private') || firstError.message?.includes('permission');
-
-        if (isPrivate) {
-          if (this.settings.accessToken) {
-            throw new Error('🚫 List is private and this token has no permission.');
-          } else {
-            throw new Error('🔒 List is private. Please authenticate to access it.');
-          }
-        }
-
-        throw new Error(firstError.message || 'AniList returned an unknown error.');
-      }
-
-      if (!result.data) {
-        throw new Error('AniList returned no data.');
-      }
-
-       // Save to cache
-  this.setToCache(cacheType, cacheKey, result.data);
-  return result.data;
-    
 
 
-    } catch (error) {
-      console.error('[Zoro] fetchZoroData() failed:', error);
-      throw error;
-    }
-  }
   // Process Zoro Code Block - FIXED: Now properly inside the class
   async processZoroCodeBlock(source, el, ctx) {
     try {
@@ -414,7 +828,7 @@ if (this.settings.accessToken) {
         throw new Error('❌ No username provided. Set `username:` in your code block or enable `useAuthenticatedUser`.');
       }
 
-      const data = await this.fetchZoroData(config);
+      const data = await this.api.fetchZoroData(config);
 
       if (!data || (Array.isArray(data) && data.length === 0)) {
         throw new Error('⚠️ No data returned from Zoro API.');
@@ -428,63 +842,6 @@ if (this.settings.accessToken) {
     }
   }
 
-// Update Media List 
-    async updateMediaListEntry(mediaId, updates) {
-  try {
-    // Ensure valid token before proceeding
-    if (!this.settings.accessToken || !(await this.auth.ensureValidToken())) {
-      throw new Error('❌ Authentication required to update entries.');
-    }
-
-    const mutation = `
-      mutation ($mediaId: Int, $status: MediaListStatus, $score: Float, $progress: Int) {
-        SaveMediaListEntry(mediaId: $mediaId, status: $status, score: $score, progress: $progress) {
-          id
-          status
-          score
-          progress
-        }
-      }
-    `;
-
-    // Filter out undefined values
-const variables = {
-  mediaId,
-  ...(updates.status !== undefined && { status: updates.status }),
-  ...(updates.score !== undefined && updates.score !== null && { score: updates.score }),
-  ...(updates.progress !== undefined && { progress: updates.progress }),
-};
-
-
-    
-// Rate Limit  add
-    const response = await this.requestQueue.add(() => requestUrl({
-  url: 'https://graphql.anilist.co',
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.settings.accessToken}`
-      },
-      body: JSON.stringify({ query: mutation, variables })
-    }));
-
-    const result = response.json;
-
-    if (!result || result.errors?.length > 0) {
-      const message = result.errors?.[0]?.message || 'Unknown mutation error';
-      throw new Error(`AniList update error: ${message}`);
-    }
-
-    // Targeted cache clearing instead of full clear
-    this.clearCacheForMedia(mediaId);
-    
-    return result.data.SaveMediaListEntry;
-
-  } catch (error) {
-    console.error('[Zoro] updateMediaListEntry failed:', error);
-    throw new Error(`❌ Failed to update entry: ${error.message}`);
-  }
-}
 
 clearCacheForMedia(mediaId) {
   // Clear media-specific cache
@@ -618,7 +975,7 @@ clearCacheForMedia(mediaId) {
 
       try {
         const config = this.parseInlineLink(href);
-        const data = await this.fetchZoroData(config);
+        const data = await this.api.fetchZoroData(config);
 
         const container = document.createElement('span');
         container.className = 'zoro-inline-container';
@@ -704,336 +1061,6 @@ clearCacheForMedia(mediaId) {
     return config;
   }
 
-  // Get Media List Query - FIXED: Now properly inside the class
-  getMediaListQuery(layout = 'card') {
-    const baseFields = `
-      id
-      status
-      score
-      progress
-    `;
-
-    const mediaFields = {
-      compact: `
-        id
-        title {
-          romaji
-        }
-        coverImage {
-          medium
-        }
-      `,
-      card: `
-        id
-        title {
-          romaji
-          english
-          native
-        }
-        coverImage {
-          large
-          medium
-        }
-        format
-        averageScore
-        status
-        genres
-        episodes
-        chapters
-      `,
-      full: `
-        id
-        title {
-          romaji
-          english
-          native
-        }
-        coverImage {
-          large
-          medium
-        }
-        episodes
-        chapters
-        genres
-        format
-        averageScore
-        status
-        startDate {
-          year
-          month
-          day
-        }
-        endDate {
-          year
-          month
-          day
-        }
-      `
-    };
-
-    const fields = mediaFields[layout] || mediaFields.card;
-
-    return `
-        query ($username: String, $status: MediaListStatus, $type: MediaType, $sort: [MediaListSort]) {
-  MediaListCollection(userName: $username, status: $status, type: $type, sort: $sort) {
-          lists {
-            entries {
-              ${baseFields}
-              media {
-                ${fields}
-              }
-            }
-          }
-        }
-      }
-    `;
-  }
-
-  // Single Media Query - FIXED: Now properly inside the class
-  getSingleMediaQuery(layout = 'card') {
-    const baseFields = `
-      id
-      status
-      score
-      progress
-    `;
-
-    const mediaFields = {
-      compact: `
-        id
-        title {
-          romaji
-        }
-        coverImage {
-          medium
-        }
-      `,
-      card: `
-        id
-        title {
-          romaji
-          english
-          native
-        }
-        coverImage {
-          large
-          medium
-        }
-        format
-        averageScore
-        status
-        genres
-        episodes
-        chapters
-      `,
-      full: `
-        id
-        title {
-          romaji
-          english
-          native
-        }
-        coverImage {
-          large
-          medium
-        }
-        episodes
-        chapters
-        genres
-        format
-        averageScore
-        status
-        startDate {
-          year
-          month
-          day
-        }
-        endDate {
-          year
-          month
-          day
-        }
-      `
-    };
-
-    const selectedMediaFields = mediaFields[layout] || mediaFields.card;
-
-    return `
-      query ($username: String, $mediaId: Int, $type: MediaType) {
-        MediaList(userName: $username, mediaId: $mediaId, type: $type) {
-          ${baseFields}
-          media {
-            ${selectedMediaFields}
-          }
-        }
-      }
-    `;
-  }
-
-  // User Stats Query - FIXED: Now properly inside the class
-  getUserStatsQuery({ mediaType = 'ANIME', layout = 'card', useViewer = false } = {}) {
-    const typeKey = mediaType.toLowerCase(); // 'anime' or 'manga'
-
-    const statFields = {
-      compact: `
-        count
-        meanScore
-      `,
-      card: `
-        count
-        meanScore
-        standardDeviation
-      `,
-      full: `
-        count
-        meanScore
-        standardDeviation
-        episodesWatched
-        minutesWatched
-        chaptersRead
-        volumesRead
-      `
-    };
-
-    const selectedFields = statFields[layout] || statFields.card;
-
-    const viewerPrefix = useViewer ? 'Viewer' : `User(name: $username)`;
-
-    return `
-      query ($username: String) {
-        ${viewerPrefix} {
-          id
-          name
-          avatar {
-            large
-            medium
-          }
-          statistics {
-            ${typeKey} {
-              ${selectedFields}
-            }
-          }
-        }
-      }
-    `;
-  }
-
-  // Search Media Query - FIXED: Now properly inside the class
-  getSearchMediaQuery(layout = 'card') {
-    const mediaFields = {
-      compact: `
-        id
-        title {
-          romaji
-        }
-        coverImage {
-          medium
-        }
-      `,
-      card: `
-        id
-        title {
-          romaji
-          english
-          native
-        }
-        coverImage {
-          large
-          medium
-        }
-        format
-        averageScore
-        status
-        genres
-        episodes
-        chapters
-      `,
-      full: `
-        id
-        title {
-          romaji
-          english
-          native
-        }
-        coverImage {
-          large
-          medium
-        }
-        episodes
-        chapters
-        genres
-        format
-        averageScore
-        status
-        startDate {
-          year
-          month
-          day
-        }
-        endDate {
-          year
-          month
-          day
-        }
-      `
-    };
-
-    const fields = mediaFields[layout] || mediaFields.card;
-
-    return `
-        query ($search: String, $type: MediaType, $page: Int, $perPage: Int, $sort: [MediaSort]) {
-  Page(page: $page, perPage: $perPage) {
-    media(search: $search, type: $type, sort: $sort) {
-            ${fields}
-          }
-        }
-      }
-    `;
-  }
-
-  // Getting AniList URL
-  getZoroUrl(mediaId, mediaType = 'ANIME') {
-    if (!mediaId || typeof mediaId !== 'number') {
-      throw new Error(`Invalid mediaId: ${mediaId}`);
-    }
-
-    const type = String(mediaType).toUpperCase();
-
-    const validTypes = ['ANIME', 'MANGA'];
-    const urlType = validTypes.includes(type) ? type.toLowerCase() : 'anime'; // fallback
-
-    return `https://anilist.co/${urlType}/${mediaId}`;
-  }
-
-  // Add this method to check if media is already in user's list
-async checkIfMediaInList(mediaId, mediaType) {
-  if (!this.settings.accessToken) return false;
-  
-  try {
-    const config = {
-      type: 'single',
-      mediaType: mediaType,
-      mediaId: parseInt(mediaId)
-    };
-    
-    const response = await this.fetchZoroData(config);
-    return response.MediaList !== null;
-  } catch (error) {
-    console.warn('Error checking media list status:', error);
-    return false;
-  }
-}
-
-// Add this method to add new media to list
-async addMediaToList(mediaId, updates, mediaType) {
-  if (!this.settings.accessToken) {
-    throw new Error('Authentication required');
-  }
-  
-  // Use the same method as your existing updateMediaListEntry
-  // but for adding new entries instead of updating existing ones
-  return await this.updateMediaListEntry(mediaId, updates);
-}
 
   handleEditClick(e, entry, statusEl) {
     e.preventDefault();
@@ -1043,7 +1070,7 @@ async addMediaToList(mediaId, updates, mediaType) {
       entry,
       async updates => {
         try {
-          await this.updateMediaListEntry(entry.media.id, updates);
+          await this.api.updateMediaListEntry(entry.media.id, updates);
           new Notice('✅ Updated!');
  this.cache.userData.clear();
  this.cache.mediaData.clear();
@@ -1614,7 +1641,7 @@ class Render {
       if (term.length < 3) { resultsDiv.innerHTML = '<div class="zoro-search-message">Type at least 3 characters…</div>'; return; }
       try {
         resultsDiv.innerHTML = '<div class="zoro-search-loading">Searching…</div>';
-        const data = await this.plugin.fetchZoroData({ ...config, search: term, page: 1, perPage: 5 });
+        const data = await this.plugin.api.fetchZoroData({ ...config, search: term, page: 1, perPage: 5 });
         this.renderSearchResults(resultsDiv, data.Page.media, config);
       } catch (e) { this.plugin.renderError(resultsDiv, e.message); }
     };
@@ -1687,7 +1714,7 @@ class Render {
   addBadge.style.pointerEvents = 'none';
 
   try {
-    await this.plugin.addMediaToList(item.id, { status: 'PLANNING', progress: 0 }, config.mediaType);
+    await this.plugin.api.addMediaToList(item.id, { status: 'PLANNING', progress: 0 }, config.mediaType);
     addBadge.className = 'status-badge status-planning';
     addBadge.textContent = 'PLANNING';
     addBadge.onclick = null;

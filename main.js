@@ -769,6 +769,7 @@ class ZoroPlugin extends Plugin {
   this.api = new Api(this);
     this.auth = new Authentication(this);
     this.theme = new Theme(this);
+    this.processor = new Processor(this);
     this.edit = new Edit(this);
     this.export = new Export(this);
     this.sample = new Sample(this);
@@ -846,10 +847,10 @@ await this.theme.applyTheme(this.settings.theme);
 
     // Processors
     /// Markdown code block processors
-    this.registerMarkdownCodeBlockProcessor('zoro', this.processZoroCodeBlock.bind(this));
-    this.registerMarkdownCodeBlockProcessor('zoro-search', this.processZoroSearchCodeBlock.bind(this));
+    this.registerMarkdownCodeBlockProcessor('zoro', this.processor.processZoroCodeBlock.bind(this.processor));
+    this.registerMarkdownCodeBlockProcessor('zoro-search', this.processor.processZoroSearchCodeBlock.bind(this.processor));
     /// Process inline links (e.g., [[Zoro:ID]])
-    this.registerMarkdownPostProcessor(this.processInlineLinks.bind(this));
+    this.registerMarkdownPostProcessor(this.processor.processInlineLinks.bind(this.processor));
     // Add plugin settings tab
     this.addSettingTab(new ZoroSettingTab(this.app, this));
     console.log('[Zoro] Plugin loaded successfully.');
@@ -901,41 +902,7 @@ await this.theme.applyTheme(this.settings.theme);
  
 
 
-  // Process Zoro Code Block - FIXED: Now properly inside the class
-  async processZoroCodeBlock(source, el, ctx) {
-    try {
-      const config = this.parseCodeBlockConfig(source) || {};
-
-      // Debug: Log raw config
-      console.log('[Zoro] Code block config:', config);
-
-      // Handle authenticated user resolution
-      if (config.useAuthenticatedUser) {
-        const authUsername = await this.auth.getAuthenticatedUsername();
-        if (!authUsername) {
-          throw new Error('❌ Could not retrieve authenticated username. Check your authentication setup or set a username manually.');
-        }
-        config.username = authUsername;
-      }
-
-      if (!config.username) {
-        throw new Error('❌ No username provided. Set `username:` in your code block or enable `useAuthenticatedUser`.');
-      }
-
-      const data = await this.api.fetchZoroData(config);
-
-      if (!data || (Array.isArray(data) && data.length === 0)) {
-        throw new Error('⚠️ No data returned from Zoro API.');
-      }
-
-      if (config.type === 'stats') {         this.render.renderUserStats(el, data.User);       } else if (config.type === 'single') {         this.render.renderSingleMedia(el, data.MediaList, config);       } else {         const entries = data.MediaListCollection.lists.flatMap(list => list.entries);         this.render.renderMediaList(el, entries, config);       }
-      
-    } catch (error) {
-      console.error('[Zoro] Code block processing error:', error);
-      this.renderError(el, error.message || 'Unknown error occurred.');
-    }
-  }
-
+  
 
 clearCacheForMedia(mediaId) {
   // Clear media-specific cache
@@ -958,203 +925,6 @@ clearCacheForMedia(mediaId) {
   
   console.log(`[Zoro] Cleared cache for media ${mediaId}`);
 }
-
-  async processZoroSearchCodeBlock(source, el, ctx) {
-    try {
-      const config = this.parseSearchCodeBlockConfig(source);
-
-
-      if (this.settings.debugMode) {
-        console.log('[Zoro] Search block config:', config);
-      }
-
-      // Show loading placeholder
-      el.createEl('div', { text: '🔍 Searching Zoro...', cls: 'zoro-loading-placeholder' });
-      
-      
-
-      await this.render.renderSearchInterface(el, config);
-    } catch (error) {
-      console.error('[Zoro] Search block processing error:', error);
-      this.renderError(el, error.message || 'Failed to process Zoro search block.');
-    }
-  }
-
-  // Parse Code Block Config - FIXED: Now properly inside the class
-  parseCodeBlockConfig(source) {
-    const config = {};
-    const lines = source.split('\n').filter(line => line.trim());
-    
-    for (const line of lines) {
-      const [key, value] = line.split(':').map(s => s.trim());
-      if (key && value) {
-        config[key] = value;
-      }
-    }
-    
-    // Use authenticated user if no username provided and no default username
-    if (!config.username) {
-      if (this.settings.defaultUsername) {
-        config.username = this.settings.defaultUsername;
-      } else if (this.settings.accessToken) {
-        config.useAuthenticatedUser = true;
-      } else {
-        throw new Error('Username is required. Please set a default username in plugin settings, authenticate, or specify one in the code block.');
-      }
-    }
-    
-    config.listType = config.listType || 'CURRENT';
-    config.layout = config.layout || this.settings.defaultLayout;
-    config.mediaType = config.mediaType || 'ANIME';
-  
-   const sortRaw = (config.sort || '').trim();
-    if (!sortRaw) {
-      // no explicit sort in block → use global defaults
-      config.sortOptions = this._buildSortOptions(
-        `${this.settings.defaultSortField}-${this.settings.defaultSortDir}`
-      );
-    } else {
-      config.sortOptions = this._buildSortOptions(sortRaw);
-    }
-    
-    return config;
-  }
-
-  // Parse Search Code Block Config 
-  parseSearchCodeBlockConfig(source) {
-    const config = { type: 'search' };
-    const lines = source.split('\n').filter(line => line.trim());
-    
-    for (const line of lines) {
-      const [key, value] = line.split(':').map(s => s.trim());
-      if (key && value) {
-        config[key] = value;
-      }
-    }
-    
-    config.layout = config.layout || this.settings.defaultLayout || 'card';
-
-    
-    // Default to ANIME if no mediaType specified
-    config.mediaType = config.mediaType || 'ANIME';
-    config.layout = config.layout || this.settings.defaultLayout;
-    
-
-    const sortRaw = (config.sort || '').trim();
-    if (!sortRaw) {
-      config.sortOptions = this._buildSortOptions(
-        `${this.settings.defaultSortField}-${this.settings.defaultSortDir}`
-      );
-   } else {
-      config.sortOptions = this._buildSortOptions(sortRaw);
-    }
-
-
-
-    
-    return config;
-  }
-
-  // Process Inline Links - FIXED: Now properly inside the class
-  async processInlineLinks(el, ctx) {
-    const inlineLinks = el.querySelectorAll('a[href^="zoro:"]');
-
-    for (const link of inlineLinks) {
-      const href = link.getAttribute('href');
-      
-      // Optional: Show loading shimmer while data loads
-      const placeholder = document.createElement('span');
-      placeholder.textContent = '🔄 Loading Zoro...';
-      link.replaceWith(placeholder);
-
-      try {
-        const config = this.parseInlineLink(href);
-        const data = await this.api.fetchZoroData(config);
-
-        const container = document.createElement('span');
-        container.className = 'zoro-inline-container';
-        if (config.type === 'stats') {           this.render.renderUserStats(container, data.User);         } else if (config.type === 'single') {           this.render.renderSingleMedia(container, data.MediaList, config);         } else {           const entries = data.MediaListCollection.lists.flatMap(list => list.entries);           this.render.renderMediaList(container, entries, config);         }
-
-        placeholder.replaceWith(container);
-
-        // ✅ Cleanup if the block is removed (important for re-render safety)
-        ctx.addChild({
-          unload: () => {
-            container.remove();
-          }
-        });
-
-      } catch (error) {
-        console.warn(`[Zoro] Inline link failed for ${href}:`, error);
-
-        const errorEl = document.createElement('span');
-        errorEl.className = 'zoro-inline-error';
-        errorEl.textContent = `⚠️ ${error.message || 'Failed to load data'}`;
-
-        placeholder.replaceWith(errorEl);
-      }
-    }
-  }
-
-  // Parse Inline Link - FIXED: Now properly inside the class
-  parseInlineLink(href) {
-    const [base, hash] = href.replace('zoro:', '').split('#');
-
-    const parts = base.split('/');
-    let username, pathParts;
-
-    if (parts[0] === '') {
-      if (!this.settings.defaultUsername) {
-        throw new Error('⚠️ Default username not set. Configure it in plugin settings.');
-      }
-      username = this.settings.defaultUsername;
-      pathParts = parts.slice(1);
-    } else {
-      if (parts.length < 2) {
-        throw new Error('❌ Invalid Zoro inline link format.');
-      }
-      username = parts[0];
-      pathParts = parts.slice(1);
-    }
-
-    const config = {
-      username: username,
-      layout: 'card', // Default layout
-      type: 'list'     // Default to media list
-    };
-
-    const main = pathParts[0];
-    const second = pathParts[1];
-
-    if (main === 'stats') {
-      config.type = 'stats';
-    } else if (main === 'anime' || main === 'manga') {
-      config.type = 'single';
-      config.mediaType = main.toUpperCase();
-      if (!second || isNaN(parseInt(second))) {
-        throw new Error('⚠️ Invalid media ID for anime/manga inline link.');
-      }
-      config.mediaId = parseInt(second);
-    } else {
-      config.listType = main.toUpperCase();
-    }
-
-    // Optional layout modifiers from hash
-    if (hash) {
-      const hashParts = hash.split(',');
-      for (const mod of hashParts) {
-        if (mod === 'compact' || mod === 'card' || mod === 'minimal' || mod === 'full') {
-          config.layout = mod;
-        }
-        if (mod === 'nocache') {
-          config.nocache = true;
-        }
-      }
-    }
-
-    return config;
-  }
-
 
   handleEditClick(e, entry, statusEl) {
     e.preventDefault();
@@ -1632,7 +1402,251 @@ class AuthPinModal extends Modal {
     setTimeout(() => input.focus(), 100);
   }
 }
+// Processor 
+class Processor {
+  constructor(plugin) {
+    this.plugin = plugin;
+  }
 
+  // Process Zoro Code Block
+  async processZoroCodeBlock(source, el, ctx) {
+    try {
+      const config = this.parseCodeBlockConfig(source) || {};
+
+      // Debug: Log raw config
+      console.log('[Zoro] Code block config:', config);
+
+      // Handle authenticated user resolution
+      if (config.useAuthenticatedUser) {
+        const authUsername = await this.plugin.auth.getAuthenticatedUsername();
+        if (!authUsername) {
+          throw new Error('❌ Could not retrieve authenticated username. Check your authentication setup or set a username manually.');
+        }
+        config.username = authUsername;
+      }
+
+      if (!config.username) {
+        throw new Error('❌ No username provided. Set `username:` in your code block or enable `useAuthenticatedUser`.');
+      }
+
+      const data = await this.plugin.api.fetchZoroData(config);
+
+      if (!data || (Array.isArray(data) && data.length === 0)) {
+        throw new Error('⚠️ No data returned from Zoro API.');
+      }
+
+      if (config.type === 'stats') {
+        this.plugin.render.renderUserStats(el, data.User);
+      } else if (config.type === 'single') {
+        this.plugin.render.renderSingleMedia(el, data.MediaList, config);
+      } else {
+        const entries = data.MediaListCollection.lists.flatMap(list => list.entries);
+        this.plugin.render.renderMediaList(el, entries, config);
+      }
+      
+    } catch (error) {
+      console.error('[Zoro] Code block processing error:', error);
+      this.plugin.renderError(el, error.message || 'Unknown error occurred.');
+    }
+  }
+
+  // Process Zoro Search Code Block
+  async processZoroSearchCodeBlock(source, el, ctx) {
+    try {
+      const config = this.parseSearchCodeBlockConfig(source);
+
+      if (this.plugin.settings.debugMode) {
+        console.log('[Zoro] Search block config:', config);
+      }
+
+      // Show loading placeholder
+      el.createEl('div', { text: '🔍 Searching Zoro...', cls: 'zoro-loading-placeholder' });
+      
+      await this.plugin.render.renderSearchInterface(el, config);
+    } catch (error) {
+      console.error('[Zoro] Search block processing error:', error);
+      this.plugin.renderError(el, error.message || 'Failed to process Zoro search block.');
+    }
+  }
+
+  // Process Inline Links
+  async processInlineLinks(el, ctx) {
+    const inlineLinks = el.querySelectorAll('a[href^="zoro:"]');
+
+    for (const link of inlineLinks) {
+      const href = link.getAttribute('href');
+      
+      // Optional: Show loading shimmer while data loads
+      const placeholder = document.createElement('span');
+      placeholder.textContent = '🔄 Loading Zoro...';
+      link.replaceWith(placeholder);
+
+      try {
+        const config = this.parseInlineLink(href);
+        const data = await this.plugin.api.fetchZoroData(config);
+
+        const container = document.createElement('span');
+        container.className = 'zoro-inline-container';
+        
+        if (config.type === 'stats') {
+          this.plugin.render.renderUserStats(container, data.User);
+        } else if (config.type === 'single') {
+          this.plugin.render.renderSingleMedia(container, data.MediaList, config);
+        } else {
+          const entries = data.MediaListCollection.lists.flatMap(list => list.entries);
+          this.plugin.render.renderMediaList(container, entries, config);
+        }
+
+        placeholder.replaceWith(container);
+
+        // ✅ Cleanup if the block is removed (important for re-render safety)
+        ctx.addChild({
+          unload: () => {
+            container.remove();
+          }
+        });
+
+      } catch (error) {
+        console.warn(`[Zoro] Inline link failed for ${href}:`, error);
+
+        const errorEl = document.createElement('span');
+        errorEl.className = 'zoro-inline-error';
+        errorEl.textContent = `⚠️ ${error.message || 'Failed to load data'}`;
+
+        placeholder.replaceWith(errorEl);
+      }
+    }
+  }
+
+  // Parse Code Block Config
+  parseCodeBlockConfig(source) {
+    const config = {};
+    const lines = source.split('\n').filter(line => line.trim());
+    
+    for (const line of lines) {
+      const [key, value] = line.split(':').map(s => s.trim());
+      if (key && value) {
+        config[key] = value;
+      }
+    }
+    
+    // Use authenticated user if no username provided and no default username
+    if (!config.username) {
+      if (this.plugin.settings.defaultUsername) {
+        config.username = this.plugin.settings.defaultUsername;
+      } else if (this.plugin.settings.accessToken) {
+        config.useAuthenticatedUser = true;
+      } else {
+        throw new Error('Username is required. Please set a default username in plugin settings, authenticate, or specify one in the code block.');
+      }
+    }
+    
+    config.listType = config.listType || 'CURRENT';
+    config.layout = config.layout || this.plugin.settings.defaultLayout;
+    config.mediaType = config.mediaType || 'ANIME';
+  
+    const sortRaw = (config.sort || '').trim();
+    if (!sortRaw) {
+      // no explicit sort in block → use global defaults
+      config.sortOptions = this.plugin._buildSortOptions(
+        `${this.plugin.settings.defaultSortField}-${this.plugin.settings.defaultSortDir}`
+      );
+    } else {
+      config.sortOptions = this.plugin._buildSortOptions(sortRaw);
+    }
+    
+    return config;
+  }
+
+  // Parse Search Code Block Config
+  parseSearchCodeBlockConfig(source) {
+    const config = { type: 'search' };
+    const lines = source.split('\n').filter(line => line.trim());
+    
+    for (const line of lines) {
+      const [key, value] = line.split(':').map(s => s.trim());
+      if (key && value) {
+        config[key] = value;
+      }
+    }
+    
+    config.layout = config.layout || this.plugin.settings.defaultLayout || 'card';
+    
+    // Default to ANIME if no mediaType specified
+    config.mediaType = config.mediaType || 'ANIME';
+    config.layout = config.layout || this.plugin.settings.defaultLayout;
+    
+    const sortRaw = (config.sort || '').trim();
+    if (!sortRaw) {
+      config.sortOptions = this.plugin._buildSortOptions(
+        `${this.plugin.settings.defaultSortField}-${this.plugin.settings.defaultSortDir}`
+      );
+    } else {
+      config.sortOptions = this.plugin._buildSortOptions(sortRaw);
+    }
+    
+    return config;
+  }
+
+  // Parse Inline Link
+  parseInlineLink(href) {
+    const [base, hash] = href.replace('zoro:', '').split('#');
+
+    const parts = base.split('/');
+    let username, pathParts;
+
+    if (parts[0] === '') {
+      if (!this.plugin.settings.defaultUsername) {
+        throw new Error('⚠️ Default username not set. Configure it in plugin settings.');
+      }
+      username = this.plugin.settings.defaultUsername;
+      pathParts = parts.slice(1);
+    } else {
+      if (parts.length < 2) {
+        throw new Error('❌ Invalid Zoro inline link format.');
+      }
+      username = parts[0];
+      pathParts = parts.slice(1);
+    }
+
+    const config = {
+      username: username,
+      layout: 'card', // Default layout
+      type: 'list'     // Default to media list
+    };
+
+    const main = pathParts[0];
+    const second = pathParts[1];
+
+    if (main === 'stats') {
+      config.type = 'stats';
+    } else if (main === 'anime' || main === 'manga') {
+      config.type = 'single';
+      config.mediaType = main.toUpperCase();
+      if (!second || isNaN(parseInt(second))) {
+        throw new Error('⚠️ Invalid media ID for anime/manga inline link.');
+      }
+      config.mediaId = parseInt(second);
+    } else {
+      config.listType = main.toUpperCase();
+    }
+
+    // Optional layout modifiers from hash
+    if (hash) {
+      const hashParts = hash.split(',');
+      for (const mod of hashParts) {
+        if (mod === 'compact' || mod === 'card' || mod === 'minimal' || mod === 'full') {
+          config.layout = mod;
+        }
+        if (mod === 'nocache') {
+          config.nocache = true;
+        }
+      }
+    }
+
+    return config;
+  }
+}
 // Render
 class Render {
   constructor(plugin) {

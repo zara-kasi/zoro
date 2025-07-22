@@ -67,7 +67,6 @@
     return (a.media?.id || 0) - (b.media?.id || 0);
   });
 }
-
 // Request Queue
  class RequestQueue {
   constructor() {
@@ -103,7 +102,6 @@ try {
 }
 }
 }
-
 // API 
 class Api {
   constructor(plugin) {
@@ -112,10 +110,6 @@ class Api {
     this.cache = plugin.cache;
     this.cacheTimeout = plugin.cacheTimeout;
   }
-
-  /**
-   * Make OAuth token request to AniList via Obsidian's requestUrl
-   */
   async makeObsidianRequest(code, redirectUri) {
     const body = new URLSearchParams({
       grant_type: 'authorization_code',
@@ -149,14 +143,9 @@ class Api {
       throw new Error('Failed to authenticate with AniList via Obsidian requestUrl.');
     }
   }
-
-  /**
-   * Main method to fetch data from AniList GraphQL API
-   */
   async fetchZoroData(config) {
     const cacheKey = JSON.stringify(config);
     let cacheType;
-
     // Determine cache type based on request
     if (config.type === 'stats') {
       cacheType = 'userData';
@@ -167,7 +156,6 @@ class Api {
     } else {
       cacheType = 'userData'; // Default for lists
     }
-
     const cached = this.plugin.getFromCache(cacheType, cacheKey);
     if (cached) return cached;
 
@@ -177,12 +165,10 @@ class Api {
         'Content-Type': 'application/json',
         'Accept': 'application/json'
       };
-      
       if (this.plugin.settings.accessToken) {
         await this.plugin.auth.ensureValidToken();
         headers['Authorization'] = `Bearer ${this.plugin.settings.accessToken}`;
       }
-
       // Build query and variables based on config type
       if (config.type === 'stats') {
         query = this.getUserStatsQuery();
@@ -212,7 +198,6 @@ class Api {
           sort: config.sortOptions?.anilistSort ? [config.sortOptions.anilistSort] : null,
         };
       }
-
       // Make the GraphQL request with rate limiting
       const response = await this.requestQueue.add(() => requestUrl({
         url: 'https://graphql.anilist.co',
@@ -220,11 +205,8 @@ class Api {
         headers,
         body: JSON.stringify({ query, variables })
       }));
-
       const result = response.json;
-
       if (!result) throw new Error('Empty response from AniList.');
-
       if (result.errors && result.errors.length > 0) {
         const firstError = result.errors[0];
         const isPrivate = firstError.message?.includes('Private') || firstError.message?.includes('permission');
@@ -236,14 +218,11 @@ class Api {
             throw new Error('🔒 List is private. Please authenticate to access it.');
           }
         }
-
         throw new Error(firstError.message || 'AniList returned an unknown error.');
       }
-
       if (!result.data) {
         throw new Error('AniList returned no data.');
       }
-
       // Save to cache
       this.plugin.setToCache(cacheType, cacheKey, result.data);
       return result.data;
@@ -253,13 +232,8 @@ class Api {
       throw error;
     }
   }
-
-  /**
-   * Update a media list entry via GraphQL mutation
-   */
   async updateMediaListEntry(mediaId, updates) {
     try {
-      // Ensure valid token before proceeding
       if (!this.plugin.settings.accessToken || !(await this.plugin.auth.ensureValidToken())) {
         throw new Error('❌ Authentication required to update entries.');
       }
@@ -274,16 +248,12 @@ class Api {
           }
         }
       `;
-
-      // Filter out undefined values
       const variables = {
         mediaId,
         ...(updates.status !== undefined && { status: updates.status }),
         ...(updates.score !== undefined && updates.score !== null && { score: updates.score }),
         ...(updates.progress !== undefined && { progress: updates.progress }),
       };
-
-      // Make mutation request with rate limiting
       const response = await this.requestQueue.add(() => requestUrl({
         url: 'https://graphql.anilist.co',
         method: 'POST',
@@ -300,8 +270,6 @@ class Api {
         const message = result.errors?.[0]?.message || 'Unknown mutation error';
         throw new Error(`AniList update error: ${message}`);
       }
-
-      // Targeted cache clearing instead of full clear
       this.plugin.clearCacheForMedia(mediaId);
       
       return result.data.SaveMediaListEntry;
@@ -311,10 +279,6 @@ class Api {
       throw new Error(`❌ Failed to update entry: ${error.message}`);
     }
   }
-
-  /**
-   * Check if media is already in user's list
-   */
   async checkIfMediaInList(mediaId, mediaType) {
     if (!this.plugin.settings.accessToken) return false;
     
@@ -332,24 +296,12 @@ class Api {
       return false;
     }
   }
-
-  /**
-   * Add new media to user's list
-   */
   async addMediaToList(mediaId, updates, mediaType) {
     if (!this.plugin.settings.accessToken) {
       throw new Error('Authentication required');
     }
-    
-    // Use the same method as updateMediaListEntry for adding new entries
     return await this.updateMediaListEntry(mediaId, updates);
   }
-
-  // ========== GraphQL Query Builders ==========
-
-  /**
-   * Get media list query with different detail levels
-   */
   getMediaListQuery(layout = 'card') {
     const baseFields = `
       id
@@ -433,10 +385,6 @@ class Api {
       }
     `;
   }
-
-  /**
-   * Get single media query
-   */
   getSingleMediaQuery(layout = 'card') {
     const baseFields = `
       id
@@ -516,10 +464,6 @@ class Api {
       }
     `;
   }
-
-  /**
-   * Get user stats query
-   */
   getUserStatsQuery({ mediaType = 'ANIME', layout = 'card', useViewer = false } = {}) {
     const typeKey = mediaType.toLowerCase(); // 'anime' or 'manga'
 
@@ -565,10 +509,6 @@ class Api {
       }
     `;
   }
-
-  /**
-   * Get search media query
-   */
   getSearchMediaQuery(layout = 'card') {
     const mediaFields = {
       compact: `
@@ -640,10 +580,6 @@ class Api {
       }
     `;
   }
-
-  /**
-   * Generate AniList URL for a given media
-   */
   getZoroUrl(mediaId, mediaType = 'ANIME') {
     if (!mediaId || typeof mediaId !== 'number') {
       throw new Error(`Invalid mediaId: ${mediaId}`);
@@ -656,105 +592,10 @@ class Api {
     return `https://anilist.co/${urlType}/${mediaId}`;
   }
 }
-
-// Theme
-class Theme {
-  constructor(plugin) {
-    this.plugin = plugin;
-    this.themeStyleId = 'zoro-theme';
-  }
-
-  /**
-   * Return an array of theme file names (without .css).
-   */
-  async getAvailableThemes() {
-    try {
-      const themesDir = `${this.plugin.manifest.dir}/themes`;
-      const { files } = await this.plugin.app.vault.adapter.list(themesDir);
-      return files
-        .filter(f => f.endsWith('.css'))
-        .map(f => f.split('/').pop().replace('.css', ''));
-    } catch {
-      return [];
-    }
-  }
-
-  /**
-   * Apply or remove a theme.
-   * @param {string} themeName  file name without .css, or "" to disable
-   */
-  async applyTheme(themeName) {
-    // 1. Remove any previous scoped theme
-    const old = document.getElementById(this.themeStyleId);
-    if (old) old.remove();
-
-    // 2. If user chose "None", stop here
-    if (!themeName) return;
-
-    // 3. Read the CSS file
-    const cssPath = `${this.plugin.manifest.dir}/themes/${themeName}.css`;
-    let rawCss;
-    try {
-      rawCss = await this.plugin.app.vault.adapter.read(cssPath);
-    } catch (err) {
-      console.warn('Zoro: theme file missing:', themeName, err);
-      new Notice(`❌ Theme "${themeName}" not found`);
-      return;
-    }
-
-    // 4. Fully scope the CSS
-    const scopedCss = this.scopeCss(rawCss);
-
-    // 5. Inject the scoped style
-    const style = document.createElement('style');
-    style.id = this.themeStyleId;
-    style.textContent = scopedCss;
-    document.head.appendChild(style);
-  }
-
-  /**
-   * Scope raw CSS so every rule only targets `.zoro-container`.
-   * - `:root` → `.zoro-container`
-   * - Every normal selector → prefixed with `.zoro-container `
-   */
-  scopeCss(rawCss, scope = '.zoro-container') {
-    // 1. Move CSS variables from :root to the plugin container
-    let css = rawCss.replace(/:root\b/g, scope);
-
-    // 2. Prefix every selector (outside @-rules)
-    css = css.replace(
-      /(^|})(\s*)([^{@}][^{}]*?)\s*\{/g,
-      (_, prefix, ws, selectorText) => {
-        const scoped = selectorText
-          .split(',')
-          .map(s => {
-            const sel = s.trim();
-            return sel.startsWith(scope) ? sel : `${scope} ${sel}`;
-          })
-          .join(', ');
-        return `${prefix}${ws}${scoped} {`;
-      }
-    );
-
-    return css;
-  }
-
-  /**
-   * Remove the theme styles from the DOM
-   */
-  removeTheme() {
-    const existingStyle = document.getElementById(this.themeStyleId);
-    if (existingStyle) {
-      existingStyle.remove();
-      console.log(`Removed theme style element with ID: ${this.themeStyleId}`);
-    }
-  }
-}
 // Plugin
 class ZoroPlugin extends Plugin {
   constructor(app, manifest) {
     super(app, manifest);
-    
   // Initialize separate caches
   this.cache = {
     userData: new Map(),
@@ -763,7 +604,6 @@ class ZoroPlugin extends Plugin {
   };
     this.requestQueue = new RequestQueue();
     this.cacheTimeout = 4 * 60 * 1000; // 4 min
-// Add periodic pruning
 // Add periodic pruning
   this.pruneInterval = setInterval(() => this.pruneCache(), this.cacheTimeout);
   this.api = new Api(this);
@@ -775,11 +615,9 @@ class ZoroPlugin extends Plugin {
     this.sample = new Sample(this);
     this.prompt = new Prompt(this);
   }
-
 getZoroUrl(mediaId, mediaType = 'ANIME') {
   return this.api.getZoroUrl(mediaId, mediaType);
 }
-
 // Prune Cache 
 pruneCache() {
   const now = Date.now();
@@ -825,6 +663,7 @@ setToCache(type, key, value) {
     timestamp: Date.now()
   });
 }
+// Onload 
   async onload() {
     console.log('[Zoro] Plugin loading...');
     this.render = new Render(this);
@@ -875,7 +714,6 @@ await this.theme.applyTheme(this.settings.theme);
       accessToken: typeof settings?.accessToken === 'string' ? settings.accessToken : '',
     };
   }
-  
    async saveSettings() {
     try {
       const validSettings = this.validateSettings(this.settings);
@@ -886,24 +724,16 @@ await this.theme.applyTheme(this.settings.theme);
       new Notice('⚠️ Failed to save settings. See console for details.');
     }
   }
-
   // Load settings 
   async loadSettings() {
     const saved = await this.loadData() || {};
     const merged = Object.assign({}, DEFAULT_SETTINGS, saved);
     this.settings = this.validateSettings(merged);
-   
-   // no secret saved...
    if (!this.settings.clientSecret) {
     const secret = await this.promptForSecret("Paste your client secret:");
     this.settings.clientSecret = secret.trim();
     await this.saveData(this.settings);
   }}
- 
-
-
-  
-
 clearCacheForMedia(mediaId) {
   // Clear media-specific cache
   for (const [key] of this.cache.mediaData) {
@@ -1073,7 +903,6 @@ _buildSortOptions(raw) {
   }
 
 } 
-
 // Authentication
 class Authentication {
   constructor(plugin) {
@@ -1118,11 +947,11 @@ class Authentication {
     }
 
     // 4. Prompt for pin
-    const pin = await this._promptModal('Paste the PIN code from the browser:');
+    const pin = await this.promptModal('Paste the PIN code from the browser:');
     if (!pin) return;
 
     // 5. Exchange pin → token
-    await this._exchangePin(pin);
+    await this.exchangePin(pin);
   }
 
   async logout() {
@@ -1142,7 +971,7 @@ class Authentication {
   }
 
   /* ---------- internal helpers ---------- */
-  async _exchangePin(pin) {
+  async exchangePin(pin) {
     const body = new URLSearchParams({
       grant_type:    'authorization_code',
       code:          pin.trim(),
@@ -1184,7 +1013,7 @@ class Authentication {
     }
   }
 
-  async _promptModal(message) {
+  async promptModal(message) {
     // Simple synchronous prompt (works in Obsidian)
     return new Promise((res) => {
       const val = prompt(message);
@@ -1192,13 +1021,11 @@ class Authentication {
     });
   }
 
-  /* ---------- high-level wrappers ---------- */
   async ensureValidToken() {
     if (!this.isLoggedIn) throw new Error('Not authenticated');
-    // TODO: check expiry and refresh if needed
     return true;
   }
-
+  
   async getAuthenticatedUsername() {
     await this.ensureValidToken();
 
@@ -1400,6 +1227,79 @@ class AuthPinModal extends Modal {
     });
     
     setTimeout(() => input.focus(), 100);
+  }
+}
+// Theme
+class Theme {
+  constructor(plugin) {
+    this.plugin = plugin;
+    this.themeStyleId = 'zoro-theme';
+  }
+  async getAvailableThemes() {
+    try {
+      const themesDir = `${this.plugin.manifest.dir}/themes`;
+      const { files } = await this.plugin.app.vault.adapter.list(themesDir);
+      return files
+        .filter(f => f.endsWith('.css'))
+        .map(f => f.split('/').pop().replace('.css', ''));
+    } catch {
+      return [];
+    }
+  }
+  async applyTheme(themeName) {
+    // 1. Remove any previous scoped theme
+    const old = document.getElementById(this.themeStyleId);
+    if (old) old.remove();
+
+    // 2. If user chose "None", stop here
+    if (!themeName) return;
+
+    // 3. Read the CSS file
+    const cssPath = `${this.plugin.manifest.dir}/themes/${themeName}.css`;
+    let rawCss;
+    try {
+      rawCss = await this.plugin.app.vault.adapter.read(cssPath);
+    } catch (err) {
+      console.warn('Zoro: theme file missing:', themeName, err);
+      new Notice(`❌ Theme "${themeName}" not found`);
+      return;
+    }
+
+    // 4. Fully scope the CSS
+    const scopedCss = this.scopeCss(rawCss);
+
+    // 5. Inject the scoped style
+    const style = document.createElement('style');
+    style.id = this.themeStyleId;
+    style.textContent = scopedCss;
+    document.head.appendChild(style);
+  }
+  scopeCss(rawCss, scope = '.zoro-container') {
+    // 1. Move CSS variables from :root to the plugin container
+    let css = rawCss.replace(/:root\b/g, scope);
+
+    // 2. Prefix every selector (outside @-rules)
+    css = css.replace(
+      /(^|})(\s*)([^{@}][^{}]*?)\s*\{/g,
+      (_, prefix, ws, selectorText) => {
+        const scoped = selectorText
+          .split(',')
+          .map(s => {
+            const sel = s.trim();
+            return sel.startsWith(scope) ? sel : `${scope} ${sel}`;
+          })
+          .join(', ');
+        return `${prefix}${ws}${scoped} {`;
+      }
+    );
+    return css;
+  }
+  removeTheme() {
+    const existingStyle = document.getElementById(this.themeStyleId);
+    if (existingStyle) {
+      existingStyle.remove();
+      console.log(`Removed theme style element with ID: ${this.themeStyleId}`);
+    }
   }
 }
 // Processor 
@@ -1931,7 +1831,7 @@ status.onclick = e => {
   /* ----------  UTILITIES  ---------- */
   clear(el) { el.empty?.(); }
 }
-
+// Edit
 class Edit {
   constructor(plugin) {
     this.plugin = plugin;
@@ -2350,8 +2250,7 @@ class Edit {
     this.saving = false;
   }
 }
-
-// Add this class to your main.js file (before or after your main plugin class)
+// Prompt
 class Prompt {
   constructor(plugin) {
     this.plugin = plugin;
@@ -2463,19 +2362,8 @@ class Prompt {
       }
     }
   }
-
-  // Add any other authentication-related methods here
-  // For example:
-  // login() { ... }
-  // logout() { ... }
-  // validateToken() { ... }
-  // etc.
 }
-// Updated main plugin class constructor should include:
-// this.edit = new Edit(this);
-/* ------------------------------------------------------------------
-   Export
-   ------------------------------------------------------------------ */
+// Export
 class Export {
   constructor(plugin) {
     this.plugin = plugin;
@@ -2594,9 +2482,7 @@ class Export {
     return str;
   }
 }
-/* ------------------------------------------------------------------
-   Note
-   ------------------------------------------------------------------ */
+// Sample
 class Sample {
   constructor(plugin) {
     this.plugin = plugin;
@@ -2913,7 +2799,6 @@ type: stats
   new Notice('✅ Dashboards generated!', 4000);
 }
 }
-
 // Settings
 class ZoroSettingTab extends PluginSettingTab { 
   constructor(app, plugin) { 

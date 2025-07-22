@@ -1234,7 +1234,16 @@ class Theme {
   constructor(plugin) {
     this.plugin = plugin;
     this.themeStyleId = 'zoro-theme';
+    this.pluginScopes = [
+      '.zoro-container',
+      '.zoro-search-container',
+      '.zoro-dashboard-container',
+      '.zoro-modal-overlay',
+      '.zoro-edit-modal',
+      '.zoro-auth-modal'
+    ];
   }
+
   async getAvailableThemes() {
     try {
       const themesDir = `${this.plugin.manifest.dir}/themes`;
@@ -1246,15 +1255,13 @@ class Theme {
       return [];
     }
   }
+
   async applyTheme(themeName) {
-    // 1. Remove any previous scoped theme
     const old = document.getElementById(this.themeStyleId);
     if (old) old.remove();
 
-    // 2. If user chose "None", stop here
     if (!themeName) return;
 
-    // 3. Read the CSS file
     const cssPath = `${this.plugin.manifest.dir}/themes/${themeName}.css`;
     let rawCss;
     try {
@@ -1265,40 +1272,148 @@ class Theme {
       return;
     }
 
-    // 4. Fully scope the CSS
-    const scopedCss = this.scopeCss(rawCss);
+    const scopedCss = this.scopeToPlugin(rawCss);
 
-    // 5. Inject the scoped style
     const style = document.createElement('style');
     style.id = this.themeStyleId;
     style.textContent = scopedCss;
     document.head.appendChild(style);
   }
-  scopeCss(rawCss, scope = '.zoro-container') {
-    // 1. Move CSS variables from :root to the plugin container
-    let css = rawCss.replace(/:root\b/g, scope);
 
-    // 2. Prefix every selector (outside @-rules)
-    css = css.replace(
-      /(^|})(\s*)([^{@}][^{}]*?)\s*\{/g,
-      (_, prefix, ws, selectorText) => {
-        const scoped = selectorText
-          .split(',')
-          .map(s => {
-            const sel = s.trim();
-            return sel.startsWith(scope) ? sel : `${scope} ${sel}`;
-          })
-          .join(', ');
-        return `${prefix}${ws}${scoped} {`;
+  scopeToPlugin(css) {
+    const rules = this.extractCSSRules(css);
+    const scopedRules = [];
+
+    for (const rule of rules) {
+      if (rule.type === 'at-rule') {
+        scopedRules.push(this.handleAtRule(rule));
+      } else if (rule.type === 'rule') {
+        scopedRules.push(this.handleRegularRule(rule));
+      } else {
+        scopedRules.push(rule.content);
       }
-    );
-    return css;
+    }
+
+    return scopedRules.join('\n');
   }
+
+  extractCSSRules(css) {
+    const rules = [];
+    let pos = 0;
+    let current = '';
+    let braceDepth = 0;
+    let inAtRule = false;
+    let atRuleType = '';
+
+    while (pos < css.length) {
+      const char = css[pos];
+      current += char;
+
+      if (char === '@' && braceDepth === 0) {
+        if (current.slice(0, -1).trim()) {
+          rules.push({ type: 'text', content: current.slice(0, -1) });
+        }
+        current = char;
+        inAtRule = true;
+        const match = css.slice(pos).match(/^@(\w+)/);
+        atRuleType = match ? match[1] : '';
+      }
+
+      if (char === '{') {
+        braceDepth++;
+      } else if (char === '}') {
+        braceDepth--;
+        
+        if (braceDepth === 0) {
+          if (inAtRule) {
+            rules.push({ type: 'at-rule', content: current, atType: atRuleType });
+            inAtRule = false;
+            atRuleType = '';
+          } else {
+            rules.push({ type: 'rule', content: current });
+          }
+          current = '';
+        }
+      }
+
+      pos++;
+    }
+
+    if (current.trim()) {
+      rules.push({ type: 'text', content: current });
+    }
+
+    return rules;
+  }
+
+  handleAtRule(rule) {
+    if (rule.atType === 'media') {
+      const mediaMatch = rule.content.match(/^(@media[^{]+)\{(.*)\}$/s);
+      if (mediaMatch) {
+        const mediaQuery = mediaMatch[1];
+        const innerCSS = mediaMatch[2];
+        const scopedInner = this.scopeToPlugin(innerCSS);
+        return `${mediaQuery} {\n${scopedInner}\n}`;
+      }
+    }
+    return rule.content;
+  }
+
+  handleRegularRule(rule) {
+    const match = rule.content.match(/^([^{]+)\{(.*)\}$/s);
+    if (!match) return rule.content;
+
+    const selectors = match[1].trim();
+    const declarations = match[2];
+
+    const selectorList = selectors.split(',').map(s => s.trim());
+    const scopedSelectors = [];
+
+    for (const selector of selectorList) {
+      if (this.isAlreadyPluginScoped(selector)) {
+        scopedSelectors.push(selector);
+      } else if (this.shouldBePluginScoped(selector)) {
+        scopedSelectors.push(this.addPluginScope(selector));
+      } else {
+        scopedSelectors.push(selector);
+      }
+    }
+
+    return `${scopedSelectors.join(', ')} {${declarations}}`;
+  }
+
+  isAlreadyPluginScoped(selector) {
+    return this.pluginScopes.some(scope => selector.includes(scope));
+  }
+
+  shouldBePluginScoped(selector) {
+    const globalPrefixes = [':root', 'html', 'body', '*'];
+    const pluginPrefixes = ['.zoro-', '#zoro-'];
+    
+    const hasGlobalPrefix = globalPrefixes.some(prefix => selector.startsWith(prefix));
+    const hasPluginPrefix = pluginPrefixes.some(prefix => selector.includes(prefix));
+    
+    return !hasGlobalPrefix && (hasPluginPrefix || !selector.startsWith('.'));
+  }
+
+  addPluginScope(selector) {
+    const primaryScope = '.zoro-container';
+    
+    if (selector.includes('.zoro-modal') || selector.includes('.zoro-overlay')) {
+      return selector;
+    }
+    
+    if (selector.startsWith(':')) {
+      return `${primaryScope}${selector}`;
+    }
+    
+    return `${primaryScope} ${selector}`;
+  }
+
   removeTheme() {
     const existingStyle = document.getElementById(this.themeStyleId);
     if (existingStyle) {
       existingStyle.remove();
-      console.log(`Removed theme style element with ID: ${this.themeStyleId}`);
     }
   }
 }
@@ -2836,7 +2951,6 @@ class ZoroSettingTab extends PluginSettingTab {
     const More = section('✨  More');
     const Data = section('📤 Data');
     const Cache = section('🔄 Cache');
-    const Exit = section('🔚 Exit');
     const About = section('ℹ️ About');
     
 
@@ -3042,11 +3156,8 @@ new Setting(Guide)
   .setName('Version')
   .setDesc(this.plugin.manifest.version);
 new Setting(About)
-  .setName('Description')
-  .setDesc(this.plugin.manifest.description);
-new Setting(About)
   .setName('Privacy')
-  .setDesc('Zoro only talks to the AniList API to fetch your media data. Nothing else is sent or shared—your data stays local.');
+  .setDesc('Zoro only talks to the AniList API to fetch & update your media data. Nothing else is sent or shared—your data stays local.');
 
 new Setting(About)
   .setName('GitHub')
@@ -3060,23 +3171,13 @@ new Setting(About)
       })
   );
   
-  new Setting(Exit)
-  .setDesc('This will clear all saved credentials and sign you out from the plugin.')
-  .addButton(btn => btn
-    .setButtonText('Sign out')
-    .setWarning()
-    .onClick(async () => {
-      await this.plugin.auth.logout();
-      this.updateAuthButton();
-    })
-  );
   }
   //  Dynamic Update of Auth button
 updateAuthButton() {
   if (!this.authButton) return;
-  
-  const settings = this.plugin.settings;
-  
+
+  const { settings } = this.plugin;
+
   if (!settings.clientId) {
     this.authButton.setButtonText('Enter Client ID');
     this.authButton.removeCta();
@@ -3087,23 +3188,18 @@ updateAuthButton() {
     this.authButton.setButtonText('Authenticate Now');
     this.authButton.setCta();
   } else {
-    const expiryDate = new Date(settings.tokenExpiry).toLocaleDateString('en-US', { 
-      month: 'short', 
-      day: 'numeric' 
-    });
-    this.authButton.setButtonText(`✅`);
-    this.authButton.setCta();
+    this.authButton.setButtonText('Sign Out');
+    this.authButton.setWarning().removeCta();
   }
-  
 }
 
 async handleAuthButtonClick() {
-  const settings = this.plugin.settings;
-  
+  const { settings } = this.plugin;
+
   if (!settings.clientId) {
     const modal = new ClientIdModal(this.app, async (clientId) => {
-      if (clientId && clientId.trim()) {
-        this.plugin.settings.clientId = clientId.trim();
+      if (clientId?.trim()) {
+        settings.clientId = clientId.trim();
         await this.plugin.saveSettings();
         this.updateAuthButton();
       }
@@ -3111,8 +3207,8 @@ async handleAuthButtonClick() {
     modal.open();
   } else if (!settings.clientSecret) {
     const modal = new ClientSecretModal(this.app, async (clientSecret) => {
-      if (clientSecret && clientSecret.trim()) {
-        this.plugin.settings.clientSecret = clientSecret.trim();
+      if (clientSecret?.trim()) {
+        settings.clientSecret = clientSecret.trim();
         await this.plugin.saveSettings();
         this.updateAuthButton();
       }
@@ -3120,10 +3216,15 @@ async handleAuthButtonClick() {
     modal.open();
   } else if (!settings.accessToken) {
     await this.plugin.auth.loginWithFlow();
+    this.updateAuthButton(); // refresh after login completes
   } else {
-    await this.plugin.auth.loginWithFlow();
+    if (confirm('⚠️ Are you sure you want to sign out?')) { 
+    await this.plugin.auth.logout();
+    this.updateAuthButton(); // refresh after logout
+  }
   }
 }
+
 
 }
 module.exports = {

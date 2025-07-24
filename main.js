@@ -2562,7 +2562,7 @@ class Export {
     `;
 
     new Notice(`${useAuth ? '📥 Full' : '📥 Public'} export started…`, 4000);
-
+  const progress = this.createProgressNotice('📊 Exporting… 0 %');
     const fetchType = async type => {
       const headers = { 'Content-Type': 'application/json' };
       if (useAuth) {
@@ -2581,6 +2581,8 @@ class Export {
           })
         })
       );
+       const percent = type === 'ANIME' ? 50 : 100;
+     this.updateProgressNotice(progress, `📊 Exporting… ${percent} %`);
       return res.json.data?.MediaListCollection?.lists || [];
     };
 
@@ -2641,6 +2643,24 @@ class Export {
     }
     return str;
   }
+  
+  // main.js – inside Export class
+createProgressNotice(message) {
+  // Keep the notice reference so we can update it
+  return new Notice(message, 0); // 0 = never auto-dismiss
+}
+
+updateProgressNotice(notice, message) {
+  // Dismiss old notice and show new one (Obsidian replaces in-place)
+  notice.hide();
+  return new Notice(message, 0);
+}
+
+finishProgressNotice(notice, message) {
+  notice.hide();
+  new Notice(message, 4000); // auto-dismiss after 4 s
+}
+
 }
 // Sample
 class Sample {

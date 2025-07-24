@@ -1789,7 +1789,7 @@ createMediaCard(data, config, options = {}) {
     // Search-specific add button
     if (isSearch) {
       const addBtn = document.createElement('button');
-      addBtn.className = 'status-badge status-planning clickable-status';
+      addBtn.className = 'status-badge status-add clickable-status';
       addBtn.textContent = 'ADD';
       addBtn.onclick = (e) => {
   e.preventDefault();

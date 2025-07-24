@@ -775,3 +775,90 @@
   background: #2ecc71 !important;
   color: #fff !important;
 }
+
+/ Blur-glass skeleton (frosted, glass-like shimmer) /
+.zoro-skeleton,
+.zoro-card.zoro-skeleton {
+background: rgba(var(--mono-rgb-100), .04);
+backdrop-filter: blur(8px);
+border: 1px solid rgba(var(--mono-rgb-100), .08);
+border-radius: 12px;
+overflow: hidden;
+position: relative;
+}
+
+/ The shimmering wave /
+.zoro-skeleton::before,
+.zoro-card.zoro-skeleton::before {
+content: "";
+position: absolute;
+inset: 0;
+background: linear-gradient(
+105deg,
+transparent 30%,
+rgba(var(--mono-rgb-100), .05) 50%,
+transparent 70%
+);
+animation: blurShimmer 2s infinite;
+}
+
+/ Blurred placeholders inside /
+.skeleton-cover,
+.skeleton-title,
+.skeleton-badge,
+.skeleton-avatar,
+.skeleton-stat-section {
+background: rgba(var(--mono-rgb-100), .08);
+filter: blur(1px);
+border-radius: inherit;
+}
+
+/ Keep original sizes /
+.skeleton-cover  { width: 100%; height: 150px; }
+.skeleton-title  { height: 20px; width: 80%; margin: 10px 0; }
+.skeleton-badge  { height: 16px; width: 60px; display: inline-block; margin-right: 8px; }
+.skeleton-avatar { width: 48px; height: 48px; border-radius: 50%; }
+.skeleton-stat-section { height: 120px; }
+
+@keyframes blurShimmer {
+0%   { transform: translateX(-100%); }
+100% { transform: translateX(100%); }
+}
+
+/ Dark-mode fine-tune /
+.theme-dark .zoro-skeleton,
+.theme-dark .zoro-card.zoro-skeleton {
+background: rgba(var(--mono-rgb-0), .06);
+border-color: rgba(var(--mono-rgb-0), .12);
+}
+.theme-dark .zoro-skeleton::before,
+.theme-dark .zoro-card.zoro-skeleton::before {
+background: linear-gradient(
+105deg,
+transparent 30%,
+rgba(var(--mono-rgb-0), .06) 50%,
+transparent 70%
+);
+}
+
+
+
+// CSS (add to injectCSS)
+.zoro-progress-wrap {
+  display: none;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.85em;
+  color: var(--text-muted);
+}
+.zoro-progress-wrap.visible { display: flex; }
+.zoro-progress-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--text-muted);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+

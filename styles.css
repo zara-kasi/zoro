@@ -862,3 +862,7 @@ transparent 70%
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.zoro-container img.media-cover {
+  pointer-events: none;
+  user-select: none;
+}

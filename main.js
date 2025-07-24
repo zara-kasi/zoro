@@ -248,12 +248,6 @@ class Api {
       return false;
     }
   }
-  async addMediaToList(mediaId, updates, mediaType) {
-    if (!this.plugin.settings.accessToken) {
-      throw new Error('Authentication required');
-    }
-    return await this.updateMediaListEntry(mediaId, updates);
-  }
   getMediaListQuery(layout = 'card') {
     const baseFields = `
       id
@@ -1797,7 +1791,43 @@ createMediaCard(data, config, options = {}) {
       const addBtn = document.createElement('button');
       addBtn.className = 'status-badge status-planning clickable-status';
       addBtn.textContent = 'ADD';
-      addBtn.onclick = (e) => this.handleAddClick(e, media, config);
+      addBtn.onclick = (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+
+  if (!this.plugin.settings.accessToken) {
+    this.plugin.prompt.createAuthenticationPrompt();
+    return;
+  }
+
+  // Use a consistent entry structure (no fake entry needed)
+  const entryData = {
+    media: media,
+    status: 'PLANNING', // Default starting status
+    progress: 0,
+    score: null,
+    id: null // Indicates this is a new entry
+  };
+
+  this.plugin.edit.createEditModal(
+    entryData,
+    async (updates) => {
+      // Use the same update method for both add and edit
+      await this.plugin.api.updateMediaListEntry(media.id, updates);
+      new Notice('✅ Added!');
+      
+      // Refresh any visible lists
+      const containers = document.querySelectorAll('.zoro-container');
+      containers.forEach(container => {
+        const block = container.closest('.markdown-rendered')?.querySelector('code');
+        if (block) {
+          this.plugin.processor.processZoroCodeBlock(block.textContent, container, {});
+        }
+      });
+    },
+    () => {} // onCancel - do nothing
+  );
+};
       details.appendChild(addBtn);
     }
 

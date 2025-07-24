@@ -2,16 +2,18 @@
   const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal } = require('obsidian');
   
 // Default Setting
-  const DEFAULT_SETTINGS = {
+  const getDefaultGridColumns = () => {
+  return window.innerWidth >= 768 ? 4 : 2;
+};
+
+const DEFAULT_SETTINGS = {
   defaultUsername: '',
   defaultLayout: 'card',
-  defaultSortField: '',
-  defaultSortDir:   '', 
   showCoverImages: true,
   showRatings: true,
   showProgress: true,
   showGenres: false,
-  gridColumns: 2,
+  gridColumns: getDefaultGridColumns(),
   theme: '',  
   clientId: '',
   clientSecret: '',
@@ -19,54 +21,6 @@
   accessToken: '',
 };
 
-//Sort
-  const SORT_FIELDS = {
-  title:        { label: 'Title' },
-  startDate:    { label: 'Release Date' },
-  completedAt:  { label: 'Completed At' },
-  updatedAt:    { label: 'Recently Updated' },
-  score:        { label: 'User Score' },
-  popularity:   { label: 'Popularity' },
-  trending:     { label: 'Trending' },
-  favourites:   { label: 'Favorites' }
-};
-  const ANILIST_SEARCH_SORT_MAP = {
-  title:       'TITLE_ROMAJI',
-  startDate:   'START_DATE',
-  updatedAt:   'UPDATED_AT',
-  score:       'SCORE',
-  popularity:  'POPULARITY',
-  trending:    'TRENDING',
-  favourites:  'FAVOURITES'
-};
-  function sortEntries(entries, { field = '', dir = '' } = {}) {
-   if (field === '') return entries;
-  const d = dir === 'desc' ? -1 : 1;
-  const key = (e) => {
-  const m = e.media || e;
-    switch (field) {
-      case 'title':       return (m.title?.english || m.title?.romaji || '').toLowerCase();
-      case 'startDate':   return m.startDate?.year || 0;
-      case 'completedAt': return e.completedAt?.year || 0;
-      case 'updatedAt':   return e.updatedAt || 0;
-      case 'score':       return e.score ?? -1;
-      case 'popularity':  return m.popularity ?? 0;
-      case 'trending':    return m.trending ?? 0;
-      case 'favourites':  return m.favourites ?? 0;
-      default:            return m.id || 0;
-    }
-  };
-  return [...entries].sort((a, b) => {
-    const ka = key(a), kb = key(b);
-    if (ka < kb) return -d;
-    if (ka > kb) return  d;
-    const ta = (a.media?.title?.english || a.media?.title?.romaji || '').toLowerCase();
-    const tb = (b.media?.title?.english || b.media?.title?.romaji || '').toLowerCase();
-    if (ta < tb) return -1;
-    if (ta > tb) return  1;
-    return (a.media?.id || 0) - (b.media?.id || 0);
-  });
-}
 // Request Queue
  class RequestQueue {
   constructor() {
@@ -187,7 +141,6 @@ class Api {
           type: config.mediaType,
           page: config.page || 1,
           perPage: config.perPage || 5,
-          sort: config.sortOptions?.anilistSort ? [config.sortOptions.anilistSort] : null,
         };
       } else {
         query = this.getMediaListQuery(config.layout);
@@ -195,7 +148,6 @@ class Api {
           username: config.username,
           status: config.listType,
           type: config.mediaType || 'ANIME',
-          sort: config.sortOptions?.anilistSort ? [config.sortOptions.anilistSort] : null,
         };
       }
       // Make the GraphQL request with rate limiting
@@ -371,8 +323,8 @@ class Api {
     const fields = mediaFields[layout] || mediaFields.card;
 
     return `
-      query ($username: String, $status: MediaListStatus, $type: MediaType, $sort: [MediaListSort]) {
-        MediaListCollection(userName: $username, status: $status, type: $type, sort: $sort) {
+      query ($username: String, $status: MediaListStatus, $type: MediaType) {
+        MediaListCollection(userName: $username, status: $status, type: $type) {
           lists {
             entries {
               ${baseFields}
@@ -571,9 +523,9 @@ class Api {
     const fields = mediaFields[layout] || mediaFields.card;
 
     return `
-      query ($search: String, $type: MediaType, $page: Int, $perPage: Int, $sort: [MediaSort]) {
+      query ($search: String, $type: MediaType, $page: Int, $perPage: Int) {
         Page(page: $page, perPage: $perPage) {
-          media(search: $search, type: $type, sort: $sort) {
+          media(search: $search, type: $type) {
             ${fields}
           }
         }
@@ -696,24 +648,21 @@ await this.theme.applyTheme(this.settings.theme);
   }
    // Validate Settings 
   validateSettings(settings) {
-    return {
-      defaultUsername: typeof settings?.defaultUsername === 'string' ? settings.defaultUsername : '',
-      defaultLayout: ['card', 'list'].includes(settings?.defaultLayout) ? settings.defaultLayout : 'card',
-      gridColumns: Number.isInteger(settings?.gridColumns) ? settings.gridColumns : 3,
-      theme: typeof settings?.theme === 'string' ? settings.theme : '',
-   defaultSortField: (typeof settings?.defaultSortField === 'string' && (settings.defaultSortField === '' || SORT_FIELDS[settings.defaultSortField])) ? settings.defaultSortField : '',
-
-      defaultSortDir:    ['asc','desc',''].includes(settings?.defaultSortDir) ? settings.defaultSortDir : '',
-      showCoverImages: !!settings?.showCoverImages,
-      showRatings: !!settings?.showRatings,
-      showProgress: !!settings?.showProgress,
-      showGenres: !!settings?.showGenres,
-      clientId: typeof settings?.clientId === 'string' ? settings.clientId : '',
-      clientSecret: typeof settings?.clientSecret === 'string' ? settings.clientSecret : '',
-      redirectUri: typeof settings?.redirectUri === 'string' ? settings.redirectUri : DEFAULT_SETTINGS.redirectUri,
-      accessToken: typeof settings?.accessToken === 'string' ? settings.accessToken : '',
-    };
-  }
+  return {
+    defaultUsername: typeof settings?.defaultUsername === 'string' ? settings.defaultUsername : '',
+    defaultLayout: ['card', 'list'].includes(settings?.defaultLayout) ? settings.defaultLayout : 'card',
+    gridColumns: Number.isInteger(settings?.gridColumns) ? settings.gridColumns : getDefaultGridColumns(),
+    theme: typeof settings?.theme === 'string' ? settings.theme : '',
+    showCoverImages: !!settings?.showCoverImages,
+    showRatings: !!settings?.showRatings,
+    showProgress: !!settings?.showProgress,
+    showGenres: !!settings?.showGenres,
+    clientId: typeof settings?.clientId === 'string' ? settings.clientId : '',
+    clientSecret: typeof settings?.clientSecret === 'string' ? settings.clientSecret : '',
+    redirectUri: typeof settings?.redirectUri === 'string' ? settings.redirectUri : DEFAULT_SETTINGS.redirectUri,
+    accessToken: typeof settings?.accessToken === 'string' ? settings.accessToken : '',
+  };
+}
    async saveSettings() {
     try {
       const validSettings = this.validateSettings(this.settings);
@@ -848,38 +797,10 @@ clearCacheForMedia(mediaId) {
     el.appendChild(wrapper);
   }
 
- // ---------- inside ZoroPlugin ----------
-_buildSortOptions(raw) {
-  let field = '', dir = '';
 
-  // 1. Decide the field & dir
-  if (!raw || raw.trim() === '') {
-    // fall back to global defaults
-    field = this.settings.defaultSortField || '';
-    dir   = this.settings.defaultSortDir   || '';
-  } else {
-    // explicit block value
-    const [f, d = 'asc'] = raw.split('-', 2);
-    field = f.trim();
-    dir   = d.trim().toLowerCase();
-  }
 
-  // 2. Validate
-  if (!SORT_FIELDS[field]) field = '';
-  if (!['asc', 'desc', ''].includes(dir)) dir = 'asc';
 
-  if (!field) return { field: '', dir: '', anilistSort: null };
 
-  // 3. Build AniList sort key (list vs search)
-  const isSearch = arguments[1]?.type === 'search';
-  const map      = isSearch ? ANILIST_SEARCH_SORT_MAP : ANILIST_SORT_MAP;
-
-  const key = map[field];
-  if (!key) return { field: '', dir: '', anilistSort: null };
-
-  const suffix = dir === 'desc' ? '_DESC' : '_ASC';
-  return { field, dir, anilistSort: key + suffix };
-}
   // Plugin unload method
   onunload() {
     console.log('Unloading Zoro Plugin');
@@ -902,7 +823,7 @@ _buildSortOptions(raw) {
     }
   }
 
-} 
+}
 // Authentication
 class Authentication {
   constructor(plugin) {
@@ -1486,6 +1407,8 @@ class Processor {
 
   // Process Inline Links
   async processInlineLinks(el, ctx) {
+    
+
     const inlineLinks = el.querySelectorAll('a[href^="zoro:"]');
 
     for (const link of inlineLinks) {
@@ -1559,16 +1482,6 @@ class Processor {
     config.listType = config.listType || 'CURRENT';
     config.layout = config.layout || this.plugin.settings.defaultLayout;
     config.mediaType = config.mediaType || 'ANIME';
-  
-    const sortRaw = (config.sort || '').trim();
-    if (!sortRaw) {
-      // no explicit sort in block → use global defaults
-      config.sortOptions = this.plugin._buildSortOptions(
-        `${this.plugin.settings.defaultSortField}-${this.plugin.settings.defaultSortDir}`
-      );
-    } else {
-      config.sortOptions = this.plugin._buildSortOptions(sortRaw);
-    }
     
     return config;
   }
@@ -1590,15 +1503,6 @@ class Processor {
     // Default to ANIME if no mediaType specified
     config.mediaType = config.mediaType || 'ANIME';
     config.layout = config.layout || this.plugin.settings.defaultLayout;
-    
-    const sortRaw = (config.sort || '').trim();
-    if (!sortRaw) {
-      config.sortOptions = this.plugin._buildSortOptions(
-        `${this.plugin.settings.defaultSortField}-${this.plugin.settings.defaultSortDir}`
-      );
-    } else {
-      config.sortOptions = this.plugin._buildSortOptions(sortRaw);
-    }
     
     return config;
   }
@@ -1662,6 +1566,9 @@ class Processor {
     return config;
   }
 }
+
+
+
 // Render
 class Render {
   constructor(plugin) {
@@ -1699,125 +1606,34 @@ class Render {
     return;
   }
 
-  const sorted = sortEntries(media, config.sortOptions);
-  const gridDiv = document.createElement('div');
-  gridDiv.className = 'zoro-cards-grid';
-  gridDiv.style.setProperty('--zoro-grid-columns', this.plugin.settings.gridColumns);
-
-  sorted.forEach(async (item) => {
-    const title = item.title.english || item.title.romaji;
-
-    const cardDiv = document.createElement('div');
-    cardDiv.className = 'zoro-card';
-
-    if (this.plugin.settings.showCoverImages) {
-      const img = document.createElement('img');
-      img.src = item.coverImage.large;
-      img.alt = title;
-      img.className = 'media-cover';
-      cardDiv.appendChild(img);
-    }
-
-    const mediaInfoDiv = document.createElement('div');
-    mediaInfoDiv.className = 'media-info';
-
-    const titleElement = document.createElement('h4');
-    const titleLink = document.createElement('a');
-    titleLink.href = this.plugin.getZoroUrl(item.id, config.mediaType);
-    titleLink.target = '_blank';
-    titleLink.rel = 'noopener noreferrer';
-    titleLink.className = 'anilist-title-link';
-    titleLink.textContent = title;
-    titleElement.appendChild(titleLink);
-    mediaInfoDiv.appendChild(titleElement);
-
-    const detailsDiv = document.createElement('div');
-    detailsDiv.className = 'media-details';
-
-    if (item.format) {
-      const formatBadge = document.createElement('span');
-      formatBadge.className = 'format-badge';
-      formatBadge.textContent = item.format;
-      detailsDiv.appendChild(formatBadge);
-    }
-
-    const statusBadge = document.createElement('span');
-    statusBadge.className = `status-badge status-${item.status.toLowerCase()}`;
-    statusBadge.textContent = item.status;
-    detailsDiv.appendChild(statusBadge);
-
-    const addBadge = document.createElement('span');
-    addBadge.textContent = 'ADD';
-    addBadge.className = 'status-badge status-planning clickable-status';
-
-    addBadge.onclick = async (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  addBadge.textContent = 'Adding…';
-  addBadge.style.pointerEvents = 'none';
-
-  try {
-    await this.plugin.api.addMediaToList(item.id, { status: 'PLANNING', progress: 0 }, config.mediaType);
-    addBadge.className = 'status-badge status-planning';
-    addBadge.textContent = 'PLANNING';
-    addBadge.onclick = null;
-    new Notice('✅ Added!');
-  } catch (err) {
-    new Notice(`❌ ${err.message}`);
-    addBadge.textContent = 'ADD';
-    addBadge.style.pointerEvents = '';
-  }
-};
-
-    
-    detailsDiv.appendChild(addBadge);
-
-    if (this.plugin.settings.showRatings && item.averageScore) {
-      const scoreSpan = document.createElement('span');
-      scoreSpan.className = 'score';
-      scoreSpan.textContent = `★ ${item.averageScore}`;
-      detailsDiv.appendChild(scoreSpan);
-    }
-
-    mediaInfoDiv.appendChild(detailsDiv);
-
-    if (this.plugin.settings.showGenres && item.genres) {
-      const genresDiv = document.createElement('div');
-      genresDiv.className = 'genres';
-      item.genres.slice(0, 3).forEach(genre => {
-        const genreTag = document.createElement('span');
-        genreTag.className = 'genre-tag';
-        genreTag.textContent = genre;
-        genresDiv.appendChild(genreTag);
-      });
-      mediaInfoDiv.appendChild(genresDiv);
-    }
-
-    cardDiv.appendChild(mediaInfoDiv);
-    gridDiv.appendChild(cardDiv);
-
-    
+  const grid = el.createDiv({ cls: 'zoro-cards-grid' });
+  grid.style.setProperty('--zoro-grid-columns', this.plugin.settings.gridColumns);
+  
+  media.forEach(item => {
+    grid.appendChild(this.createMediaCard(item, config, { isSearch: true }));
   });
-
-  el.appendChild(gridDiv);
 }
 
 
-  /* ----------  MEDIA LIST  ---------- */
-  renderMediaList(el, entries, config) {
-    const sorted = sortEntries(entries, config.sortOptions);
-    el.empty();
-    el.className = 'zoro-container';
-    if (config.layout === 'table') {
-      this.renderTableLayout(el, sorted, config);
-    } else {
-      const grid = el.createDiv({ cls: 'zoro-cards-grid' });
-      grid.style.setProperty('--zoro-grid-columns', this.plugin.settings.gridColumns);
-      sorted.forEach(entry => grid.appendChild(this.createMediaCard(entry, config)));
-    }
+renderMediaList(el, entries, config) {
+  el.empty();
+  el.className = 'zoro-container';
+  
+  if (config.layout === 'table') {
+    this.renderTableLayout(el, entries, config);
+    return;
   }
 
-  renderTableLayout(el, sorted, config) {
+  const grid = el.createDiv({ cls: 'zoro-cards-grid' });
+  grid.style.setProperty('--zoro-grid-columns', this.plugin.settings.gridColumns);
+  
+  entries.forEach(entry => {
+    grid.appendChild(this.createMediaCard(entry, config));
+  });
+}
+
+
+  renderTableLayout(el, entries, config) {
     const table = el.createEl('table', { cls: 'zoro-table' });
     const headers = ['Title', 'Format', 'Status'];
     if (this.plugin.settings.showProgress) headers.push('Progress');
@@ -1827,7 +1643,7 @@ class Render {
     table.createTHead().createEl('tr', null, tr => headers.forEach(h => tr.createEl('th', { text: h })));
 
     const tbody = table.createTBody();
-    sorted.forEach(entry => {
+    entries.forEach(entry => {
       const m = entry.media;
       const tr = tbody.createEl('tr');
       tr.createEl('td', null, td => td.createEl('a', { text: m.title.english || m.title.romaji, href: this.plugin.getZoroUrl(m.id, config.mediaType), cls: 'zoro-title-link', target: '_blank' }));
@@ -1860,15 +1676,15 @@ class Render {
     if (m.format) details.createEl('span', { text: m.format, cls: 'format-badge' });
     details.createEl('span', { text: mediaList.status, cls: `status-badge status-${mediaList.status.toLowerCase()}` });
     const status = details.lastChild; // the span we just created
-status.classList.add('clickable-status');
-status.onclick = e => {
-  e.preventDefault(); e.stopPropagation();
-  if (!this.plugin.settings.accessToken) {
-    this.plugin.prompt.createAuthenticationPrompt();
-    return;
-  }
-  this.plugin.handleEditClick(e, mediaList, status);
-};
+    status.classList.add('clickable-status');
+    status.onclick = e => {
+      e.preventDefault(); e.stopPropagation();
+      if (!this.plugin.settings.accessToken) {
+        this.plugin.prompt.createAuthenticationPrompt();
+        return;
+      }
+      this.plugin.handleEditClick(e, mediaList, status);
+    };
 
     if (this.plugin.settings.showProgress) details.createEl('span', { text: `${mediaList.progress}/${m.episodes || m.chapters || '?'}`, cls: 'progress' });
     if (this.plugin.settings.showRatings && mediaList.score != null) details.createEl('span', { text: `★ ${mediaList.score}`, cls: 'score' });
@@ -1902,46 +1718,138 @@ status.onclick = e => {
     });
   }
 
-  /* ----------  SHARED CARD FACTORY  ---------- */
-  createMediaCard(obj, config, isSearch = false) {
-    const media = obj.media || obj; // search returns raw media
-    const title = media.title.english || media.title.romaji;
-    const card = document.createElement('div');
-    card.className = 'zoro-card';
+// In Render class (around line 1888)
+createMediaCard(data, config, options = {}) {
+  const isSearch = options.isSearch || false;
+  const isCompact = config.layout === 'compact';
+  const entry = isSearch ? null : data; // null for search results
+  const media = isSearch ? data : data.media;
 
-    if (this.plugin.settings.showCoverImages && media.coverImage?.large) {
-      card.createEl('img', { cls: 'media-cover', attr: { src: media.coverImage.large, alt: title } });
+  const card = document.createElement('div');
+  card.className = `zoro-card ${isCompact ? 'compact' : ''}`;
+
+  // Cover Image (shared)
+  if (this.plugin.settings.showCoverImages && media.coverImage?.large) {
+    const img = document.createElement('img');
+    img.src = media.coverImage.large;
+    img.alt = media.title.english || media.title.romaji;
+    img.className = 'media-cover';
+    img.loading = 'lazy'; // Performance boost
+    card.appendChild(img);
+  }
+
+  const info = document.createElement('div');
+  info.className = 'media-info';
+
+  // Title (shared)
+  const title = document.createElement('h4');
+  const titleLink = document.createElement('a');
+  titleLink.href = this.plugin.getZoroUrl(media.id, config.mediaType);
+  titleLink.target = '_blank';
+  titleLink.textContent = media.title.english || media.title.romaji;
+  title.appendChild(titleLink);
+  info.appendChild(title);
+
+  // Details section (conditional)
+  if (!isCompact) {
+    const details = document.createElement('div');
+    details.className = 'media-details';
+
+    // Format badge
+    if (media.format) {
+      const formatBadge = document.createElement('span');
+      formatBadge.className = 'format-badge';
+      formatBadge.textContent = media.format;
+      details.appendChild(formatBadge);
     }
 
-    const info = card.createDiv({ cls: 'media-info' });
-    info.createEl('h4', null, h => {
-      h.createEl('a', { text: title, href: this.plugin.getZoroUrl(media.id, config.mediaType), cls: 'anilist-title-link', target: '_blank' });
-    });
+    // Status badge (only for list entries)
+    if (!isSearch && entry) {
+      const statusBadge = document.createElement('span');
+      statusBadge.className = `status-badge status-${entry.status.toLowerCase()} clickable-status`;
+      statusBadge.textContent = entry.status;
+      statusBadge.onclick = (e) => this.handleStatusClick(e, entry, statusBadge);
+      details.appendChild(statusBadge);
+    }
 
-    if (!isSearch) {
-      const details = info.createDiv({ cls: 'media-details' });
-      if (media.format) details.createEl('span', { text: media.format, cls: 'format-badge' });
-      const status = details.createEl('span', { text: obj.status, cls: `status-badge status-${obj.status.toLowerCase()} clickable-status` });
-      status.classList.add('clickable-status');
-      status.onclick = e => {
+    // Progress (only for list entries)
+    if (!isSearch && entry && this.plugin.settings.showProgress) {
+      const progress = document.createElement('span');
+      progress.className = 'progress';
+      const total = media.episodes || media.chapters || '?';
+      progress.textContent = `${entry.progress || 0}/${total}`;
+      details.appendChild(progress);
+    }
+
+    // Rating (shared)
+    if (this.plugin.settings.showRatings) {
+      const score = isSearch ? media.averageScore : entry?.score;
+      if (score != null) {
+        const rating = document.createElement('span');
+        rating.className = 'score';
+        rating.textContent = `★ ${score}`;
+        details.appendChild(rating);
+      }
+    }
+
+    // Search-specific add button
+    if (isSearch) {
+      const addBtn = document.createElement('button');
+      addBtn.className = 'status-badge status-planning clickable-status';
+      addBtn.textContent = 'ADD';
+      addBtn.onclick = (e) => this.handleAddClick(e, media, config);
+      details.appendChild(addBtn);
+    }
+
+    info.appendChild(details);
+  }
+
+  // Genres (shared)
+  if (!isCompact && this.plugin.settings.showGenres && media.genres?.length) {
+    const genres = document.createElement('div');
+    genres.className = 'genres';
+    media.genres.slice(0, 3).forEach(g => {
+      const tag = document.createElement('span');
+      tag.className = 'genre-tag';
+      tag.textContent = g;
+      genres.appendChild(tag);
+    });
+    info.appendChild(genres);
+  }
+
+  card.appendChild(info);
+  return card;
+}
+
+// Helper methods
+handleStatusClick(e, entry, badge) {
   e.preventDefault();
   e.stopPropagation();
   if (!this.plugin.settings.accessToken) {
     this.plugin.prompt.createAuthenticationPrompt();
     return;
   }
-  this.plugin.handleEditClick(e, obj, status);
-};
+  this.plugin.handleEditClick(e, entry, badge);
+}
 
-      if (this.plugin.settings.showProgress) details.createEl('span', { text: `${obj.progress}/${media.episodes ?? media.chapters ?? '?'}`, cls: 'progress' });
-      if (this.plugin.settings.showRatings && obj.score != null) details.createEl('span', { text: `★ ${obj.score}`, cls: 'score' });
-    }
-    if (this.plugin.settings.showGenres && media.genres?.length) {
-      const genres = info.createDiv({ cls: 'genres' });
-      media.genres.slice(0, 3).forEach(g => genres.createEl('span', { text: g, cls: 'genre-tag' }));
-    }
-    return card;
-  }
+handleAddClick(e, media, config) {
+  e.preventDefault();
+  e.stopPropagation();
+  const btn = e.target;
+  btn.textContent = '⏳';
+  btn.disabled = true;
+  
+  this.plugin.api.addMediaToList(media.id, { status: 'PLANNING' }, config.mediaType)
+    .then(() => {
+      btn.textContent = '✅';
+      new Notice('Added to list!');
+    })
+    .catch(err => {
+      btn.textContent = 'ADD';
+      btn.disabled = false;
+      new Notice(`❌ ${err.message}`);
+    });
+}
 
   /* ----------  UTILITIES  ---------- */
   clear(el) { el.empty?.(); }
@@ -2914,6 +2822,7 @@ type: stats
   new Notice('✅ Dashboards generated!', 4000);
 }
 }
+
 // Settings
 class ZoroSettingTab extends PluginSettingTab { 
   constructor(app, plugin) { 
@@ -2952,12 +2861,13 @@ class ZoroSettingTab extends PluginSettingTab {
     const Data = section('📤 Data');
     const Cache = section('🔄 Cache');
     const About = section('ℹ️ About');
+    const Exp = section('🚧 Experimental');
     
 
     
     new Setting(Account)
       .setName('🆔 Username')
-      .setDesc('Lets you access your public profile and stats — that’s it.')
+      .setDesc("Lets you access your public profile and stats — that's it" )
       .addText(text => text
         .setPlaceholder('Enter your AniList username')
         .setValue(this.plugin.settings.defaultUsername)
@@ -3005,34 +2915,6 @@ authSetting.addButton(button => {
           this.plugin.settings.gridColumns = value;
           await this.plugin.saveSettings();
         }));
-        
-      /* ----------  existing ZoroSettingTab.display()  ---------- */
-
-new Setting(UI)
-  .setName('Sort by')
-  .addDropdown(drop =>
-    Object.entries(SORT_FIELDS).forEach(([k, { label }]) => drop.addOption(k, label))
-    && drop.setValue(this.plugin.settings.defaultSortField)   // ← already validated
-           .onChange(async v => {
-             this.plugin.settings.defaultSortField = v;
-             await this.plugin.saveSettings();
-           })
-  );
-
-new Setting(UI)
-  .setName('Sort direction')
-  .addDropdown(drop =>
-    drop
-      .addOption('', 'Default')
-      .addOption('asc', 'Ascending ↑')
-      .addOption('desc', 'Descending ↓')
-      .setValue(this.plugin.settings.defaultSortDir)          // ← already validated
-      .onChange(async v => {
-        this.plugin.settings.defaultSortDir = v;
-        await this.plugin.saveSettings();
-      })
-  );
-
 
     new Setting(UI)
       .setName('🌆 Cover')
@@ -3082,7 +2964,7 @@ new Setting(UI)
 /* ---- Unified Export button (always shown) ---- */
 new Setting(Data)
 .setName('🧾 Export your data')
-  .setDesc('Everything you’ve watched, rated, and maybe ghosted — neatly exported into a CSV.')
+  .setDesc("Everything you've watched, rated, and maybe ghosted — neatly exported into a CSV.")
   .addButton(btn => btn
     .setButtonText('Export')
     .setClass('mod-cta')
@@ -3103,7 +2985,7 @@ new Setting(Theme)
   .setDesc('Pick a custom CSS file from the themes folder')
   .addDropdown(async dropdown => {
     // Populate
-    dropdown.addOption('', 'None (built-in)');
+    dropdown.addOption('', 'default');
     const themes = await this.plugin.theme.getAvailableThemes();
     themes.forEach(t => dropdown.addOption(t, t));
 
@@ -3149,6 +3031,7 @@ new Setting(Guide)
           window.open('https://github.com/zara-kasi/zoro/blob/main/Docs/anilist-auth-setup.md', '_blank');
         }));
         
+        
         new Setting(About)
   .setName('Author')
   .setDesc(this.plugin.manifest.author);
@@ -3171,6 +3054,9 @@ new Setting(About)
       })
   );
   
+
+
+
   }
   //  Dynamic Update of Auth button
 updateAuthButton() {

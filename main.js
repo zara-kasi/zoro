@@ -15,7 +15,8 @@ const DEFAULT_SETTINGS = {
   showGenres: false,
   showLoadingIcon: true,
   gridColumns: getDefaultGridColumns(),
-  theme: '',  
+  theme: '', 
+  hideUrlsInTitles: false,
   clientId: '',
   clientSecret: '',
   redirectUri: 'https://anilist.co/api/v2/oauth/pin',
@@ -926,7 +927,8 @@ clearSingleEntryCache(mediaId, username, mediaType = 'ANIME') {
     showRatings: !!settings?.showRatings,
     showProgress: !!settings?.showProgress,
     showGenres: !!settings?.showGenres,
-    showLoadingIcon: typeof settings?.showLoadingIcon === 'boolean' ? settings.showLoadingIcon : true, // Add this line
+    showLoadingIcon: typeof settings?.showLoadingIcon === 'boolean' ? settings.showLoadingIcon : true,
+    hideUrlsInTitles: typeof settings?.hideUrlsInTitles === 'boolean' ? settings.hideUrlsInTitles : false,
     clientId: typeof settings?.clientId === 'string' ? settings.clientId : '',
     clientSecret: typeof settings?.clientSecret === 'string' ? settings.clientSecret : '',
     redirectUri: typeof settings?.redirectUri === 'string' ? settings.redirectUri : DEFAULT_SETTINGS.redirectUri,
@@ -1821,20 +1823,26 @@ createMediaCard(data, config, options = {}) {
   const info = document.createElement('div');
   info.className = 'media-info';
 
-  // Title (shared)
+
   const title = document.createElement('h4');
+
+if (this.plugin.settings.hideUrlsInTitles) {
+  // Show as regular text
+  title.textContent = media.title.english || media.title.romaji;
+} else {
+  // Show as clickable link with your original styling
   const titleLink = document.createElement('a');
   titleLink.href = this.plugin.getZoroUrl(media.id, config.mediaType);
   titleLink.target = '_blank';
   titleLink.textContent = media.title.english || media.title.romaji;
   
-  // Remove URL styling to make it look like regular text
+  // Keep your original URL styling (looks like regular text but is clickable)
   titleLink.style.textDecoration = 'none';
   titleLink.style.color = 'inherit';
   titleLink.style.border = 'none';
   titleLink.style.outline = 'none';
   
-  // Optional: Add subtle hover effect
+  // Keep your original hover effect
   titleLink.onmouseover = () => {
     titleLink.style.opacity = '0.7';
   };
@@ -1843,7 +1851,9 @@ createMediaCard(data, config, options = {}) {
   };
   
   title.appendChild(titleLink);
-  info.appendChild(title);
+}
+
+info.appendChild(title);
 
   // Details section (conditional)
   if (!isCompact) {
@@ -2053,19 +2063,32 @@ class MoreDetailsPanel {
   }
 
   async fetchAndUpdatePanel(mediaId, panel) {
-    try {
-      const detailedMedia = await this.fetchDetailedMediaData(mediaId);
-      
-      // Only update if panel is still open and data is actually better
-      if (this.currentPanel === panel && this.hasMoreData(detailedMedia)) {
-        this.updatePanelContent(panel, detailedMedia);
-      }
-    } catch (error) {
-      console.error('Background fetch failed:', error);
-      // Silently fail - panel already has basic data
+  try {
+    const detailedMedia = await this.fetchDetailedMediaData(mediaId);
+    
+    // Start MAL fetch immediately if we have MAL ID (don't wait)
+    let malDataPromise = null;
+    if (detailedMedia.idMal) {
+      malDataPromise = this.fetchMALData(detailedMedia.idMal, detailedMedia.type);
     }
+    
+    // Update with AniList data first
+    if (this.currentPanel === panel && this.hasMoreData(detailedMedia)) {
+      this.updatePanelContent(panel, detailedMedia, null);
+    }
+    
+    // Then update again when MAL data arrives
+    if (malDataPromise) {
+      const malData = await malDataPromise;
+      if (this.currentPanel === panel && malData) {
+        this.updatePanelContent(panel, detailedMedia, malData);
+      }
+    }
+  } catch (error) {
+    console.error('Background fetch failed:', error);
   }
-
+}
+  
   hasMoreData(newMedia) {
     // Check if new data has more information than current
     const hasBasicData = newMedia.description || newMedia.genres?.length > 0 || newMedia.averageScore > 0;
@@ -2074,55 +2097,62 @@ class MoreDetailsPanel {
     return hasBasicData || hasAiringData;
   }
 
-  updatePanelContent(panel, media) {
-    // Only update sections that have new data
-    const content = panel.querySelector('.panel-content');
-    
-    // Update airing section if we got airing data for anime
-    if (media.type === 'ANIME' && media.nextAiringEpisode && !content.querySelector('.airing-section')) {
-      const airingSection = this.createAiringSection(media.nextAiringEpisode);
-      // Insert after metadata section
-      const metadataSection = content.querySelector('.metadata-section');
-      if (metadataSection) {
-        metadataSection.insertAdjacentElement('afterend', airingSection);
-      } else {
-        // Fallback: insert after header
-        const headerSection = content.querySelector('.panel-header');
-        if (headerSection) {
-          headerSection.insertAdjacentElement('afterend', airingSection);
-        }
-      }
-    }
-    
-    // Update synopsis if we got one
-    if (media.description) {
-      const existingSynopsis = content.querySelector('.synopsis-section');
-      if (existingSynopsis) {
-        const newSynopsis = this.createSynopsisSection(media.description);
-        content.replaceChild(newSynopsis, existingSynopsis);
-      }
-    }
-
-    // Update genres if we got them
-    if (media.genres?.length > 0 && !content.querySelector('.genres-section')) {
-      const genresSection = this.createGenresSection(media.genres);
-      const synopsisSection = content.querySelector('.synopsis-section');
-      if (synopsisSection) {
-        content.insertBefore(genresSection, synopsisSection);
-      } else {
-        content.appendChild(genresSection);
-      }
-    }
-
-    // Update stats if we got them
-    if (media.averageScore > 0) {
-      const existingStats = content.querySelector('.stats-section');
-      if (existingStats) {
-        const newStats = this.createStatisticsSection(media);
-        content.replaceChild(newStats, existingStats);
+  updatePanelContent(panel, media, malData = null) {
+  // Only update sections that have new data
+  const content = panel.querySelector('.panel-content');
+  
+  // Update airing section if we got airing data for anime
+  if (media.type === 'ANIME' && media.nextAiringEpisode && !content.querySelector('.airing-section')) {
+    const airingSection = this.createAiringSection(media.nextAiringEpisode);
+    const metadataSection = content.querySelector('.metadata-section');
+    if (metadataSection) {
+      metadataSection.insertAdjacentElement('afterend', airingSection);
+    } else {
+      const headerSection = content.querySelector('.panel-header');
+      if (headerSection) {
+        headerSection.insertAdjacentElement('afterend', airingSection);
       }
     }
   }
+  
+  // Update synopsis if we got one
+  if (media.description) {
+    const existingSynopsis = content.querySelector('.synopsis-section');
+    if (existingSynopsis) {
+      const newSynopsis = this.createSynopsisSection(media.description);
+      content.replaceChild(newSynopsis, existingSynopsis);
+    }
+  }
+
+  // Update genres if we got them
+  if (media.genres?.length > 0 && !content.querySelector('.genres-section')) {
+    const genresSection = this.createGenresSection(media.genres);
+    const synopsisSection = content.querySelector('.synopsis-section');
+    if (synopsisSection) {
+      content.insertBefore(genresSection, synopsisSection);
+    } else {
+      content.appendChild(genresSection);
+    }
+  }
+
+  // Update external links section if we got MAL ID
+  if (media.idMal) {
+    const existingLinksSection = content.querySelector('.external-links-section');
+    if (existingLinksSection) {
+      const newLinksSection = this.createExternalLinksSection(media);
+      content.replaceChild(newLinksSection, existingLinksSection);
+    }
+  }
+
+  // Update stats if we got them (now includes MAL data)
+  if (media.averageScore > 0 || malData) {
+    const existingStats = content.querySelector('.stats-section');
+    if (existingStats) {
+      const newStats = this.createStatisticsSection(media, malData);
+      content.replaceChild(newStats, existingStats);
+    }
+  }
+}
 
   async fetchDetailedMediaData(mediaId) {
     const query = this.getDetailedMediaQuery();
@@ -2153,10 +2183,38 @@ class MoreDetailsPanel {
     }
   }
 
-  getDetailedMediaQuery() {
-    // Updated query to include airing information
-    return `query($id:Int){Media(id:$id){id type title{romaji english native}description(asHtml:false)format status season seasonYear averageScore genres nextAiringEpisode{airingAt episode timeUntilAiring}}}`;
+async fetchMALData(malId, mediaType) {
+  try {
+    const type = mediaType === 'MANGA' ? 'manga' : 'anime';
+    const response = await fetch(`https://api.jikan.moe/v4/${type}/${malId}`);
+    
+    if (!response.ok) {
+      throw new Error(`Jikan API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    return data.data;
+  } catch (error) {
+    console.error('Failed to fetch MAL data:', error);
+    return null;
   }
+}
+
+  getDetailedMediaQuery() {
+  return `query($id:Int){Media(id:$id){id type title{romaji english native}description(asHtml:false)format status season seasonYear averageScore genres nextAiringEpisode{airingAt episode timeUntilAiring}idMal}}`;
+}
+
+getAniListUrl(mediaId, mediaType = 'ANIME') {
+  // Use your existing API method - assuming you have access to the API class through this.plugin
+  return this.plugin.getZoroUrl(mediaId, mediaType);
+}
+
+getMyAnimeListUrl(malId, mediaType = 'ANIME') {
+  if (!malId) return null;
+  const type = mediaType === 'MANGA' ? 'manga' : 'anime';
+  return `https://myanimelist.net/${type}/${malId}`;
+}
+
 
   createPanel(media, entry) {
     // Use document fragment for better performance
@@ -2168,33 +2226,36 @@ class MoreDetailsPanel {
     const content = document.createElement('div');
     content.className = 'panel-content';
 
-    // Build sections efficiently
-    const sections = [];
-    
-    // Header section
-    sections.push(this.createHeaderSection(media));
-    
-    // Metadata section
-    sections.push(this.createMetadataSection(media, entry));
-    
-    // Airing section (only for anime with airing data)
-    if (media.type === 'ANIME' && media.nextAiringEpisode) {
-      sections.push(this.createAiringSection(media.nextAiringEpisode));
-    }
-    
-    // Statistics section
-    if (media.averageScore > 0) {
-      sections.push(this.createStatisticsSection(media));
-    }
-    
-    // Genres section
-    if (media.genres?.length > 0) {
-      sections.push(this.createGenresSection(media.genres));
-    }
-    
-    // Synopsis section
-    sections.push(this.createSynopsisSection(media.description));
+   // Build sections efficiently
+const sections = [];
 
+// Header section
+sections.push(this.createHeaderSection(media));
+
+// Metadata section
+sections.push(this.createMetadataSection(media, entry));
+
+// Airing section (only for anime with airing data)
+if (media.type === 'ANIME' && media.nextAiringEpisode) {
+  sections.push(this.createAiringSection(media.nextAiringEpisode));
+}
+
+// Statistics section
+if (media.averageScore > 0) {
+  sections.push(this.createStatisticsSection(media));
+}
+
+// Genres section
+if (media.genres?.length > 0) {
+  sections.push(this.createGenresSection(media.genres));
+}
+
+
+// Synopsis section
+sections.push(this.createSynopsisSection(media.description));
+
+// External Links section
+sections.push(this.createExternalLinksSection(media));
     // Append all sections at once
     sections.forEach(section => content.appendChild(section));
 
@@ -2315,68 +2376,43 @@ class MoreDetailsPanel {
   }
 
   createSynopsisSection(description) {
-    const section = document.createElement('div');
-    section.className = 'panel-section synopsis-section';
+  const section = document.createElement('div');
+  section.className = 'panel-section synopsis-section';
 
-    const title = document.createElement('h3');
-    title.className = 'section-title';
-    title.textContent = 'Synopsis';
-    section.appendChild(title);
+  const title = document.createElement('h3');
+  title.className = 'section-title';
+  title.textContent = 'Synopsis';
+  section.appendChild(title);
 
-    const synopsis = document.createElement('div');
-    synopsis.className = 'synopsis-content';
-    
-    if (!description || typeof description !== 'string' || !description.trim()) {
-      synopsis.className += ' synopsis-placeholder';
-      synopsis.textContent = 'Synopsis not available yet.';
-      section.appendChild(synopsis);
-      return section;
-    }
-    
-    // Optimized text cleaning - do minimal processing
-    const cleanDescription = description
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<[^>]*>/g, '')
-      .replace(/\n\s*\n/g, '\n\n')
-      .trim();
-
-    if (!cleanDescription) {
-      synopsis.className += ' synopsis-placeholder';
-      synopsis.textContent = 'Synopsis is empty.';
-      section.appendChild(synopsis);
-      return section;
-    }
-    
-    // Handle long descriptions more efficiently
-    if (cleanDescription.length > 800) {
-      const shortDescription = cleanDescription.substring(0, 800) + '...';
-      synopsis.textContent = shortDescription;
-      
-      const expandButton = document.createElement('button');
-      expandButton.className = 'expand-synopsis-btn';
-      expandButton.textContent = 'Show More';
-      
-      // Use more efficient toggle
-      let isExpanded = false;
-      expandButton.onclick = () => {
-        if (isExpanded) {
-          synopsis.textContent = shortDescription;
-          expandButton.textContent = 'Show More';
-          isExpanded = false;
-        } else {
-          synopsis.textContent = cleanDescription;
-          expandButton.textContent = 'Show Less';
-          isExpanded = true;
-        }
-      };
-      section.appendChild(expandButton);
-    } else {
-      synopsis.textContent = cleanDescription;
-    }
-    
+  const synopsis = document.createElement('div');
+  synopsis.className = 'synopsis-content';
+  
+  if (!description || typeof description !== 'string' || !description.trim()) {
+    synopsis.className += ' synopsis-placeholder';
+    synopsis.textContent = 'Synopsis not available yet.';
     section.appendChild(synopsis);
     return section;
   }
+  
+  // Clean the description
+  const cleanDescription = description
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/\n\s*\n/g, '\n\n')
+    .trim();
+
+  if (!cleanDescription) {
+    synopsis.className += ' synopsis-placeholder';
+    synopsis.textContent = 'Synopsis is empty.';
+    section.appendChild(synopsis);
+    return section;
+  }
+  
+  // Just show the full description - no truncation or toggle
+  synopsis.textContent = cleanDescription;
+  section.appendChild(synopsis);
+  return section;
+}
 
   createMetadataSection(media, entry) {
     const section = document.createElement('div');
@@ -2402,25 +2438,43 @@ class MoreDetailsPanel {
     return section;
   }
 
-  createStatisticsSection(media) {
-    const section = document.createElement('div');
-    section.className = 'panel-section stats-section';
+  createStatisticsSection(media, malData = null) {
+  const section = document.createElement('div');
+  section.className = 'panel-section stats-section';
 
-    const title = document.createElement('h3');
-    title.className = 'section-title';
-    title.textContent = 'Statistics';
-    section.appendChild(title);
+  const title = document.createElement('h3');
+  title.className = 'section-title';
+  title.textContent = 'Statistics';
+  section.appendChild(title);
 
-    const statsGrid = document.createElement('div');
-    statsGrid.className = 'stats-grid';
+  const statsGrid = document.createElement('div');
+  statsGrid.className = 'stats-grid';
 
-    if (media.averageScore > 0) {
-      this.addStatItem(statsGrid, 'Community Score', `${media.averageScore}%`, 'score-stat');
-    }
-
-    section.appendChild(statsGrid);
-    return section;
+  // AniList score
+  if (media.averageScore > 0) {
+    this.addStatItem(statsGrid, 'AniList Score', `${media.averageScore}%`, 'score-stat anilist-stat');
   }
+
+  // MAL statistics
+  if (malData) {
+    if (malData.score) {
+      this.addStatItem(statsGrid, 'MAL Score', `${malData.score}/10`, 'score-stat mal-stat');
+    }
+    
+    if (malData.scored_by) {
+      this.addStatItem(statsGrid, 'MAL Ratings', malData.scored_by.toLocaleString(), 'count-stat');
+    }
+    
+    if (malData.rank) {
+      this.addStatItem(statsGrid, 'MAL Rank', `#${malData.rank}`, 'rank-stat');
+    }
+    
+    
+  }
+
+  section.appendChild(statsGrid);
+  return section;
+}
 
   addMetadataItem(container, label, value) {
     const item = document.createElement('div');
@@ -2490,6 +2544,53 @@ class MoreDetailsPanel {
 
     return section;
   }
+
+
+createExternalLinksSection(media) {
+  // DEBUG: Check what we're getting
+  console.log('Creating external links for media:', media);
+  console.log('Media idMal:', media.idMal);
+  
+  const section = document.createElement('div');
+  section.className = 'panel-section external-links-section';
+
+  const title = document.createElement('h3');
+  title.className = 'section-title';
+  title.textContent = 'External Links';
+  section.appendChild(title);
+
+  const linksContainer = document.createElement('div');
+  linksContainer.className = 'external-links-container';
+
+  // MyAnimeList button (only if MAL ID is available)
+  if (media.idMal) {
+    console.log('MAL ID found, creating MAL button');
+    const malBtn = document.createElement('button');
+    malBtn.className = 'external-link-btn mal-btn';
+    malBtn.innerHTML = '🔗 View on MAL';
+    malBtn.onclick = (e) => {
+      e.stopPropagation();
+      window.open(this.getMyAnimeListUrl(media.idMal, media.type), '_blank');
+    };
+    linksContainer.appendChild(malBtn);
+  // AniList button (always available since we have the media data)
+  const anilistBtn = document.createElement('button');
+  anilistBtn.className = 'external-link-btn anilist-btn';
+  anilistBtn.innerHTML = '🔗 View on AniList';
+  anilistBtn.onclick = (e) => {
+    e.stopPropagation();
+    window.open(this.getAniListUrl(media.id, media.type), '_blank');
+  };
+  linksContainer.appendChild(anilistBtn);
+
+
+  } else {
+    console.log('No MAL ID found for this media');
+  }
+
+  section.appendChild(linksContainer);
+  return section;
+}
 
   formatDisplayName(str) {
     if (!str) return '';
@@ -4215,7 +4316,15 @@ authSetting.addButton(button => {
       await this.plugin.saveSettings();
     }));
 
-
+new Setting(More)
+   .setName('🔗 Plain Titles')
+.setDesc('Show titles as plain text instead of clickable links.')
+    .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.hideUrlsInTitles)
+        .onChange(async (value) => {
+            this.plugin.settings.hideUrlsInTitles = value;
+            await this.plugin.saveSettings();
+        }));
     
         
 /* ---- Unified Export button (always shown) ---- */

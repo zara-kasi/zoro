@@ -653,7 +653,7 @@
   backdrop-filter: blur(5px);
 }
 .zoro-modal-content {
-  background: #fff;
+  background: rgba(255, 255, 255, var(--zoro-modal-overlay-opacity));
   color: #222;
   border-radius: var(--zoro-modal-content-border-radius);
   box-shadow: 0 12px 40px rgba(0, 0, 0, .25);
@@ -750,7 +750,7 @@
 /* Dark mode for modal */
 @media (prefers-color-scheme: dark) {
   .zoro-modal-content {
-    background: #2e2e2e;
+  background: rgba(0, 0, 0, var(--zoro-modal-overlay-opacity));
     color: #e5e5e5;
   }
   .zoro-form-input,
@@ -838,3 +838,204 @@ transparent 70%
 
 
 
+/* More Details Panel Styles */
+.zoro-more-details-panel {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+  z-index: 1000;
+  overflow: hidden;
+}
+
+.panel-content {
+  padding: 20px;
+  overflow-y: auto;
+  max-height: 80vh;
+}
+
+.panel-close-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--text-muted);
+  z-index: 1001;
+}
+
+.panel-close-btn:hover {
+  color: var(--text-normal);
+}
+
+.panel-section {
+  margin-bottom: 25px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.section-title {
+  font-size: 18px;
+  font-weight: bold;
+  margin-bottom: 10px;
+  color: var(--text-normal);
+}
+
+/* More button on cards */
+.zoro-more-btn {
+  margin-top: 10px;
+  padding: 6px 12px;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.zoro-more-btn:hover {
+  background: var(--interactive-accent-hover);
+}
+
+/* Grid layouts */
+.metadata-grid, .stats-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.metadata-item, .stat-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 5px 0;
+}
+
+.metadata-label, .stat-label {
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.metadata-value, .stat-value {
+  color: var(--text-normal);
+  font-weight: 500;
+}
+
+/* Tags */
+.tags-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 10px;
+}
+
+.detail-tag {
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.spoiler-tag {
+  background: var(--background-modifier-error);
+  color: var(--text-on-accent);
+}
+
+/* Characters grid */
+.characters-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.character-card {
+  text-align: center;
+}
+
+.character-image {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.character-name {
+  font-size: 12px;
+  margin-top: 5px;
+  color: var(--text-normal);
+}
+
+/* Relations */
+.relations-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.relation-item {
+  display: flex;
+  gap: 10px;
+  padding: 5px;
+}
+
+.relation-type {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.relation-title {
+  color: var(--text-normal);
+}
+
+/* Space between format badge and status badge inside .media-details */
+.media-details .format-badge + .status-badge {
+  margin-left: 0.4em;   /* tweak this value to taste */
+}
+
+.external-links-container {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.external-link-btn {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.anilist-btn {
+  background-color: #02a9ff;
+  color: white;
+}
+
+.anilist-btn:hover {
+  background-color: #0284c7;
+}
+
+.mal-btn {
+  background-color: #2e51a2;
+  color: white;
+}
+
+.mal-btn:hover {
+  background-color: #1e3a72;
+}

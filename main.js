@@ -395,84 +395,201 @@ class Api {
   }
 
   getSingleMediaQuery(layout = 'card') {
-    const baseFields = `
+  const baseFields = `
+    id
+    status
+    score
+    progress
+  `;
+
+  const mediaFields = {
+    compact: `
       id
+      title {
+        romaji
+      }
+      coverImage {
+        medium
+      }
+    `,
+    card: `
+      id
+      title {
+        romaji
+        english
+        native
+      }
+      coverImage {
+        large
+        medium
+      }
+      format
+      averageScore
       status
-      score
-      progress
-    `;
-
-    const mediaFields = {
-      compact: `
+      genres
+      episodes
+      chapters
+    `,
+    full: `
+      id
+      title {
+        romaji
+        english
+        native
+      }
+      coverImage {
+        large
+        medium
+      }
+      episodes
+      chapters
+      genres
+      format
+      averageScore
+      status
+      startDate {
+        year
+        month
+        day
+      }
+      endDate {
+        year
+        month
+        day
+      }
+    `,
+    detailed: `
+      id
+      title {
+        romaji
+        english
+        native
+      }
+      description(asHtml: false)
+      format
+      status
+      episodes
+      chapters
+      volumes
+      duration
+      season
+      seasonYear
+      startDate {
+        year
+        month
+        day
+      }
+      endDate {
+        year
+        month
+        day
+      }
+      averageScore
+      meanScore
+      popularity
+      favourites
+      trending
+      source
+      isAdult
+      siteUrl
+      genres
+      synonyms
+      hashtag
+      trailer {
         id
-        title {
-          romaji
-        }
-        coverImage {
-          medium
-        }
-      `,
-      card: `
-        id
-        title {
-          romaji
-          english
-          native
-        }
-        coverImage {
-          large
-          medium
-        }
-        format
-        averageScore
-        status
-        genres
-        episodes
-        chapters
-      `,
-      full: `
-        id
-        title {
-          romaji
-          english
-          native
-        }
-        coverImage {
-          large
-          medium
-        }
-        episodes
-        chapters
-        genres
-        format
-        averageScore
-        status
-        startDate {
-          year
-          month
-          day
-        }
-        endDate {
-          year
-          month
-          day
-        }
-      `
-    };
-
-    const selectedMediaFields = mediaFields[layout] || mediaFields.card;
-
-    return `
-      query ($username: String, $mediaId: Int, $type: MediaType) {
-        MediaList(userName: $username, mediaId: $mediaId, type: $type) {
-          ${baseFields}
-          media {
-            ${selectedMediaFields}
+        site
+      }
+      tags(perPage: 25) {
+        name
+        rank
+        isMediaSpoiler
+        description
+      }
+      characters(page: 1, perPage: 12, sort: ROLE) {
+        edges {
+          role
+          node {
+            name {
+              full
+              native
+            }
+            image {
+              medium
+            }
           }
         }
       }
-    `;
-  }
+      staff(page: 1, perPage: 15) {
+        edges {
+          role
+          node {
+            name {
+              full
+              native
+            }
+            image {
+              medium
+            }
+          }
+        }
+      }
+      studios {
+        edges {
+          node {
+            name
+            isAnimationStudio
+          }
+        }
+      }
+      relations {
+        edges {
+          relationType
+          node {
+            id
+            title {
+              romaji
+              english
+            }
+            format
+            status
+          }
+        }
+      }
+      externalLinks {
+        site
+        url
+        type
+      }
+      stats {
+        scoreDistribution {
+          score
+          amount
+        }
+        statusDistribution {
+          status
+          amount
+        }
+      }
+      coverImage {
+        large
+        medium
+      }
+    `
+  };
+
+  const selectedMediaFields = mediaFields[layout] || mediaFields.card;
+
+  return `
+    query ($username: String, $mediaId: Int, $type: MediaType) {
+      MediaList(userName: $username, mediaId: $mediaId, type: $type) {
+        ${baseFields}
+        media {
+          ${selectedMediaFields}
+        }
+      }
+    }
+  `;
+}
 
   getUserStatsQuery({ mediaType = 'ANIME', layout = 'card', useViewer = false } = {}) {
     const typeKey = mediaType.toLowerCase(); // 'anime' or 'manga'
@@ -604,114 +721,9 @@ class Api {
     return `https://anilist.co/${urlType}/${mediaId}`;
   }
   
-// In your API class
-getDetailedMediaQuery() {
-  return `
-    query ($id: Int) {
-      Media(id: $id) {
-        id
-        title {
-          romaji
-          english
-          native
-        }
-        description
-        format
-        status
-        episodes
-        chapters
-        volumes
-        duration
-        season
-        seasonYear
-        startDate {
-          year
-          month
-          day
-        }
-        endDate {
-          year
-          month
-          day
-        }
-        averageScore
-        meanScore
-        popularity
-        favourites
-        trending
-        source
-        isAdult
-        siteUrl
-        genres
-        synonyms
-        hashtag
-        trailer {
-          id
-          site
-        }
-        tags(perPage: 20) {
-          name
-          rank
-          isMediaSpoiler
-        }
-        characters(page: 1, perPage: 10, sort: ROLE) {
-          edges {
-            role
-            node {
-              name {
-                full
-              }
-              image {
-                medium
-              }
-            }
-          }
-        }
-        staff(page: 1, perPage: 12) {
-          edges {
-            role
-            node {
-              name {
-                full
-              }
-            }
-          }
-        }
-        studios {
-          edges {
-            node {
-              name
-            }
-          }
-        }
-        relations {
-          edges {
-            relationType
-            node {
-              title {
-                romaji
-                english
-              }
-              format
-            }
-          }
-        }
-        externalLinks {
-          site
-          url
-        }
-      }
-    }
-  `;
 }
 
-// Add this method if it doesn't exist
-async getDetailedMedia(mediaId) {
-  const query = this.getDetailedMediaQuery();
-  const variables = { id: mediaId };
-  return await this.request(query, variables);
-}
-}
+
 // Plugin
 class ZoroPlugin extends Plugin {
   constructor(app, manifest) {
@@ -2131,7 +2143,7 @@ class MoreDetailsPanel {
     document.body.appendChild(loadingPanel);
 
     try {
-      // Fetch detailed media data
+      // Fetch detailed media data - FIXED: Use the correct API method
       const detailedMedia = await this.fetchDetailedMediaData(media.id);
       
       // Replace loading panel with actual content
@@ -2157,10 +2169,159 @@ class MoreDetailsPanel {
       this.positionPanel(panel, triggerElement);
       document.body.appendChild(panel);
 
+      
+
       setTimeout(() => {
         document.addEventListener('click', this.handleOutsideClick.bind(this));
       }, 100);
     }
+  }
+
+  // FIXED: Proper API call implementation
+  async fetchDetailedMediaData(mediaId) {
+  try {
+    // Create config object for fetchZoroData
+    const config = {
+      type: 'single',
+      username: null, // Not needed for single media queries
+      mediaId: mediaId,
+      mediaType: 'ANIME', // You might want to determine this dynamically
+      nocache: false
+    };
+    
+    // Use fetchZoroData with proper config
+    const data = await this.plugin.fetchZoroData(config);
+    
+    if (data && data.Media) {
+      return data.Media;
+    } else {
+      throw new Error('Invalid response structure');
+    }
+  } catch (error) {
+    console.error('Error fetching detailed media:', error);
+    throw error;
+  }
+}
+
+  // FIXED: Include the query method in this class for better encapsulation
+  getDetailedMediaQuery() {
+    return `
+      query ($id: Int) {
+        Media(id: $id) {
+          id
+          title {
+            romaji
+            english
+            native
+          }
+          description(asHtml: false)
+          format
+          status
+          episodes
+          chapters
+          volumes
+          duration
+          season
+          seasonYear
+          startDate {
+            year
+            month
+            day
+          }
+          endDate {
+            year
+            month
+            day
+          }
+          averageScore
+          meanScore
+          popularity
+          favourites
+          trending
+          source
+          isAdult
+          siteUrl
+          genres
+          synonyms
+          hashtag
+          trailer {
+            id
+            site
+          }
+          tags(perPage: 25) {
+            name
+            rank
+            isMediaSpoiler
+            description
+          }
+          characters(page: 1, perPage: 12, sort: ROLE) {
+            edges {
+              role
+              node {
+                name {
+                  full
+                  native
+                }
+                image {
+                  medium
+                }
+              }
+            }
+          }
+          staff(page: 1, perPage: 15) {
+            edges {
+              role
+              node {
+                name {
+                  full
+                  native
+                }
+                image {
+                  medium
+                }
+              }
+            }
+          }
+          studios {
+            edges {
+              node {
+                name
+                isAnimationStudio
+              }
+            }
+          }
+          relations {
+            edges {
+              relationType
+              node {
+                id
+                title {
+                  romaji
+                  english
+                }
+                format
+                status
+              }
+            }
+          }
+          externalLinks {
+            site
+            url
+            type
+          }
+          stats {
+            scoreDistribution {
+              score
+              amount
+            }
+            statusDistribution {
+              status
+              amount
+            }
+          }
+        }
+      }
+    `;
   }
 
   createPanel(media, entry) {
@@ -2174,7 +2335,7 @@ class MoreDetailsPanel {
     // Header section
     content.appendChild(this.createHeaderSection(media));
 
-    // Synopsis section - Enhanced with better fallback
+    // Synopsis section - FIXED: Better handling
     if (media.description) {
       content.appendChild(this.createSynopsisSection(media.description));
     }
@@ -2182,45 +2343,45 @@ class MoreDetailsPanel {
     // Metadata section
     content.appendChild(this.createMetadataSection(media, entry));
 
-    // Statistics section - Enhanced with better data handling
+    // Statistics section - FIXED: Better data handling
     content.appendChild(this.createStatisticsSection(media));
 
-    // Genres section - NEW: Display genres separately from tags
-    if (media.genres?.length) {
+    // Genres section
+    if (media.genres && media.genres.length > 0) {
       content.appendChild(this.createGenresSection(media.genres));
     }
 
-    // Tags section - Enhanced with better filtering
-    if (media.tags?.length) {
+    // Tags section - FIXED: Better filtering and display
+    if (media.tags && media.tags.length > 0) {
       content.appendChild(this.createTagsSection(media.tags));
     }
 
-    // Characters section (if available)
-    if (media.characters?.edges?.length) {
+    // Characters section
+    if (media.characters && media.characters.edges && media.characters.edges.length > 0) {
       content.appendChild(this.createCharactersSection(media.characters));
     }
 
-    // Staff section (if available)
-    if (media.staff?.edges?.length) {
+    // Staff section
+    if (media.staff && media.staff.edges && media.staff.edges.length > 0) {
       content.appendChild(this.createStaffSection(media.staff));
     }
 
     // Studios section (for anime)
-    if (media.studios?.edges?.length) {
+    if (media.studios && media.studios.edges && media.studios.edges.length > 0) {
       content.appendChild(this.createStudiosSection(media.studios));
     }
 
     // Relations section
-    if (media.relations?.edges?.length) {
+    if (media.relations && media.relations.edges && media.relations.edges.length > 0) {
       content.appendChild(this.createRelationsSection(media.relations));
     }
 
-    // External Links section - Enhanced
+    // External Links section
     if (media.externalLinks?.length || media.trailer || media.siteUrl) {
       content.appendChild(this.createLinksSection(media));
     }
 
-    // Additional Info section - NEW: Background and other info
+    // Additional Info section
     const additionalInfo = this.createAdditionalInfoSection(media);
     if (additionalInfo) {
       content.appendChild(additionalInfo);
@@ -2238,6 +2399,216 @@ class MoreDetailsPanel {
     return panel;
   }
 
+  // FIXED: Better synopsis handling
+  createSynopsisSection(description) {
+    const section = document.createElement('div');
+    section.className = 'panel-section synopsis-section';
+
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'Synopsis';
+    section.appendChild(title);
+
+    const synopsis = document.createElement('div');
+    synopsis.className = 'synopsis-content';
+    
+    // Clean HTML tags and format text better
+    let cleanDescription = description
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<i>/gi, '*').replace(/<\/i>/gi, '*')
+      .replace(/<b>/gi, '**').replace(/<\/b>/gi, '**')
+      .replace(/<[^>]*>/g, '')
+      .replace(/\n\s*\n/g, '\n\n')
+      .trim();
+    
+    // Handle very long descriptions
+    if (cleanDescription.length > 800) {
+      const shortDescription = cleanDescription.substring(0, 800) + '...';
+      synopsis.textContent = shortDescription;
+      
+      const expandButton = document.createElement('button');
+      expandButton.className = 'expand-synopsis-btn';
+      expandButton.textContent = 'Show More';
+      expandButton.onclick = () => {
+        if (synopsis.textContent.includes('...')) {
+          synopsis.textContent = cleanDescription;
+          expandButton.textContent = 'Show Less';
+        } else {
+          synopsis.textContent = shortDescription;
+          expandButton.textContent = 'Show More';
+        }
+      };
+      section.appendChild(expandButton);
+    } else {
+      synopsis.textContent = cleanDescription;
+    }
+    
+    section.appendChild(synopsis);
+    return section;
+  }
+
+  // FIXED: Better metadata handling with more robust value checking
+  createMetadataSection(media, entry) {
+    const section = document.createElement('div');
+    section.className = 'panel-section metadata-section';
+
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'Details';
+    section.appendChild(title);
+
+    const metaGrid = document.createElement('div');
+    metaGrid.className = 'metadata-grid';
+
+    // Status
+    if (media.status) {
+      this.addMetadataItem(metaGrid, 'Status', this.formatDisplayName(media.status));
+    }
+
+    // Episodes/Chapters/Volumes
+    if (media.episodes && media.episodes > 0) {
+      this.addMetadataItem(metaGrid, 'Episodes', media.episodes);
+    }
+    if (media.chapters && media.chapters > 0) {
+      this.addMetadataItem(metaGrid, 'Chapters', media.chapters);
+    }
+    if (media.volumes && media.volumes > 0) {
+      this.addMetadataItem(metaGrid, 'Volumes', media.volumes);
+    }
+
+    // Duration (for anime)
+    if (media.duration && media.duration > 0) {
+      this.addMetadataItem(metaGrid, 'Episode Duration', `${media.duration} min`);
+    }
+
+    // Start/End dates
+    if (media.startDate && media.startDate.year) {
+      const startDate = this.formatDate(media.startDate);
+      this.addMetadataItem(metaGrid, 'Start Date', startDate);
+    }
+    if (media.endDate && media.endDate.year) {
+      const endDate = this.formatDate(media.endDate);
+      this.addMetadataItem(metaGrid, 'End Date', endDate);
+    }
+
+    // Source
+    if (media.source) {
+      this.addMetadataItem(metaGrid, 'Source', this.formatDisplayName(media.source));
+    }
+
+    // Adult rating
+    if (media.isAdult === true) {
+      this.addMetadataItem(metaGrid, 'Rating', '18+');
+    }
+
+    // Synonyms (first few)
+    if (media.synonyms && media.synonyms.length > 0) {
+      const synonymsText = media.synonyms.slice(0, 3).join(', ');
+      this.addMetadataItem(metaGrid, 'Also Known As', synonymsText);
+    }
+
+    section.appendChild(metaGrid);
+    return section;
+  }
+
+  // FIXED: More robust statistics handling
+  createStatisticsSection(media) {
+    const section = document.createElement('div');
+    section.className = 'panel-section stats-section';
+
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'Statistics';
+    section.appendChild(title);
+
+    const statsGrid = document.createElement('div');
+    statsGrid.className = 'stats-grid';
+
+    // Average Score (Community Score)
+    if (media.averageScore && media.averageScore > 0) {
+      this.addStatItem(statsGrid, 'Community Score', `${media.averageScore}%`, 'score-stat');
+    }
+
+    // Mean Score (if different from average)
+    if (media.meanScore && media.meanScore > 0 && media.meanScore !== media.averageScore) {
+      this.addStatItem(statsGrid, 'Mean Score', `${media.meanScore}%`, 'score-stat');
+    }
+
+    // Popularity ranking
+    if (media.popularity && media.popularity > 0) {
+      this.addStatItem(statsGrid, 'Popularity Rank', `#${media.popularity}`, 'popularity-stat');
+    }
+
+    // Favorites count
+    if (media.favourites && media.favourites > 0) {
+      this.addStatItem(statsGrid, 'Favorites', media.favourites.toLocaleString(), 'favorites-stat');
+    }
+
+    // Trending ranking
+    if (media.trending && media.trending > 0) {
+      this.addStatItem(statsGrid, 'Trending Rank', `#${media.trending}`, 'trending-stat');
+    }
+
+    section.appendChild(statsGrid);
+    return section;
+  }
+
+  // Helper method to add error messages
+  addErrorMessage(panel, message) {
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'panel-error-message';
+    errorDiv.textContent = message;
+    errorDiv.style.cssText = `
+      background: #ff6b6b;
+      color: white;
+      padding: 8px 12px;
+      border-radius: 4px;
+      margin: 10px;
+      font-size: 12px;
+    `;
+    panel.appendChild(errorDiv);
+  }
+
+  // FIXED: More robust value checking
+  addMetadataItem(container, label, value) {
+    if (value === null || value === undefined || value === '' || value === 0) return;
+    
+    const item = document.createElement('div');
+    item.className = 'metadata-item';
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'metadata-label';
+    labelEl.textContent = label;
+
+    const valueEl = document.createElement('span');
+    valueEl.className = 'metadata-value';
+    valueEl.textContent = value;
+
+    item.appendChild(labelEl);
+    item.appendChild(valueEl);
+    container.appendChild(item);
+  }
+
+  addStatItem(container, label, value, className = '') {
+    if (value === null || value === undefined || value === '' || value === 0) return;
+    
+    const item = document.createElement('div');
+    item.className = `stat-item ${className}`;
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'stat-label';
+    labelEl.textContent = label;
+
+    const valueEl = document.createElement('span');
+    valueEl.className = 'stat-value';
+    valueEl.textContent = value;
+
+    item.appendChild(labelEl);
+    item.appendChild(valueEl);
+    container.appendChild(item);
+  }
+
+  // Rest of the methods remain the same...
   createHeaderSection(media) {
     const header = document.createElement('div');
     header.className = 'panel-header';
@@ -2290,136 +2661,6 @@ class MoreDetailsPanel {
     return header;
   }
 
-  createSynopsisSection(description) {
-    const section = document.createElement('div');
-    section.className = 'panel-section synopsis-section';
-
-    const title = document.createElement('h3');
-    title.className = 'section-title';
-    title.textContent = 'Synopsis';
-    section.appendChild(title);
-
-    const synopsis = document.createElement('div');
-    synopsis.className = 'synopsis-content';
-    
-    // Clean HTML tags and format text better
-    let cleanDescription = description
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<[^>]*>/g, '')
-      .replace(/\n\s*\n/g, '\n\n')
-      .trim();
-    
-    synopsis.textContent = cleanDescription;
-    section.appendChild(synopsis);
-
-    return section;
-  }
-
-  createMetadataSection(media, entry) {
-    const section = document.createElement('div');
-    section.className = 'panel-section metadata-section';
-
-    const title = document.createElement('h3');
-    title.className = 'section-title';
-    title.textContent = 'Details';
-    section.appendChild(title);
-
-    const metaGrid = document.createElement('div');
-    metaGrid.className = 'metadata-grid';
-
-    // Status
-    if (media.status) {
-      this.addMetadataItem(metaGrid, 'Status', this.formatDisplayName(media.status));
-    }
-
-    // Episodes/Chapters/Volumes
-    if (media.episodes) {
-      this.addMetadataItem(metaGrid, 'Episodes', media.episodes);
-    }
-    if (media.chapters) {
-      this.addMetadataItem(metaGrid, 'Chapters', media.chapters);
-    }
-    if (media.volumes) {
-      this.addMetadataItem(metaGrid, 'Volumes', media.volumes);
-    }
-
-    // Duration (for anime)
-    if (media.duration) {
-      this.addMetadataItem(metaGrid, 'Episode Duration', `${media.duration} min`);
-    }
-
-    // Start/End dates
-    if (media.startDate?.year) {
-      const startDate = this.formatDate(media.startDate);
-      this.addMetadataItem(metaGrid, 'Start Date', startDate);
-    }
-    if (media.endDate?.year) {
-      const endDate = this.formatDate(media.endDate);
-      this.addMetadataItem(metaGrid, 'End Date', endDate);
-    }
-
-    // Source
-    if (media.source) {
-      this.addMetadataItem(metaGrid, 'Source', this.formatDisplayName(media.source));
-    }
-
-    // Adult rating
-    if (media.isAdult) {
-      this.addMetadataItem(metaGrid, 'Rating', '18+');
-    }
-
-    // Synonyms
-    if (media.synonyms?.length) {
-      const synonymsText = media.synonyms.slice(0, 3).join(', ');
-      this.addMetadataItem(metaGrid, 'Also Known As', synonymsText);
-    }
-
-    section.appendChild(metaGrid);
-    return section;
-  }
-
-  createStatisticsSection(media) {
-    const section = document.createElement('div');
-    section.className = 'panel-section stats-section';
-
-    const title = document.createElement('h3');
-    title.className = 'section-title';
-    title.textContent = 'Statistics';
-    section.appendChild(title);
-
-    const statsGrid = document.createElement('div');
-    statsGrid.className = 'stats-grid';
-
-    // Average Score (Community Score)
-    if (media.averageScore) {
-      this.addStatItem(statsGrid, 'Community Score', `${media.averageScore}%`, 'score-stat');
-    }
-
-    // Mean Score (may be different from average)
-    if (media.meanScore && media.meanScore !== media.averageScore) {
-      this.addStatItem(statsGrid, 'Mean Score', `${media.meanScore}%`, 'score-stat');
-    }
-
-    // Popularity ranking
-    if (media.popularity) {
-      this.addStatItem(statsGrid, 'Popularity Rank', `#${media.popularity}`, 'popularity-stat');
-    }
-
-    // Favorites count
-    if (media.favourites) {
-      this.addStatItem(statsGrid, 'Favorites', media.favourites.toLocaleString(), 'favorites-stat');
-    }
-
-    // Trending ranking
-    if (media.trending) {
-      this.addStatItem(statsGrid, 'Trending Rank', `#${media.trending}`, 'trending-stat');
-    }
-
-    section.appendChild(statsGrid);
-    return section;
-  }
-
-  // NEW: Separate genres section
   createGenresSection(genres) {
     const section = document.createElement('div');
     section.className = 'panel-section genres-section';
@@ -2471,6 +2712,9 @@ class MoreDetailsPanel {
       const tagElement = document.createElement('span');
       tagElement.className = 'detail-tag';
       tagElement.textContent = tag.name;
+      if (tag.description) {
+        tagElement.title = tag.description;
+      }
       tagsContainer.appendChild(tagElement);
     });
 
@@ -2713,9 +2957,8 @@ class MoreDetailsPanel {
     return section;
   }
 
-  // NEW: Additional info section for background, hashtags, etc.
   createAdditionalInfoSection(media) {
-    const hasAdditionalInfo = media.hashtag || media.synonyms?.length > 3;
+    const hasAdditionalInfo = media.hashtag || (media.synonyms && media.synonyms.length > 3);
     
     if (!hasAdditionalInfo) return null;
 
@@ -2749,7 +2992,7 @@ class MoreDetailsPanel {
     }
 
     // All synonyms if there are many
-    if (media.synonyms?.length > 3) {
+    if (media.synonyms && media.synonyms.length > 3) {
       const synonymsItem = document.createElement('div');
       synonymsItem.className = 'info-item';
       
@@ -2776,13 +3019,6 @@ class MoreDetailsPanel {
     return section;
   }
 
-  // Helper methods
-  async fetchDetailedMediaData(mediaId) {
-    // Use the API class method instead of defining the query here
-    const response = await this.plugin.api.getDetailedMedia(mediaId);
-    return response.data.Media;
-  }
-
   createLoadingPanel() {
     const panel = document.createElement('div');
     panel.className = 'zoro-more-details-panel loading-panel';
@@ -2798,44 +3034,6 @@ class MoreDetailsPanel {
     panel.appendChild(content);
 
     return panel;
-  }
-
-  addMetadataItem(container, label, value) {
-    if (!value) return; // Skip empty values
-    
-    const item = document.createElement('div');
-    item.className = 'metadata-item';
-
-    const labelEl = document.createElement('span');
-    labelEl.className = 'metadata-label';
-    labelEl.textContent = label;
-
-    const valueEl = document.createElement('span');
-    valueEl.className = 'metadata-value';
-    valueEl.textContent = value;
-
-    item.appendChild(labelEl);
-    item.appendChild(valueEl);
-    container.appendChild(item);
-  }
-
-  addStatItem(container, label, value, className = '') {
-    if (!value) return; // Skip empty values
-    
-    const item = document.createElement('div');
-    item.className = `stat-item ${className}`;
-
-    const labelEl = document.createElement('span');
-    labelEl.className = 'stat-label';
-    labelEl.textContent = label;
-
-    const valueEl = document.createElement('span');
-    valueEl.className = 'stat-value';
-    valueEl.textContent = value;
-
-    item.appendChild(labelEl);
-    item.appendChild(valueEl);
-    container.appendChild(item);
   }
 
   formatDate(dateObj) {

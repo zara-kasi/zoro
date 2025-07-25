@@ -2452,13 +2452,16 @@ sections.push(this.createExternalLinksSection(media));
 
   // AniList score
   if (media.averageScore > 0) {
-    this.addStatItem(statsGrid, 'AniList Score', `${media.averageScore}%`, 'score-stat anilist-stat');
+     const scoreOutOf10 = (media.averageScore / 10).toFixed(1);
+    this.addStatItem(statsGrid, 'AniList Score', `${scoreOutOf10}`, 'score-stat anilist-stat');
   }
+
+
 
   // MAL statistics
   if (malData) {
     if (malData.score) {
-      this.addStatItem(statsGrid, 'MAL Score', `${malData.score}/10`, 'score-stat mal-stat');
+      this.addStatItem(statsGrid, 'MAL Score', `${malData.score}`, 'score-stat mal-stat');
     }
     
     if (malData.scored_by) {

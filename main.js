@@ -1772,6 +1772,11 @@ createMediaCard(data, config, options = {}) {
 
   // Cover Image (shared) - now press and hold for more details
   if (this.plugin.settings.showCoverImages && media.coverImage?.large) {
+    const coverContainer = document.createElement('div');
+    coverContainer.className = 'cover-container';
+    coverContainer.style.position = 'relative';
+    coverContainer.style.display = 'inline-block';
+    
     const img = document.createElement('img');
     img.src = media.coverImage.large;
     img.alt = media.title.english || media.title.romaji;
@@ -1780,17 +1785,19 @@ createMediaCard(data, config, options = {}) {
     
     let pressTimer = null;
     let isPressed = false;
-    const pressHoldDuration = 400; // 500ms hold time
+    const pressHoldDuration = 500; // 500ms hold time
     
     // Mouse events
     img.onmousedown = (e) => {
       e.preventDefault();
+      e.stopPropagation();
       isPressed = true;
       img.style.opacity = '0.7';
       
       pressTimer = setTimeout(() => {
         if (isPressed) {
           this.plugin.moreDetailsPanel.showPanel(media, entry, img);
+          // Reset opacity immediately when panel opens
           img.style.opacity = '1';
           isPressed = false;
         }
@@ -1802,40 +1809,120 @@ createMediaCard(data, config, options = {}) {
         clearTimeout(pressTimer);
         pressTimer = null;
       }
+      // Always reset opacity
       img.style.opacity = '1';
       isPressed = false;
     };
     
-    // Touch events for mobile
-    img.ontouchstart = (e) => {
+    // Prevent any click events on the image
+    img.onclick = (e) => {
       e.preventDefault();
+      e.stopPropagation();
+      return false;
+    };
+    
+    // Prevent context menu
+    img.oncontextmenu = (e) => {
+      e.preventDefault();
+      return false;
+    };
+    
+    // Prevent drag
+    img.ondragstart = (e) => {
+      e.preventDefault();
+      return false;
+    };
+    
+    // Touch events for mobile - modified to not interfere with scrolling
+    img.ontouchstart = (e) => {
+      // Don't prevent default to allow scrolling
       isPressed = true;
       img.style.opacity = '0.7';
       
       pressTimer = setTimeout(() => {
         if (isPressed) {
+          e.preventDefault(); // Only prevent default when actually opening panel
           this.plugin.moreDetailsPanel.showPanel(media, entry, img);
+          // Reset opacity immediately when panel opens
           img.style.opacity = '1';
           isPressed = false;
         }
       }, pressHoldDuration);
     };
     
-    img.ontouchend = img.ontouchcancel = (e) => {
+    img.ontouchend = img.ontouchcancel = img.ontouchmove = (e) => {
       if (pressTimer) {
         clearTimeout(pressTimer);
         pressTimer = null;
       }
+      // Always reset opacity
       img.style.opacity = '1';
       isPressed = false;
     };
+    
+    // Additional CSS properties to prevent image popup
+    img.style.userSelect = 'none';
+    img.style.webkitUserSelect = 'none';
+    img.style.mozUserSelect = 'none';
+    img.style.msUserSelect = 'none';
+    img.style.webkitTouchCallout = 'none';
+    img.style.webkitUserDrag = 'none';
+    img.style.webkitTapHighlightColor = 'transparent';
     
     // Add visual feedback for press and hold
     img.style.cursor = 'pointer';
     img.title = 'Press and hold for more details';
     img.style.transition = 'opacity 0.1s ease';
     
-    card.appendChild(img);
+    coverContainer.appendChild(img);
+    
+    // Create overlay for progress and rating on cover (keeping original design)
+    const needsOverlay = (!isSearch && entry && this.plugin.settings.showProgress) || 
+                        (this.plugin.settings.showRatings && ((isSearch && media.averageScore != null) || (!isSearch && entry?.score != null)));
+                        
+    if (needsOverlay) {
+      const overlay = document.createElement('div');
+      overlay.className = 'cover-overlay';
+      overlay.style.position = 'absolute';
+      overlay.style.bottom = '4px'; // Small margin from bottom edge
+      overlay.style.left = '4px';   // Small margin from left edge
+      overlay.style.right = '4px';  // Small margin from right edge
+      overlay.style.padding = '4px 6px';
+      overlay.style.display = 'flex';
+      overlay.style.justifyContent = 'space-between';
+      overlay.style.alignItems = 'center';
+      overlay.style.pointerEvents = 'none'; // Allow clicks to pass through to image
+      
+      // Progress (left side, only for list entries) - keeping original design
+      if (!isSearch && entry && this.plugin.settings.showProgress) {
+        const progress = document.createElement('span');
+        progress.className = 'progress'; // Same class as original
+        const total = media.episodes || media.chapters || '?';
+        progress.textContent = `${entry.progress || 0}/${total}`;
+        overlay.appendChild(progress);
+      } else {
+        // Empty span to maintain spacing
+        overlay.appendChild(document.createElement('span'));
+      }
+      
+      // Rating (right side) - keeping original design
+      if (this.plugin.settings.showRatings) {
+        const score = isSearch ? media.averageScore : entry?.score;
+        if (score != null) {
+          const rating = document.createElement('span');
+          rating.className = 'score'; // Same class as original
+          rating.textContent = `★ ${score}`;
+          overlay.appendChild(rating);
+        } else {
+          // Empty span to maintain spacing
+          overlay.appendChild(document.createElement('span'));
+        }
+      }
+      
+      coverContainer.appendChild(overlay);
+    }
+    
+    card.appendChild(coverContainer);
   }
 
   const info = document.createElement('div');
@@ -1872,25 +1959,8 @@ createMediaCard(data, config, options = {}) {
       details.appendChild(statusBadge);
     }
 
-    // Progress (only for list entries)
-    if (!isSearch && entry && this.plugin.settings.showProgress) {
-      const progress = document.createElement('span');
-      progress.className = 'progress';
-      const total = media.episodes || media.chapters || '?';
-      progress.textContent = `${entry.progress || 0}/${total}`;
-      details.appendChild(progress);
-    }
-
-    // Rating (shared)
-    if (this.plugin.settings.showRatings) {
-      const score = isSearch ? media.averageScore : entry?.score;
-      if (score != null) {
-        const rating = document.createElement('span');
-        rating.className = 'score';
-        rating.textContent = `★ ${score}`;
-        details.appendChild(rating);
-      }
-    }
+    // Progress (only for list entries) - moved to cover overlay
+    // Rating (shared) - moved to cover overlay
 
     // Search-specific add button
     if (isSearch) {

@@ -603,6 +603,114 @@ class Api {
 
     return `https://anilist.co/${urlType}/${mediaId}`;
   }
+  
+// In your API class
+getDetailedMediaQuery() {
+  return `
+    query ($id: Int) {
+      Media(id: $id) {
+        id
+        title {
+          romaji
+          english
+          native
+        }
+        description
+        format
+        status
+        episodes
+        chapters
+        volumes
+        duration
+        season
+        seasonYear
+        startDate {
+          year
+          month
+          day
+        }
+        endDate {
+          year
+          month
+          day
+        }
+        averageScore
+        meanScore
+        popularity
+        favourites
+        trending
+        source
+        isAdult
+        siteUrl
+        genres
+        synonyms
+        hashtag
+        trailer {
+          id
+          site
+        }
+        tags(perPage: 20) {
+          name
+          rank
+          isMediaSpoiler
+        }
+        characters(page: 1, perPage: 10, sort: ROLE) {
+          edges {
+            role
+            node {
+              name {
+                full
+              }
+              image {
+                medium
+              }
+            }
+          }
+        }
+        staff(page: 1, perPage: 12) {
+          edges {
+            role
+            node {
+              name {
+                full
+              }
+            }
+          }
+        }
+        studios {
+          edges {
+            node {
+              name
+            }
+          }
+        }
+        relations {
+          edges {
+            relationType
+            node {
+              title {
+                romaji
+                english
+              }
+              format
+            }
+          }
+        }
+        externalLinks {
+          site
+          url
+        }
+      }
+    }
+  `;
+}
+
+// Add this method if it doesn't exist
+async getDetailedMedia(mediaId) {
+  const query = this.getDetailedMediaQuery();
+  const variables = { id: mediaId };
+  return await this.request(query, variables);
+}
 }
 // Plugin
 class ZoroPlugin extends Plugin {
@@ -627,6 +735,7 @@ class ZoroPlugin extends Plugin {
     this.theme = new Theme(this);
     this.processor = new Processor(this);
     this.edit = new Edit(this);
+    this.moreDetailsPanel = new MoreDetailsPanel(this);
     this.export = new Export(this);
     this.sample = new Sample(this);
     this.prompt = new Prompt(this);
@@ -1661,13 +1770,71 @@ createMediaCard(data, config, options = {}) {
   const card = document.createElement('div');
   card.className = `zoro-card ${isCompact ? 'compact' : ''}`;
 
-  // Cover Image (shared)
+  // Cover Image (shared) - now press and hold for more details
   if (this.plugin.settings.showCoverImages && media.coverImage?.large) {
     const img = document.createElement('img');
     img.src = media.coverImage.large;
     img.alt = media.title.english || media.title.romaji;
-    img.className = 'media-cover';
+    img.className = 'media-cover pressable-cover';
     img.loading = 'lazy'; // Performance boost
+    
+    let pressTimer = null;
+    let isPressed = false;
+    const pressHoldDuration = 500; // 500ms hold time
+    
+    // Mouse events
+    img.onmousedown = (e) => {
+      e.preventDefault();
+      isPressed = true;
+      img.style.opacity = '0.7';
+      
+      pressTimer = setTimeout(() => {
+        if (isPressed) {
+          this.plugin.moreDetailsPanel.showPanel(media, entry, img);
+          img.style.opacity = '1';
+          isPressed = false;
+        }
+      }, pressHoldDuration);
+    };
+    
+    img.onmouseup = img.onmouseleave = (e) => {
+      if (pressTimer) {
+        clearTimeout(pressTimer);
+        pressTimer = null;
+      }
+      img.style.opacity = '1';
+      isPressed = false;
+    };
+    
+    // Touch events for mobile
+    img.ontouchstart = (e) => {
+      e.preventDefault();
+      isPressed = true;
+      img.style.opacity = '0.7';
+      
+      pressTimer = setTimeout(() => {
+        if (isPressed) {
+          this.plugin.moreDetailsPanel.showPanel(media, entry, img);
+          img.style.opacity = '1';
+          isPressed = false;
+        }
+      }, pressHoldDuration);
+    };
+    
+    img.ontouchend = img.ontouchcancel = (e) => {
+      if (pressTimer) {
+        clearTimeout(pressTimer);
+        pressTimer = null;
+      }
+      img.style.opacity = '1';
+      isPressed = false;
+    };
+    
+    // Add visual feedback for press and hold
+    img.style.cursor = 'pointer';
+    img.title = 'Press and hold for more details';
+    img.style.transition = 'opacity 0.1s ease';
+    
     card.appendChild(img);
   }
 
@@ -1731,42 +1898,42 @@ createMediaCard(data, config, options = {}) {
       addBtn.className = 'status-badge status-add clickable-status';
       addBtn.textContent = 'ADD';
       addBtn.onclick = (e) => {
-  e.preventDefault();
-  e.stopPropagation();
+        e.preventDefault();
+        e.stopPropagation();
 
-  if (!this.plugin.settings.accessToken) {
-    this.plugin.prompt.createAuthenticationPrompt();
-    return;
-  }
-
-  // Use a consistent entry structure (no fake entry needed)
-  const entryData = {
-    media: media,
-    status: 'PLANNING', // Default starting status
-    progress: 0,
-    score: null,
-    id: null // Indicates this is a new entry
-  };
-
-  this.plugin.edit.createEditModal(
-    entryData,
-    async (updates) => {
-      // Use the same update method for both add and edit
-      await this.plugin.api.updateMediaListEntry(media.id, updates);
-      new Notice('✅ Added!');
-      
-      // Refresh any visible lists
-      const containers = document.querySelectorAll('.zoro-container');
-      containers.forEach(container => {
-        const block = container.closest('.markdown-rendered')?.querySelector('code');
-        if (block) {
-          this.plugin.processor.processZoroCodeBlock(block.textContent, container, {});
+        if (!this.plugin.settings.accessToken) {
+          this.plugin.prompt.createAuthenticationPrompt();
+          return;
         }
-      });
-    },
-    () => {} // onCancel - do nothing
-  );
-};
+
+        // Use a consistent entry structure (no fake entry needed)
+        const entryData = {
+          media: media,
+          status: 'PLANNING', // Default starting status
+          progress: 0,
+          score: null,
+          id: null // Indicates this is a new entry
+        };
+
+        this.plugin.edit.createEditModal(
+          entryData,
+          async (updates) => {
+            // Use the same update method for both add and edit
+            await this.plugin.api.updateMediaListEntry(media.id, updates);
+            new Notice('✅ Added!');
+            
+            // Refresh any visible lists
+            const containers = document.querySelectorAll('.zoro-container');
+            containers.forEach(container => {
+              const block = container.closest('.markdown-rendered')?.querySelector('code');
+              if (block) {
+                this.plugin.processor.processZoroCodeBlock(block.textContent, container, {});
+              }
+            });
+          },
+          () => {} // onCancel - do nothing
+        );
+      };
       details.appendChild(addBtn);
     }
 
@@ -1785,6 +1952,8 @@ createMediaCard(data, config, options = {}) {
     });
     info.appendChild(genres);
   }
+
+  // Removed the separate "More" button since cover image now handles this functionality
 
   card.appendChild(info);
   return card;
@@ -1847,6 +2016,789 @@ handleAddClick(e, media, config) {
   clear(el) { el.empty?.(); }
 }
 
+class MoreDetailsPanel {
+  constructor(plugin) {
+    this.plugin = plugin;
+    this.currentPanel = null;
+  }
+
+  /**
+   * Creates and shows the detailed panel for a media item
+   * @param {Object} media - The media object from AniList
+   * @param {Object} entry - The list entry (null for search results)
+   * @param {HTMLElement} triggerElement - The element that triggered the panel
+   */
+  async showPanel(media, entry = null, triggerElement) {
+    // Close any existing panel first
+    this.closePanel();
+
+    // Show loading panel first
+    const loadingPanel = this.createLoadingPanel();
+    this.currentPanel = loadingPanel;
+    this.positionPanel(loadingPanel, triggerElement);
+    document.body.appendChild(loadingPanel);
+
+    try {
+      // Fetch detailed media data
+      const detailedMedia = await this.fetchDetailedMediaData(media.id);
+      
+      // Replace loading panel with actual content
+      loadingPanel.remove();
+      
+      const panel = this.createPanel(detailedMedia, entry);
+      this.currentPanel = panel;
+      this.positionPanel(panel, triggerElement);
+      document.body.appendChild(panel);
+
+      // Add click-outside-to-close functionality
+      setTimeout(() => {
+        document.addEventListener('click', this.handleOutsideClick.bind(this));
+      }, 100);
+
+    } catch (error) {
+      console.error('Failed to fetch detailed media data:', error);
+      
+      // Fallback: show panel with available data
+      loadingPanel.remove();
+      const panel = this.createPanel(media, entry);
+      this.currentPanel = panel;
+      this.positionPanel(panel, triggerElement);
+      document.body.appendChild(panel);
+
+      setTimeout(() => {
+        document.addEventListener('click', this.handleOutsideClick.bind(this));
+      }, 100);
+    }
+  }
+
+  createPanel(media, entry) {
+    const panel = document.createElement('div');
+    panel.className = 'zoro-more-details-panel';
+
+    // Create scrollable content container
+    const content = document.createElement('div');
+    content.className = 'panel-content';
+
+    // Header section
+    content.appendChild(this.createHeaderSection(media));
+
+    // Synopsis section - Enhanced with better fallback
+    if (media.description) {
+      content.appendChild(this.createSynopsisSection(media.description));
+    }
+
+    // Metadata section
+    content.appendChild(this.createMetadataSection(media, entry));
+
+    // Statistics section - Enhanced with better data handling
+    content.appendChild(this.createStatisticsSection(media));
+
+    // Genres section - NEW: Display genres separately from tags
+    if (media.genres?.length) {
+      content.appendChild(this.createGenresSection(media.genres));
+    }
+
+    // Tags section - Enhanced with better filtering
+    if (media.tags?.length) {
+      content.appendChild(this.createTagsSection(media.tags));
+    }
+
+    // Characters section (if available)
+    if (media.characters?.edges?.length) {
+      content.appendChild(this.createCharactersSection(media.characters));
+    }
+
+    // Staff section (if available)
+    if (media.staff?.edges?.length) {
+      content.appendChild(this.createStaffSection(media.staff));
+    }
+
+    // Studios section (for anime)
+    if (media.studios?.edges?.length) {
+      content.appendChild(this.createStudiosSection(media.studios));
+    }
+
+    // Relations section
+    if (media.relations?.edges?.length) {
+      content.appendChild(this.createRelationsSection(media.relations));
+    }
+
+    // External Links section - Enhanced
+    if (media.externalLinks?.length || media.trailer || media.siteUrl) {
+      content.appendChild(this.createLinksSection(media));
+    }
+
+    // Additional Info section - NEW: Background and other info
+    const additionalInfo = this.createAdditionalInfoSection(media);
+    if (additionalInfo) {
+      content.appendChild(additionalInfo);
+    }
+
+    // Close button
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'panel-close-btn';
+    closeBtn.innerHTML = '×';
+    closeBtn.onclick = () => this.closePanel();
+
+    panel.appendChild(closeBtn);
+    panel.appendChild(content);
+
+    return panel;
+  }
+
+  createHeaderSection(media) {
+    const header = document.createElement('div');
+    header.className = 'panel-header';
+
+    // Title section
+    const titleSection = document.createElement('div');
+    titleSection.className = 'title-section';
+    
+    const mainTitle = document.createElement('h2');
+    mainTitle.className = 'main-title';
+    mainTitle.textContent = media.title?.english || media.title?.romaji || 'Unknown Title';
+    titleSection.appendChild(mainTitle);
+
+    // Alternative titles
+    if (media.title?.romaji && media.title?.english && media.title.romaji !== media.title.english) {
+      const altTitle = document.createElement('div');
+      altTitle.className = 'alt-title';
+      altTitle.textContent = media.title.romaji;
+      titleSection.appendChild(altTitle);
+    }
+
+    if (media.title?.native) {
+      const nativeTitle = document.createElement('div');
+      nativeTitle.className = 'native-title';
+      nativeTitle.textContent = media.title.native;
+      titleSection.appendChild(nativeTitle);
+    }
+
+    header.appendChild(titleSection);
+
+    // Format and season info
+    const formatInfo = document.createElement('div');
+    formatInfo.className = 'format-info';
+    
+    if (media.format) {
+      const format = document.createElement('span');
+      format.className = 'format-badge-large';
+      format.textContent = this.formatDisplayName(media.format);
+      formatInfo.appendChild(format);
+    }
+
+    if (media.season && media.seasonYear) {
+      const season = document.createElement('span');
+      season.className = 'season-info';
+      season.textContent = `${this.capitalize(media.season)} ${media.seasonYear}`;
+      formatInfo.appendChild(season);
+    }
+
+    header.appendChild(formatInfo);
+    return header;
+  }
+
+  createSynopsisSection(description) {
+    const section = document.createElement('div');
+    section.className = 'panel-section synopsis-section';
+
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'Synopsis';
+    section.appendChild(title);
+
+    const synopsis = document.createElement('div');
+    synopsis.className = 'synopsis-content';
+    
+    // Clean HTML tags and format text better
+    let cleanDescription = description
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]*>/g, '')
+      .replace(/\n\s*\n/g, '\n\n')
+      .trim();
+    
+    synopsis.textContent = cleanDescription;
+    section.appendChild(synopsis);
+
+    return section;
+  }
+
+  createMetadataSection(media, entry) {
+    const section = document.createElement('div');
+    section.className = 'panel-section metadata-section';
+
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'Details';
+    section.appendChild(title);
+
+    const metaGrid = document.createElement('div');
+    metaGrid.className = 'metadata-grid';
+
+    // Status
+    if (media.status) {
+      this.addMetadataItem(metaGrid, 'Status', this.formatDisplayName(media.status));
+    }
+
+    // Episodes/Chapters/Volumes
+    if (media.episodes) {
+      this.addMetadataItem(metaGrid, 'Episodes', media.episodes);
+    }
+    if (media.chapters) {
+      this.addMetadataItem(metaGrid, 'Chapters', media.chapters);
+    }
+    if (media.volumes) {
+      this.addMetadataItem(metaGrid, 'Volumes', media.volumes);
+    }
+
+    // Duration (for anime)
+    if (media.duration) {
+      this.addMetadataItem(metaGrid, 'Episode Duration', `${media.duration} min`);
+    }
+
+    // Start/End dates
+    if (media.startDate?.year) {
+      const startDate = this.formatDate(media.startDate);
+      this.addMetadataItem(metaGrid, 'Start Date', startDate);
+    }
+    if (media.endDate?.year) {
+      const endDate = this.formatDate(media.endDate);
+      this.addMetadataItem(metaGrid, 'End Date', endDate);
+    }
+
+    // Source
+    if (media.source) {
+      this.addMetadataItem(metaGrid, 'Source', this.formatDisplayName(media.source));
+    }
+
+    // Adult rating
+    if (media.isAdult) {
+      this.addMetadataItem(metaGrid, 'Rating', '18+');
+    }
+
+    // Synonyms
+    if (media.synonyms?.length) {
+      const synonymsText = media.synonyms.slice(0, 3).join(', ');
+      this.addMetadataItem(metaGrid, 'Also Known As', synonymsText);
+    }
+
+    section.appendChild(metaGrid);
+    return section;
+  }
+
+  createStatisticsSection(media) {
+    const section = document.createElement('div');
+    section.className = 'panel-section stats-section';
+
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'Statistics';
+    section.appendChild(title);
+
+    const statsGrid = document.createElement('div');
+    statsGrid.className = 'stats-grid';
+
+    // Average Score (Community Score)
+    if (media.averageScore) {
+      this.addStatItem(statsGrid, 'Community Score', `${media.averageScore}%`, 'score-stat');
+    }
+
+    // Mean Score (may be different from average)
+    if (media.meanScore && media.meanScore !== media.averageScore) {
+      this.addStatItem(statsGrid, 'Mean Score', `${media.meanScore}%`, 'score-stat');
+    }
+
+    // Popularity ranking
+    if (media.popularity) {
+      this.addStatItem(statsGrid, 'Popularity Rank', `#${media.popularity}`, 'popularity-stat');
+    }
+
+    // Favorites count
+    if (media.favourites) {
+      this.addStatItem(statsGrid, 'Favorites', media.favourites.toLocaleString(), 'favorites-stat');
+    }
+
+    // Trending ranking
+    if (media.trending) {
+      this.addStatItem(statsGrid, 'Trending Rank', `#${media.trending}`, 'trending-stat');
+    }
+
+    section.appendChild(statsGrid);
+    return section;
+  }
+
+  // NEW: Separate genres section
+  createGenresSection(genres) {
+    const section = document.createElement('div');
+    section.className = 'panel-section genres-section';
+
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'Genres';
+    section.appendChild(title);
+
+    const genresContainer = document.createElement('div');
+    genresContainer.className = 'genres-container';
+
+    genres.forEach(genre => {
+      const genreElement = document.createElement('span');
+      genreElement.className = 'genre-tag';
+      genreElement.textContent = genre;
+      genresContainer.appendChild(genreElement);
+    });
+
+    section.appendChild(genresContainer);
+    return section;
+  }
+
+  createTagsSection(tags) {
+    const section = document.createElement('div');
+    section.className = 'panel-section tags-section';
+
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'Tags';
+    section.appendChild(title);
+
+    const tagsContainer = document.createElement('div');
+    tagsContainer.className = 'tags-container';
+
+    // Filter out spoiler tags by default, sort by rank
+    const visibleTags = tags
+      .filter(tag => !tag.isMediaSpoiler)
+      .sort((a, b) => (b.rank || 0) - (a.rank || 0))
+      .slice(0, 12);
+
+    const spoilerTags = tags
+      .filter(tag => tag.isMediaSpoiler)
+      .sort((a, b) => (b.rank || 0) - (a.rank || 0))
+      .slice(0, 3);
+
+    // Add visible tags
+    visibleTags.forEach(tag => {
+      const tagElement = document.createElement('span');
+      tagElement.className = 'detail-tag';
+      tagElement.textContent = tag.name;
+      tagsContainer.appendChild(tagElement);
+    });
+
+    // Add spoiler tags with special styling
+    spoilerTags.forEach(tag => {
+      const tagElement = document.createElement('span');
+      tagElement.className = 'detail-tag spoiler-tag';
+      tagElement.textContent = tag.name;
+      tagElement.title = 'Contains spoilers - click to reveal';
+      tagElement.onclick = () => {
+        tagElement.classList.toggle('revealed');
+      };
+      tagsContainer.appendChild(tagElement);
+    });
+
+    section.appendChild(tagsContainer);
+    return section;
+  }
+
+  createCharactersSection(characters) {
+    const section = document.createElement('div');
+    section.className = 'panel-section characters-section';
+
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'Main Characters';
+    section.appendChild(title);
+
+    const charactersGrid = document.createElement('div');
+    charactersGrid.className = 'characters-grid';
+
+    // Show main characters first, then supporting
+    const mainCharacters = characters.edges
+      .filter(edge => edge.role === 'MAIN')
+      .slice(0, 6);
+    
+    const supportingCharacters = characters.edges
+      .filter(edge => edge.role === 'SUPPORTING')
+      .slice(0, Math.max(0, 6 - mainCharacters.length));
+
+    const displayCharacters = [...mainCharacters, ...supportingCharacters];
+
+    displayCharacters.forEach(edge => {
+      const charCard = document.createElement('div');
+      charCard.className = 'character-card';
+
+      if (edge.node.image?.medium) {
+        const img = document.createElement('img');
+        img.src = edge.node.image.medium;
+        img.alt = edge.node.name?.full || 'Unknown Character';
+        img.className = 'character-image';
+        img.onerror = () => {
+          img.style.display = 'none';
+        };
+        charCard.appendChild(img);
+      }
+
+      const name = document.createElement('div');
+      name.className = 'character-name';
+      name.textContent = edge.node.name?.full || 'Unknown Character';
+      charCard.appendChild(name);
+
+      const role = document.createElement('div');
+      role.className = 'character-role';
+      role.textContent = this.capitalize(edge.role || '');
+      charCard.appendChild(role);
+
+      charactersGrid.appendChild(charCard);
+    });
+
+    section.appendChild(charactersGrid);
+    return section;
+  }
+
+  createStaffSection(staff) {
+    const section = document.createElement('div');
+    section.className = 'panel-section staff-section';
+
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'Staff';
+    section.appendChild(title);
+
+    const staffList = document.createElement('div');
+    staffList.className = 'staff-list';
+
+    // Show key staff, prioritize directors, writers, etc.
+    const priorityRoles = ['Director', 'Original Creator', 'Script', 'Character Design', 'Music'];
+    const keyStaff = staff.edges
+      .sort((a, b) => {
+        const aPriority = priorityRoles.indexOf(a.role) !== -1 ? priorityRoles.indexOf(a.role) : 999;
+        const bPriority = priorityRoles.indexOf(b.role) !== -1 ? priorityRoles.indexOf(b.role) : 999;
+        return aPriority - bPriority;
+      })
+      .slice(0, 8);
+
+    keyStaff.forEach(edge => {
+      const staffItem = document.createElement('div');
+      staffItem.className = 'staff-item';
+
+      const name = document.createElement('span');
+      name.className = 'staff-name';
+      name.textContent = edge.node.name?.full || 'Unknown Staff';
+
+      const role = document.createElement('span');
+      role.className = 'staff-role';
+      role.textContent = edge.role || 'Unknown Role';
+
+      staffItem.appendChild(name);
+      staffItem.appendChild(role);
+      staffList.appendChild(staffItem);
+    });
+
+    section.appendChild(staffList);
+    return section;
+  }
+
+  createStudiosSection(studios) {
+    const section = document.createElement('div');
+    section.className = 'panel-section studios-section';
+
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'Studios';
+    section.appendChild(title);
+
+    const studiosList = document.createElement('div');
+    studiosList.className = 'studios-list';
+
+    studios.edges.forEach(edge => {
+      const studio = document.createElement('span');
+      studio.className = 'studio-name';
+      studio.textContent = edge.node.name;
+      studiosList.appendChild(studio);
+    });
+
+    section.appendChild(studiosList);
+    return section;
+  }
+
+  createRelationsSection(relations) {
+    const section = document.createElement('div');
+    section.className = 'panel-section relations-section';
+
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'Related Media';
+    section.appendChild(title);
+
+    const relationsList = document.createElement('div');
+    relationsList.className = 'relations-list';
+
+    // Sort relations by importance
+    const relationOrder = ['PREQUEL', 'SEQUEL', 'PARENT', 'SIDE_STORY', 'ADAPTATION', 'SPIN_OFF', 'OTHER'];
+    const sortedRelations = relations.edges.sort((a, b) => {
+      const aIndex = relationOrder.indexOf(a.relationType) !== -1 ? relationOrder.indexOf(a.relationType) : 999;
+      const bIndex = relationOrder.indexOf(b.relationType) !== -1 ? relationOrder.indexOf(b.relationType) : 999;
+      return aIndex - bIndex;
+    });
+
+    sortedRelations.forEach(edge => {
+      const relation = document.createElement('div');
+      relation.className = 'relation-item';
+
+      const relationType = document.createElement('span');
+      relationType.className = 'relation-type';
+      relationType.textContent = this.formatDisplayName(edge.relationType);
+
+      const mediaTitle = document.createElement('span');
+      mediaTitle.className = 'relation-title';
+      mediaTitle.textContent = edge.node.title?.english || edge.node.title?.romaji || 'Unknown Title';
+
+      const mediaFormat = document.createElement('span');
+      mediaFormat.className = 'relation-format';
+      mediaFormat.textContent = edge.node.format ? `(${this.formatDisplayName(edge.node.format)})` : '';
+
+      relation.appendChild(relationType);
+      relation.appendChild(mediaTitle);
+      if (mediaFormat.textContent) {
+        relation.appendChild(mediaFormat);
+      }
+      relationsList.appendChild(relation);
+    });
+
+    section.appendChild(relationsList);
+    return section;
+  }
+
+  createLinksSection(media) {
+    const section = document.createElement('div');
+    section.className = 'panel-section links-section';
+
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'External Links';
+    section.appendChild(title);
+
+    const linksContainer = document.createElement('div');
+    linksContainer.className = 'links-container';
+
+    // AniList link (always available if siteUrl exists)
+    if (media.siteUrl) {
+      const anilistLink = document.createElement('a');
+      anilistLink.href = media.siteUrl;
+      anilistLink.target = '_blank';
+      anilistLink.className = 'external-link anilist-link';
+      anilistLink.textContent = 'View on AniList';
+      linksContainer.appendChild(anilistLink);
+    }
+
+    // Trailer
+    if (media.trailer?.id) {
+      const trailerLink = document.createElement('a');
+      if (media.trailer.site === 'youtube') {
+        trailerLink.href = `https://www.youtube.com/watch?v=${media.trailer.id}`;
+      } else if (media.trailer.site === 'dailymotion') {
+        trailerLink.href = `https://www.dailymotion.com/video/${media.trailer.id}`;
+      }
+      trailerLink.target = '_blank';
+      trailerLink.className = 'external-link trailer-link';
+      trailerLink.textContent = 'Watch Trailer';
+      linksContainer.appendChild(trailerLink);
+    }
+
+    // Other external links
+    if (media.externalLinks?.length) {
+      media.externalLinks.slice(0, 6).forEach(link => {
+        if (link.url && link.site) {
+          const extLink = document.createElement('a');
+          extLink.href = link.url;
+          extLink.target = '_blank';
+          extLink.className = 'external-link';
+          extLink.textContent = link.site;
+          linksContainer.appendChild(extLink);
+        }
+      });
+    }
+
+    section.appendChild(linksContainer);
+    return section;
+  }
+
+  // NEW: Additional info section for background, hashtags, etc.
+  createAdditionalInfoSection(media) {
+    const hasAdditionalInfo = media.hashtag || media.synonyms?.length > 3;
+    
+    if (!hasAdditionalInfo) return null;
+
+    const section = document.createElement('div');
+    section.className = 'panel-section additional-info-section';
+
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'Additional Information';
+    section.appendChild(title);
+
+    const infoContainer = document.createElement('div');
+    infoContainer.className = 'additional-info-container';
+
+    // Hashtag
+    if (media.hashtag) {
+      const hashtagItem = document.createElement('div');
+      hashtagItem.className = 'info-item';
+      
+      const hashtagLabel = document.createElement('span');
+      hashtagLabel.className = 'info-label';
+      hashtagLabel.textContent = 'Official Hashtag:';
+      
+      const hashtagValue = document.createElement('span');
+      hashtagValue.className = 'info-value hashtag';
+      hashtagValue.textContent = media.hashtag;
+      
+      hashtagItem.appendChild(hashtagLabel);
+      hashtagItem.appendChild(hashtagValue);
+      infoContainer.appendChild(hashtagItem);
+    }
+
+    // All synonyms if there are many
+    if (media.synonyms?.length > 3) {
+      const synonymsItem = document.createElement('div');
+      synonymsItem.className = 'info-item';
+      
+      const synonymsLabel = document.createElement('span');
+      synonymsLabel.className = 'info-label';
+      synonymsLabel.textContent = 'Alternative Titles:';
+      
+      const synonymsValue = document.createElement('div');
+      synonymsValue.className = 'info-value synonyms-list';
+      
+      media.synonyms.slice(0, 8).forEach(synonym => {
+        const synonymSpan = document.createElement('span');
+        synonymSpan.className = 'synonym';
+        synonymSpan.textContent = synonym;
+        synonymsValue.appendChild(synonymSpan);
+      });
+      
+      synonymsItem.appendChild(synonymsLabel);
+      synonymsItem.appendChild(synonymsValue);
+      infoContainer.appendChild(synonymsItem);
+    }
+
+    section.appendChild(infoContainer);
+    return section;
+  }
+
+  // Helper methods
+  async fetchDetailedMediaData(mediaId) {
+    // Use the API class method instead of defining the query here
+    const response = await this.plugin.api.getDetailedMedia(mediaId);
+    return response.data.Media;
+  }
+
+  createLoadingPanel() {
+    const panel = document.createElement('div');
+    panel.className = 'zoro-more-details-panel loading-panel';
+
+    const content = document.createElement('div');
+    content.className = 'panel-content loading-content';
+    
+    const spinner = document.createElement('div');
+    spinner.className = 'loading-spinner';
+    spinner.textContent = 'Loading detailed information...';
+    
+    content.appendChild(spinner);
+    panel.appendChild(content);
+
+    return panel;
+  }
+
+  addMetadataItem(container, label, value) {
+    if (!value) return; // Skip empty values
+    
+    const item = document.createElement('div');
+    item.className = 'metadata-item';
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'metadata-label';
+    labelEl.textContent = label;
+
+    const valueEl = document.createElement('span');
+    valueEl.className = 'metadata-value';
+    valueEl.textContent = value;
+
+    item.appendChild(labelEl);
+    item.appendChild(valueEl);
+    container.appendChild(item);
+  }
+
+  addStatItem(container, label, value, className = '') {
+    if (!value) return; // Skip empty values
+    
+    const item = document.createElement('div');
+    item.className = `stat-item ${className}`;
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'stat-label';
+    labelEl.textContent = label;
+
+    const valueEl = document.createElement('span');
+    valueEl.className = 'stat-value';
+    valueEl.textContent = value;
+
+    item.appendChild(labelEl);
+    item.appendChild(valueEl);
+    container.appendChild(item);
+  }
+
+  formatDate(dateObj) {
+    if (!dateObj?.year) return 'Unknown';
+    
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+                   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    
+    let result = '';
+    if (dateObj.month) result += months[dateObj.month - 1] + ' ';
+    if (dateObj.day) result += dateObj.day + ', ';
+    result += dateObj.year;
+    
+    return result;
+  }
+
+  formatDisplayName(str) {
+    if (!str) return '';
+    return str.replace(/_/g, ' ')
+              .split(' ')
+              .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+              .join(' ');
+  }
+
+  capitalize(str) {
+    if (!str) return '';
+    return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+  }
+
+  positionPanel(panel, triggerElement) {
+    // Simple center positioning - you can enhance this based on trigger position
+    panel.style.position = 'fixed';
+    panel.style.top = '50%';
+    panel.style.left = '50%';
+    panel.style.transform = 'translate(-50%, -50%)';
+    panel.style.zIndex = '1000';
+    panel.style.maxHeight = '80vh';
+    panel.style.maxWidth = '90vw';
+    panel.style.width = '600px';
+  }
+
+  handleOutsideClick(event) {
+    if (this.currentPanel && !this.currentPanel.contains(event.target)) {
+      this.closePanel();
+    }
+  }
+
+  closePanel() {
+    if (this.currentPanel) {
+      document.removeEventListener('click', this.handleOutsideClick.bind(this));
+      this.currentPanel.remove();
+      this.currentPanel = null;
+    }
+  }
+}
 // Authentication
 class Authentication {
   constructor(plugin) {

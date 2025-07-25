@@ -1780,7 +1780,7 @@ createMediaCard(data, config, options = {}) {
     
     let pressTimer = null;
     let isPressed = false;
-    const pressHoldDuration = 500; // 500ms hold time
+    const pressHoldDuration = 400; // 500ms hold time
     
     // Mouse events
     img.onmousedown = (e) => {

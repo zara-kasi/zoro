@@ -1934,6 +1934,21 @@ createMediaCard(data, config, options = {}) {
   titleLink.href = this.plugin.getZoroUrl(media.id, config.mediaType);
   titleLink.target = '_blank';
   titleLink.textContent = media.title.english || media.title.romaji;
+  
+  // Remove URL styling to make it look like regular text
+  titleLink.style.textDecoration = 'none';
+  titleLink.style.color = 'inherit';
+  titleLink.style.border = 'none';
+  titleLink.style.outline = 'none';
+  
+  // Optional: Add subtle hover effect
+  titleLink.onmouseover = () => {
+    titleLink.style.opacity = '0.7';
+  };
+  titleLink.onmouseout = () => {
+    titleLink.style.opacity = '1';
+  };
+  
   title.appendChild(titleLink);
   info.appendChild(title);
 
@@ -1946,7 +1961,14 @@ createMediaCard(data, config, options = {}) {
     if (media.format) {
       const formatBadge = document.createElement('span');
       formatBadge.className = 'format-badge';
-      formatBadge.textContent = media.format;
+      formatBadge.textContent = media.format.substring(0, 2).toUpperCase();
+      
+      // Set fixed width for uniform alignment
+      formatBadge.style.display = 'inline-block';
+      formatBadge.style.width = '24px'; // Fixed width for 2 characters
+      formatBadge.style.textAlign = 'center';
+      formatBadge.style.minWidth = '24px';
+      
       details.appendChild(formatBadge);
     }
 

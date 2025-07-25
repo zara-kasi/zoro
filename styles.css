@@ -262,10 +262,8 @@
 .status-dropped   { background: var(--color-red);    color: white; }
 .status-planning  { background: var(--color-purple); color: white; }
 .status-repeating { background: var(--color-cyan);   color: white; }
-.status-add       { background: var(--color-cyan);   color: white; }
-.status-add {
-  background: #2ecc71;
-  color: #fff; }
+.status-add       { background: var(--color-pink);   color: white; }
+
 
 /* Progress & Score */
 .progress,
@@ -771,9 +769,6 @@
   .zoro-remove-btn { background: #ff453a; }
 }
 
-.status-add {
-  background: #2ecc71 !important;
-  color: #fff !important;
 }
 
 / Blur-glass skeleton (frosted, glass-like shimmer) /
@@ -843,26 +838,3 @@ transparent 70%
 
 
 
-// CSS (add to injectCSS)
-.zoro-progress-wrap {
-  display: none;
-  align-items: center;
-  gap: 4px;
-  font-size: 0.85em;
-  color: var(--text-muted);
-}
-.zoro-progress-wrap.visible { display: flex; }
-.zoro-progress-spinner {
-  width: 12px;
-  height: 12px;
-  border: 2px solid var(--text-muted);
-  border-top-color: transparent;
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-@keyframes spin { to { transform: rotate(360deg); } }
-
-.zoro-container img.media-cover {
-  pointer-events: none;
-  user-select: none;
-}

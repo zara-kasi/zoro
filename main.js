@@ -395,201 +395,84 @@ class Api {
   }
 
   getSingleMediaQuery(layout = 'card') {
-  const baseFields = `
-    id
-    status
-    score
-    progress
-  `;
+    const baseFields = `
+      id
+      status
+      score
+      progress
+    `;
 
-  const mediaFields = {
-    compact: `
-      id
-      title {
-        romaji
-      }
-      coverImage {
-        medium
-      }
-    `,
-    card: `
-      id
-      title {
-        romaji
-        english
-        native
-      }
-      coverImage {
-        large
-        medium
-      }
-      format
-      averageScore
-      status
-      genres
-      episodes
-      chapters
-    `,
-    full: `
-      id
-      title {
-        romaji
-        english
-        native
-      }
-      coverImage {
-        large
-        medium
-      }
-      episodes
-      chapters
-      genres
-      format
-      averageScore
-      status
-      startDate {
-        year
-        month
-        day
-      }
-      endDate {
-        year
-        month
-        day
-      }
-    `,
-    detailed: `
-      id
-      title {
-        romaji
-        english
-        native
-      }
-      description(asHtml: false)
-      format
-      status
-      episodes
-      chapters
-      volumes
-      duration
-      season
-      seasonYear
-      startDate {
-        year
-        month
-        day
-      }
-      endDate {
-        year
-        month
-        day
-      }
-      averageScore
-      meanScore
-      popularity
-      favourites
-      trending
-      source
-      isAdult
-      siteUrl
-      genres
-      synonyms
-      hashtag
-      trailer {
+    const mediaFields = {
+      compact: `
         id
-        site
-      }
-      tags(perPage: 25) {
-        name
-        rank
-        isMediaSpoiler
-        description
-      }
-      characters(page: 1, perPage: 12, sort: ROLE) {
-        edges {
-          role
-          node {
-            name {
-              full
-              native
-            }
-            image {
-              medium
-            }
-          }
+        title {
+          romaji
         }
-      }
-      staff(page: 1, perPage: 15) {
-        edges {
-          role
-          node {
-            name {
-              full
-              native
-            }
-            image {
-              medium
-            }
-          }
+        coverImage {
+          medium
         }
-      }
-      studios {
-        edges {
-          node {
-            name
-            isAnimationStudio
-          }
+      `,
+      card: `
+        id
+        title {
+          romaji
+          english
+          native
         }
-      }
-      relations {
-        edges {
-          relationType
-          node {
-            id
-            title {
-              romaji
-              english
-            }
-            format
-            status
-          }
+        coverImage {
+          large
+          medium
         }
-      }
-      externalLinks {
-        site
-        url
-        type
-      }
-      stats {
-        scoreDistribution {
-          score
-          amount
+        format
+        averageScore
+        status
+        genres
+        episodes
+        chapters
+      `,
+      full: `
+        id
+        title {
+          romaji
+          english
+          native
         }
-        statusDistribution {
-          status
-          amount
+        coverImage {
+          large
+          medium
         }
-      }
-      coverImage {
-        large
-        medium
-      }
-    `
-  };
+        episodes
+        chapters
+        genres
+        format
+        averageScore
+        status
+        startDate {
+          year
+          month
+          day
+        }
+        endDate {
+          year
+          month
+          day
+        }
+      `
+    };
 
-  const selectedMediaFields = mediaFields[layout] || mediaFields.card;
+    const selectedMediaFields = mediaFields[layout] || mediaFields.card;
 
-  return `
-    query ($username: String, $mediaId: Int, $type: MediaType) {
-      MediaList(userName: $username, mediaId: $mediaId, type: $type) {
-        ${baseFields}
-        media {
-          ${selectedMediaFields}
+    return `
+      query ($username: String, $mediaId: Int, $type: MediaType) {
+        MediaList(userName: $username, mediaId: $mediaId, type: $type) {
+          ${baseFields}
+          media {
+            ${selectedMediaFields}
+          }
         }
       }
-    }
-  `;
-}
+    `;
+  }
 
   getUserStatsQuery({ mediaType = 'ANIME', layout = 'card', useViewer = false } = {}) {
     const typeKey = mediaType.toLowerCase(); // 'anime' or 'manga'
@@ -722,8 +605,6 @@ class Api {
   }
   
 }
-
-
 // Plugin
 class ZoroPlugin extends Plugin {
   constructor(app, manifest) {
@@ -2143,7 +2024,7 @@ class MoreDetailsPanel {
     document.body.appendChild(loadingPanel);
 
     try {
-      // Fetch detailed media data - FIXED: Use the correct API method
+      // Fetch detailed media data
       const detailedMedia = await this.fetchDetailedMediaData(media.id);
       
       // Replace loading panel with actual content
@@ -2169,41 +2050,30 @@ class MoreDetailsPanel {
       this.positionPanel(panel, triggerElement);
       document.body.appendChild(panel);
 
-      
-
       setTimeout(() => {
         document.addEventListener('click', this.handleOutsideClick.bind(this));
       }, 100);
     }
   }
 
-  // FIXED: Proper API call implementation
   async fetchDetailedMediaData(mediaId) {
-  try {
-    // Create config object for fetchZoroData
-    const config = {
-      type: 'single',
-      username: null, // Not needed for single media queries
-      mediaId: mediaId,
-      mediaType: 'ANIME', // You might want to determine this dynamically
-      nocache: false
-    };
-    
-    // Use fetchZoroData with proper config
-    const data = await this.plugin.fetchZoroData(config);
-    
-    if (data && data.Media) {
-      return data.Media;
-    } else {
-      throw new Error('Invalid response structure');
+    try {
+      const query = this.getDetailedMediaQuery();
+      const variables = { id: mediaId };
+      
+      const response = await this.plugin.fetchZoroData(query, variables);
+      
+      if (response && response.data && response.data.Media) {
+        return response.data.Media;
+      } else {
+        throw new Error('Invalid response structure');
+      }
+    } catch (error) {
+      console.error('Error fetching detailed media:', error);
+      throw error;
     }
-  } catch (error) {
-    console.error('Error fetching detailed media:', error);
-    throw error;
   }
-}
 
-  // FIXED: Include the query method in this class for better encapsulation
   getDetailedMediaQuery() {
     return `
       query ($id: Int) {
@@ -2217,108 +2087,10 @@ class MoreDetailsPanel {
           description(asHtml: false)
           format
           status
-          episodes
-          chapters
-          volumes
-          duration
           season
           seasonYear
-          startDate {
-            year
-            month
-            day
-          }
-          endDate {
-            year
-            month
-            day
-          }
           averageScore
-          meanScore
-          popularity
-          favourites
-          trending
-          source
-          isAdult
-          siteUrl
           genres
-          synonyms
-          hashtag
-          trailer {
-            id
-            site
-          }
-          tags(perPage: 25) {
-            name
-            rank
-            isMediaSpoiler
-            description
-          }
-          characters(page: 1, perPage: 12, sort: ROLE) {
-            edges {
-              role
-              node {
-                name {
-                  full
-                  native
-                }
-                image {
-                  medium
-                }
-              }
-            }
-          }
-          staff(page: 1, perPage: 15) {
-            edges {
-              role
-              node {
-                name {
-                  full
-                  native
-                }
-                image {
-                  medium
-                }
-              }
-            }
-          }
-          studios {
-            edges {
-              node {
-                name
-                isAnimationStudio
-              }
-            }
-          }
-          relations {
-            edges {
-              relationType
-              node {
-                id
-                title {
-                  romaji
-                  english
-                }
-                format
-                status
-              }
-            }
-          }
-          externalLinks {
-            site
-            url
-            type
-          }
-          stats {
-            scoreDistribution {
-              score
-              amount
-            }
-            statusDistribution {
-              status
-              amount
-            }
-          }
         }
       }
     `;
@@ -2335,56 +2107,20 @@ class MoreDetailsPanel {
     // Header section
     content.appendChild(this.createHeaderSection(media));
 
-    // Synopsis section - FIXED: Better handling
+    // Synopsis section
     if (media.description) {
       content.appendChild(this.createSynopsisSection(media.description));
     }
 
-    // Metadata section
+    // Metadata section (simplified to show only Format and Status)
     content.appendChild(this.createMetadataSection(media, entry));
 
-    // Statistics section - FIXED: Better data handling
+    // Statistics section (Community Score only)
     content.appendChild(this.createStatisticsSection(media));
 
     // Genres section
     if (media.genres && media.genres.length > 0) {
       content.appendChild(this.createGenresSection(media.genres));
-    }
-
-    // Tags section - FIXED: Better filtering and display
-    if (media.tags && media.tags.length > 0) {
-      content.appendChild(this.createTagsSection(media.tags));
-    }
-
-    // Characters section
-    if (media.characters && media.characters.edges && media.characters.edges.length > 0) {
-      content.appendChild(this.createCharactersSection(media.characters));
-    }
-
-    // Staff section
-    if (media.staff && media.staff.edges && media.staff.edges.length > 0) {
-      content.appendChild(this.createStaffSection(media.staff));
-    }
-
-    // Studios section (for anime)
-    if (media.studios && media.studios.edges && media.studios.edges.length > 0) {
-      content.appendChild(this.createStudiosSection(media.studios));
-    }
-
-    // Relations section
-    if (media.relations && media.relations.edges && media.relations.edges.length > 0) {
-      content.appendChild(this.createRelationsSection(media.relations));
-    }
-
-    // External Links section
-    if (media.externalLinks?.length || media.trailer || media.siteUrl) {
-      content.appendChild(this.createLinksSection(media));
-    }
-
-    // Additional Info section
-    const additionalInfo = this.createAdditionalInfoSection(media);
-    if (additionalInfo) {
-      content.appendChild(additionalInfo);
     }
 
     // Close button
@@ -2399,7 +2135,6 @@ class MoreDetailsPanel {
     return panel;
   }
 
-  // FIXED: Better synopsis handling
   createSynopsisSection(description) {
     const section = document.createElement('div');
     section.className = 'panel-section synopsis-section';
@@ -2447,7 +2182,6 @@ class MoreDetailsPanel {
     return section;
   }
 
-  // FIXED: Better metadata handling with more robust value checking
   createMetadataSection(media, entry) {
     const section = document.createElement('div');
     section.className = 'panel-section metadata-section';
@@ -2460,58 +2194,20 @@ class MoreDetailsPanel {
     const metaGrid = document.createElement('div');
     metaGrid.className = 'metadata-grid';
 
+    // Format
+    if (media.format) {
+      this.addMetadataItem(metaGrid, 'Format', this.formatDisplayName(media.format));
+    }
+
     // Status
     if (media.status) {
       this.addMetadataItem(metaGrid, 'Status', this.formatDisplayName(media.status));
-    }
-
-    // Episodes/Chapters/Volumes
-    if (media.episodes && media.episodes > 0) {
-      this.addMetadataItem(metaGrid, 'Episodes', media.episodes);
-    }
-    if (media.chapters && media.chapters > 0) {
-      this.addMetadataItem(metaGrid, 'Chapters', media.chapters);
-    }
-    if (media.volumes && media.volumes > 0) {
-      this.addMetadataItem(metaGrid, 'Volumes', media.volumes);
-    }
-
-    // Duration (for anime)
-    if (media.duration && media.duration > 0) {
-      this.addMetadataItem(metaGrid, 'Episode Duration', `${media.duration} min`);
-    }
-
-    // Start/End dates
-    if (media.startDate && media.startDate.year) {
-      const startDate = this.formatDate(media.startDate);
-      this.addMetadataItem(metaGrid, 'Start Date', startDate);
-    }
-    if (media.endDate && media.endDate.year) {
-      const endDate = this.formatDate(media.endDate);
-      this.addMetadataItem(metaGrid, 'End Date', endDate);
-    }
-
-    // Source
-    if (media.source) {
-      this.addMetadataItem(metaGrid, 'Source', this.formatDisplayName(media.source));
-    }
-
-    // Adult rating
-    if (media.isAdult === true) {
-      this.addMetadataItem(metaGrid, 'Rating', '18+');
-    }
-
-    // Synonyms (first few)
-    if (media.synonyms && media.synonyms.length > 0) {
-      const synonymsText = media.synonyms.slice(0, 3).join(', ');
-      this.addMetadataItem(metaGrid, 'Also Known As', synonymsText);
     }
 
     section.appendChild(metaGrid);
     return section;
   }
 
-  // FIXED: More robust statistics handling
   createStatisticsSection(media) {
     const section = document.createElement('div');
     section.className = 'panel-section stats-section';
@@ -2529,47 +2225,10 @@ class MoreDetailsPanel {
       this.addStatItem(statsGrid, 'Community Score', `${media.averageScore}%`, 'score-stat');
     }
 
-    // Mean Score (if different from average)
-    if (media.meanScore && media.meanScore > 0 && media.meanScore !== media.averageScore) {
-      this.addStatItem(statsGrid, 'Mean Score', `${media.meanScore}%`, 'score-stat');
-    }
-
-    // Popularity ranking
-    if (media.popularity && media.popularity > 0) {
-      this.addStatItem(statsGrid, 'Popularity Rank', `#${media.popularity}`, 'popularity-stat');
-    }
-
-    // Favorites count
-    if (media.favourites && media.favourites > 0) {
-      this.addStatItem(statsGrid, 'Favorites', media.favourites.toLocaleString(), 'favorites-stat');
-    }
-
-    // Trending ranking
-    if (media.trending && media.trending > 0) {
-      this.addStatItem(statsGrid, 'Trending Rank', `#${media.trending}`, 'trending-stat');
-    }
-
     section.appendChild(statsGrid);
     return section;
   }
 
-  // Helper method to add error messages
-  addErrorMessage(panel, message) {
-    const errorDiv = document.createElement('div');
-    errorDiv.className = 'panel-error-message';
-    errorDiv.textContent = message;
-    errorDiv.style.cssText = `
-      background: #ff6b6b;
-      color: white;
-      padding: 8px 12px;
-      border-radius: 4px;
-      margin: 10px;
-      font-size: 12px;
-    `;
-    panel.appendChild(errorDiv);
-  }
-
-  // FIXED: More robust value checking
   addMetadataItem(container, label, value) {
     if (value === null || value === undefined || value === '' || value === 0) return;
     
@@ -2608,7 +2267,6 @@ class MoreDetailsPanel {
     container.appendChild(item);
   }
 
-  // Rest of the methods remain the same...
   createHeaderSection(media) {
     const header = document.createElement('div');
     header.className = 'panel-header';
@@ -2684,341 +2342,6 @@ class MoreDetailsPanel {
     return section;
   }
 
-  createTagsSection(tags) {
-    const section = document.createElement('div');
-    section.className = 'panel-section tags-section';
-
-    const title = document.createElement('h3');
-    title.className = 'section-title';
-    title.textContent = 'Tags';
-    section.appendChild(title);
-
-    const tagsContainer = document.createElement('div');
-    tagsContainer.className = 'tags-container';
-
-    // Filter out spoiler tags by default, sort by rank
-    const visibleTags = tags
-      .filter(tag => !tag.isMediaSpoiler)
-      .sort((a, b) => (b.rank || 0) - (a.rank || 0))
-      .slice(0, 12);
-
-    const spoilerTags = tags
-      .filter(tag => tag.isMediaSpoiler)
-      .sort((a, b) => (b.rank || 0) - (a.rank || 0))
-      .slice(0, 3);
-
-    // Add visible tags
-    visibleTags.forEach(tag => {
-      const tagElement = document.createElement('span');
-      tagElement.className = 'detail-tag';
-      tagElement.textContent = tag.name;
-      if (tag.description) {
-        tagElement.title = tag.description;
-      }
-      tagsContainer.appendChild(tagElement);
-    });
-
-    // Add spoiler tags with special styling
-    spoilerTags.forEach(tag => {
-      const tagElement = document.createElement('span');
-      tagElement.className = 'detail-tag spoiler-tag';
-      tagElement.textContent = tag.name;
-      tagElement.title = 'Contains spoilers - click to reveal';
-      tagElement.onclick = () => {
-        tagElement.classList.toggle('revealed');
-      };
-      tagsContainer.appendChild(tagElement);
-    });
-
-    section.appendChild(tagsContainer);
-    return section;
-  }
-
-  createCharactersSection(characters) {
-    const section = document.createElement('div');
-    section.className = 'panel-section characters-section';
-
-    const title = document.createElement('h3');
-    title.className = 'section-title';
-    title.textContent = 'Main Characters';
-    section.appendChild(title);
-
-    const charactersGrid = document.createElement('div');
-    charactersGrid.className = 'characters-grid';
-
-    // Show main characters first, then supporting
-    const mainCharacters = characters.edges
-      .filter(edge => edge.role === 'MAIN')
-      .slice(0, 6);
-    
-    const supportingCharacters = characters.edges
-      .filter(edge => edge.role === 'SUPPORTING')
-      .slice(0, Math.max(0, 6 - mainCharacters.length));
-
-    const displayCharacters = [...mainCharacters, ...supportingCharacters];
-
-    displayCharacters.forEach(edge => {
-      const charCard = document.createElement('div');
-      charCard.className = 'character-card';
-
-      if (edge.node.image?.medium) {
-        const img = document.createElement('img');
-        img.src = edge.node.image.medium;
-        img.alt = edge.node.name?.full || 'Unknown Character';
-        img.className = 'character-image';
-        img.onerror = () => {
-          img.style.display = 'none';
-        };
-        charCard.appendChild(img);
-      }
-
-      const name = document.createElement('div');
-      name.className = 'character-name';
-      name.textContent = edge.node.name?.full || 'Unknown Character';
-      charCard.appendChild(name);
-
-      const role = document.createElement('div');
-      role.className = 'character-role';
-      role.textContent = this.capitalize(edge.role || '');
-      charCard.appendChild(role);
-
-      charactersGrid.appendChild(charCard);
-    });
-
-    section.appendChild(charactersGrid);
-    return section;
-  }
-
-  createStaffSection(staff) {
-    const section = document.createElement('div');
-    section.className = 'panel-section staff-section';
-
-    const title = document.createElement('h3');
-    title.className = 'section-title';
-    title.textContent = 'Staff';
-    section.appendChild(title);
-
-    const staffList = document.createElement('div');
-    staffList.className = 'staff-list';
-
-    // Show key staff, prioritize directors, writers, etc.
-    const priorityRoles = ['Director', 'Original Creator', 'Script', 'Character Design', 'Music'];
-    const keyStaff = staff.edges
-      .sort((a, b) => {
-        const aPriority = priorityRoles.indexOf(a.role) !== -1 ? priorityRoles.indexOf(a.role) : 999;
-        const bPriority = priorityRoles.indexOf(b.role) !== -1 ? priorityRoles.indexOf(b.role) : 999;
-        return aPriority - bPriority;
-      })
-      .slice(0, 8);
-
-    keyStaff.forEach(edge => {
-      const staffItem = document.createElement('div');
-      staffItem.className = 'staff-item';
-
-      const name = document.createElement('span');
-      name.className = 'staff-name';
-      name.textContent = edge.node.name?.full || 'Unknown Staff';
-
-      const role = document.createElement('span');
-      role.className = 'staff-role';
-      role.textContent = edge.role || 'Unknown Role';
-
-      staffItem.appendChild(name);
-      staffItem.appendChild(role);
-      staffList.appendChild(staffItem);
-    });
-
-    section.appendChild(staffList);
-    return section;
-  }
-
-  createStudiosSection(studios) {
-    const section = document.createElement('div');
-    section.className = 'panel-section studios-section';
-
-    const title = document.createElement('h3');
-    title.className = 'section-title';
-    title.textContent = 'Studios';
-    section.appendChild(title);
-
-    const studiosList = document.createElement('div');
-    studiosList.className = 'studios-list';
-
-    studios.edges.forEach(edge => {
-      const studio = document.createElement('span');
-      studio.className = 'studio-name';
-      studio.textContent = edge.node.name;
-      studiosList.appendChild(studio);
-    });
-
-    section.appendChild(studiosList);
-    return section;
-  }
-
-  createRelationsSection(relations) {
-    const section = document.createElement('div');
-    section.className = 'panel-section relations-section';
-
-    const title = document.createElement('h3');
-    title.className = 'section-title';
-    title.textContent = 'Related Media';
-    section.appendChild(title);
-
-    const relationsList = document.createElement('div');
-    relationsList.className = 'relations-list';
-
-    // Sort relations by importance
-    const relationOrder = ['PREQUEL', 'SEQUEL', 'PARENT', 'SIDE_STORY', 'ADAPTATION', 'SPIN_OFF', 'OTHER'];
-    const sortedRelations = relations.edges.sort((a, b) => {
-      const aIndex = relationOrder.indexOf(a.relationType) !== -1 ? relationOrder.indexOf(a.relationType) : 999;
-      const bIndex = relationOrder.indexOf(b.relationType) !== -1 ? relationOrder.indexOf(b.relationType) : 999;
-      return aIndex - bIndex;
-    });
-
-    sortedRelations.forEach(edge => {
-      const relation = document.createElement('div');
-      relation.className = 'relation-item';
-
-      const relationType = document.createElement('span');
-      relationType.className = 'relation-type';
-      relationType.textContent = this.formatDisplayName(edge.relationType);
-
-      const mediaTitle = document.createElement('span');
-      mediaTitle.className = 'relation-title';
-      mediaTitle.textContent = edge.node.title?.english || edge.node.title?.romaji || 'Unknown Title';
-
-      const mediaFormat = document.createElement('span');
-      mediaFormat.className = 'relation-format';
-      mediaFormat.textContent = edge.node.format ? `(${this.formatDisplayName(edge.node.format)})` : '';
-
-      relation.appendChild(relationType);
-      relation.appendChild(mediaTitle);
-      if (mediaFormat.textContent) {
-        relation.appendChild(mediaFormat);
-      }
-      relationsList.appendChild(relation);
-    });
-
-    section.appendChild(relationsList);
-    return section;
-  }
-
-  createLinksSection(media) {
-    const section = document.createElement('div');
-    section.className = 'panel-section links-section';
-
-    const title = document.createElement('h3');
-    title.className = 'section-title';
-    title.textContent = 'External Links';
-    section.appendChild(title);
-
-    const linksContainer = document.createElement('div');
-    linksContainer.className = 'links-container';
-
-    // AniList link (always available if siteUrl exists)
-    if (media.siteUrl) {
-      const anilistLink = document.createElement('a');
-      anilistLink.href = media.siteUrl;
-      anilistLink.target = '_blank';
-      anilistLink.className = 'external-link anilist-link';
-      anilistLink.textContent = 'View on AniList';
-      linksContainer.appendChild(anilistLink);
-    }
-
-    // Trailer
-    if (media.trailer?.id) {
-      const trailerLink = document.createElement('a');
-      if (media.trailer.site === 'youtube') {
-        trailerLink.href = `https://www.youtube.com/watch?v=${media.trailer.id}`;
-      } else if (media.trailer.site === 'dailymotion') {
-        trailerLink.href = `https://www.dailymotion.com/video/${media.trailer.id}`;
-      }
-      trailerLink.target = '_blank';
-      trailerLink.className = 'external-link trailer-link';
-      trailerLink.textContent = 'Watch Trailer';
-      linksContainer.appendChild(trailerLink);
-    }
-
-    // Other external links
-    if (media.externalLinks?.length) {
-      media.externalLinks.slice(0, 6).forEach(link => {
-        if (link.url && link.site) {
-          const extLink = document.createElement('a');
-          extLink.href = link.url;
-          extLink.target = '_blank';
-          extLink.className = 'external-link';
-          extLink.textContent = link.site;
-          linksContainer.appendChild(extLink);
-        }
-      });
-    }
-
-    section.appendChild(linksContainer);
-    return section;
-  }
-
-  createAdditionalInfoSection(media) {
-    const hasAdditionalInfo = media.hashtag || (media.synonyms && media.synonyms.length > 3);
-    
-    if (!hasAdditionalInfo) return null;
-
-    const section = document.createElement('div');
-    section.className = 'panel-section additional-info-section';
-
-    const title = document.createElement('h3');
-    title.className = 'section-title';
-    title.textContent = 'Additional Information';
-    section.appendChild(title);
-
-    const infoContainer = document.createElement('div');
-    infoContainer.className = 'additional-info-container';
-
-    // Hashtag
-    if (media.hashtag) {
-      const hashtagItem = document.createElement('div');
-      hashtagItem.className = 'info-item';
-      
-      const hashtagLabel = document.createElement('span');
-      hashtagLabel.className = 'info-label';
-      hashtagLabel.textContent = 'Official Hashtag:';
-      
-      const hashtagValue = document.createElement('span');
-      hashtagValue.className = 'info-value hashtag';
-      hashtagValue.textContent = media.hashtag;
-      
-      hashtagItem.appendChild(hashtagLabel);
-      hashtagItem.appendChild(hashtagValue);
-      infoContainer.appendChild(hashtagItem);
-    }
-
-    // All synonyms if there are many
-    if (media.synonyms && media.synonyms.length > 3) {
-      const synonymsItem = document.createElement('div');
-      synonymsItem.className = 'info-item';
-      
-      const synonymsLabel = document.createElement('span');
-      synonymsLabel.className = 'info-label';
-      synonymsLabel.textContent = 'Alternative Titles:';
-      
-      const synonymsValue = document.createElement('div');
-      synonymsValue.className = 'info-value synonyms-list';
-      
-      media.synonyms.slice(0, 8).forEach(synonym => {
-        const synonymSpan = document.createElement('span');
-        synonymSpan.className = 'synonym';
-        synonymSpan.textContent = synonym;
-        synonymsValue.appendChild(synonymSpan);
-      });
-      
-      synonymsItem.appendChild(synonymsLabel);
-      synonymsItem.appendChild(synonymsValue);
-      infoContainer.appendChild(synonymsItem);
-    }
-
-    section.appendChild(infoContainer);
-    return section;
-  }
-
   createLoadingPanel() {
     const panel = document.createElement('div');
     panel.className = 'zoro-more-details-panel loading-panel';
@@ -3034,20 +2357,6 @@ class MoreDetailsPanel {
     panel.appendChild(content);
 
     return panel;
-  }
-
-  formatDate(dateObj) {
-    if (!dateObj?.year) return 'Unknown';
-    
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-                   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    
-    let result = '';
-    if (dateObj.month) result += months[dateObj.month - 1] + ' ';
-    if (dateObj.day) result += dateObj.day + ', ';
-    result += dateObj.year;
-    
-    return result;
   }
 
   formatDisplayName(str) {

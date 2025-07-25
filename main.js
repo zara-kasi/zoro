@@ -2005,6 +2005,10 @@ class MoreDetailsPanel {
   constructor(plugin) {
     this.plugin = plugin;
     this.currentPanel = null;
+    this.boundOutsideClickHandler = this.handleOutsideClick.bind(this);
+    
+    // Cache DOM elements and reuse them
+    this.elementCache = new Map();
   }
 
   /**
@@ -2017,111 +2021,182 @@ class MoreDetailsPanel {
     // Close any existing panel first
     this.closePanel();
 
-    // Show loading panel first
-    const loadingPanel = this.createLoadingPanel();
-    this.currentPanel = loadingPanel;
-    this.positionPanel(loadingPanel, triggerElement);
-    document.body.appendChild(loadingPanel);
+    // Create panel immediately with available data
+    const panel = this.createPanel(media, entry);
+    this.currentPanel = panel;
+    this.positionPanel(panel, triggerElement);
+    document.body.appendChild(panel);
 
+    // Add click-outside-to-close functionality immediately
+    document.addEventListener('click', this.boundOutsideClickHandler);
+    this.plugin.requestQueue.showGlobalLoader();
+    
+    // Try to fetch more detailed data in background and update if needed
+    if (this.shouldFetchDetailedData(media)) {
+      this.fetchAndUpdatePanel(media.id, panel)
+        .finally(() => {
+          // Always hide loader when fetch ends
+          this.plugin.requestQueue.hideGlobalLoader();
+        });
+    } else {
+      // Nothing to fetch → hide loader right away
+      this.plugin.requestQueue.hideGlobalLoader();
+    }
+  }
+
+  shouldFetchDetailedData(media) {
+    // Only fetch if we're missing key data or airing info for anime
+    const missingBasicData = !media.description || !media.genres || !media.averageScore;
+    const isAnimeWithoutAiring = media.type === 'ANIME' && !media.nextAiringEpisode;
+    
+    return missingBasicData || isAnimeWithoutAiring;
+  }
+
+  async fetchAndUpdatePanel(mediaId, panel) {
     try {
-      // Fetch detailed media data
-      const detailedMedia = await this.fetchDetailedMediaData(media.id);
+      const detailedMedia = await this.fetchDetailedMediaData(mediaId);
       
-      // Replace loading panel with actual content
-      loadingPanel.remove();
-      
-      const panel = this.createPanel(detailedMedia, entry);
-      this.currentPanel = panel;
-      this.positionPanel(panel, triggerElement);
-      document.body.appendChild(panel);
-
-      // Add click-outside-to-close functionality
-      setTimeout(() => {
-        document.addEventListener('click', this.handleOutsideClick.bind(this));
-      }, 100);
-
+      // Only update if panel is still open and data is actually better
+      if (this.currentPanel === panel && this.hasMoreData(detailedMedia)) {
+        this.updatePanelContent(panel, detailedMedia);
+      }
     } catch (error) {
-      console.error('Failed to fetch detailed media data:', error);
-      
-      // Fallback: show panel with available data
-      loadingPanel.remove();
-      const panel = this.createPanel(media, entry);
-      this.currentPanel = panel;
-      this.positionPanel(panel, triggerElement);
-      document.body.appendChild(panel);
+      console.error('Background fetch failed:', error);
+      // Silently fail - panel already has basic data
+    }
+  }
 
-      setTimeout(() => {
-        document.addEventListener('click', this.handleOutsideClick.bind(this));
-      }, 100);
+  hasMoreData(newMedia) {
+    // Check if new data has more information than current
+    const hasBasicData = newMedia.description || newMedia.genres?.length > 0 || newMedia.averageScore > 0;
+    const hasAiringData = newMedia.type === 'ANIME' && newMedia.nextAiringEpisode;
+    
+    return hasBasicData || hasAiringData;
+  }
+
+  updatePanelContent(panel, media) {
+    // Only update sections that have new data
+    const content = panel.querySelector('.panel-content');
+    
+    // Update airing section if we got airing data for anime
+    if (media.type === 'ANIME' && media.nextAiringEpisode && !content.querySelector('.airing-section')) {
+      const airingSection = this.createAiringSection(media.nextAiringEpisode);
+      // Insert after metadata section
+      const metadataSection = content.querySelector('.metadata-section');
+      if (metadataSection) {
+        metadataSection.insertAdjacentElement('afterend', airingSection);
+      } else {
+        // Fallback: insert after header
+        const headerSection = content.querySelector('.panel-header');
+        if (headerSection) {
+          headerSection.insertAdjacentElement('afterend', airingSection);
+        }
+      }
+    }
+    
+    // Update synopsis if we got one
+    if (media.description) {
+      const existingSynopsis = content.querySelector('.synopsis-section');
+      if (existingSynopsis) {
+        const newSynopsis = this.createSynopsisSection(media.description);
+        content.replaceChild(newSynopsis, existingSynopsis);
+      }
+    }
+
+    // Update genres if we got them
+    if (media.genres?.length > 0 && !content.querySelector('.genres-section')) {
+      const genresSection = this.createGenresSection(media.genres);
+      const synopsisSection = content.querySelector('.synopsis-section');
+      if (synopsisSection) {
+        content.insertBefore(genresSection, synopsisSection);
+      } else {
+        content.appendChild(genresSection);
+      }
+    }
+
+    // Update stats if we got them
+    if (media.averageScore > 0) {
+      const existingStats = content.querySelector('.stats-section');
+      if (existingStats) {
+        const newStats = this.createStatisticsSection(media);
+        content.replaceChild(newStats, existingStats);
+      }
     }
   }
 
   async fetchDetailedMediaData(mediaId) {
+    const query = this.getDetailedMediaQuery();
+    const variables = { id: mediaId };
+    
+    // Try the most likely method first
+    let response;
     try {
-      const query = this.getDetailedMediaQuery();
-      const variables = { id: mediaId };
-      
-      const response = await this.plugin.fetchZoroData(query, variables);
-      
-      if (response && response.data && response.data.Media) {
-        return response.data.Media;
+      if (this.plugin.fetchZoroData) {
+        response = await this.plugin.fetchZoroData(query, variables);
       } else {
-        throw new Error('Invalid response structure');
+        // Direct API call
+        const apiResponse = await fetch('https://graphql.anilist.co', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query, variables })
+        });
+        response = await apiResponse.json();
       }
+
+      if (response?.data?.Media) {
+        return response.data.Media;
+      }
+      throw new Error('No media data received');
     } catch (error) {
-      console.error('Error fetching detailed media:', error);
+      console.error('API fetch failed:', error);
       throw error;
     }
   }
 
   getDetailedMediaQuery() {
-    return `
-      query ($id: Int) {
-        Media(id: $id) {
-          id
-          title {
-            romaji
-            english
-            native
-          }
-          description(asHtml: false)
-          format
-          status
-          season
-          seasonYear
-          averageScore
-          genres
-        }
-      }
-    `;
+    // Updated query to include airing information
+    return `query($id:Int){Media(id:$id){id type title{romaji english native}description(asHtml:false)format status season seasonYear averageScore genres nextAiringEpisode{airingAt episode timeUntilAiring}}}`;
   }
 
   createPanel(media, entry) {
+    // Use document fragment for better performance
+    const fragment = document.createDocumentFragment();
+    
     const panel = document.createElement('div');
     panel.className = 'zoro-more-details-panel';
 
-    // Create scrollable content container
     const content = document.createElement('div');
     content.className = 'panel-content';
 
+    // Build sections efficiently
+    const sections = [];
+    
     // Header section
-    content.appendChild(this.createHeaderSection(media));
-
-    // Synopsis section
-    if (media.description) {
-      content.appendChild(this.createSynopsisSection(media.description));
+    sections.push(this.createHeaderSection(media));
+    
+    // Metadata section
+    sections.push(this.createMetadataSection(media, entry));
+    
+    // Airing section (only for anime with airing data)
+    if (media.type === 'ANIME' && media.nextAiringEpisode) {
+      sections.push(this.createAiringSection(media.nextAiringEpisode));
     }
-
-    // Metadata section (simplified to show only Format and Status)
-    content.appendChild(this.createMetadataSection(media, entry));
-
-    // Statistics section (Community Score only)
-    content.appendChild(this.createStatisticsSection(media));
-
+    
+    // Statistics section
+    if (media.averageScore > 0) {
+      sections.push(this.createStatisticsSection(media));
+    }
+    
     // Genres section
-    if (media.genres && media.genres.length > 0) {
-      content.appendChild(this.createGenresSection(media.genres));
+    if (media.genres?.length > 0) {
+      sections.push(this.createGenresSection(media.genres));
     }
+    
+    // Synopsis section
+    sections.push(this.createSynopsisSection(media.description));
+
+    // Append all sections at once
+    sections.forEach(section => content.appendChild(section));
 
     // Close button
     const closeBtn = document.createElement('button');
@@ -2133,6 +2208,110 @@ class MoreDetailsPanel {
     panel.appendChild(content);
 
     return panel;
+  }
+
+  createAiringSection(nextAiringEpisode) {
+    const section = document.createElement('div');
+    section.className = 'panel-section airing-section';
+
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'Next Airing';
+    section.appendChild(title);
+
+    const airingInfo = document.createElement('div');
+    airingInfo.className = 'airing-info';
+
+    const airingTime = new Date(nextAiringEpisode.airingAt * 1000); // Convert Unix timestamp to Date
+
+    // Episode number
+    const episodeInfo = document.createElement('div');
+    episodeInfo.className = 'airing-episode';
+    episodeInfo.innerHTML = `<span class="airing-label">Episode:</span> <span class="airing-value">${nextAiringEpisode.episode}</span>`;
+    airingInfo.appendChild(episodeInfo);
+
+    // Date
+    const dateInfo = document.createElement('div');
+    dateInfo.className = 'airing-date';
+    dateInfo.innerHTML = `<span class="airing-label">Date:</span> <span class="airing-value">${this.formatAiringDate(airingTime)}</span>`;
+    airingInfo.appendChild(dateInfo);
+
+    // Time
+    const timeInfo = document.createElement('div');
+    timeInfo.className = 'airing-time';
+    timeInfo.innerHTML = `<span class="airing-label">Time:</span> <span class="airing-value">${this.formatAiringTimeOnly(airingTime)}</span>`;
+    airingInfo.appendChild(timeInfo);
+
+    // Time until airing (countdown)
+    if (nextAiringEpisode.timeUntilAiring > 0) {
+      const countdownInfo = document.createElement('div');
+      countdownInfo.className = 'airing-countdown';
+      countdownInfo.innerHTML = `<span class="airing-label">In:</span> <span class="airing-value countdown-value">${this.formatTimeUntilAiring(nextAiringEpisode.timeUntilAiring)}</span>`;
+      airingInfo.appendChild(countdownInfo);
+
+      // Optional: Start a live countdown timer
+      this.startCountdown(countdownInfo.querySelector('.countdown-value'), nextAiringEpisode.timeUntilAiring);
+    }
+
+    section.appendChild(airingInfo);
+    return section;
+  }
+
+  formatAiringDate(date) {
+    // Format: DD MMM YYYY (e.g., "25 Jul 2025")
+    const options = {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    };
+    return date.toLocaleDateString('en-GB', options);
+  }
+
+  formatAiringTimeOnly(date) {
+    // Format: HH:mm (e.g., "14:30")
+    const options = {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    };
+    return date.toLocaleTimeString('en-GB', options);
+  }
+
+  formatTimeUntilAiring(seconds) {
+    const days = Math.floor(seconds / (24 * 3600));
+    const hours = Math.floor((seconds % (24 * 3600)) / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+
+    if (days > 0) {
+      return `${days}d ${hours}h ${minutes}m`;
+    } else if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    } else {
+      return `${minutes}m`;
+    }
+  }
+
+  startCountdown(element, initialSeconds) {
+    let remainingSeconds = initialSeconds;
+    
+    const updateCountdown = () => {
+      if (remainingSeconds <= 0) {
+        element.textContent = 'Aired!';
+        return;
+      }
+      
+      element.textContent = this.formatTimeUntilAiring(remainingSeconds);
+      remainingSeconds--;
+    };
+
+    // Update immediately
+    updateCountdown();
+    
+    // Update every minute (60 seconds)
+    const intervalId = setInterval(updateCountdown, 60000);
+    
+    // Store interval ID on the element so we can clear it when panel closes
+    element.dataset.intervalId = intervalId;
   }
 
   createSynopsisSection(description) {
@@ -2147,16 +2326,28 @@ class MoreDetailsPanel {
     const synopsis = document.createElement('div');
     synopsis.className = 'synopsis-content';
     
-    // Clean HTML tags and format text better
-    let cleanDescription = description
+    if (!description || typeof description !== 'string' || !description.trim()) {
+      synopsis.className += ' synopsis-placeholder';
+      synopsis.textContent = 'Synopsis not available yet.';
+      section.appendChild(synopsis);
+      return section;
+    }
+    
+    // Optimized text cleaning - do minimal processing
+    const cleanDescription = description
       .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<i>/gi, '*').replace(/<\/i>/gi, '*')
-      .replace(/<b>/gi, '**').replace(/<\/b>/gi, '**')
       .replace(/<[^>]*>/g, '')
       .replace(/\n\s*\n/g, '\n\n')
       .trim();
+
+    if (!cleanDescription) {
+      synopsis.className += ' synopsis-placeholder';
+      synopsis.textContent = 'Synopsis is empty.';
+      section.appendChild(synopsis);
+      return section;
+    }
     
-    // Handle very long descriptions
+    // Handle long descriptions more efficiently
     if (cleanDescription.length > 800) {
       const shortDescription = cleanDescription.substring(0, 800) + '...';
       synopsis.textContent = shortDescription;
@@ -2164,13 +2355,18 @@ class MoreDetailsPanel {
       const expandButton = document.createElement('button');
       expandButton.className = 'expand-synopsis-btn';
       expandButton.textContent = 'Show More';
+      
+      // Use more efficient toggle
+      let isExpanded = false;
       expandButton.onclick = () => {
-        if (synopsis.textContent.includes('...')) {
-          synopsis.textContent = cleanDescription;
-          expandButton.textContent = 'Show Less';
-        } else {
+        if (isExpanded) {
           synopsis.textContent = shortDescription;
           expandButton.textContent = 'Show More';
+          isExpanded = false;
+        } else {
+          synopsis.textContent = cleanDescription;
+          expandButton.textContent = 'Show Less';
+          isExpanded = true;
         }
       };
       section.appendChild(expandButton);
@@ -2194,12 +2390,10 @@ class MoreDetailsPanel {
     const metaGrid = document.createElement('div');
     metaGrid.className = 'metadata-grid';
 
-    // Format
+    // Only add items that exist
     if (media.format) {
       this.addMetadataItem(metaGrid, 'Format', this.formatDisplayName(media.format));
     }
-
-    // Status
     if (media.status) {
       this.addMetadataItem(metaGrid, 'Status', this.formatDisplayName(media.status));
     }
@@ -2220,8 +2414,7 @@ class MoreDetailsPanel {
     const statsGrid = document.createElement('div');
     statsGrid.className = 'stats-grid';
 
-    // Average Score (Community Score)
-    if (media.averageScore && media.averageScore > 0) {
+    if (media.averageScore > 0) {
       this.addStatItem(statsGrid, 'Community Score', `${media.averageScore}%`, 'score-stat');
     }
 
@@ -2230,40 +2423,16 @@ class MoreDetailsPanel {
   }
 
   addMetadataItem(container, label, value) {
-    if (value === null || value === undefined || value === '' || value === 0) return;
-    
     const item = document.createElement('div');
     item.className = 'metadata-item';
-
-    const labelEl = document.createElement('span');
-    labelEl.className = 'metadata-label';
-    labelEl.textContent = label;
-
-    const valueEl = document.createElement('span');
-    valueEl.className = 'metadata-value';
-    valueEl.textContent = value;
-
-    item.appendChild(labelEl);
-    item.appendChild(valueEl);
+    item.innerHTML = `<span class="metadata-label">${label}</span><span class="metadata-value">${value}</span>`;
     container.appendChild(item);
   }
 
   addStatItem(container, label, value, className = '') {
-    if (value === null || value === undefined || value === '' || value === 0) return;
-    
     const item = document.createElement('div');
     item.className = `stat-item ${className}`;
-
-    const labelEl = document.createElement('span');
-    labelEl.className = 'stat-label';
-    labelEl.textContent = label;
-
-    const valueEl = document.createElement('span');
-    valueEl.className = 'stat-value';
-    valueEl.textContent = value;
-
-    item.appendChild(labelEl);
-    item.appendChild(valueEl);
+    item.innerHTML = `<span class="stat-label">${label}</span><span class="stat-value">${value}</span>`;
     container.appendChild(item);
   }
 
@@ -2271,51 +2440,40 @@ class MoreDetailsPanel {
     const header = document.createElement('div');
     header.className = 'panel-header';
 
-    // Title section
+    // Build title section efficiently
     const titleSection = document.createElement('div');
     titleSection.className = 'title-section';
     
-    const mainTitle = document.createElement('h2');
-    mainTitle.className = 'main-title';
-    mainTitle.textContent = media.title?.english || media.title?.romaji || 'Unknown Title';
-    titleSection.appendChild(mainTitle);
+    const mainTitle = media.title?.english || media.title?.romaji || 'Unknown Title';
+    titleSection.innerHTML = `<h2 class="main-title">${mainTitle}</h2>`;
 
-    // Alternative titles
+    // Add alternative titles if they exist and are different
     if (media.title?.romaji && media.title?.english && media.title.romaji !== media.title.english) {
-      const altTitle = document.createElement('div');
-      altTitle.className = 'alt-title';
-      altTitle.textContent = media.title.romaji;
-      titleSection.appendChild(altTitle);
+      titleSection.innerHTML += `<div class="alt-title">${media.title.romaji}</div>`;
     }
-
     if (media.title?.native) {
-      const nativeTitle = document.createElement('div');
-      nativeTitle.className = 'native-title';
-      nativeTitle.textContent = media.title.native;
-      titleSection.appendChild(nativeTitle);
+      titleSection.innerHTML += `<div class="native-title">${media.title.native}</div>`;
     }
 
     header.appendChild(titleSection);
 
     // Format and season info
-    const formatInfo = document.createElement('div');
-    formatInfo.className = 'format-info';
-    
-    if (media.format) {
-      const format = document.createElement('span');
-      format.className = 'format-badge-large';
-      format.textContent = this.formatDisplayName(media.format);
-      formatInfo.appendChild(format);
+    if (media.format || (media.season && media.seasonYear)) {
+      const formatInfo = document.createElement('div');
+      formatInfo.className = 'format-info';
+      
+      let html = '';
+      if (media.format) {
+        html += `<span class="format-badge-large">${this.formatDisplayName(media.format)}</span>`;
+      }
+      if (media.season && media.seasonYear) {
+        html += `<span class="season-info">${this.capitalize(media.season)} ${media.seasonYear}</span>`;
+      }
+      
+      formatInfo.innerHTML = html;
+      header.appendChild(formatInfo);
     }
 
-    if (media.season && media.seasonYear) {
-      const season = document.createElement('span');
-      season.className = 'season-info';
-      season.textContent = `${this.capitalize(media.season)} ${media.seasonYear}`;
-      formatInfo.appendChild(season);
-    }
-
-    header.appendChild(formatInfo);
     return header;
   }
 
@@ -2323,40 +2481,14 @@ class MoreDetailsPanel {
     const section = document.createElement('div');
     section.className = 'panel-section genres-section';
 
-    const title = document.createElement('h3');
-    title.className = 'section-title';
-    title.textContent = 'Genres';
-    section.appendChild(title);
+    section.innerHTML = `
+      <h3 class="section-title">Genres</h3>
+      <div class="genres-container">
+        ${genres.map(genre => `<span class="genre-tag">${genre}</span>`).join('')}
+      </div>
+    `;
 
-    const genresContainer = document.createElement('div');
-    genresContainer.className = 'genres-container';
-
-    genres.forEach(genre => {
-      const genreElement = document.createElement('span');
-      genreElement.className = 'genre-tag';
-      genreElement.textContent = genre;
-      genresContainer.appendChild(genreElement);
-    });
-
-    section.appendChild(genresContainer);
     return section;
-  }
-
-  createLoadingPanel() {
-    const panel = document.createElement('div');
-    panel.className = 'zoro-more-details-panel loading-panel';
-
-    const content = document.createElement('div');
-    content.className = 'panel-content loading-content';
-    
-    const spinner = document.createElement('div');
-    spinner.className = 'loading-spinner';
-    spinner.textContent = 'Loading detailed information...';
-    
-    content.appendChild(spinner);
-    panel.appendChild(content);
-
-    return panel;
   }
 
   formatDisplayName(str) {
@@ -2373,15 +2505,17 @@ class MoreDetailsPanel {
   }
 
   positionPanel(panel, triggerElement) {
-    // Simple center positioning - you can enhance this based on trigger position
-    panel.style.position = 'fixed';
-    panel.style.top = '50%';
-    panel.style.left = '50%';
-    panel.style.transform = 'translate(-50%, -50%)';
-    panel.style.zIndex = '1000';
-    panel.style.maxHeight = '80vh';
-    panel.style.maxWidth = '90vw';
-    panel.style.width = '600px';
+    // Set styles in one batch to avoid reflows
+    Object.assign(panel.style, {
+      position: 'fixed',
+      top: '50%',
+      left: '50%',
+      transform: 'translate(-50%, -50%)',
+      zIndex: '1000',
+      maxHeight: '80vh',
+      maxWidth: '90vw',
+      width: '600px'
+    });
   }
 
   handleOutsideClick(event) {
@@ -2392,12 +2526,22 @@ class MoreDetailsPanel {
 
   closePanel() {
     if (this.currentPanel) {
-      document.removeEventListener('click', this.handleOutsideClick.bind(this));
+      // Clear any countdown timers
+      const countdownElements = this.currentPanel.querySelectorAll('.countdown-value[data-interval-id]');
+      countdownElements.forEach(element => {
+        const intervalId = element.dataset.intervalId;
+        if (intervalId) {
+          clearInterval(parseInt(intervalId));
+        }
+      });
+
+      document.removeEventListener('click', this.boundOutsideClickHandler);
       this.currentPanel.remove();
       this.currentPanel = null;
     }
   }
 }
+
 // Authentication
 class Authentication {
   constructor(plugin) {

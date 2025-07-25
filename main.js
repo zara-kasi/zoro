@@ -751,6 +751,34 @@ class ZoroPlugin extends Plugin {
     this.clearListCaches();
   }
 
+// ✅ Removes just the affected entry, keeps everything else
+clearSingleEntryCache(mediaId, username, mediaType = 'ANIME') {
+  const id = parseInt(mediaId, 10);
+  if (!id || !username) return;
+
+  // Key pattern used by Api.createCacheKey
+  const listKey = JSON.stringify({
+    username,
+    type: 'list',
+    listType: 'CURRENT',   // any list type is inside the same response
+    mediaType
+  });
+
+  // Remove the *whole list* only for this user/type combo
+  this.cache.userData.delete(listKey);
+
+  // Remove the single-media cache for this item
+  const singleKey = JSON.stringify({
+    username,
+    type: 'single',
+    mediaId: id,
+    mediaType
+  });
+  this.cache.mediaData.delete(singleKey);
+
+  console.log(`[Zoro] Invalidated cache for media ${id} (user: ${username})`);
+}
+
   // NEW: Clear list caches (useful after updates)
   clearListCaches() {
     const beforeCount = this.cache.userData.size;
@@ -950,8 +978,12 @@ class ZoroPlugin extends Plugin {
           await this.api.updateMediaListEntry(entry.media.id, updates);
           new Notice('✅ Updated!');
           
-          // FIXED: Better cache invalidation after updates
-          this.clearCacheForMedia(entry.media.id);
+         this.plugin.clearSingleEntryCache(
+  entry.media.id,
+  this.plugin.settings.defaultUsername || config.username,
+  config.mediaType
+);
+
 
           const parent = statusEl.closest('.zoro-container');
           if (parent) {
@@ -1114,7 +1146,12 @@ async processZoroCodeBlock(source, el, ctx) {
   } catch (error) {
     el.empty(); // Clear skeleton on error
     console.error('[Zoro] Code block processing error:', error);
-    this.plugin.renderError(el, error.message || 'Unknown error occurred.');
+    this.plugin.renderError(
+      el,
+      error.message || 'Unknown error occurred.',
+      'Code block',
+      () => this.processZoroCodeBlock(source, el, ctx)
+    );
   }
 }
 
@@ -1146,7 +1183,12 @@ async processZoroSearchCodeBlock(source, el, ctx) {
   } catch (error) {
     console.error('[Zoro] Search block processing error:', error);
     el.empty(); // Clear any existing content
-    this.plugin.renderError(el, error.message || 'Failed to process Zoro search block.');
+    this.plugin.renderError(
+      el,
+      error.message || 'Failed to process Zoro search block.',
+      'Search block',
+      () => this.processZoroSearchCodeBlock(source, el, ctx)
+    );
   }
 }
 
@@ -1398,31 +1440,63 @@ renderSearchResults(el, media, config) {
 }
 
 
+renderTableLayout(el, entries, config) {
+  const table = el.createEl('table', { cls: 'zoro-table' });
+  const headers = ['Title', 'Format', 'Status'];
+  if (this.plugin.settings.showProgress) headers.push('Progress');
+  if (this.plugin.settings.showRatings) headers.push('Score');
+  if (this.plugin.settings.showGenres) headers.push('Genres');
 
-  renderTableLayout(el, entries, config) {
-    const table = el.createEl('table', { cls: 'zoro-table' });
-    const headers = ['Title', 'Format', 'Status'];
-    if (this.plugin.settings.showProgress) headers.push('Progress');
-    if (this.plugin.settings.showRatings) headers.push('Score');
-    if (this.plugin.settings.showGenres) headers.push('Genres');
+  table.createTHead().createEl('tr', null, tr =>
+    headers.forEach(h => tr.createEl('th', { text: h }))
+  );
 
-    table.createTHead().createEl('tr', null, tr => headers.forEach(h => tr.createEl('th', { text: h })));
+  const tbody = table.createTBody();
+  const fragment = document.createDocumentFragment();   // 🎯 batch container
 
-    const tbody = table.createTBody();
-    entries.forEach(entry => {
-      const m = entry.media;
-      const tr = tbody.createEl('tr');
-      tr.createEl('td', null, td => td.createEl('a', { text: m.title.english || m.title.romaji, href: this.plugin.getZoroUrl(m.id, config.mediaType), cls: 'zoro-title-link', target: '_blank' }));
-      tr.createEl('td', { text: m.format || '-' });
-      tr.createEl('td', null, td => {
-        const s = td.createEl('span', { text: entry.status, cls: `status-badge status-${entry.status.toLowerCase()} clickable-status` });
-        s.onclick = e => {   e.preventDefault(); e.stopPropagation();   if (!this.plugin.settings.accessToken) {     this.plugin.prompt.createAuthenticationPrompt();     return;   }   this.plugin.handleEditClick(e, entry, s); };
+  entries.forEach(entry => {
+    const m = entry.media;
+    const tr = fragment.createEl('tr');                 // build off-fragment
+    tr.createEl('td', null, td =>
+      td.createEl('a', {
+        text: m.title.english || m.title.romaji,
+        href: this.plugin.getZoroUrl(m.id, config.mediaType),
+        cls: 'zoro-title-link',
+        target: '_blank'
+      })
+    );
+    tr.createEl('td', { text: m.format || '-' });
+    tr.createEl('td', null, td => {
+      const s = td.createEl('span', {
+        text: entry.status,
+        cls: `status-badge status-${entry.status.toLowerCase()} clickable-status`
       });
-      if (this.plugin.settings.showProgress) tr.createEl('td', { text: `${entry.progress ?? 0}/${m.episodes ?? m.chapters ?? '?'}` });
-      if (this.plugin.settings.showRatings) tr.createEl('td', { text: entry.score != null ? `★ ${entry.score}` : '-' });
-      if (this.plugin.settings.showGenres) tr.createEl('td', { text: (m.genres || []).slice(0, 3).join(', ') || '-' });
+      s.onclick = e => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (!this.plugin.settings.accessToken) {
+          this.plugin.prompt.createAuthenticationPrompt();
+          return;
+        }
+        this.plugin.handleEditClick(e, entry, s);
+      };
     });
-  }
+    if (this.plugin.settings.showProgress)
+      tr.createEl('td', {
+        text: `${entry.progress ?? 0}/${m.episodes ?? m.chapters ?? '?'}`
+      });
+    if (this.plugin.settings.showRatings)
+      tr.createEl('td', { text: entry.score != null ? `★ ${entry.score}` : '-' });
+    if (this.plugin.settings.showGenres)
+      tr.createEl('td', {
+        text: (m.genres || []).slice(0, 3).join(', ') || '-'
+      });
+  });
+
+  tbody.appendChild(fragment);  // ⚡ single DOM write
+}
+
+  
 
   /* ----------  SINGLE MEDIA  ---------- */
   renderSingleMedia(el, mediaList, config) {
@@ -1578,75 +1652,144 @@ createSearchSkeleton() {
   return container;
 }
 
-
-// In Render class, replace the existing createMediaCard with:
 createMediaCard(data, config, options = {}) {
   const isSearch = options.isSearch || false;
-  const entry = isSearch ? null : data;
+  const isCompact = config.layout === 'compact';
+  const entry = isSearch ? null : data; // null for search results
   const media = isSearch ? data : data.media;
 
-  // Use template literal for faster creation (no individual element creation)
   const card = document.createElement('div');
-  card.className = `zoro-card ${config.layout === 'compact' ? 'compact' : ''}`;
-  
-  // Cache expensive lookups
-  const title = media.title.english || media.title.romaji;
-  const total = media.episodes || media.chapters || '?';
-  const score = isSearch ? media.averageScore : entry?.score;
-  
-  // Build HTML string (faster than individual createElement calls)
-  let html = '';
-  
-  // Cover image (conditional)
+  card.className = `zoro-card ${isCompact ? 'compact' : ''}`;
+
+  // Cover Image (shared)
   if (this.plugin.settings.showCoverImages && media.coverImage?.large) {
-    html += `<img class="media-cover" src="${media.coverImage.large}" alt="${title}" loading="lazy" />`;
+    const img = document.createElement('img');
+    img.src = media.coverImage.large;
+    img.alt = media.title.english || media.title.romaji;
+    img.className = 'media-cover';
+    img.loading = 'lazy'; // Performance boost
+    card.appendChild(img);
   }
-  
-  html += `<div class="media-info">
-    <h4><a href="${this.plugin.getZoroUrl(media.id, config.mediaType)}" target="_blank">${title}</a></h4>`;
-  
-  if (config.layout !== 'compact') {
-    html += `<div class="media-details">`;
-    
+
+  const info = document.createElement('div');
+  info.className = 'media-info';
+
+  // Title (shared)
+  const title = document.createElement('h4');
+  const titleLink = document.createElement('a');
+  titleLink.href = this.plugin.getZoroUrl(media.id, config.mediaType);
+  titleLink.target = '_blank';
+  titleLink.textContent = media.title.english || media.title.romaji;
+  title.appendChild(titleLink);
+  info.appendChild(title);
+
+  // Details section (conditional)
+  if (!isCompact) {
+    const details = document.createElement('div');
+    details.className = 'media-details';
+
+    // Format badge
     if (media.format) {
-      html += `<span class="format-badge">${media.format}</span>`;
+      const formatBadge = document.createElement('span');
+      formatBadge.className = 'format-badge';
+      formatBadge.textContent = media.format;
+      details.appendChild(formatBadge);
     }
-    
+
+    // Status badge (only for list entries)
     if (!isSearch && entry) {
-      html += `<span class="status-badge status-${entry.status.toLowerCase()} clickable-status" data-entry-id="${entry.id}">${entry.status}</span>`;
+      const statusBadge = document.createElement('span');
+      statusBadge.className = `status-badge status-${entry.status.toLowerCase()} clickable-status`;
+      statusBadge.textContent = entry.status;
+      statusBadge.onclick = (e) => this.handleStatusClick(e, entry, statusBadge);
+      details.appendChild(statusBadge);
     }
-    
+
+    // Progress (only for list entries)
     if (!isSearch && entry && this.plugin.settings.showProgress) {
-      html += `<span class="progress">${entry.progress || 0}/${total}</span>`;
+      const progress = document.createElement('span');
+      progress.className = 'progress';
+      const total = media.episodes || media.chapters || '?';
+      progress.textContent = `${entry.progress || 0}/${total}`;
+      details.appendChild(progress);
     }
-    
-    if (this.plugin.settings.showRatings && score != null) {
-      html += `<span class="score">★ ${score}</span>`;
+
+    // Rating (shared)
+    if (this.plugin.settings.showRatings) {
+      const score = isSearch ? media.averageScore : entry?.score;
+      if (score != null) {
+        const rating = document.createElement('span');
+        rating.className = 'score';
+        rating.textContent = `★ ${score}`;
+        details.appendChild(rating);
+      }
     }
-    
+
+    // Search-specific add button
     if (isSearch) {
-      html += `<button class="status-badge status-add clickable-status" data-media-id="${media.id}">ADD</button>`;
+      const addBtn = document.createElement('span');
+      addBtn.className = 'status-badge status-add clickable-status';
+      addBtn.textContent = 'ADD';
+      addBtn.onclick = (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+
+  if (!this.plugin.settings.accessToken) {
+    this.plugin.prompt.createAuthenticationPrompt();
+    return;
+  }
+
+  // Use a consistent entry structure (no fake entry needed)
+  const entryData = {
+    media: media,
+    status: 'PLANNING', // Default starting status
+    progress: 0,
+    score: null,
+    id: null // Indicates this is a new entry
+  };
+
+  this.plugin.edit.createEditModal(
+    entryData,
+    async (updates) => {
+      // Use the same update method for both add and edit
+      await this.plugin.api.updateMediaListEntry(media.id, updates);
+      new Notice('✅ Added!');
+      
+      // Refresh any visible lists
+      const containers = document.querySelectorAll('.zoro-container');
+      containers.forEach(container => {
+        const block = container.closest('.markdown-rendered')?.querySelector('code');
+        if (block) {
+          this.plugin.processor.processZoroCodeBlock(block.textContent, container, {});
+        }
+      });
+    },
+    () => {} // onCancel - do nothing
+  );
+};
+      details.appendChild(addBtn);
     }
-    
-    html += `</div>`;
+
+    info.appendChild(details);
   }
-  
-  if (config.layout !== 'compact' && this.plugin.settings.showGenres && media.genres?.length) {
-    const genres = media.genres.slice(0, 3).join('</span><span class="genre-tag">');
-    html += `<div class="genres"><span class="genre-tag">${genres}</span></div>`;
+
+  // Genres (shared)
+  if (!isCompact && this.plugin.settings.showGenres && media.genres?.length) {
+    const genres = document.createElement('div');
+    genres.className = 'genres';
+    media.genres.slice(0, 3).forEach(g => {
+      const tag = document.createElement('span');
+      tag.className = 'genre-tag';
+      tag.textContent = g;
+      genres.appendChild(tag);
+    });
+    info.appendChild(genres);
   }
-  
-  html += `</div>`;
-  
-  card.innerHTML = html;
-  
-  // Attach event listeners after insertion (delegated for performance)
-  this.attachEventListeners(card, entry, media, config);
-  
+
+  card.appendChild(info);
   return card;
 }
 
-// New helper to attach events efficiently
 attachEventListeners(card, entry, media, config) {
   // Status badge click (for existing entries)
   const statusBadge = card.querySelector('.clickable-status[data-entry-id]');
@@ -1850,6 +1993,7 @@ class Authentication {
     return name;
   }
 }
+
 class ClientIdModal extends Modal {
   constructor(app, onSubmit) {
     super(app);
@@ -1886,17 +2030,20 @@ class ClientIdModal extends Modal {
       cls: 'auth-button'
     });
     
+    // Centralized close modal function
+    const closeModal = () => {
+      this.close();
+    };
+    
     submitButton.addEventListener('click', () => {
       const value = input.value.trim();
       if (value) {
         this.onSubmit(value);
-        this.close();
+        closeModal();
       }
     });
     
-    cancelButton.addEventListener('click', () => {
-      this.close();
-    });
+    cancelButton.addEventListener('click', closeModal);
     
     input.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') {
@@ -1907,6 +2054,7 @@ class ClientIdModal extends Modal {
     setTimeout(() => input.focus(), 100);
   }
 }
+
 class ClientSecretModal extends Modal {
   constructor(app, onSubmit) {
     super(app);
@@ -1943,17 +2091,20 @@ class ClientSecretModal extends Modal {
       cls: 'auth-button'
     });
     
+    // Centralized close modal function
+    const closeModal = () => {
+      this.close();
+    };
+    
     submitButton.addEventListener('click', () => {
       const value = input.value.trim();
       if (value) {
         this.onSubmit(value);
-        this.close();
+        closeModal();
       }
     });
     
-    cancelButton.addEventListener('click', () => {
-      this.close();
-    });
+    cancelButton.addEventListener('click', closeModal);
     
     input.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') {
@@ -1964,6 +2115,7 @@ class ClientSecretModal extends Modal {
     setTimeout(() => input.focus(), 100);
   }
 }
+
 class AuthPinModal extends Modal {
   constructor(app, onSubmit) {
     super(app);
@@ -2000,17 +2152,20 @@ class AuthPinModal extends Modal {
       cls: 'auth-button'
     });
     
+    // Centralized close modal function
+    const closeModal = () => {
+      this.close();
+    };
+    
     submitButton.addEventListener('click', () => {
       const value = input.value.trim();
       if (value) {
         this.onSubmit(value);
-        this.close();
+        closeModal();
       }
     });
     
-    cancelButton.addEventListener('click', () => {
-      this.close();
-    });
+    cancelButton.addEventListener('click', closeModal);
     
     input.addEventListener('keypress', (e) => {
       if (e.key === 'Enter') {
@@ -2224,71 +2379,77 @@ class Edit {
     this.plugin = plugin;
   }
 
-
-  createEditModal(entry, onSave, onCancel) {
+ createEditModal(entry, onSave, onCancel) {
     const modal = document.createElement('div');
     modal.className = 'zoro-edit-modal';
-
     const overlay = document.createElement('div');
     overlay.className = 'zoro-modal-overlay';
-
     const content = document.createElement('div');
     content.className = 'zoro-modal-content';
-
     const form = document.createElement('form');
     form.className = 'zoro-edit-form';
-    form.onsubmit = async (e) => {
-      e.preventDefault();
-      await this.trySave(entry, onSave, saveBtn, statusSelect, scoreInput, progressInput, modal, escListener);
-    };
-
+    
     const title = document.createElement('h3');
     title.className = 'zoro-modal-title';
     title.textContent = entry.media.title.english || entry.media.title.romaji;
-
+    
     // --- Status Field ---
     const statusGroup = this.createStatusField(entry);
     const statusSelect = statusGroup.querySelector('.zoro-status-select');
-
+    
     // --- Score Field ---
     const scoreGroup = this.createScoreField(entry);
     const scoreInput = scoreGroup.querySelector('.zoro-score-input');
-
+    
     // --- Progress Field ---
     const progressGroup = this.createProgressField(entry);
     const progressInput = progressGroup.querySelector('.zoro-progress-input');
-
+    
     // --- Quick Buttons ---
     const quickProgressDiv = this.createQuickProgressButtons(entry, progressInput, statusSelect);
-
+    
     // --- Buttons ---
     const buttonContainer = this.createButtonContainer(entry, onSave, onCancel, modal);
     const saveBtn = buttonContainer.querySelector('.zoro-save-btn');
     const removeBtn = buttonContainer.querySelector('.zoro-remove-btn');
-
-    // Setup remove button functionality
-    this.setupRemoveButton(removeBtn, entry, modal);
-
-    form.append(title, statusGroup, scoreGroup, progressGroup, quickProgressDiv, buttonContainer);
-    content.appendChild(form);
-
-    modal.append(overlay, content);
-    document.body.appendChild(modal);
-
-    // Setup modal interactions
-    this.setupModalInteractions(modal, overlay, onCancel);
-
+    const cancelBtn = buttonContainer.querySelector('.zoro-cancel-btn');
+    
     // Keyboard accessibility
     const escListener = this.createEscapeListener(onCancel, modal, () => {
-      this.trySave(entry, onSave, saveBtn, statusSelect, scoreInput, progressInput, modal, escListener);
+        this.trySave(entry, onSave, saveBtn, statusSelect, scoreInput, progressInput, modal, escListener, closeModal);
     });
-  this.plugin.addGlobalListener(document, 'keydown', escListener);
-
-
+    
+    // Centralized close modal function
+    const closeModal = () => {
+        if (modal.parentNode) modal.parentNode.removeChild(modal);
+        document.removeEventListener('keydown', escListener);
+        this.plugin.removeAllGlobalListeners();          // safest belt-and-braces
+    };
+    
+    // Form submission
+    form.onsubmit = async (e) => {
+        e.preventDefault();
+        await this.trySave(entry, onSave, saveBtn, statusSelect, scoreInput, progressInput, modal, escListener, closeModal);
+    };
+    
+    // Setup remove button functionality
+    this.setupRemoveButton(removeBtn, entry, modal, closeModal);
+    
+    form.append(title, statusGroup, scoreGroup, progressGroup, quickProgressDiv, buttonContainer);
+    content.appendChild(form);
+    modal.append(overlay, content);
+    document.body.appendChild(modal);
+    
+    // Setup modal interactions using closeModal
+    overlay.onclick = closeModal;                      // overlay click
+    if (cancelBtn) cancelBtn.onclick = closeModal;     // Cancel button
+    
+    this.plugin.addGlobalListener(document, 'keydown', escListener);
+    
     // Get and set favorite status
     this.setFavoriteStatus(entry, buttonContainer.querySelector('.zoro-fav-btn'));
-  }
-
+}
+  
   createStatusField(entry) {
     const statusGroup = document.createElement('div');
     statusGroup.className = 'zoro-form-group zoro-status-group';
@@ -2459,7 +2620,12 @@ class Edit {
         );
         // close modal & refresh view
         document.body.removeChild(modal);
-        this.plugin.clearCacheForMedia(entry.media.id);
+        this.plugin.clearSingleEntryCache(
+  entry.media.id,
+  this.plugin.settings.defaultUsername || config.username,
+  config.mediaType
+);
+
         // trigger re-render of the block that owns this entry
         const parentContainer = document.querySelector('.zoro-container');
         if (parentContainer) {
@@ -2604,31 +2770,33 @@ class Edit {
   }
 
   // Save logic
-  async trySave(entry, onSave, saveBtn, statusSelect, scoreInput, progressInput, modal, escListener) {
+  async trySave(entry, onSave, saveBtn, statusSelect, scoreInput, progressInput, modal, escListener, closeModal) {
     if (this.saving) return;
     this.saving = true;
     saveBtn.disabled = true;
     saveBtn.textContent = 'Saving...';
-
     const scoreVal = parseFloat(scoreInput.value);
     if (scoreInput.value && (isNaN(scoreVal) || scoreVal < 0 || scoreVal > 10)) {
       alert("⚠ Score must be between 0 and 10.");
       this.resetSaveBtn(saveBtn);
       return;
     }
-
     try {
       await onSave({
         status: statusSelect.value,
         score: scoreInput.value === '' ? null : scoreVal,
         progress: parseInt(progressInput.value) || 0
       });
-      document.body.removeChild(modal);
-      document.removeEventListener('keydown', escListener);
+      this.plugin.clearSingleEntryCache(
+        entry.media.id,
+        this.plugin.settings.authUsername || this.plugin.settings.defaultUsername,
+        entry.media.type
+      );
+      
+      closeModal();
     } catch (err) {
       alert(`❌ Failed to save: ${err.message}`);
     }
-
     this.resetSaveBtn(saveBtn);
   }
 

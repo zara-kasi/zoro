@@ -183,6 +183,18 @@
   }
 }
 
+/* === Grid Column Count via CSS Variable (no inline JS) ========== */
+.zoro-cards-grid {
+  --zoro-grid-columns: 2;      /* default value */
+}
+
+@media (min-width: 768px) {
+  .zoro-cards-grid {
+    --zoro-grid-columns: 5;    /* desktop value */
+  }
+}
+
+
 /* Cards */
 .zoro-card,
 .zoro-single-card {
@@ -837,209 +849,56 @@ transparent 70%
 }
 
 
-
-/* More Details Panel Styles */
-.zoro-more-details-panel {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 90%;
-  max-width: 600px;
-  max-height: 80vh;
-  background: var(--background-primary);
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 8px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-  z-index: 1000;
-  overflow: hidden;
+/* CSS Variables for theme support */
+:root {
+  /* Dark theme (default) */
+  --panel-bg: #1a1a1a;
+  --panel-header-bg: linear-gradient(135deg, #2a2a2a, #1a1a1a);
+  --panel-text-primary: #ffffff;
+  --panel-text-secondary: #b0b0b0;
+  --panel-text-tertiary: #888888;
+  --panel-border: rgba(255, 255, 255, 0.1);
+  --panel-border-light: rgba(255, 255, 255, 0.05);
+  --panel-overlay: rgba(0, 0, 0, 0.5);
+  --panel-shadow: 0 20px 40px rgba(0, 0, 0, 0.8);
+  --panel-section-bg: rgba(255, 255, 255, 0.03);
+  --panel-section-hover: rgba(255, 255, 255, 0.06);
+  --panel-button-bg: rgba(255, 255, 255, 0.1);
+  --panel-button-hover: rgba(255, 255, 255, 0.2);
+  --panel-genre-bg: rgba(255, 255, 255, 0.1);
+  --panel-genre-hover: rgba(255, 255, 255, 0.15);
+  --panel-scrollbar-track: rgba(255, 255, 255, 0.05);
+  --panel-scrollbar-thumb: rgba(255, 255, 255, 0.2);
+  --panel-scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
+  --panel-airing-bg: rgba(34, 197, 94, 0.05);
+  --panel-loading-text: #6b7280;
 }
 
-.panel-content {
-  padding: 20px;
-  overflow-y: auto;
-  max-height: 80vh;
+/* Light theme - automatically applies when system prefers light */
+@media (prefers-color-scheme: light) {
+  :root {
+    --panel-bg: #ffffff;
+    --panel-header-bg: linear-gradient(135deg, #fffafc, #f1f5f9);
+    --panel-text-primary: #1f2937;
+    --panel-text-secondary: #4b5563;
+    --panel-text-tertiary: #6b7280;
+    --panel-border: rgba(0, 0, 0, 0.1);
+    --panel-border-light: rgba(0, 0, 0, 0.05);
+    --panel-overlay: rgba(0, 0, 0, 0);
+    --panel-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+    --panel-section-bg: rgba(0, 0, 0, 0.02);
+    --panel-section-hover: rgba(0, 0, 0, 0.04);
+    --panel-button-bg: rgba(0, 0, 0, 0.05);
+    --panel-button-hover: rgba(0, 0, 0, 0.1);
+    --panel-genre-bg: rgba(0, 0, 0, 0.08);
+    --panel-genre-hover: rgba(0, 0, 0, 0.12);
+    --panel-scrollbar-track: rgba(0, 0, 0, 0.05);
+    --panel-scrollbar-thumb: rgba(0, 0, 0, 0.2);
+    --panel-scrollbar-thumb-hover: rgba(0, 0, 0, 0.3);
+    --panel-airing-bg: rgba(34, 197, 94, 0.08);
+    --panel-loading-text: #9ca3af;
+  }
 }
-
-.panel-close-btn {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  background: none;
-  border: none;
-  font-size: 24px;
-  cursor: pointer;
-  color: var(--text-muted);
-  z-index: 1001;
-}
-
-.panel-close-btn:hover {
-  color: var(--text-normal);
-}
-
-.panel-section {
-  margin-bottom: 25px;
-  padding-bottom: 15px;
-  border-bottom: 1px solid var(--background-modifier-border);
-}
-
-.section-title {
-  font-size: 18px;
-  font-weight: bold;
-  margin-bottom: 10px;
-  color: var(--text-normal);
-}
-
-/* More button on cards */
-.zoro-more-btn {
-  margin-top: 10px;
-  padding: 6px 12px;
-  background: var(--interactive-accent);
-  color: var(--text-on-accent);
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.zoro-more-btn:hover {
-  background: var(--interactive-accent-hover);
-}
-
-/* Grid layouts */
-.metadata-grid, .stats-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-.metadata-item, .stat-item {
-  display: flex;
-  justify-content: space-between;
-  padding: 5px 0;
-}
-
-.metadata-label, .stat-label {
-  color: var(--text-muted);
-  font-size: 14px;
-}
-
-.metadata-value, .stat-value {
-  color: var(--text-normal);
-  font-weight: 500;
-}
-
-/* Tags */
-.tags-container {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-  margin-top: 10px;
-}
-
-.detail-tag {
-  background: var(--background-secondary);
-  color: var(--text-normal);
-  padding: 4px 8px;
-  border-radius: 12px;
-  font-size: 12px;
-}
-
-.spoiler-tag {
-  background: var(--background-modifier-error);
-  color: var(--text-on-accent);
-}
-
-/* Characters grid */
-.characters-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
-  gap: 10px;
-  margin-top: 10px;
-}
-
-.character-card {
-  text-align: center;
-}
-
-.character-image {
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  object-fit: cover;
-}
-
-.character-name {
-  font-size: 12px;
-  margin-top: 5px;
-  color: var(--text-normal);
-}
-
-/* Relations */
-.relations-list {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.relation-item {
-  display: flex;
-  gap: 10px;
-  padding: 5px;
-}
-
-.relation-type {
-  color: var(--text-muted);
-  font-size: 12px;
-}
-
-.relation-title {
-  color: var(--text-normal);
-}
-
-/* Space between format badge and status badge inside .media-details */
-.media-details .format-badge + .status-badge {
-  margin-left: 0.4em;   /* tweak this value to taste */
-}
-
-.external-links-container {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-
-.external-link-btn {
-  padding: 8px 16px;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  transition: all 0.2s ease;
-  text-decoration: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.anilist-btn {
-  background-color: #02a9ff;
-  color: white;
-}
-
-.anilist-btn:hover {
-  background-color: #0284c7;
-}
-
-.mal-btn {
-  background-color: #2e51a2;
-  color: white;
-}
-
-.mal-btn:hover {
-  background-color: #1e3a72;
-}
-
 
 /* Background blur overlay */
 .zoro-more-details-panel::before {
@@ -1049,7 +908,7 @@ transparent 70%
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: var(--panel-overlay);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
   z-index: -1;
@@ -1065,10 +924,10 @@ transparent 70%
   max-height: 80vh;
   max-width: 90vw;
   width: 600px;
-  background: #1a1a1a;
+  background: var(--panel-bg);
   border-radius: 12px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.8);
-  color: #ffffff;
+  box-shadow: var(--panel-shadow);
+  color: var(--panel-text-primary);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   overflow: hidden;
   animation: panelSlideIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
@@ -1090,12 +949,12 @@ transparent 70%
   position: absolute;
   top: 16px;
   right: 16px;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--panel-button-bg);
   border: none;
   border-radius: 50%;
   width: 32px;
   height: 32px;
-  color: #ffffff;
+  color: var(--panel-text-primary);
   font-size: 20px;
   font-weight: bold;
   cursor: pointer;
@@ -1107,7 +966,7 @@ transparent 70%
 }
 
 .panel-close-btn:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--panel-button-hover);
   transform: scale(1.1);
 }
 
@@ -1124,23 +983,23 @@ transparent 70%
 }
 
 .panel-content::-webkit-scrollbar-track {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--panel-scrollbar-track);
 }
 
 .panel-content::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--panel-scrollbar-thumb);
   border-radius: 4px;
 }
 
 .panel-content::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
+  background: var(--panel-scrollbar-thumb-hover);
 }
 
 /* Header section */
 .panel-header {
-  background: linear-gradient(135deg, #2a2a2a, #1a1a1a);
+  background: var(--panel-header-bg);
   padding: 24px 24px 20px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  border-bottom: 1px solid var(--panel-border);
 }
 
 .title-section {
@@ -1152,18 +1011,18 @@ transparent 70%
   font-weight: 700;
   margin: 0 0 8px 0;
   line-height: 1.2;
-  color: #ffffff;
+  color: var(--panel-text-primary);
 }
 
 .alt-title {
   font-size: 16px;
-  color: #b0b0b0;
+  color: var(--panel-text-secondary);
   margin-bottom: 4px;
 }
 
 .native-title {
   font-size: 14px;
-  color: #888888;
+  color: var(--panel-text-tertiary);
 }
 
 .format-info {
@@ -1185,7 +1044,7 @@ transparent 70%
 }
 
 .season-info {
-  color: #b0b0b0;
+  color: var(--panel-text-secondary);
   font-size: 14px;
   font-weight: 500;
 }
@@ -1193,7 +1052,7 @@ transparent 70%
 /* Panel sections */
 .panel-section {
   padding: 20px 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--panel-border-light);
 }
 
 .panel-section:last-child {
@@ -1205,7 +1064,7 @@ transparent 70%
   font-size: 18px;
   font-weight: 600;
   margin: 0 0 16px 0;
-  color: #ffffff;
+  color: var(--panel-text-primary);
   display: flex;
   align-items: center;
 }
@@ -1234,20 +1093,20 @@ transparent 70%
 }
 
 .metadata-label {
-  color: #b0b0b0;
+  color: var(--panel-text-secondary);
   font-size: 14px;
   font-weight: 500;
 }
 
 .metadata-value {
-  color: #ffffff;
+  color: var(--panel-text-primary);
   font-size: 14px;
   font-weight: 600;
 }
 
 /* Airing section */
 .airing-section {
-  background: rgba(34, 197, 94, 0.05);
+  background: var(--panel-airing-bg);
   border-left: 4px solid #22c55e;
   margin: 0 10px;
   padding: 20px 24px;
@@ -1269,7 +1128,7 @@ transparent 70%
 }
 
 .airing-label {
-  color: #b0b0b0;
+  color: var(--panel-text-secondary);
   font-size: 12px;
   font-weight: 500;
   text-transform: uppercase;
@@ -1295,7 +1154,7 @@ transparent 70%
 }
 
 .stat-item {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--panel-section-bg);
   border-radius: 8px;
   padding: 16px;
   text-align: center;
@@ -1303,13 +1162,13 @@ transparent 70%
 }
 
 .stat-item:hover {
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--panel-section-hover);
   transform: translateY(-2px);
 }
 
 .stat-label {
   display: block;
-  color: #b0b0b0;
+  color: var(--panel-text-secondary);
   font-size: 12px;
   font-weight: 500;
   text-transform: uppercase;
@@ -1319,7 +1178,7 @@ transparent 70%
 
 .stat-value {
   display: block;
-  color: #ffffff;
+  color: var(--panel-text-primary);
   font-size: 20px;
   font-weight: 700;
 }
@@ -1341,7 +1200,7 @@ transparent 70%
 }
 
 .loading .stat-value {
-  color: #6b7280;
+  color: var(--panel-loading-text);
   font-size: 14px;
   font-weight: 500;
 }
@@ -1354,8 +1213,8 @@ transparent 70%
 }
 
 .genre-tag {
-  background: rgba(255, 255, 255, 0.1);
-  color: #ffffff;
+  background: var(--panel-genre-bg);
+  color: var(--panel-text-primary);
   padding: 6px 12px;
   border-radius: 16px;
   font-size: 12px;
@@ -1364,7 +1223,7 @@ transparent 70%
 }
 
 .genre-tag:hover {
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--panel-genre-hover);
   transform: translateY(-1px);
 }
 
@@ -1430,13 +1289,13 @@ transparent 70%
 
 /* Synopsis section */
 .synopsis-content {
-  color: #e0e0e0;
+  color: var(--panel-text-secondary);
   line-height: 1.6;
   font-size: 14px;
 }
 
 .synopsis-placeholder {
-  color: #888888;
+  color: var(--panel-text-tertiary);
   font-style: italic;
 }
 
@@ -1518,7 +1377,114 @@ transparent 70%
   }
 }
 
-/* give the label a fixed gap from the value */
-.score-stat .stat-label {
-  margin-right: 3px;   /* or whatever distance you want */
+/* 
+The panel will automatically adapt to the user's system theme preference:
+- Dark mode when system is set to dark
+- Light mode when system is set to light
+- No JavaScript or manual toggling required!
+*/
+
+
+/* === Global Loader ===================================================== */
+#zoro-global-loader {
+  position: fixed;
+  bottom: 10px;
+  left: 10px;
+  font-size: 16px;
+  z-index: 9999;
+  display: none;                     /* hidden by default */
+}
+
+#zoro-global-loader.zoro-show {
+  display: block;                    /* revealed when needed */
+}
+
+/* === Cover Image Container ============================================ */
+.cover-container {
+  position: relative;
+  display: inline-block;
+}
+
+.media-cover.pressed {
+  opacity: 0.7;
+}
+
+.media-info h4 a.hovered {
+  opacity: 0.7;
+}
+
+.media-cover {
+  transition: opacity 0.1s ease;
+}
+
+.media-info h4 a {
+  transition: opacity 0.1s ease;
+}
+
+.pressable-cover {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+  transition: opacity 0.1s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cover-overlay {
+  position: absolute;
+  bottom: 9px;
+  left: 1px;
+  right: 1px;
+  padding: 0px 0px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  pointer-events: none;
+}
+
+.media-title-link {
+  text-decoration: none;
+  color: inherit;
+  border: none;
+  outline: none;
+  transition: opacity 0.1s ease;
+}
+
+.media-title-link:hover {
+  opacity: 0.7;
+}
+
+.format-badge {
+  display: inline-block;
+  width: 24px;
+  text-align: left;
+  min-width: 24px;
+}
+
+
+/* === More-Details Modal ============================================ */
+.zoro-more-details-panel {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1000;
+  max-height: 80vh;
+  max-width: 90vw;
+  width: 600px;
+}
+
+/* spacing between format badge and status badge */
+.media-details .format-badge + .status-badge {
+  margin-left: 0.5em;
 }

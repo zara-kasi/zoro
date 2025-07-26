@@ -1,0 +1,3 @@
+```zoro
+type: stats
+```

@@ -3,7 +3,7 @@
   
 // Default Setting
   const getDefaultGridColumns = () => {
-  return window.innerWidth >= 768 ? 4 : 2;
+  return window.innerWidth >= 768 ? 5 : 2;
 };
 
 const DEFAULT_SETTINGS = {
@@ -16,7 +16,7 @@ const DEFAULT_SETTINGS = {
   showLoadingIcon: true,
   gridColumns: getDefaultGridColumns(),
   theme: '', 
-  hideUrlsInTitles: false,
+  hideUrlsInTitles: true,
   clientId: '',
   clientSecret: '',
   redirectUri: 'https://anilist.co/api/v2/oauth/pin',
@@ -37,16 +37,18 @@ const DEFAULT_SETTINGS = {
     });
   }
   // main.js – inside RequestQueue
+
+// NEW
 showGlobalLoader() {
-  if (!this.plugin?.settings?.showLoadingIcon) return; // Check setting first
-  const loader = document.getElementById('zoro-global-loader');
-  if (loader) loader.style.display = 'block';
+  if (!this.plugin?.settings?.showLoadingIcon) return;
+  document.getElementById('zoro-global-loader')?.classList.add('zoro-show');
 }
 
 hideGlobalLoader() {
-  const loader = document.getElementById('zoro-global-loader');
-  if (loader) loader.style.display = 'none'; // Always hide when done
+  document.getElementById('zoro-global-loader')?.classList.remove('zoro-show');
 }
+
+
 
 
   // main.js – inside RequestQueue.process()
@@ -928,7 +930,7 @@ clearSingleEntryCache(mediaId, username, mediaType = 'ANIME') {
     showProgress: !!settings?.showProgress,
     showGenres: !!settings?.showGenres,
     showLoadingIcon: typeof settings?.showLoadingIcon === 'boolean' ? settings.showLoadingIcon : true,
-    hideUrlsInTitles: typeof settings?.hideUrlsInTitles === 'boolean' ? settings.hideUrlsInTitles : false,
+    hideUrlsInTitles: typeof settings?.hideUrlsInTitles === 'boolean' ? settings.hideUrlsInTitles : true,
     clientId: typeof settings?.clientId === 'string' ? settings.clientId : '',
     clientSecret: typeof settings?.clientSecret === 'string' ? settings.clientSecret : '',
     redirectUri: typeof settings?.redirectUri === 'string' ? settings.redirectUri : DEFAULT_SETTINGS.redirectUri,
@@ -1022,7 +1024,9 @@ clearSingleEntryCache(mediaId, username, mediaType = 'ANIME') {
     this.globalLoader = document.createElement('div');
     this.globalLoader.id = 'zoro-global-loader';
     this.globalLoader.textContent = '⏳';
-    this.globalLoader.style.cssText = 'position:fixed;bottom:10px;left:10px;font-size:16px;z-index:9999;display:none;';
+    // NEW (no inline styles)
+this.globalLoader.className = 'zoro-global-loader';
+
     document.body.appendChild(this.globalLoader);
   }
 
@@ -1412,7 +1416,7 @@ renderMediaList(el, entries, config) {
   }
 
   const grid = el.createDiv({ cls: 'zoro-cards-grid' });
-  grid.style.setProperty('--zoro-grid-columns', this.plugin.settings.gridColumns);
+  
   
   // Batch all cards into a fragment
   const fragment = document.createDocumentFragment();
@@ -1432,7 +1436,7 @@ renderSearchResults(el, media, config) {
   }
 
   const grid = el.createDiv({ cls: 'zoro-cards-grid' });
-  grid.style.setProperty('--zoro-grid-columns', this.plugin.settings.gridColumns);
+  
   
   // Batch all cards into a fragment
   const fragment = document.createDocumentFragment();
@@ -1568,7 +1572,7 @@ renderTableLayout(el, entries, config) {
   el.className = 'zoro-container';
   
   const grid = el.createDiv({ cls: 'zoro-cards-grid' });
-  grid.style.setProperty('--zoro-grid-columns', this.plugin.settings.gridColumns);
+  
   
   let index = 0;
   
@@ -1669,8 +1673,6 @@ createMediaCard(data, config, options = {}) {
   if (this.plugin.settings.showCoverImages && media.coverImage?.large) {
     const coverContainer = document.createElement('div');
     coverContainer.className = 'cover-container';
-    coverContainer.style.position = 'relative';
-    coverContainer.style.display = 'inline-block';
     
     const img = document.createElement('img');
     img.src = media.coverImage.large;
@@ -1682,32 +1684,31 @@ createMediaCard(data, config, options = {}) {
     let isPressed = false;
     const pressHoldDuration = 500; // 500ms hold time
     
-    // Mouse events
-    img.onmousedown = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      isPressed = true;
-      img.style.opacity = '0.7';
-      
-      pressTimer = setTimeout(() => {
-        if (isPressed) {
-          this.plugin.moreDetailsPanel.showPanel(media, entry, img);
-          // Reset opacity immediately when panel opens
-          img.style.opacity = '1';
-          isPressed = false;
-        }
-      }, pressHoldDuration);
-    };
-    
-    img.onmouseup = img.onmouseleave = (e) => {
-      if (pressTimer) {
-        clearTimeout(pressTimer);
-        pressTimer = null;
-      }
-      // Always reset opacity
-      img.style.opacity = '1';
+   img.onmousedown = (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  isPressed = true;
+  img.classList.add('pressed'); // Replace: img.style.opacity = '0.7';
+  
+  pressTimer = setTimeout(() => {
+    if (isPressed) {
+      this.plugin.moreDetailsPanel.showPanel(media, entry, img);
+      // Reset opacity immediately when panel opens
+      img.classList.remove('pressed'); // Replace: img.style.opacity = '1';
       isPressed = false;
-    };
+    }
+  }, pressHoldDuration);
+};
+
+img.onmouseup = img.onmouseleave = (e) => {
+  if (pressTimer) {
+    clearTimeout(pressTimer);
+    pressTimer = null;
+  }
+  // Always reset opacity
+  img.classList.remove('pressed'); // Replace: img.style.opacity = '1';
+  isPressed = false;
+};
     
     // Prevent any click events on the image
     img.onclick = (e) => {
@@ -1728,46 +1729,34 @@ createMediaCard(data, config, options = {}) {
       return false;
     };
     
-    // Touch events for mobile - modified to not interfere with scrolling
-    img.ontouchstart = (e) => {
-      // Don't prevent default to allow scrolling
-      isPressed = true;
-      img.style.opacity = '0.7';
-      
-      pressTimer = setTimeout(() => {
-        if (isPressed) {
-          e.preventDefault(); // Only prevent default when actually opening panel
-          this.plugin.moreDetailsPanel.showPanel(media, entry, img);
-          // Reset opacity immediately when panel opens
-          img.style.opacity = '1';
-          isPressed = false;
-        }
-      }, pressHoldDuration);
-    };
-    
-    img.ontouchend = img.ontouchcancel = img.ontouchmove = (e) => {
-      if (pressTimer) {
-        clearTimeout(pressTimer);
-        pressTimer = null;
-      }
-      // Always reset opacity
-      img.style.opacity = '1';
+   img.ontouchstart = (e) => {
+  // Don't prevent default to allow scrolling
+  isPressed = true;
+  img.classList.add('pressed'); // Replace: img.style.opacity = '0.7';
+  
+  pressTimer = setTimeout(() => {
+    if (isPressed) {
+      e.preventDefault(); // Only prevent default when actually opening panel
+      this.plugin.moreDetailsPanel.showPanel(media, entry, img);
+      // Reset opacity immediately when panel opens
+      img.classList.remove('pressed'); // Replace: img.style.opacity = '1';
       isPressed = false;
-    };
+    }
+  }, pressHoldDuration);
+};
+
+img.ontouchend = img.ontouchcancel = img.ontouchmove = (e) => {
+  if (pressTimer) {
+    clearTimeout(pressTimer);
+    pressTimer = null;
+  }
+  // Always reset opacity
+  img.classList.remove('pressed'); // Replace: img.style.opacity = '1';
+  isPressed = false;
+};
+
     
-    // Additional CSS properties to prevent image popup
-    img.style.userSelect = 'none';
-    img.style.webkitUserSelect = 'none';
-    img.style.mozUserSelect = 'none';
-    img.style.msUserSelect = 'none';
-    img.style.webkitTouchCallout = 'none';
-    img.style.webkitUserDrag = 'none';
-    img.style.webkitTapHighlightColor = 'transparent';
-    
-    // Add visual feedback for press and hold
-    img.style.cursor = 'pointer';
     img.title = 'Press and hold for more details';
-    img.style.transition = 'opacity 0.1s ease';
     
     coverContainer.appendChild(img);
     
@@ -1778,17 +1767,7 @@ createMediaCard(data, config, options = {}) {
     if (needsOverlay) {
       const overlay = document.createElement('div');
       overlay.className = 'cover-overlay';
-      overlay.style.position = 'absolute';
-      overlay.style.bottom = '4px'; // Small margin from bottom edge
-      overlay.style.left = '4px';   // Small margin from left edge
-      overlay.style.right = '4px';  // Small margin from right edge
-      overlay.style.padding = '4px 6px';
-      overlay.style.display = 'flex';
-      overlay.style.justifyContent = 'space-between';
-      overlay.style.alignItems = 'center';
-      overlay.style.pointerEvents = 'none'; // Allow clicks to pass through to image
       
-      // Progress (left side, only for list entries) - keeping original design
       if (!isSearch && entry && this.plugin.settings.showProgress) {
         const progress = document.createElement('span');
         progress.className = 'progress'; // Same class as original
@@ -1835,21 +1814,7 @@ if (this.plugin.settings.hideUrlsInTitles) {
   titleLink.href = this.plugin.getZoroUrl(media.id, config.mediaType);
   titleLink.target = '_blank';
   titleLink.textContent = media.title.english || media.title.romaji;
-  
-  // Keep your original URL styling (looks like regular text but is clickable)
-  titleLink.style.textDecoration = 'none';
-  titleLink.style.color = 'inherit';
-  titleLink.style.border = 'none';
-  titleLink.style.outline = 'none';
-  
-  // Keep your original hover effect
-  titleLink.onmouseover = () => {
-    titleLink.style.opacity = '0.7';
-  };
-  titleLink.onmouseout = () => {
-    titleLink.style.opacity = '1';
-  };
-  
+  titleLink.className = 'media-title-link';
   title.appendChild(titleLink);
 }
 
@@ -1865,12 +1830,6 @@ info.appendChild(title);
       const formatBadge = document.createElement('span');
       formatBadge.className = 'format-badge';
       formatBadge.textContent = media.format.substring(0, 2).toUpperCase();
-      
-      // Set fixed width for uniform alignment
-      formatBadge.style.display = 'inline-block';
-      formatBadge.style.width = '24px'; // Fixed width for 2 characters
-      formatBadge.style.textAlign = 'center';
-      formatBadge.style.minWidth = '24px';
       
       details.appendChild(formatBadge);
     }
@@ -2565,6 +2524,17 @@ createExternalLinksSection(media) {
   const linksContainer = document.createElement('div');
   linksContainer.className = 'external-links-container';
 
+
+  // AniList button (always available since we have the media data)
+  const anilistBtn = document.createElement('button');
+  anilistBtn.className = 'external-link-btn anilist-btn';
+  anilistBtn.innerHTML = '🔗 View on AniList';
+  anilistBtn.onclick = (e) => {
+    e.stopPropagation();
+    window.open(this.getAniListUrl(media.id, media.type), '_blank');
+  };
+  linksContainer.appendChild(anilistBtn);
+
   // MyAnimeList button (only if MAL ID is available)
   if (media.idMal) {
     console.log('MAL ID found, creating MAL button');
@@ -2576,17 +2546,6 @@ createExternalLinksSection(media) {
       window.open(this.getMyAnimeListUrl(media.idMal, media.type), '_blank');
     };
     linksContainer.appendChild(malBtn);
-  // AniList button (always available since we have the media data)
-  const anilistBtn = document.createElement('button');
-  anilistBtn.className = 'external-link-btn anilist-btn';
-  anilistBtn.innerHTML = '🔗 View on AniList';
-  anilistBtn.onclick = (e) => {
-    e.stopPropagation();
-    window.open(this.getAniListUrl(media.id, media.type), '_blank');
-  };
-  linksContainer.appendChild(anilistBtn);
-
-
   } else {
     console.log('No MAL ID found for this media');
   }
@@ -2609,17 +2568,9 @@ createExternalLinksSection(media) {
   }
 
   positionPanel(panel, triggerElement) {
-    // Set styles in one batch to avoid reflows
-    Object.assign(panel.style, {
-      position: 'fixed',
-      top: '50%',
-      left: '50%',
-      transform: 'translate(-50%, -50%)',
-      zIndex: '1000',
-      maxHeight: '80vh',
-      maxWidth: '90vw',
-      width: '600px'
-    });
+   // NEW – single line
+panel.className = 'zoro-more-details-panel';
+
   }
 
   handleOutsideClick(event) {

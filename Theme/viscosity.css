@@ -1,0 +1,1141 @@
+
+/* glass.css – scoped glassmorphism theme for Zoro plugin UI only */
+
+/* =========================================================
+   GLASSMORPHISM TRANSFORMATION
+   Modern iOS/macOS-inspired glass design
+   ========================================================= */
+
+.zoro-container {
+  /* === Container & Layout === */
+  --zoro-container-margin: 1.25rem 0;
+  --zoro-container-padding: 0 0.25rem;
+
+  /* === Grid Layout === */
+  --zoro-grid-gap: 1.25rem;
+  --zoro-grid-gap-mobile: 0.875rem;
+  --zoro-grid-margin: 1.25rem 0;
+
+  /* === Card Dimensions === */
+  --zoro-card-border-radius: 16px;
+  --zoro-card-border-width: 1px;
+  --zoro-card-cover-aspect-ratio: 2 / 3;
+  --zoro-card-padding: 0.75rem 1rem;
+  --zoro-card-gap: 0.4rem;
+
+  /* === Typography === */
+  --zoro-title-font-size: 1rem;
+  --zoro-title-font-weight: 600;
+  --zoro-title-line-height: 1.3;
+  --zoro-single-title-font-size: 1.1rem;
+  --zoro-badge-font-size: 0.75rem;
+  --zoro-badge-font-weight: 600;
+  --zoro-progress-font-size: 0.8rem;
+  --zoro-progress-font-weight: 600;
+  --zoro-genre-font-size: 0.7rem;
+  --zoro-genre-font-weight: 500;
+
+  /* === Badge Styling === */
+  --zoro-badge-padding: 0.2rem 0.5rem;
+  --zoro-badge-border-radius: 14px;
+  --zoro-badge-letter-spacing: 0.3px;
+  --zoro-progress-padding: 0.15rem 0.3rem;
+  --zoro-progress-border-radius: 6px;
+  --zoro-genre-padding: 0.15rem 0.4rem;
+  --zoro-genre-border-radius: 12px;
+
+  /* === Details Section === */
+  --zoro-details-gap: 0.3rem;
+  --zoro-genres-gap: 0.3rem;
+  --zoro-genres-margin-top: 0.4rem;
+
+  /* === Table Styling === */
+  --zoro-table-margin: 1.25rem 0;
+  --zoro-table-border-radius: 16px;
+  --zoro-table-header-padding: 1.25rem;
+  --zoro-table-header-font-weight: 600;
+  --zoro-table-cell-padding: 1rem 1.25rem;
+  --zoro-table-border-width: 1px;
+
+  /* === User Stats === */
+  --zoro-user-stats-padding: 2rem;
+  --zoro-user-stats-margin: 1.25rem 0;
+  --zoro-user-stats-border-radius: 16px;
+  --zoro-user-stats-border-width: 1px;
+  --zoro-user-header-gap: 1.25rem;
+  --zoro-user-header-margin-bottom: 2rem;
+  --zoro-user-header-padding-bottom: 1.25rem;
+
+  /* === Error Box === */
+  --zoro-error-padding: 1rem;
+  --zoro-error-border-radius: 16px;
+  --zoro-error-border-width: 1px;
+  --zoro-error-margin: 1.25rem 0;
+  --zoro-error-box-padding: 1rem 1.25rem;
+  --zoro-error-box-margin-top: 1rem;
+  --zoro-error-box-border-radius: 12px;
+  --zoro-error-box-font-size: 0.875rem;
+  --zoro-error-box-border-left-width: 4px;
+
+  /* === Buttons === */
+  --zoro-retry-btn-margin-top: 0.75rem;
+  --zoro-retry-btn-padding: 0.5rem 1rem;
+  --zoro-retry-btn-border-radius: 8px;
+  --zoro-auth-btn-padding: 0.75rem 1.5rem;
+  --zoro-auth-btn-border-radius: 8px;
+  --zoro-auth-btn-font-weight: 600;
+  --zoro-cancel-btn-padding: 0.75rem 1.5rem;
+  --zoro-cancel-btn-border-radius: 8px;
+
+  /* === Modal Styling === */
+  --zoro-modal-z-index: 1000;
+  --zoro-modal-overlay-opacity: 0.3;
+  --zoro-modal-content-border-radius: 20px;
+  --zoro-modal-content-padding: 2rem;
+  --zoro-modal-content-max-width: 520px;
+  --zoro-modal-content-width: 90%;
+  --zoro-modal-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
+
+  /* === Auth Modal === */
+  --zoro-auth-modal-padding: 2.5rem;
+  --zoro-auth-modal-max-width: 480px;
+  --zoro-auth-modal-border-radius: 20px;
+  --zoro-auth-title-font-size: 1.6rem;
+  --zoro-auth-title-font-weight: 700;
+  --zoro-auth-title-margin-bottom: 1.25rem;
+  --zoro-auth-desc-font-size: 1rem;
+  --zoro-auth-desc-line-height: 1.5;
+  --zoro-auth-desc-margin-bottom: 2rem;
+  --zoro-auth-input-padding: 1rem 1.25rem;
+  --zoro-auth-input-border-width: 2px;
+  --zoro-auth-input-border-radius: 12px;
+  --zoro-auth-input-font-size: 1.1rem;
+  --zoro-auth-input-margin-bottom: 2rem;
+  --zoro-auth-button-padding: 0.875rem 1.75rem;
+  --zoro-auth-button-border-radius: 10px;
+  --zoro-auth-button-font-size: 1rem;
+  --zoro-auth-button-font-weight: 600;
+  --zoro-auth-button-min-width: 100px;
+  --zoro-auth-button-gap: 1rem;
+  --zoro-pin-input-font-size: 1.2rem;
+  --zoro-pin-input-letter-spacing: 1px;
+  --zoro-auth-focus-shadow: 0 0 0 4px;
+
+  /* === Animations === */
+  --zoro-transition-duration: 0.3s;
+  --zoro-hover-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+  --zoro-fade-in-duration: 0.4s;
+  --zoro-scale-hover: 1.05;
+  --zoro-brightness-hover: 1.15;
+
+  /* === Mobile Breakpoints === */
+  --zoro-mobile-breakpoint: 480px;
+  --zoro-tablet-breakpoint: 600px;
+  --zoro-auth-mobile-max-width: 380px;
+  --zoro-auth-mobile-padding: 2rem;
+  --zoro-mobile-title-font-size: 1rem;
+  --zoro-mobile-user-header-font-size: 1.4rem;
+
+  /* === Settings Button === */
+  --zoro-setting-btn-font-size: 0.9rem;
+  --zoro-setting-btn-padding: 0.75rem 1.25rem;
+  --zoro-setting-btn-max-width: 220px;
+  --zoro-setting-btn-mobile-font-size: 1.1rem;
+
+  /* === Glass Colors (Light Mode) === */
+  --glass-bg: rgba(255, 255, 255, 0.12);
+  --glass-border: rgba(255, 255, 255, 0.2);
+  --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  --glass-highlight: rgba(255, 255, 255, 0.08);
+  --glass-text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+
+  /* === Glass Colors (Dark Mode) === */
+  --glass-bg-dark: rgba(255, 255, 255, 0.06);
+  --glass-border-dark: rgba(255, 255, 255, 0.12);
+  --glass-shadow-dark: 0 8px 32px rgba(0, 0, 0, 0.3);
+  --glass-highlight-dark: rgba(255, 255, 255, 0.04);
+  --glass-text-shadow-dark: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* =========================================================
+   BASE GLASS STYLES
+   ========================================================= */
+
+/* Glass Container Base */
+.zoro-container {
+  margin: var(--zoro-container-margin);
+  padding: var(--zoro-container-padding);
+  font-family: var(--font-interface);
+}
+
+/* ─── Error Styles – Glass Error ─── */
+.zoro-container .zoro-error {
+  color: var(--text-error);
+  background: var(--background-modifier-error);
+  padding: var(--zoro-error-padding);
+  border-radius: var(--zoro-error-border-radius);
+  border: var(--zoro-error-border-width) solid var(--border-color);
+  margin: var(--zoro-error-margin);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  background: rgba(var(--background-modifier-error-rgb), 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: var(--glass-shadow);
+}
+
+.zoro-container .zoro-error-box {
+  background: rgba(var(--color-red-rgb), 0.1);
+  border-left: var(--zoro-error-box-border-left-width) solid var(--color-red);
+  padding: var(--zoro-error-box-padding);
+  margin-top: var(--zoro-error-box-margin-top);
+  border-radius: var(--zoro-error-box-border-radius);
+  font-size: var(--zoro-error-box-font-size);
+  color: var(--text-normal);
+  white-space: pre-wrap;
+  text-shadow: var(--glass-text-shadow);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* ─── Card Styles – Glass Cards ─── */
+.zoro-container .zoro-card,
+.zoro-container .zoro-single-card {
+  background: var(--glass-bg);
+  border: var(--zoro-card-border-width) solid var(--glass-border);
+  border-radius: var(--zoro-card-border-radius);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: all var(--zoro-transition-duration) ease;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+  position: relative;
+}
+
+.zoro-container .zoro-card:hover,
+.zoro-container .zoro-single-card:hover {
+  transform: translateY(-2px) scale(var(--zoro-scale-hover));
+  box-shadow: var(--glass-shadow), 0 12px 40px rgba(0, 0, 0, 0.15);
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.zoro-container .zoro-card::before,
+.zoro-container .zoro-single-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+  opacity: 0.6;
+}
+
+/* ─── Card Media Cover – Glass Overlay ─── */
+.zoro-container .zoro-card .media-cover,
+.zoro-container .zoro-single-card .media-cover {
+  width: 100%;
+  aspect-ratio: var(--zoro-card-cover-aspect-ratio);
+  object-fit: cover;
+  flex-shrink: 0;
+  transition: filter var(--zoro-transition-duration) ease;
+}
+
+.zoro-container .zoro-card:hover .media-cover,
+.zoro-container .zoro-single-card:hover .media-cover {
+  filter: brightness(1.1) saturate(1.2);
+}
+
+/* ─── Card Media Info – Glass Padding ─── */
+.zoro-container .zoro-card .media-info,
+.zoro-container .zoro-single-card .media-info {
+  padding: var(--zoro-card-padding);
+  display: flex;
+  flex-direction: column;
+  gap: var(--zoro-card-gap);
+}
+
+/* ─── Card Titles – Glass Text ─── */
+.zoro-container .zoro-card h4,
+.zoro-container .zoro-single-card h3 {
+  margin: 0;
+  font-size: var(--zoro-title-font-size);
+  font-weight: var(--zoro-title-font-weight);
+  color: var(--text-normal);
+  line-height: var(--zoro-title-line-height);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: var(--glass-text-shadow);
+}
+
+.zoro-container .zoro-single-card h3 {
+  font-size: var(--zoro-single-title-font-size);
+}
+
+/* ─── Media Details – Glass Details ─── */
+.zoro-container .media-details {
+  display: flex;
+  gap: var(--zoro-details-gap);
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 0.25rem 0;
+}
+
+/* ─── Badge Styles – Glass Badges ─── */
+.zoro-container .format-badge {
+  font-size: 0.55rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  line-height: 1;
+}
+.zoro-container .status-badge {
+  padding: var(--zoro-badge-padding);
+  border-radius: var(--zoro-badge-border-radius);
+  font-size: var(--zoro-badge-font-size);
+  font-weight: var(--zoro-badge-font-weight);
+  text-transform: uppercase;
+  letter-spacing: var(--zoro-badge-letter-spacing);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+/* ─── Status Badge Colors – Enhanced ─── */
+.zoro-container .status-current   { background: rgba(var(--color-green-rgb), 0.2);  color: var(--color-green);  border-color: rgba(var(--color-green-rgb), 0.3); }
+.zoro-container .status-completed { background: rgba(var(--color-blue-rgb), 0.2);   color: var(--color-blue);   border-color: rgba(var(--color-blue-rgb), 0.3); }
+.zoro-container .status-paused    { background: rgba(var(--color-yellow-rgb), 0.2); color: var(--color-yellow); border-color: rgba(var(--color-yellow-rgb), 0.3); }
+.zoro-container .status-dropped   { background: rgba(var(--color-red-rgb), 0.2);    color: var(--color-red);    border-color: rgba(var(--color-red-rgb), 0.3); }
+.zoro-container .status-planning  { background: rgba(var(--color-purple-rgb), 0.2); color: var(--color-purple); border-color: rgba(var(--color-purple-rgb), 0.3); }
+.zoro-container .status-repeating { background: rgba(var(--color-cyan-rgb), 0.2);   color: var(--color-cyan);   border-color: rgba(var(--color-cyan-rgb), 0.3); }
+.zoro-container .status-add       { background: rgba(var(--color-cyan-rgb), 0.2);   color: var(--color-cyan);   border-color: rgba(var(--color-cyan-rgb), 0.3); }
+
+/* ─── Progress & Score – Glass Elements ─── */
+.zoro-container .progress,
+.zoro-container .score {
+  padding: var(--zoro-progress-padding);
+  background: rgba(var(--background-modifier-border-rgb), 0.4);
+  border-radius: var(--zoro-progress-border-radius);
+  font-size: var(--zoro-progress-font-size);
+  font-weight: var(--zoro-progress-font-weight);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+
+.zoro-container .score {
+  color: var(--color-orange);
+  background: rgba(var(--color-orange-rgb), 0.15);
+  border-color: rgba(var(--color-orange-rgb), 0.2);
+}
+
+/* ─── Genres Section – Glass Tags ─── */
+.zoro-container .genres {
+  display: flex;
+  gap: var(--zoro-genres-gap);
+  flex-wrap: wrap;
+  margin-top: var(--zoro-genres-margin-top);
+}
+
+.zoro-container .genre-tag {
+  background: rgba(var(--background-modifier-hover-rgb), 0.5);
+  color: var(--text-muted);
+  padding: var(--zoro-genre-padding);
+  border-radius: var(--zoro-genre-border-radius);
+  font-size: var(--zoro-genre-font-size);
+  font-weight: var(--zoro-genre-font-weight);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: all var(--zoro-transition-duration) ease;
+}
+
+.zoro-container .genre-tag:hover {
+  background: rgba(var(--background-modifier-hover-rgb), 0.7);
+  transform: translateY(-1px);
+}
+
+/* ─── Table Layout – Glass Table ─── */
+.zoro-container .zoro-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: var(--zoro-table-margin);
+  background: var(--glass-bg);
+  border-radius: var(--zoro-table-border-radius);
+  overflow: hidden;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+}
+
+.zoro-container .zoro-table th {
+  background: rgba(var(--background-modifier-hover-rgb), 0.3);
+  color: var(--text-normal);
+  padding: var(--zoro-table-header-padding);
+  text-align: left;
+  font-weight: var(--zoro-table-header-font-weight);
+  border-bottom: var(--zoro-table-border-width) solid var(--glass-border);
+  text-shadow: var(--glass-text-shadow);
+}
+
+.zoro-container .zoro-table td {
+  padding: var(--zoro-table-cell-padding);
+  border-bottom: var(--zoro-table-border-width) solid var(--glass-border);
+  color: var(--text-normal);
+  text-shadow: var(--glass-text-shadow);
+}
+
+.zoro-container .zoro-table tr:hover {
+  background: rgba(var(--background-modifier-hover-rgb), 0.4);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+/* ─── User Stats – Glass Stats ─── */
+.zoro-container .zoro-user-stats {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--zoro-user-stats-border-radius);
+  padding: var(--zoro-user-stats-padding);
+  margin: var(--zoro-user-stats-margin);
+  backdrop-filter: blur(25px);
+  -webkit-backdrop-filter: blur(25px);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+  position: relative;
+}
+
+.zoro-container .zoro-user-stats::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  opacity: 0.7;
+}
+
+.zoro-container .zoro-user-header {
+  display: flex;
+  align-items: center;
+  gap: var(--zoro-user-header-gap);
+  margin-bottom: var(--zoro-user-header-margin-bottom);
+  padding-bottom: var(--zoro-user-header-padding-bottom);
+  border-bottom: var(--zoro-table-border-width) solid var(--glass-border);
+  text-shadow: var(--glass-text-shadow);
+}
+
+/* ─── Button Styles – Glass Buttons ─── */
+.zoro-container .zoro-retry-btn {
+  margin-top: var(--zoro-retry-btn-margin-top);
+  background: rgba(var(--interactive-accent-rgb), 0.2);
+  color: var(--interactive-accent);
+  border: 1px solid rgba(var(--interactive-accent-rgb), 0.3);
+  padding: var(--zoro-retry-btn-padding);
+  border-radius: var(--zoro-retry-btn-border-radius);
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: all var(--zoro-transition-duration) ease;
+  text-shadow: var(--glass-text-shadow);
+}
+
+.zoro-container .zoro-retry-btn:hover {
+  background: rgba(var(--interactive-accent-rgb), 0.3);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(var(--interactive-accent-rgb), 0.2);
+}
+
+.zoro-container .zoro-auth-button {
+  background: linear-gradient(135deg, rgba(2, 169, 255, 0.2), rgba(59, 130, 246, 0.2));
+  color: #02A9FF;
+  font-weight: var(--zoro-auth-btn-font-weight);
+  padding: var(--zoro-auth-btn-padding);
+  border-radius: var(--zoro-auth-btn-border-radius);
+  border: 1px solid rgba(2, 169, 255, 0.3);
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: all var(--zoro-transition-duration) ease;
+  text-shadow: var(--glass-text-shadow);
+}
+
+.zoro-container .zoro-auth-button:hover {
+  background: linear-gradient(135deg, rgba(2, 169, 255, 0.3), rgba(59, 130, 246, 0.3));
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(2, 169, 255, 0.2);
+}
+
+.zoro-container .zoro-cancel-button {
+  background: var(--glass-bg);
+  color: var(--text-normal);
+  padding: var(--zoro-cancel-btn-padding);
+  border-radius: var(--zoro-cancel-btn-border-radius);
+  border: 1px solid var(--glass-border);
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: all var(--zoro-transition-duration) ease;
+  text-shadow: var(--glass-text-shadow);
+}
+
+.zoro-container .zoro-cancel-button:hover {
+  background: rgba(var(--background-modifier-hover-rgb), 0.5);
+  transform: translateY(-1px);
+}
+
+/* ─── Modal Styles – Glass Modals ─── */
+.zoro-edit-modal .zoro-modal-overlay {
+  position: absolute;
+  width: 100%; height: 100%;
+  background-color: rgba(0, 0, 0, var(--zoro-modal-overlay-opacity));
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+.zoro-edit-modal .zoro-modal-content {
+  background: var(--glass-bg);
+  border-radius: var(--zoro-modal-content-border-radius);
+  padding: var(--zoro-modal-content-padding);
+  max-width: var(--zoro-modal-content-max-width);
+  width: var(--zoro-modal-content-width);
+  position: relative;
+  box-shadow: var(--glass-shadow), 0 0 0 1px var(--glass-border);
+  backdrop-filter: blur(25px);
+  -webkit-backdrop-filter: blur(25px);
+  border: 1px solid var(--glass-border);
+}
+
+/* ─── Auth Modal Styles – Glass Auth ─── */
+.zoro-auth-modal .auth-modal {
+  padding: var(--zoro-auth-modal-padding);
+  max-width: var(--zoro-auth-modal-max-width);
+  margin: 0 auto;
+  background: var(--glass-bg);
+  border-radius: var(--zoro-auth-modal-border-radius);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+}
+
+.zoro-auth-modal .auth-modal h2 {
+  margin-bottom: var(--zoro-auth-title-margin-bottom);
+  text-align: center;
+  color: var(--text-normal);
+  font-size: var(--zoro-auth-title-font-size);
+  font-weight: var(--zoro-auth-title-font-weight);
+  text-shadow: var(--glass-text-shadow);
+}
+
+.zoro-auth-modal .auth-modal-desc {
+  margin-bottom: var(--zoro-auth-desc-margin-bottom);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--zoro-auth-desc-font-size);
+  line-height: var(--zoro-auth-desc-line-height);
+  text-shadow: var(--glass-text-shadow);
+}
+
+.zoro-auth-modal .auth-input-container {
+  margin-bottom: var(--zoro-auth-input-margin-bottom);
+}
+
+.zoro-auth-modal .auth-input {
+  width: 100%;
+  padding: var(--zoro-auth-input-padding);
+  border: var(--zoro-auth-input-border-width) solid var(--glass-border);
+  border-radius: var(--zoro-auth-input-border-radius);
+  background: rgba(var(--background-primary-rgb), 0.3);
+  color: var(--text-normal);
+  font-size: var(--zoro-auth-input-font-size);
+  transition: all var(--zoro-transition-duration) ease;
+  font-family: var(--font-interface);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.zoro-auth-modal .auth-input:focus {
+  outline: none;
+  border-color: var(--interactive-accent);
+  box-shadow: var(--zoro-auth-focus-shadow) var(--interactive-accent-hover);
+  background: rgba(var(--background-primary-rgb), 0.5);
+}
+
+.zoro-auth-modal .auth-input::placeholder {
+  color: var(--text-muted);
+}
+
+.zoro-auth-modal .pin-input {
+  font-family: var(--font-monospace);
+  letter-spacing: var(--zoro-pin-input-letter-spacing);
+  text-align: center;
+  font-size: var(--zoro-pin-input-font-size);
+}
+
+.zoro-auth-modal .auth-button-container {
+  display: flex;
+  gap: var(--zoro-auth-button-gap);
+  justify-content: flex-end;
+}
+
+.zoro-auth-modal .auth-button {
+  padding: var(--zoro-auth-button-padding);
+  border: none;
+  border-radius: var(--zoro-auth-button-border-radius);
+  font-size: var(--zoro-auth-button-font-size);
+  font-weight: var(--zoro-auth-button-font-weight);
+  cursor: pointer;
+  transition: all var(--zoro-transition-duration) ease;
+  min-width: var(--zoro-auth-button-min-width);
+  font-family: var(--font-interface);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.zoro-auth-modal .auth-button:not(.mod-cta) {
+  background: rgba(var(--interactive-normal-rgb), 0.2);
+  color: var(--text-normal);
+  border: 1px solid var(--glass-border);
+}
+
+.zoro-auth-modal .auth-button:not(.mod-cta):hover {
+  background: rgba(var(--interactive-hover-rgb), 0.3);
+  transform: translateY(-1px);
+}
+
+.zoro-auth-modal .auth-button.mod-cta {
+  background: rgba(var(--interactive-accent-rgb), 0.2);
+  color: var(--text-on-accent);
+  border: 1px solid rgba(var(--interactive-accent-rgb), 0.3);
+}
+
+.zoro-auth-modal .auth-button.mod-cta:hover {
+  background: rgba(var(--interactive-accent-hover-rgb), 0.3);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(var(--interactive-accent-rgb), 0.2);
+}
+
+.zoro-auth-modal .submit-button {
+  position: relative;
+  overflow: hidden;
+}
+
+.zoro-auth-modal .submit-button.ready {
+  background: rgba(var(--color-green-rgb), 0.2);
+  color: var(--color-green);
+  border-color: rgba(var(--color-green-rgb), 0.3);
+  transform: scale(var(--zoro-scale-hover));
+}
+
+.zoro-auth-modal .submit-button.ready:hover {
+  background: rgba(var(--color-green-rgb), 0.3);
+  filter: brightness(var(--zoro-brightness-hover));
+  box-shadow: 0 8px 25px rgba(var(--color-green-rgb), 0.2);
+}
+
+.zoro-auth-modal .pin-modal {
+  border: var(--zoro-auth-input-border-width) solid rgba(var(--interactive-accent-rgb), 0.3);
+}
+
+.zoro-auth-modal .pin-modal h2 {
+  color: var(--interactive-accent);
+}
+
+/* ─── Settings Button – Glass Settings ─── */
+.zoro-container .setting-item .setting-item-control button {
+  font-size: var(--zoro-setting-btn-font-size) !important;
+  padding: var(--zoro-setting-btn-padding) !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: var(--zoro-setting-btn-max-width) !important;
+  background: var(--glass-bg) !important;
+  border: 1px solid var(--glass-border) !important;
+  border-radius: 8px !important;
+  backdrop-filter: blur(10px) !important;
+  -webkit-backdrop-filter: blur(10px) !important;
+  transition: all var(--zoro-transition-duration) ease !important;
+}
+
+.zoro-container .setting-item .setting-item-control button:hover {
+  background: rgba(var(--background-modifier-hover-rgb), 0.3) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* ─── Dark Mode Glass Styles ─── */
+.theme-dark {
+  --glass-bg: var(--glass-bg-dark);
+  --glass-border: var(--glass-border-dark);
+  --glass-shadow: var(--glass-shadow-dark);
+  --glass-highlight: var(--glass-highlight-dark);
+  --glass-text-shadow: var(--glass-text-shadow-dark);
+}
+
+.theme-dark .zoro-container .zoro-card,
+.theme-dark .zoro-container .zoro-single-card,
+.theme-dark .zoro-container .zoro-user-stats,
+.theme-dark .zoro-container .zoro-table {
+  background: var(--glass-bg-dark);
+  border-color: var(--glass-border-dark);
+  box-shadow: var(--glass-shadow-dark), inset 0 1px 0 var(--glass-highlight-dark);
+}
+
+.theme-dark .zoro-container .zoro-card:hover,
+.theme-dark .zoro-container .zoro-single-card:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* ─── Custom Scrollbar – Glass Scrollbar ─── */
+.zoro-container ::-webkit-scrollbar {
+  width: 8px;
+}
+
+.zoro-container ::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 4px;
+}
+
+.zoro-container ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.zoro-container ::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* ─── Animations – Enhanced Glass Animations ─── */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.zoro-container > * {
+  animation: fadeIn var(--zoro-fade-in-duration) ease;
+}
+
+/* ─── Mobile Responsive – Glass Mobile ─── */
+@media (max-width: 480px) {
+  .zoro-container .zoro-card,
+  .zoro-container .zoro-single-card {
+    text-align: center;
+    border-radius: 12px;
+  }
+  
+  .zoro-auth-modal .auth-modal {
+    padding: var(--zoro-auth-mobile-padding);
+    max-width: var(--zoro-auth-mobile-max-width);
+  }
+  
+  .zoro-auth-modal .auth-button-container {
+    flex-direction: column;
+  }
+  
+  .zoro-auth-modal .auth-button {
+    width: 100%;
+  }
+  
+  .zoro-container .setting-item .setting-item-control button {
+    max-width: 100% !important;
+    font-size: var(--zoro-setting-btn-mobile-font-size) !important;
+  }
+}
+
+@media (max-width: 600px) {
+  .zoro-container .zoro-card h4,
+  .zoro-container .zoro-single-card h3 {
+    font-size: var(--zoro-mobile-title-font-size);
+  }
+
+  .zoro-container .zoro-user-header h3 {
+    font-size: var(--zoro-mobile-user-header-font-size);
+  }
+}
+
+/* ===== TITLE CSS – Glass Titles ===== */
+.zoro-container .media-info h4 {
+  margin: 0;
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.3;
+  text-shadow: var(--glass-text-shadow);
+}
+
+.zoro-container .anilist-title-link,
+.zoro-container .zoro-title-link {
+  color: var(--text-normal);
+  text-decoration: none;
+  display: block;
+  transition: all var(--zoro-transition-duration) ease;
+  text-shadow: var(--glass-text-shadow);
+}
+
+.zoro-container .anilist-title-link:hover,
+.zoro-container .zoro-title-link:hover {
+  color: var(--interactive-accent);
+  text-decoration: underline;
+  text-shadow: 0 0 8px rgba(var(--interactive-accent-rgb), 0.3);
+}
+
+/* ===== ANIMATION CSS – Glass Animations ===== */
+.zoro-container .zoro-card {
+  transition: all var(--zoro-transition-duration) ease;
+}
+
+.zoro-container .zoro-card:hover {
+  transform: translateY(-2px) scale(1.02);
+}
+
+/* Focus states for accessibility */
+.zoro-container *:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(var(--interactive-accent-rgb), 0.2);
+}
+
+/*  EDIT MODAL THEME - GLASS DESIGN */
+
+/* ---------- 1. Modal shell ---------- */
+.zoro-edit-modal .zoro-modal-content {
+  background: rgba(255, 255, 255, 0.15);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.95);
+  border-radius: 16px;
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(255, 255, 255, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  width: 340px;
+  max-width: 90vw;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 24px;
+  position: relative;
+}
+
+/* Glass highlight effect */
+.zoro-edit-modal .zoro-modal-content::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, 
+    transparent, 
+    rgba(255, 255, 255, 0.4), 
+    transparent
+  );
+  border-radius: 16px 16px 0 0;
+}
+
+/* ---------- 2. Form layout ---------- */
+.zoro-edit-modal .zoro-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.zoro-edit-modal .zoro-modal-title {
+  margin: 0 0 12px;
+  font-size: 1.25rem;
+  font-weight: 600;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.95);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+.zoro-edit-modal .zoro-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.zoro-edit-modal .zoro-form-label {
+  font-size: .875rem;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.85);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.zoro-edit-modal .zoro-form-input,
+.zoro-edit-modal .zoro-status-select {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.95);
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 1rem;
+  transition: all 0.3s ease;
+  text-align: left;
+}
+
+.zoro-edit-modal .zoro-form-input::placeholder {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.zoro-edit-modal .zoro-form-input:focus,
+.zoro-edit-modal .zoro-status-select:focus {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(135, 206, 250, 0.6);
+  box-shadow: 
+    0 0 0 2px rgba(135, 206, 250, 0.2),
+    0 4px 12px rgba(0, 0, 0, 0.2);
+  outline: none;
+}
+
+/* ---------- 3. Quick-progress buttons ---------- */
+.zoro-edit-modal .zoro-quick-progress-buttons {
+  display: flex;
+  gap: 6px;
+  align-items: right;
+  justify-content: flex-end;
+}
+
+.zoro-edit-modal .zoro-quick-btn {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.9);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: .875rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.zoro-edit-modal .zoro-quick-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.3);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+/* ---------- 4. Bottom action bar ---------- */
+.zoro-edit-modal .zoro-modal-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.zoro-edit-modal .zoro-modal-btn {
+  padding: 8px 14px;
+  font-size: .875rem;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  cursor: pointer;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+  font-weight: 500;
+}
+
+.zoro-edit-modal .zoro-save-btn {
+  background: rgba(0, 119, 255, 0.3);
+  color: rgba(255, 255, 255, 0.95);
+  border-color: rgba(0, 119, 255, 0.4);
+}
+
+.zoro-edit-modal .zoro-save-btn:hover {
+  background: rgba(0, 119, 255, 0.4);
+  border-color: rgba(0, 119, 255, 0.6);
+  box-shadow: 0 4px 16px rgba(0, 119, 255, 0.3);
+  transform: translateY(-1px);
+}
+
+.zoro-edit-modal .zoro-remove-btn {
+  background: rgba(255, 59, 48, 0.3);
+  color: rgba(255, 255, 255, 0.95);
+  border-color: rgba(255, 59, 48, 0.4);
+}
+
+.zoro-edit-modal .zoro-remove-btn:hover {
+  background: rgba(255, 59, 48, 0.4);
+  border-color: rgba(255, 59, 48, 0.6);
+  box-shadow: 0 4px 16px rgba(255, 59, 48, 0.3);
+  transform: translateY(-1px);
+}
+
+.zoro-edit-modal .zoro-cancel-btn {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.9);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.zoro-edit-modal .zoro-cancel-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+  transform: translateY(-1px);
+}
+
+.zoro-edit-modal .zoro-fav-btn {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  padding: 0 6px;
+  cursor: pointer;
+  align-items: left;
+  color: rgba(255, 255, 255, 0.8);
+  transition: all 0.3s ease;
+}
+
+.zoro-edit-modal .zoro-fav-btn:hover {
+  color: rgba(255, 215, 0, 0.9);
+  transform: scale(1.1);
+}
+
+/* ---------- 5. Dark-mode overrides ---------- */
+@media (prefers-color-scheme: dark) {
+  .zoro-edit-modal .zoro-modal-content {
+    background: rgba(20, 20, 20, 0.3);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.95);
+  }
+
+  .zoro-edit-modal .zoro-form-input,
+  .zoro-edit-modal .zoro-status-select {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.15);
+    color: rgba(255, 255, 255, 0.95);
+  }
+
+  .zoro-edit-modal .zoro-form-input:focus,
+  .zoro-edit-modal .zoro-status-select:focus {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(100, 149, 237, 0.6);
+  }
+
+  .zoro-edit-modal .zoro-quick-btn,
+  .zoro-edit-modal .zoro-cancel-btn {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  .zoro-edit-modal .zoro-quick-btn:hover,
+  .zoro-edit-modal .zoro-cancel-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+  }
+
+  .zoro-edit-modal .zoro-save-btn {
+    background: rgba(10, 132, 255, 0.3);
+    border-color: rgba(10, 132, 255, 0.4);
+  }
+
+  .zoro-edit-modal .zoro-save-btn:hover {
+    background: rgba(10, 132, 255, 0.4);
+    border-color: rgba(10, 132, 255, 0.6);
+    box-shadow: 0 4px 16px rgba(10, 132, 255, 0.3);
+  }
+
+  .zoro-edit-modal .zoro-remove-btn {
+    background: rgba(255, 69, 58, 0.3);
+    border-color: rgba(255, 69, 58, 0.4);
+  }
+
+  .zoro-edit-modal .zoro-remove-btn:hover {
+    background: rgba(255, 69, 58, 0.4);
+    border-color: rgba(255, 69, 58, 0.6);
+    box-shadow: 0 4px 16px rgba(255, 69, 58, 0.3);
+  }
+}
+
+/* ---------- 6. Additional glass enhancements ---------- */
+.zoro-edit-modal .zoro-form-input:hover,
+.zoro-edit-modal .zoro-status-select:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+/* Smooth scrollbar for glass effect */
+.zoro-edit-modal .zoro-modal-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.zoro-edit-modal .zoro-modal-content::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+.zoro-edit-modal .zoro-modal-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.zoro-edit-modal .zoro-modal-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.zoro-search-container {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--zoro-card-border-radius);
+  padding: var(--zoro-card-padding);
+  backdrop-filter: blur(20px);
+  box-shadow: var(--glass-shadow);
+}
+
+.zoro-search-input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 8px;
+  color: var(--text-normal);
+}
+
+.zoro-search-results {
+  margin-top: 1rem;
+}
+
+/* 3. Make the search-result grid use glass styling */
+.zoro-search-container .zoro-cards-grid {
+  --zoro-grid-columns: var(--zoro-grid-columns); /* inherit plugin var */
+  display: grid;
+  gap: var(--zoro-grid-gap);
+  margin: var(--zoro-grid-margin);
+}
+
+/* 4. Apply glass card styles to search results */
+.zoro-search-container .zoro-card {
+  background: var(--glass-bg);
+  border: var(--zoro-card-border-width) solid var(--glass-border);
+  border-radius: var(--zoro-card-border-radius);
+  overflow: hidden;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: var(--glass-shadow), inset 0 1px 0 var(--glass-highlight);
+  transition: all var(--zoro-transition-duration) ease;
+}
+
+.zoro-search-container .zoro-card:hover {
+  transform: translateY(-2px) scale(var(--zoro-scale-hover));
+  box-shadow: var(--glass-shadow), 0 12px 40px rgba(0, 0, 0, 0.15);
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.25);
+}

@@ -1,8 +1,6 @@
-// Obsidian API
-  const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal } = require('obsidian');
-  
-// Default Setting
-  const getDefaultGridColumns = () => {
+const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal } = require('obsidian');
+
+const getDefaultGridColumns = () => {
   return window.innerWidth >= 768 ? 5 : 2;
 };
 
@@ -21,61 +19,60 @@ const DEFAULT_SETTINGS = {
   clientSecret: '',
   redirectUri: 'https://anilist.co/api/v2/oauth/pin',
   accessToken: '',
+  malClientId: '',
+  malClientSecret: '',
+  malAccessToken: '',
+  malRefreshToken: '',
+  malTokenExpiry: null,
+  malUserInfo: null,
 };
 
-// Request Queue
- class RequestQueue {
+class RequestQueue {
   constructor(plugin) {
     this.plugin = plugin;
     this.queue = [];
-    this.delay = 700; // ~85 requests/min (AniList limit: 90/min)
+    this.delay = 700;
     this.isProcessing = false;
-  } add(requestFn) {
+  }
+  add(requestFn) {
     return new Promise((resolve, reject) => {
       this.queue.push({ requestFn, resolve, reject });
       this.process();
     });
   }
-  // main.js – inside RequestQueue
 
-// NEW
-showGlobalLoader() {
-  if (!this.plugin?.settings?.showLoadingIcon) return;
-  document.getElementById('zoro-global-loader')?.classList.add('zoro-show');
-}
-
-hideGlobalLoader() {
-  document.getElementById('zoro-global-loader')?.classList.remove('zoro-show');
-}
-
-
-
-
-  // main.js – inside RequestQueue.process()
-async process() {
-  if (this.isProcessing || !this.queue.length) {
-    if (!this.queue.length) this.hideGlobalLoader(); // hide if queue is empty
-    return;
+  showGlobalLoader() {
+    if (!this.plugin?.settings?.showLoadingIcon) return;
+    document.getElementById('zoro-global-loader')?.classList.add('zoro-show');
   }
-  this.isProcessing = true;
-  if (this.queue.length === 1) this.showGlobalLoader(); // first item
 
-  const { requestFn, resolve, reject } = this.queue.shift();
-  try {
-    const result = await requestFn();
-    resolve(result);
-  } catch (err) {
-    reject(err);
-  } finally {
-    setTimeout(() => {
-      this.isProcessing = false;
-      this.process(); // will hide loader if queue is now empty
-    }, this.delay);
+  hideGlobalLoader() {
+    document.getElementById('zoro-global-loader')?.classList.remove('zoro-show');
+  }
+
+  async process() {
+    if (this.isProcessing || !this.queue.length) {
+      if (!this.queue.length) this.hideGlobalLoader();
+      return;
+    }
+    this.isProcessing = true;
+    if (this.queue.length === 1) this.showGlobalLoader();
+
+    const { requestFn, resolve, reject } = this.queue.shift();
+    try {
+      const result = await requestFn();
+      resolve(result);
+    } catch (err) {
+      reject(err);
+    } finally {
+      setTimeout(() => {
+        this.isProcessing = false;
+        this.process();
+      }, this.delay);
+    }
   }
 }
 
-}
-// API 
 class Api {
   constructor(plugin) {
     this.plugin = plugin;
@@ -84,9 +81,7 @@ class Api {
     this.cacheTimeout = plugin.cacheTimeout;
   }
 
-  // NEW: Create deterministic cache keys
   createCacheKey(config) {
-    // Create a consistent key by sorting object keys
     const sortedConfig = {};
     Object.keys(config).sort().forEach(key => {
       sortedConfig[key] = config[key];
@@ -129,10 +124,8 @@ class Api {
   }
 
   async fetchZoroData(config) {
-    // FIXED: Create deterministic cache key
     const cacheKey = this.createCacheKey(config);
     
-    // FIXED: Determine cache type and TTL first
     let cacheType;
     if (config.type === 'stats') {
       cacheType = 'userData';
@@ -141,18 +134,16 @@ class Api {
     } else if (config.type === 'search') {
       cacheType = 'searchResults';
     } else {
-      cacheType = 'userData'; // Default for lists
+      cacheType = 'userData';
     }
     
-    // FIXED: Define TTL map properly
     const ttlMap = {
-      userData: 30 * 60 * 1000,    // 30 min for stats/lists
-      mediaData: 10 * 60 * 1000,   // 10 min for single media
-      searchResults: 2 * 60 * 1000 // 2 min for search
+      userData: 30 * 60 * 1000,
+      mediaData: 10 * 60 * 1000,
+      searchResults: 2 * 60 * 1000
     };
     const cacheTtl = ttlMap[cacheType] || this.plugin.cacheTimeout;
 
-    // FIXED: Check cache FIRST - before doing any expensive work
     const cached = !config.nocache && this.plugin.getFromCache(cacheType, cacheKey, cacheTtl);
     if (cached) {
       console.log(`[Zoro] Cache HIT for ${cacheType}: ${cacheKey.substring(0, 50)}...`);
@@ -161,7 +152,6 @@ class Api {
 
     console.log(`[Zoro] Cache MISS for ${cacheType}: ${cacheKey.substring(0, 50)}...`);
 
-    // Now do the expensive work only if cache miss
     let query, variables;
     try {
       const headers = {
@@ -174,7 +164,6 @@ class Api {
         headers['Authorization'] = `Bearer ${this.plugin.settings.accessToken}`;
       }
       
-      // Build query and variables based on config type
       if (config.type === 'stats') {
         query = this.getUserStatsQuery();
         variables = { username: config.username };
@@ -202,7 +191,6 @@ class Api {
         };
       }
       
-      // Make the GraphQL request with rate limiting
       const response = await this.requestQueue.add(() => requestUrl({
         url: 'https://graphql.anilist.co',
         method: 'POST',
@@ -231,7 +219,6 @@ class Api {
         throw new Error('AniList returned no data.');
       }
       
-      // FIXED: Save to cache with logging
       this.plugin.setToCache(cacheType, cacheKey, result.data);
       console.log(`[Zoro] Cached data for ${cacheType}: ${cacheKey.substring(0, 50)}...`);
       
@@ -284,7 +271,6 @@ class Api {
         throw new Error(`AniList update error: ${message}`);
       }
       
-      // FIXED: Clear cache after update
       this.plugin.clearCacheForMedia(mediaId);
       
       return result.data.SaveMediaListEntry;
@@ -478,7 +464,7 @@ class Api {
   }
 
   getUserStatsQuery({ mediaType = 'ANIME', layout = 'card', useViewer = false } = {}) {
-    const typeKey = mediaType.toLowerCase(); // 'anime' or 'manga'
+    const typeKey = mediaType.toLowerCase();
 
     const statFields = {
       compact: `
@@ -602,32 +588,28 @@ class Api {
 
     const type = String(mediaType).toUpperCase();
     const validTypes = ['ANIME', 'MANGA'];
-    const urlType = validTypes.includes(type) ? type.toLowerCase() : 'anime'; // fallback
+    const urlType = validTypes.includes(type) ? type.toLowerCase() : 'anime';
 
     return `https://anilist.co/${urlType}/${mediaId}`;
   }
-  
 }
-// Plugin
+
 class ZoroPlugin extends Plugin {
   constructor(app, manifest) {
     super(app, manifest);
     this.globalListeners = [];
-
-    // Initialize separate caches
     this.cache = {
       userData: new Map(),
       mediaData: new Map(),
       searchResults: new Map() 
     };
     this.requestQueue = new RequestQueue();
-    this.cacheTimeout = 4 * 60 * 1000; // 4 min default
-    
-    // FIXED: More frequent pruning to handle shorter TTLs
-    this.pruneInterval = setInterval(() => this.pruneCache(), 60 * 1000); // Every minute
+    this.cacheTimeout = 4 * 60 * 1000;
+    this.pruneInterval = setInterval(() => this.pruneCache(), 60 * 1000);
     this.requestQueue = new RequestQueue(this);
     this.api = new Api(this);
     this.auth = new Authentication(this);
+    this.malAuth = new MALAuthentication(this);
     this.theme = new Theme(this);
     this.processor = new Processor(this);
     this.edit = new Edit(this);
@@ -641,16 +623,13 @@ class ZoroPlugin extends Plugin {
     return this.api.getZoroUrl(mediaId, mediaType);
   }
 
-  // FIXED: Improved pruning with better logging
   pruneCache() {
     const now = Date.now();
     let totalPruned = 0;
-    
-    // Define TTLs for each cache type
     const ttlMap = {
-      userData: 30 * 60 * 1000,    // 30 min
-      mediaData: 10 * 60 * 1000,   // 10 min
-      searchResults: 2 * 60 * 1000 // 2 min
+      userData: 30 * 60 * 1000,
+      mediaData: 10 * 60 * 1000,
+      searchResults: 2 * 60 * 1000
     };
     
     for (const [cacheType, map] of Object.entries(this.cache)) {
@@ -675,7 +654,6 @@ class ZoroPlugin extends Plugin {
     }
   }
 
-  // FIXED: Better cache retrieval with logging
   getFromCache(type, key, customTtl = null) {
     const cacheMap = this.cache[type];
     if (!cacheMap) {
@@ -688,7 +666,6 @@ class ZoroPlugin extends Plugin {
       return null;
     }
     
-    // Check TTL
     const ttl = customTtl ?? this.cacheTimeout;
     const age = Date.now() - entry.timestamp;
     
@@ -701,7 +678,6 @@ class ZoroPlugin extends Plugin {
     return entry.value;
   }
 
-  // FIXED: Better cache setting with logging
   setToCache(type, key, value) {
     const cacheMap = this.cache[type];
     if (!cacheMap) {
@@ -717,7 +693,6 @@ class ZoroPlugin extends Plugin {
     console.log(`[Zoro] Cached data in ${type}: ${cacheMap.size} total entries`);
   }
 
-  // FIXED: Improved cache clearing with better error handling
   clearCacheForMedia(mediaId) {
     const id = parseInt(mediaId, 10);
     if (!id) {
@@ -729,7 +704,7 @@ class ZoroPlugin extends Plugin {
 
     const prune = (map, cacheType, exactKeys) => {
       let cleared = 0;
-      for (const key of Array.from(map.keys())) { // Create array to avoid modification during iteration
+      for (const key of Array.from(map.keys())) {
         try {
           const parsed = JSON.parse(key);
           if (exactKeys.some(k => parsed[k] === id)) {
@@ -738,60 +713,50 @@ class ZoroPlugin extends Plugin {
             console.log(`[Zoro] Cleared ${cacheType} cache key: ${key.substring(0, 80)}...`);
           }
         } catch (e) {
-          // Skip non-JSON keys silently
           continue;
         }
       }
       return cleared;
     };
 
-    // Clear from all cache types
     totalCleared += prune(this.cache.mediaData, 'mediaData', ['mediaId']);
     totalCleared += prune(this.cache.userData, 'userData', ['mediaId']);
     totalCleared += prune(this.cache.searchResults, 'searchResults', ['mediaId']);
 
     console.log(`[Zoro] Cleared ${totalCleared} cache entries for media ${id}`);
-    
-    // Also clear any list caches that might contain this media
     this.clearListCaches();
   }
 
-// ✅ Removes just the affected entry, keeps everything else
-clearSingleEntryCache(mediaId, username, mediaType = 'ANIME') {
-  const id = parseInt(mediaId, 10);
-  if (!id || !username) return;
+  clearSingleEntryCache(mediaId, username, mediaType = 'ANIME') {
+    const id = parseInt(mediaId, 10);
+    if (!id || !username) return;
 
-  // Key pattern used by Api.createCacheKey
-  const listKey = JSON.stringify({
-    username,
-    type: 'list',
-    listType: 'CURRENT',   // any list type is inside the same response
-    mediaType
-  });
+    const listKey = JSON.stringify({
+      username,
+      type: 'list',
+      listType: 'CURRENT',
+      mediaType
+    });
 
-  // Remove the *whole list* only for this user/type combo
-  this.cache.userData.delete(listKey);
+    this.cache.userData.delete(listKey);
 
-  // Remove the single-media cache for this item
-  const singleKey = JSON.stringify({
-    username,
-    type: 'single',
-    mediaId: id,
-    mediaType
-  });
-  this.cache.mediaData.delete(singleKey);
+    const singleKey = JSON.stringify({
+      username,
+      type: 'single',
+      mediaId: id,
+      mediaType
+    });
+    this.cache.mediaData.delete(singleKey);
 
-  console.log(`[Zoro] Invalidated cache for media ${id} (user: ${username})`);
-}
+    console.log(`[Zoro] Invalidated cache for media ${id} (user: ${username})`);
+  }
 
-  // NEW: Clear list caches (useful after updates)
   clearListCaches() {
     const beforeCount = this.cache.userData.size;
     this.cache.userData.clear();
     console.log(`[Zoro] Cleared ${beforeCount} user data cache entries`);
   }
 
-  // FIXED: Better cache persistence
   async saveCacheToStorage() {
     try {
       const cacheData = {};
@@ -810,7 +775,6 @@ clearSingleEntryCache(mediaId, username, mediaType = 'ANIME') {
     }
   }
 
-  // FIXED: Better cache loading with validation
   async loadCacheFromStorage() {
     try {
       const saved = localStorage.getItem('zoro-cache');
@@ -823,7 +787,6 @@ clearSingleEntryCache(mediaId, username, mediaType = 'ANIME') {
       let loadedCount = 0;
       let expiredCount = 0;
       
-      // Define TTLs for validation
       const ttlMap = {
         userData: 30 * 60 * 1000,
         mediaData: 10 * 60 * 1000,
@@ -851,12 +814,10 @@ clearSingleEntryCache(mediaId, username, mediaType = 'ANIME') {
       console.log(`[Zoro] Loaded ${loadedCount} cached items from storage (${expiredCount} expired)`);
     } catch (e) {
       console.warn('[Zoro] Failed to load cache from storage:', e);
-      // Clear corrupted storage
       localStorage.removeItem('zoro-cache');
     }
   }
 
-  // NEW: Debug method to inspect cache
   debugCache() {
     console.log('=== ZORO CACHE DEBUG ===');
     let totalEntries = 0;
@@ -868,7 +829,7 @@ clearSingleEntryCache(mediaId, username, mediaType = 'ANIME') {
       if (map.size > 0) {
         let count = 0;
         for (const [key, entry] of map.entries()) {
-          if (count < 3) { // Show first 3 entries
+          if (count < 3) {
             const age = Date.now() - entry.timestamp;
             const keyPreview = key.length > 100 ? key.substring(0, 100) + '...' : key;
             console.log(`  [${count + 1}] Age: ${Math.round(age/1000)}s | Key: ${keyPreview}`);
@@ -885,7 +846,6 @@ clearSingleEntryCache(mediaId, username, mediaType = 'ANIME') {
     console.log('========================');
   }
 
-  // Onload with better cache initialization
   async onload() {
     console.log('[Zoro] Plugin loading...');
     this.render = new Render(this);
@@ -897,7 +857,6 @@ clearSingleEntryCache(mediaId, username, mediaType = 'ANIME') {
       console.error('[Zoro] Failed to load settings:', err);
     }
     
-    // Load cache after settings
     await this.loadCacheFromStorage();
     
     try {
@@ -909,7 +868,6 @@ clearSingleEntryCache(mediaId, username, mediaType = 'ANIME') {
     
     await this.theme.applyTheme(this.settings.theme);
 
-    // Processors
     this.registerMarkdownCodeBlockProcessor('zoro', this.processor.processZoroCodeBlock.bind(this.processor));
     this.registerMarkdownCodeBlockProcessor('zoro-search', this.processor.processZoroSearchCodeBlock.bind(this.processor));
     this.registerMarkdownPostProcessor(this.processor.processInlineLinks.bind(this.processor));
@@ -918,26 +876,30 @@ clearSingleEntryCache(mediaId, username, mediaType = 'ANIME') {
     console.log('[Zoro] Plugin loaded successfully.');
   }
 
-  // Rest of your existing methods
   validateSettings(settings) {
-  return {
-    defaultUsername: typeof settings?.defaultUsername === 'string' ? settings.defaultUsername : '',
-    defaultLayout: ['card', 'list'].includes(settings?.defaultLayout) ? settings.defaultLayout : 'card',
-    gridColumns: Number.isInteger(settings?.gridColumns) ? settings.gridColumns : getDefaultGridColumns(),
-    theme: typeof settings?.theme === 'string' ? settings.theme : '',
-    showCoverImages: !!settings?.showCoverImages,
-    showRatings: !!settings?.showRatings,
-    showProgress: !!settings?.showProgress,
-    showGenres: !!settings?.showGenres,
-    showLoadingIcon: typeof settings?.showLoadingIcon === 'boolean' ? settings.showLoadingIcon : true,
-    hideUrlsInTitles: typeof settings?.hideUrlsInTitles === 'boolean' ? settings.hideUrlsInTitles : true,
-    clientId: typeof settings?.clientId === 'string' ? settings.clientId : '',
-    clientSecret: typeof settings?.clientSecret === 'string' ? settings.clientSecret : '',
-    redirectUri: typeof settings?.redirectUri === 'string' ? settings.redirectUri : DEFAULT_SETTINGS.redirectUri,
-    accessToken: typeof settings?.accessToken === 'string' ? settings.accessToken : '',
-  };
-}
-  
+    return {
+      defaultUsername: typeof settings?.defaultUsername === 'string' ? settings.defaultUsername : '',
+      defaultLayout: ['card', 'list'].includes(settings?.defaultLayout) ? settings.defaultLayout : 'card',
+      gridColumns: Number.isInteger(settings?.gridColumns) ? settings.gridColumns : getDefaultGridColumns(),
+      theme: typeof settings?.theme === 'string' ? settings.theme : '',
+      showCoverImages: !!settings?.showCoverImages,
+      showRatings: !!settings?.showRatings,
+      showProgress: !!settings?.showProgress,
+      showGenres: !!settings?.showGenres,
+      showLoadingIcon: typeof settings?.showLoadingIcon === 'boolean' ? settings.showLoadingIcon : true,
+      hideUrlsInTitles: typeof settings?.hideUrlsInTitles === 'boolean' ? settings.hideUrlsInTitles : true,
+      clientId: typeof settings?.clientId === 'string' ? settings.clientId : '',
+      clientSecret: typeof settings?.clientSecret === 'string' ? settings.clientSecret : '',
+      redirectUri: typeof settings?.redirectUri === 'string' ? settings.redirectUri : DEFAULT_SETTINGS.redirectUri,
+      accessToken: typeof settings?.accessToken === 'string' ? settings.accessToken : '',
+      malClientId: typeof settings?.malClientId === 'string' ? settings.malClientId : '',
+      malClientSecret: typeof settings?.malClientSecret === 'string' ? settings.malClientSecret : '',
+      malAccessToken: typeof settings?.malAccessToken === 'string' ? settings.malAccessToken : '',
+      malRefreshToken: typeof settings?.malRefreshToken === 'string' ? settings.malRefreshToken : '',
+      malTokenExpiry: typeof settings?.malTokenExpiry === 'number' ? settings.malTokenExpiry : null,
+      malUserInfo: typeof settings?.malUserInfo === 'object' ? settings.malUserInfo : null,
+    };
+  }
 
   async saveSettings() {
     try {
@@ -984,12 +946,11 @@ clearSingleEntryCache(mediaId, username, mediaType = 'ANIME') {
           await this.api.updateMediaListEntry(entry.media.id, updates);
           new Notice('✅ Updated!');
           
-         this.plugin.clearSingleEntryCache(
-  entry.media.id,
-  this.plugin.settings.defaultUsername || config.username,
-  config.mediaType
-);
-
+          this.plugin.clearSingleEntryCache(
+            entry.media.id,
+            this.plugin.settings.defaultUsername || config.username,
+            config.mediaType
+          );
 
           const parent = statusEl.closest('.zoro-container');
           if (parent) {
@@ -1001,7 +962,6 @@ clearSingleEntryCache(mediaId, username, mediaType = 'ANIME') {
         }
       },
       () => {
-        // Cancel callback - do nothing
       }
     );
   }
@@ -1013,7 +973,6 @@ clearSingleEntryCache(mediaId, username, mediaType = 'ANIME') {
     
     const css = `
       .zoro-container { /* styles */ }
-      /* add all necessary styles here */
     `;
     
     const style = document.createElement('style');
@@ -1024,8 +983,7 @@ clearSingleEntryCache(mediaId, username, mediaType = 'ANIME') {
     this.globalLoader = document.createElement('div');
     this.globalLoader.id = 'zoro-global-loader';
     this.globalLoader.textContent = '⏳';
-    // NEW (no inline styles)
-this.globalLoader.className = 'zoro-global-loader';
+    this.globalLoader.className = 'zoro-global-loader';
 
     document.body.appendChild(this.globalLoader);
   }
@@ -1055,202 +1013,183 @@ this.globalLoader.className = 'zoro-global-loader';
     }
   }
 
-  // FIXED: Better cleanup on unload
   onunload() {
     console.log('[Zoro] Unloading plugin...');
 
-    // Save cache before unloading
     this.saveCacheToStorage();
 
-    // Clean up intervals
     if (this.pruneInterval) {
       clearInterval(this.pruneInterval);
       this.pruneInterval = null;
     }
 
-    // Clear caches
     this.cache.userData.clear();
     this.cache.mediaData.clear();
     this.cache.searchResults.clear();
 
-    // Remove theme and styles
     this.theme.removeTheme();
-  const styleId = 'zoro-plugin-styles';
-  const existingStyle = document.getElementById(styleId);
-  if (existingStyle) {
-    existingStyle.remove();
-    console.log(`Removed style element with ID: ${styleId}`);
-  }
+    const styleId = 'zoro-plugin-styles';
+    const existingStyle = document.getElementById(styleId);
+    if (existingStyle) {
+      existingStyle.remove();
+      console.log(`Removed style element with ID: ${styleId}`);
+    }
       
-      const loader = document.getElementById('zoro-global-loader');
-  if (loader) loader.remove();
-      
+    const loader = document.getElementById('zoro-global-loader');
+    if (loader) loader.remove();
   }
-
 }
 
-// Processor 
 class Processor {
   constructor(plugin) {
     this.plugin = plugin;
   }
 
-  // Process Zoro Code Block
- // Replace the top of processZoroCodeBlock method
-async processZoroCodeBlock(source, el, ctx) {
-  try {
-    // Show appropriate skeleton immediately
-    const config = this.parseCodeBlockConfig(source) || {};
-    let skeleton;
-    
-    if (config.type === 'stats') {
-      skeleton = this.plugin.render.createStatsSkeleton();
-    } else if (config.type === 'single') {
-      skeleton = this.plugin.render.createListSkeleton(1);
-    } else {
-      skeleton = this.plugin.render.createListSkeleton();
-    }
-    
-    el.empty();
-    el.appendChild(skeleton);
-
-    // Handle authenticated user if needed
-    if (config.useAuthenticatedUser) {
-      const authUsername = await this.plugin.auth.getAuthenticatedUsername();
-      if (!authUsername) {
-        throw new Error('❌ Could not retrieve authenticated username...');
-      }
-      config.username = authUsername;
-    }
-
-    const doFetch = async () => {
-      try {
-        const data = await this.plugin.api.fetchZoroData(config);
-        
-        // Remove skeleton and render real data
-        el.empty();
-        
-        // Render based on config type
-        if (config.type === 'stats') {
-          this.plugin.render.renderUserStats(el, data.User);
-        } else if (config.type === 'single') {
-          this.plugin.render.renderSingleMedia(el, data.MediaList, config);
-        } else {
-          const entries = data.MediaListCollection.lists.flatMap(list => list.entries);
-          this.plugin.render.renderMediaList(el, entries, config);
-        }
-        
-      } catch (err) {
-        el.empty(); // Clear any existing content
-        this.plugin.renderError(el, err.message,
-          'Failed to load list',
-          doFetch  // ← retry action
-        );
-      }
-    };
-    
-    await doFetch();
-
-  } catch (error) {
-    el.empty(); // Clear skeleton on error
-    console.error('[Zoro] Code block processing error:', error);
-    this.plugin.renderError(
-      el,
-      error.message || 'Unknown error occurred.',
-      'Code block',
-      () => this.processZoroCodeBlock(source, el, ctx)
-    );
-  }
-}
-
-// Process Zoro Search Code Block
-async processZoroSearchCodeBlock(source, el, ctx) {
-  try {
-    const config = this.parseSearchCodeBlockConfig(source);
-
-    if (this.plugin.settings.debugMode) {
-      console.log('[Zoro] Search block config:', config);
-    }
-
-    // Show loading placeholder
-    el.createEl('div', { text: '🔍 Searching Zoro...', cls: 'zoro-loading-placeholder' });
-    
-    const doSearch = async () => {
-      try {
-        await this.plugin.render.renderSearchInterface(el, config);
-      } catch (err) {
-        el.empty(); // Clear loading placeholder
-        this.plugin.renderError(el, err.message,
-          'Search failed',
-          doSearch
-        );
-      }
-    };
-    
-    await doSearch();
-  } catch (error) {
-    console.error('[Zoro] Search block processing error:', error);
-    el.empty(); // Clear any existing content
-    this.plugin.renderError(
-      el,
-      error.message || 'Failed to process Zoro search block.',
-      'Search block',
-      () => this.processZoroSearchCodeBlock(source, el, ctx)
-    );
-  }
-}
-
-// Process Inline Links
-async processInlineLinks(el, ctx) {
-  const inlineLinks = el.querySelectorAll('a[href^="zoro:"]');
-
-  for (const link of inlineLinks) {
-    const href = link.getAttribute('href');
-    
-    // Optional: Show loading shimmer while data loads
-    const placeholder = document.createElement('span');
-    placeholder.textContent = '🔄 Loading Zoro...';
-    link.replaceWith(placeholder);
-
+  async processZoroCodeBlock(source, el, ctx) {
     try {
-      const config = this.parseInlineLink(href);
-      const data = await this.plugin.api.fetchZoroData(config);
-
-      const container = document.createElement('span');
-      container.className = 'zoro-inline-container';
+      const config = this.parseCodeBlockConfig(source) || {};
+      let skeleton;
       
       if (config.type === 'stats') {
-        this.plugin.render.renderUserStats(container, data.User);
+        skeleton = this.plugin.render.createStatsSkeleton();
       } else if (config.type === 'single') {
-        this.plugin.render.renderSingleMedia(container, data.MediaList, config);
+        skeleton = this.plugin.render.createListSkeleton(1);
       } else {
-        const entries = data.MediaListCollection.lists.flatMap(list => list.entries);
-        this.plugin.render.renderMediaList(container, entries, config);
+        skeleton = this.plugin.render.createListSkeleton();
+      }
+      
+      el.empty();
+      el.appendChild(skeleton);
+
+      if (config.useAuthenticatedUser) {
+        const authUsername = await this.plugin.auth.getAuthenticatedUsername();
+        if (!authUsername) {
+          throw new Error('❌ Could not retrieve authenticated username...');
+        }
+        config.username = authUsername;
       }
 
-      placeholder.replaceWith(container);
-
-      // ✅ Cleanup if the block is removed (important for re-render safety)
-      ctx.addChild({
-        unload: () => {
-          container.remove();
+      const doFetch = async () => {
+        try {
+          const data = await this.plugin.api.fetchZoroData(config);
+          
+          el.empty();
+          
+          if (config.type === 'stats') {
+            this.plugin.render.renderUserStats(el, data.User);
+          } else if (config.type === 'single') {
+            this.plugin.render.renderSingleMedia(el, data.MediaList, config);
+          } else {
+            const entries = data.MediaListCollection.lists.flatMap(list => list.entries);
+            this.plugin.render.renderMediaList(el, entries, config);
+          }
+          
+        } catch (err) {
+          el.empty();
+          this.plugin.renderError(el, err.message,
+            'Failed to load list',
+            doFetch
+          );
         }
-      });
+      };
+      
+      await doFetch();
 
     } catch (error) {
-      console.warn(`[Zoro] Inline link failed for ${href}:`, error);
-
-      const container = document.createElement('span');
-      container.className = 'zoro-inline-container';
-
-      const retry = () => this.processInlineLinks(el, ctx); // re-scan
-      this.plugin.renderError(container, error.message, 'Inline link', retry);
-
-      placeholder.replaceWith(container);
+      el.empty();
+      console.error('[Zoro] Code block processing error:', error);
+      this.plugin.renderError(
+        el,
+        error.message || 'Unknown error occurred.',
+        'Code block',
+        () => this.processZoroCodeBlock(source, el, ctx)
+      );
     }
   }
-}
-  // Parse Code Block Config
+
+  async processZoroSearchCodeBlock(source, el, ctx) {
+    try {
+      const config = this.parseSearchCodeBlockConfig(source);
+
+      if (this.plugin.settings.debugMode) {
+        console.log('[Zoro] Search block config:', config);
+      }
+
+      el.createEl('div', { text: '🔍 Searching Zoro...', cls: 'zoro-loading-placeholder' });
+      
+      const doSearch = async () => {
+        try {
+          await this.plugin.render.renderSearchInterface(el, config);
+        } catch (err) {
+          el.empty();
+          this.plugin.renderError(el, err.message,
+            'Search failed',
+            doSearch
+          );
+        }
+      };
+      
+      await doSearch();
+    } catch (error) {
+      console.error('[Zoro] Search block processing error:', error);
+      el.empty();
+      this.plugin.renderError(
+        el,
+        error.message || 'Failed to process Zoro search block.',
+        'Search block',
+        () => this.processZoroSearchCodeBlock(source, el, ctx)
+      );
+    }
+  }
+
+  async processInlineLinks(el, ctx) {
+    const inlineLinks = el.querySelectorAll('a[href^="zoro:"]');
+
+    for (const link of inlineLinks) {
+      const href = link.getAttribute('href');
+      
+      const placeholder = document.createElement('span');
+      placeholder.textContent = '🔄 Loading Zoro...';
+      link.replaceWith(placeholder);
+
+      try {
+        const config = this.parseInlineLink(href);
+        const data = await this.plugin.api.fetchZoroData(config);
+
+        const container = document.createElement('span');
+        container.className = 'zoro-inline-container';
+        
+        if (config.type === 'stats') {
+          this.plugin.render.renderUserStats(container, data.User);
+        } else if (config.type === 'single') {
+          this.plugin.render.renderSingleMedia(container, data.MediaList, config);
+        } else {
+          const entries = data.MediaListCollection.lists.flatMap(list => list.entries);
+          this.plugin.render.renderMediaList(container, entries, config);
+        }
+
+        placeholder.replaceWith(container);
+
+        ctx.addChild({
+          unload: () => {
+            container.remove();
+          }
+        });
+
+      } catch (error) {
+        console.warn(`[Zoro] Inline link failed for ${href}:`, error);
+
+        const container = document.createElement('span');
+        container.className = 'zoro-inline-container';
+
+        const retry = () => this.processInlineLinks(el, ctx);
+        this.plugin.renderError(container, error.message, 'Inline link', retry);
+
+        placeholder.replaceWith(container);
+      }
+    }
+  }
+
   parseCodeBlockConfig(source) {
     const config = {};
     const lines = source.split('\n').filter(line => line.trim());
@@ -1262,7 +1201,6 @@ async processInlineLinks(el, ctx) {
       }
     }
     
-    // Use authenticated user if no username provided and no default username
     if (!config.username) {
       if (this.plugin.settings.defaultUsername) {
         config.username = this.plugin.settings.defaultUsername;
@@ -1280,7 +1218,6 @@ async processInlineLinks(el, ctx) {
     return config;
   }
 
-  // Parse Search Code Block Config
   parseSearchCodeBlockConfig(source) {
     const config = { type: 'search' };
     const lines = source.split('\n').filter(line => line.trim());
@@ -1293,15 +1230,12 @@ async processInlineLinks(el, ctx) {
     }
     
     config.layout = config.layout || this.plugin.settings.defaultLayout || 'card';
-    
-    // Default to ANIME if no mediaType specified
     config.mediaType = config.mediaType || 'ANIME';
     config.layout = config.layout || this.plugin.settings.defaultLayout;
     
     return config;
   }
 
-  // Parse Inline Link
   parseInlineLink(href) {
     const [base, hash] = href.replace('zoro:', '').split('#');
 
@@ -1324,8 +1258,8 @@ async processInlineLinks(el, ctx) {
 
     const config = {
       username: username,
-      layout: 'card', // Default layout
-      type: 'list'     // Default to media list
+      layout: 'card',
+      type: 'list'
     };
 
     const main = pathParts[0];
@@ -1344,7 +1278,6 @@ async processInlineLinks(el, ctx) {
       config.listType = main.toUpperCase();
     }
 
-    // Optional layout modifiers from hash
     if (hash) {
       const hashParts = hash.split(',');
       for (const mod of hashParts) {
@@ -1361,13 +1294,11 @@ async processInlineLinks(el, ctx) {
   }
 }
 
-// Render
 class Render {
   constructor(plugin) {
     this.plugin = plugin;
   }
 
-  /* ----------  SEARCH  ---------- */
   renderSearchInterface(el, config) {
     el.empty();
     el.className = 'zoro-search-container';
@@ -1378,135 +1309,121 @@ class Render {
 
     const resultsDiv = el.createDiv({ cls: 'zoro-search-results' });
     let timeout;
-    // In renderSearchInterface - replace the doSearch function
-const doSearch = async () => {
-  const term = input.value.trim();
-  if (term.length < 3) {
-    resultsDiv.innerHTML = '<div class="zoro-search-message">Type at least 3 characters…</div>';
-    return;
-  }
-  
-  try {
-    // Show skeleton during search
-    resultsDiv.innerHTML = '';
-    resultsDiv.appendChild(this.createListSkeleton(5));
-    
-    const data = await this.plugin.api.fetchZoroData({ ...config, search: term, page: 1, perPage: 5 });
-    
-    // Remove skeleton and show results
-    resultsDiv.innerHTML = '';
-    this.renderSearchResults(resultsDiv, data.Page.media, config);
-  } catch (e) {
-    this.plugin.renderError(resultsDiv, e.message);
-  }
-};
+
+    const doSearch = async () => {
+      const term = input.value.trim();
+      if (term.length < 3) {
+        resultsDiv.innerHTML = '<div class="zoro-search-message">Type at least 3 characters…</div>';
+        return;
+      }
+      
+      try {
+        resultsDiv.innerHTML = '';
+        resultsDiv.appendChild(this.createListSkeleton(5));
+        
+        const data = await this.plugin.api.fetchZoroData({ ...config, search: term, page: 1, perPage: 5 });
+        
+        resultsDiv.innerHTML = '';
+        this.renderSearchResults(resultsDiv, data.Page.media, config);
+      } catch (e) {
+        this.plugin.renderError(resultsDiv, e.message);
+      }
+    };
 
     input.addEventListener('input', () => { clearTimeout(timeout); timeout = setTimeout(doSearch, 300); });
     input.addEventListener('keypress', e => { if (e.key === 'Enter') doSearch(); });
   }
 
-// In renderMediaList() - replace the grid creation part
-renderMediaList(el, entries, config) {
-  el.empty();
-  el.className = 'zoro-container';
-  
-  if (config.layout === 'table') {
-    this.renderTableLayout(el, entries, config);
-    return;
-  }
+  renderMediaList(el, entries, config) {
+    el.empty();
+    el.className = 'zoro-container';
+    
+    if (config.layout === 'table') {
+      this.renderTableLayout(el, entries, config);
+      return;
+    }
 
-  const grid = el.createDiv({ cls: 'zoro-cards-grid' });
-  
-  
-  // Batch all cards into a fragment
-  const fragment = document.createDocumentFragment();
-  entries.forEach(entry => {
-    fragment.appendChild(this.createMediaCard(entry, config));
-  });
-  
-  grid.appendChild(fragment); // Single DOM operation
-}
-
-// In renderSearchResults() - replace the grid creation part
-renderSearchResults(el, media, config) {
-  el.empty();
-  if (media.length === 0) {
-    el.innerHTML = '<div class="zoro-search-message">No results found.</div>';
-    return;
-  }
-
-  const grid = el.createDiv({ cls: 'zoro-cards-grid' });
-  
-  
-  // Batch all cards into a fragment
-  const fragment = document.createDocumentFragment();
-  media.forEach(item => {
-    fragment.appendChild(this.createMediaCard(item, config, { isSearch: true }));
-  });
-  
-  grid.appendChild(fragment); // Single DOM operation
-}
-
-
-renderTableLayout(el, entries, config) {
-  const table = el.createEl('table', { cls: 'zoro-table' });
-  const headers = ['Title', 'Format', 'Status'];
-  if (this.plugin.settings.showProgress) headers.push('Progress');
-  if (this.plugin.settings.showRatings) headers.push('Score');
-  if (this.plugin.settings.showGenres) headers.push('Genres');
-
-  table.createTHead().createEl('tr', null, tr =>
-    headers.forEach(h => tr.createEl('th', { text: h }))
-  );
-
-  const tbody = table.createTBody();
-  const fragment = document.createDocumentFragment();   // 🎯 batch container
-
-  entries.forEach(entry => {
-    const m = entry.media;
-    const tr = fragment.createEl('tr');                 // build off-fragment
-    tr.createEl('td', null, td =>
-      td.createEl('a', {
-        text: m.title.english || m.title.romaji,
-        href: this.plugin.getZoroUrl(m.id, config.mediaType),
-        cls: 'zoro-title-link',
-        target: '_blank'
-      })
-    );
-    tr.createEl('td', { text: m.format || '-' });
-    tr.createEl('td', null, td => {
-      const s = td.createEl('span', {
-        text: entry.status,
-        cls: `status-badge status-${entry.status.toLowerCase()} clickable-status`
-      });
-      s.onclick = e => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (!this.plugin.settings.accessToken) {
-          this.plugin.prompt.createAuthenticationPrompt();
-          return;
-        }
-        this.plugin.handleEditClick(e, entry, s);
-      };
+    const grid = el.createDiv({ cls: 'zoro-cards-grid' });
+    const fragment = document.createDocumentFragment();
+    entries.forEach(entry => {
+      fragment.appendChild(this.createMediaCard(entry, config));
     });
-    if (this.plugin.settings.showProgress)
-      tr.createEl('td', {
-        text: `${entry.progress ?? 0}/${m.episodes ?? m.chapters ?? '?'}`
+    
+    grid.appendChild(fragment);
+  }
+
+  renderSearchResults(el, media, config) {
+    el.empty();
+    if (media.length === 0) {
+      el.innerHTML = '<div class="zoro-search-message">No results found.</div>';
+      return;
+    }
+
+    const grid = el.createDiv({ cls: 'zoro-cards-grid' });
+    const fragment = document.createDocumentFragment();
+    media.forEach(item => {
+      fragment.appendChild(this.createMediaCard(item, config, { isSearch: true }));
+    });
+    
+    grid.appendChild(fragment);
+  }
+
+  renderTableLayout(el, entries, config) {
+    const table = el.createEl('table', { cls: 'zoro-table' });
+    const headers = ['Title', 'Format', 'Status'];
+    if (this.plugin.settings.showProgress) headers.push('Progress');
+    if (this.plugin.settings.showRatings) headers.push('Score');
+    if (this.plugin.settings.showGenres) headers.push('Genres');
+
+    table.createTHead().createEl('tr', null, tr =>
+      headers.forEach(h => tr.createEl('th', { text: h }))
+    );
+
+    const tbody = table.createTBody();
+    const fragment = document.createDocumentFragment();
+
+    entries.forEach(entry => {
+      const m = entry.media;
+      const tr = fragment.createEl('tr');
+      tr.createEl('td', null, td =>
+        td.createEl('a', {
+          text: m.title.english || m.title.romaji,
+          href: this.plugin.getZoroUrl(m.id, config.mediaType),
+          cls: 'zoro-title-link',
+          target: '_blank'
+        })
+      );
+      tr.createEl('td', { text: m.format || '-' });
+      tr.createEl('td', null, td => {
+        const s = td.createEl('span', {
+          text: entry.status,
+          cls: `status-badge status-${entry.status.toLowerCase()} clickable-status`
+        });
+        s.onclick = e => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!this.plugin.settings.accessToken) {
+            this.plugin.prompt.createAuthenticationPrompt();
+            return;
+          }
+          this.plugin.handleEditClick(e, entry, s);
+        };
       });
-    if (this.plugin.settings.showRatings)
-      tr.createEl('td', { text: entry.score != null ? `★ ${entry.score}` : '-' });
-    if (this.plugin.settings.showGenres)
-      tr.createEl('td', {
-        text: (m.genres || []).slice(0, 3).join(', ') || '-'
-      });
-  });
+      if (this.plugin.settings.showProgress)
+        tr.createEl('td', {
+          text: `${entry.progress ?? 0}/${m.episodes ?? m.chapters ?? '?'}`
+        });
+      if (this.plugin.settings.showRatings)
+        tr.createEl('td', { text: entry.score != null ? `★ ${entry.score}` : '-' });
+      if (this.plugin.settings.showGenres)
+        tr.createEl('td', {
+          text: (m.genres || []).slice(0, 3).join(', ') || '-'
+        });
+    });
 
-  tbody.appendChild(fragment);  // ⚡ single DOM write
-}
+    tbody.appendChild(fragment);
+  }
 
-  
-
-  /* ----------  SINGLE MEDIA  ---------- */
   renderSingleMedia(el, mediaList, config) {
     const m = mediaList.media;
     el.empty(); el.className = 'zoro-container';
@@ -1523,7 +1440,7 @@ renderTableLayout(el, entries, config) {
     const details = info.createDiv({ cls: 'media-details' });
     if (m.format) details.createEl('span', { text: m.format, cls: 'format-badge' });
     details.createEl('span', { text: mediaList.status, cls: `status-badge status-${mediaList.status.toLowerCase()}` });
-    const status = details.lastChild; // the span we just created
+    const status = details.lastChild;
     status.classList.add('clickable-status');
     status.onclick = e => {
       e.preventDefault(); e.stopPropagation();
@@ -1543,7 +1460,6 @@ renderTableLayout(el, entries, config) {
     }
   }
 
-  /* ----------  USER STATS  ---------- */
   renderUserStats(el, user) {
     el.empty(); el.className = 'zoro-container';
     if (!user?.statistics) { el.createDiv({ cls: 'zoro-error-box', text: 'Stats unavailable' }); return; }
@@ -1566,407 +1482,367 @@ renderTableLayout(el, entries, config) {
     });
   }
 
-// Add to Render class for progressive rendering
   renderMediaListChunked(el, entries, config, chunkSize = 20) {
-  el.empty();
-  el.className = 'zoro-container';
-  
-  const grid = el.createDiv({ cls: 'zoro-cards-grid' });
-  
-  
-  let index = 0;
-  
-  const renderChunk = () => {
-    const fragment = document.createDocumentFragment();
-    const end = Math.min(index + chunkSize, entries.length);
+    el.empty();
+    el.className = 'zoro-container';
     
-    for (; index < end; index++) {
-      fragment.appendChild(this.createMediaCard(entries[index], config));
-    }
+    const grid = el.createDiv({ cls: 'zoro-cards-grid' });
+    let index = 0;
     
-    grid.appendChild(fragment);
+    const renderChunk = () => {
+      const fragment = document.createDocumentFragment();
+      const end = Math.min(index + chunkSize, entries.length);
+      
+      for (; index < end; index++) {
+        fragment.appendChild(this.createMediaCard(entries[index], config));
+      }
+      
+      grid.appendChild(fragment);
+      
+      if (index < entries.length) {
+        requestAnimationFrame(renderChunk);
+      }
+    };
     
-    if (index < entries.length) {
-      // Use requestAnimationFrame for smooth chunking
-      requestAnimationFrame(renderChunk);
-    }
-  };
-  
-  renderChunk();
-}
+    renderChunk();
+  }
 
-// Add these methods to Render class
-createListSkeleton(count = 6) {
-  const fragment = document.createDocumentFragment();
-  for (let i = 0; i < count; i++) {
-    const skeleton = document.createElement('div');
-    skeleton.className = 'zoro-card zoro-skeleton';
-    skeleton.innerHTML = `
-      <div class="skeleton-cover"></div>
-      <div class="media-info">
-        <div class="skeleton-title"></div>
-        <div class="skeleton-details">
-          <span class="skeleton-badge"></span>
-          <span class="skeleton-badge"></span>
+  createListSkeleton(count = 6) {
+    const fragment = document.createDocumentFragment();
+    for (let i = 0; i < count; i++) {
+      const skeleton = document.createElement('div');
+      skeleton.className = 'zoro-card zoro-skeleton';
+      skeleton.innerHTML = `
+        <div class="skeleton-cover"></div>
+        <div class="media-info">
+          <div class="skeleton-title"></div>
+          <div class="skeleton-details">
+            <span class="skeleton-badge"></span>
+            <span class="skeleton-badge"></span>
+          </div>
+        </div>
+      `;
+      fragment.appendChild(skeleton);
+    }
+    return fragment;
+  }
+
+  createStatsSkeleton() {
+    const container = document.createElement('div');
+    container.className = 'zoro-container zoro-stats-skeleton';
+    container.innerHTML = `
+      <div class="zoro-user-stats">
+        <div class="zoro-user-header">
+          <div class="skeleton-avatar"></div>
+          <div class="skeleton-title"></div>
+        </div>
+        <div class="zoro-stats-grid">
+          <div class="skeleton-stat-section"></div>
+          <div class="skeleton-stat-section"></div>
         </div>
       </div>
     `;
-    fragment.appendChild(skeleton);
+    return container;
   }
-  return fragment;
-}
 
-createStatsSkeleton() {
-  const container = document.createElement('div');
-  container.className = 'zoro-container zoro-stats-skeleton';
-  container.innerHTML = `
-    <div class="zoro-user-stats">
-      <div class="zoro-user-header">
-        <div class="skeleton-avatar"></div>
-        <div class="skeleton-title"></div>
+  createSearchSkeleton() {
+    const container = document.createElement('div');
+    container.className = 'zoro-search-container zoro-search-skeleton';
+    container.innerHTML = `
+      <div class="zoro-search-input-container">
+        <input type="text" class="zoro-search-input" disabled placeholder="Loading search...">
       </div>
-      <div class="zoro-stats-grid">
-        <div class="skeleton-stat-section"></div>
-        <div class="skeleton-stat-section"></div>
-      </div>
-    </div>
-  `;
-  return container;
-}
-
-createSearchSkeleton() {
-  const container = document.createElement('div');
-  container.className = 'zoro-search-container zoro-search-skeleton';
-  container.innerHTML = `
-    <div class="zoro-search-input-container">
-      <input type="text" class="zoro-search-input" disabled placeholder="Loading search...">
-    </div>
-    <div class="zoro-search-results">
-      <div class="zoro-cards-grid">
-        ${Array(3).fill().map(() => `
-          <div class="zoro-card zoro-skeleton">
-            <div class="skeleton-cover"></div>
-            <div class="media-info">
-              <div class="skeleton-title"></div>
-              <div class="skeleton-details">
-                <span class="skeleton-badge"></span>
+      <div class="zoro-search-results">
+        <div class="zoro-cards-grid">
+          ${Array(3).fill().map(() => `
+            <div class="zoro-card zoro-skeleton">
+              <div class="skeleton-cover"></div>
+              <div class="media-info">
+                <div class="skeleton-title"></div>
+                <div class="skeleton-details">
+                  <span class="skeleton-badge"></span>
+                </div>
               </div>
             </div>
-          </div>
-        `).join('')}
+          `).join('')}
+        </div>
       </div>
-    </div>
-  `;
-  return container;
-}
-
-createMediaCard(data, config, options = {}) {
-  const isSearch = options.isSearch || false;
-  const isCompact = config.layout === 'compact';
-  const entry = isSearch ? null : data; // null for search results
-  const media = isSearch ? data : data.media;
-
-  const card = document.createElement('div');
-  card.className = `zoro-card ${isCompact ? 'compact' : ''}`;
-
-  // Cover Image (shared) - now press and hold for more details
-  if (this.plugin.settings.showCoverImages && media.coverImage?.large) {
-    const coverContainer = document.createElement('div');
-    coverContainer.className = 'cover-container';
-    
-    const img = document.createElement('img');
-    img.src = media.coverImage.large;
-    img.alt = media.title.english || media.title.romaji;
-    img.className = 'media-cover pressable-cover';
-    img.loading = 'lazy'; // Performance boost
-    
-    let pressTimer = null;
-    let isPressed = false;
-    const pressHoldDuration = 500; // 500ms hold time
-    
-   img.onmousedown = (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  isPressed = true;
-  img.classList.add('pressed'); // Replace: img.style.opacity = '0.7';
-  
-  pressTimer = setTimeout(() => {
-    if (isPressed) {
-      this.plugin.moreDetailsPanel.showPanel(media, entry, img);
-      // Reset opacity immediately when panel opens
-      img.classList.remove('pressed'); // Replace: img.style.opacity = '1';
-      isPressed = false;
-    }
-  }, pressHoldDuration);
-};
-
-img.onmouseup = img.onmouseleave = (e) => {
-  if (pressTimer) {
-    clearTimeout(pressTimer);
-    pressTimer = null;
+    `;
+    return container;
   }
-  // Always reset opacity
-  img.classList.remove('pressed'); // Replace: img.style.opacity = '1';
-  isPressed = false;
-};
-    
-    // Prevent any click events on the image
-    img.onclick = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      return false;
-    };
-    
-    // Prevent context menu
-    img.oncontextmenu = (e) => {
-      e.preventDefault();
-      return false;
-    };
-    
-    // Prevent drag
-    img.ondragstart = (e) => {
-      e.preventDefault();
-      return false;
-    };
-    
-   img.ontouchstart = (e) => {
-  // Don't prevent default to allow scrolling
-  isPressed = true;
-  img.classList.add('pressed'); // Replace: img.style.opacity = '0.7';
-  
-  pressTimer = setTimeout(() => {
-    if (isPressed) {
-      e.preventDefault(); // Only prevent default when actually opening panel
-      this.plugin.moreDetailsPanel.showPanel(media, entry, img);
-      // Reset opacity immediately when panel opens
-      img.classList.remove('pressed'); // Replace: img.style.opacity = '1';
-      isPressed = false;
-    }
-  }, pressHoldDuration);
-};
 
-img.ontouchend = img.ontouchcancel = img.ontouchmove = (e) => {
-  if (pressTimer) {
-    clearTimeout(pressTimer);
-    pressTimer = null;
-  }
-  // Always reset opacity
-  img.classList.remove('pressed'); // Replace: img.style.opacity = '1';
-  isPressed = false;
-};
+  createMediaCard(data, config, options = {}) {
+    const isSearch = options.isSearch || false;
+    const isCompact = config.layout === 'compact';
+    const entry = isSearch ? null : data;
+    const media = isSearch ? data : data.media;
 
-    
-    img.title = 'Press and hold for more details';
-    
-    coverContainer.appendChild(img);
-    
-    // Create overlay for progress and rating on cover (keeping original design)
-    const needsOverlay = (!isSearch && entry && this.plugin.settings.showProgress) || 
-                        (this.plugin.settings.showRatings && ((isSearch && media.averageScore != null) || (!isSearch && entry?.score != null)));
-                        
-    if (needsOverlay) {
-      const overlay = document.createElement('div');
-      overlay.className = 'cover-overlay';
+    const card = document.createElement('div');
+    card.className = `zoro-card ${isCompact ? 'compact' : ''}`;
+
+    if (this.plugin.settings.showCoverImages && media.coverImage?.large) {
+      const coverContainer = document.createElement('div');
+      coverContainer.className = 'cover-container';
       
-      if (!isSearch && entry && this.plugin.settings.showProgress) {
-        const progress = document.createElement('span');
-        progress.className = 'progress'; // Same class as original
-        const total = media.episodes || media.chapters || '?';
-        progress.textContent = `${entry.progress || 0}/${total}`;
-        overlay.appendChild(progress);
-      } else {
-        // Empty span to maintain spacing
-        overlay.appendChild(document.createElement('span'));
-      }
+      const img = document.createElement('img');
+      img.src = media.coverImage.large;
+      img.alt = media.title.english || media.title.romaji;
+      img.className = 'media-cover pressable-cover';
+      img.loading = 'lazy';
       
-      // Rating (right side) - keeping original design
-      if (this.plugin.settings.showRatings) {
-        const score = isSearch ? media.averageScore : entry?.score;
-        if (score != null) {
-          const rating = document.createElement('span');
-          rating.className = 'score'; // Same class as original
-          rating.textContent = `★ ${score}`;
-          overlay.appendChild(rating);
+      let pressTimer = null;
+      let isPressed = false;
+      const pressHoldDuration = 400;
+      
+      img.onmousedown = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        isPressed = true;
+        img.classList.add('pressed');
+        
+        pressTimer = setTimeout(() => {
+          if (isPressed) {
+            this.plugin.moreDetailsPanel.showPanel(media, entry, img);
+            img.classList.remove('pressed');
+            isPressed = false;
+          }
+        }, pressHoldDuration);
+      };
+
+      img.onmouseup = img.onmouseleave = (e) => {
+        if (pressTimer) {
+          clearTimeout(pressTimer);
+          pressTimer = null;
+        }
+        img.classList.remove('pressed');
+        isPressed = false;
+      };
+      
+      img.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      };
+      
+      img.oncontextmenu = (e) => {
+        e.preventDefault();
+        return false;
+      };
+      
+      img.ondragstart = (e) => {
+        e.preventDefault();
+        return false;
+      };
+      
+      img.ontouchstart = (e) => {
+        isPressed = true;
+        img.classList.add('pressed');
+        
+        pressTimer = setTimeout(() => {
+          if (isPressed) {
+            e.preventDefault();
+            this.plugin.moreDetailsPanel.showPanel(media, entry, img);
+            img.classList.remove('pressed');
+            isPressed = false;
+          }
+        }, pressHoldDuration);
+      };
+
+      img.ontouchend = img.ontouchcancel = img.ontouchmove = (e) => {
+        if (pressTimer) {
+          clearTimeout(pressTimer);
+          pressTimer = null;
+        }
+        img.classList.remove('pressed');
+        isPressed = false;
+      };
+      
+      img.title = 'Press and hold for more details';
+      
+      coverContainer.appendChild(img);
+      
+      const needsOverlay = (!isSearch && entry && this.plugin.settings.showProgress) || 
+                          (this.plugin.settings.showRatings && ((isSearch && media.averageScore != null) || (!isSearch && entry?.score != null)));
+                          
+      if (needsOverlay) {
+        const overlay = document.createElement('div');
+        overlay.className = 'cover-overlay';
+        
+        if (!isSearch && entry && this.plugin.settings.showProgress) {
+          const progress = document.createElement('span');
+          progress.className = 'progress';
+          const total = media.episodes || media.chapters || '?';
+          progress.textContent = `${entry.progress || 0}/${total}`;
+          overlay.appendChild(progress);
         } else {
-          // Empty span to maintain spacing
           overlay.appendChild(document.createElement('span'));
         }
+        
+        if (this.plugin.settings.showRatings) {
+          const score = isSearch ? media.averageScore : entry?.score;
+          if (score != null) {
+            const rating = document.createElement('span');
+            rating.className = 'score';
+            rating.textContent = `★ ${score}`;
+            overlay.appendChild(rating);
+          } else {
+            overlay.appendChild(document.createElement('span'));
+          }
+        }
+        
+        coverContainer.appendChild(overlay);
       }
       
-      coverContainer.appendChild(overlay);
+      card.appendChild(coverContainer);
     }
-    
-    card.appendChild(coverContainer);
+
+    const info = document.createElement('div');
+    info.className = 'media-info';
+
+    const title = document.createElement('h4');
+
+    if (this.plugin.settings.hideUrlsInTitles) {
+      title.textContent = media.title.english || media.title.romaji;
+    } else {
+      const titleLink = document.createElement('a');
+      titleLink.href = this.plugin.getZoroUrl(media.id, config.mediaType);
+      titleLink.target = '_blank';
+      titleLink.textContent = media.title.english || media.title.romaji;
+      titleLink.className = 'media-title-link';
+      title.appendChild(titleLink);
+    }
+
+    info.appendChild(title);
+
+    if (!isCompact) {
+      const details = document.createElement('div');
+      details.className = 'media-details';
+
+      if (media.format) {
+        const formatBadge = document.createElement('span');
+        formatBadge.className = 'format-badge';
+        formatBadge.textContent = media.format.substring(0, 2).toUpperCase();
+        
+        details.appendChild(formatBadge);
+      }
+
+      if (!isSearch && entry) {
+        const statusBadge = document.createElement('span');
+        statusBadge.className = `status-badge status-${entry.status.toLowerCase()} clickable-status`;
+        statusBadge.textContent = entry.status;
+        statusBadge.onclick = (e) => this.handleStatusClick(e, entry, statusBadge);
+        details.appendChild(statusBadge);
+      }
+
+      if (isSearch) {
+        const addBtn = document.createElement('span');
+        addBtn.className = 'status-badge status-add clickable-status';
+        addBtn.textContent = 'ADD';
+        addBtn.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+
+          if (!this.plugin.settings.accessToken) {
+            this.plugin.prompt.createAuthenticationPrompt();
+            return;
+          }
+
+          const entryData = {
+            media: media,
+            status: 'PLANNING',
+            progress: 0,
+            score: null,
+            id: null
+          };
+
+          this.plugin.edit.createEditModal(
+            entryData,
+            async (updates) => {
+              await this.plugin.api.updateMediaListEntry(media.id, updates);
+              new Notice('✅ Added!');
+              
+              const containers = document.querySelectorAll('.zoro-container');
+              containers.forEach(container => {
+                const block = container.closest('.markdown-rendered')?.querySelector('code');
+                if (block) {
+                  this.plugin.processor.processZoroCodeBlock(block.textContent, container, {});
+                }
+              });
+            },
+            () => {}
+          );
+        };
+        details.appendChild(addBtn);
+      }
+
+      info.appendChild(details);
+    }
+
+    if (!isCompact && this.plugin.settings.showGenres && media.genres?.length) {
+      const genres = document.createElement('div');
+      genres.className = 'genres';
+      media.genres.slice(0, 3).forEach(g => {
+        const tag = document.createElement('span');
+        tag.className = 'genre-tag';
+        tag.textContent = g;
+        genres.appendChild(tag);
+      });
+      info.appendChild(genres);
+    }
+
+    card.appendChild(info);
+    return card;
   }
 
-  const info = document.createElement('div');
-  info.className = 'media-info';
-
-
-  const title = document.createElement('h4');
-
-if (this.plugin.settings.hideUrlsInTitles) {
-  // Show as regular text
-  title.textContent = media.title.english || media.title.romaji;
-} else {
-  // Show as clickable link with your original styling
-  const titleLink = document.createElement('a');
-  titleLink.href = this.plugin.getZoroUrl(media.id, config.mediaType);
-  titleLink.target = '_blank';
-  titleLink.textContent = media.title.english || media.title.romaji;
-  titleLink.className = 'media-title-link';
-  title.appendChild(titleLink);
-}
-
-info.appendChild(title);
-
-  // Details section (conditional)
-  if (!isCompact) {
-    const details = document.createElement('div');
-    details.className = 'media-details';
-
-    // Format badge
-    if (media.format) {
-      const formatBadge = document.createElement('span');
-      formatBadge.className = 'format-badge';
-      formatBadge.textContent = media.format.substring(0, 2).toUpperCase();
-      
-      details.appendChild(formatBadge);
+  attachEventListeners(card, entry, media, config) {
+    const statusBadge = card.querySelector('.clickable-status[data-entry-id]');
+    if (statusBadge) {
+      statusBadge.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.handleStatusClick(e, entry, statusBadge);
+      };
     }
-
-    // Status badge (only for list entries)
-    if (!isSearch && entry) {
-      const statusBadge = document.createElement('span');
-      statusBadge.className = `status-badge status-${entry.status.toLowerCase()} clickable-status`;
-      statusBadge.textContent = entry.status;
-      statusBadge.onclick = (e) => this.handleStatusClick(e, entry, statusBadge);
-      details.appendChild(statusBadge);
-    }
-
-    // Progress (only for list entries) - moved to cover overlay
-    // Rating (shared) - moved to cover overlay
-
-    // Search-specific add button
-    if (isSearch) {
-      const addBtn = document.createElement('span');
-      addBtn.className = 'status-badge status-add clickable-status';
-      addBtn.textContent = 'ADD';
+    
+    const addBtn = card.querySelector('.clickable-status[data-media-id]');
+    if (addBtn) {
       addBtn.onclick = (e) => {
         e.preventDefault();
         e.stopPropagation();
-
-        if (!this.plugin.settings.accessToken) {
-          this.plugin.prompt.createAuthenticationPrompt();
-          return;
-        }
-
-        // Use a consistent entry structure (no fake entry needed)
-        const entryData = {
-          media: media,
-          status: 'PLANNING', // Default starting status
-          progress: 0,
-          score: null,
-          id: null // Indicates this is a new entry
-        };
-
-        this.plugin.edit.createEditModal(
-          entryData,
-          async (updates) => {
-            // Use the same update method for both add and edit
-            await this.plugin.api.updateMediaListEntry(media.id, updates);
-            new Notice('✅ Added!');
-            
-            // Refresh any visible lists
-            const containers = document.querySelectorAll('.zoro-container');
-            containers.forEach(container => {
-              const block = container.closest('.markdown-rendered')?.querySelector('code');
-              if (block) {
-                this.plugin.processor.processZoroCodeBlock(block.textContent, container, {});
-              }
-            });
-          },
-          () => {} // onCancel - do nothing
-        );
+        this.handleAddClick(e, media, config);
       };
-      details.appendChild(addBtn);
     }
-
-    info.appendChild(details);
   }
 
-  // Genres (shared)
-  if (!isCompact && this.plugin.settings.showGenres && media.genres?.length) {
-    const genres = document.createElement('div');
-    genres.className = 'genres';
-    media.genres.slice(0, 3).forEach(g => {
-      const tag = document.createElement('span');
-      tag.className = 'genre-tag';
-      tag.textContent = g;
-      genres.appendChild(tag);
-    });
-    info.appendChild(genres);
+  handleStatusClick(e, entry, badge) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!this.plugin.settings.accessToken) {
+      this.plugin.prompt.createAuthenticationPrompt();
+      return;
+    }
+    this.plugin.handleEditClick(e, entry, badge);
   }
 
-  // Removed the separate "More" button since cover image now handles this functionality
-
-  card.appendChild(info);
-  return card;
-}
-
-attachEventListeners(card, entry, media, config) {
-  // Status badge click (for existing entries)
-  const statusBadge = card.querySelector('.clickable-status[data-entry-id]');
-  if (statusBadge) {
-    statusBadge.onclick = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      this.handleStatusClick(e, entry, statusBadge);
-    };
+  handleAddClick(e, media, config) {
+    e.preventDefault();
+    e.stopPropagation();
+    const btn = e.target;
+    btn.textContent = '⏳';
+    btn.disabled = true;
+    
+    this.plugin.api.addMediaToList(media.id, { status: 'PLANNING' }, config.mediaType)
+      .then(() => {
+        btn.textContent = '✅';
+        new Notice('Added to list!');
+      })
+      .catch(err => {
+        btn.textContent = 'ADD';
+        btn.disabled = false;
+        new Notice(`❌ ${err.message}`);
+      });
   }
-  
-  // Add button click (for search results)
-  const addBtn = card.querySelector('.clickable-status[data-media-id]');
-  if (addBtn) {
-    addBtn.onclick = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      this.handleAddClick(e, media, config);
-    };
-  }
-}
 
-
-// Helper methods
-handleStatusClick(e, entry, badge) {
-  e.preventDefault();
-  e.stopPropagation();
-  if (!this.plugin.settings.accessToken) {
-    this.plugin.prompt.createAuthenticationPrompt();
-    return;
-  }
-  this.plugin.handleEditClick(e, entry, badge);
-}
-
-handleAddClick(e, media, config) {
-  e.preventDefault();
-  e.stopPropagation();
-  const btn = e.target;
-  btn.textContent = '⏳';
-  btn.disabled = true;
-  
-  this.plugin.api.addMediaToList(media.id, { status: 'PLANNING' }, config.mediaType)
-    .then(() => {
-      btn.textContent = '✅';
-      new Notice('Added to list!');
-    })
-    .catch(err => {
-      btn.textContent = 'ADD';
-      btn.disabled = false;
-      new Notice(`❌ ${err.message}`);
-    });
-}
-
-  /* ----------  UTILITIES  ---------- */
   clear(el) { el.empty?.(); }
 }
 
@@ -1975,46 +1851,31 @@ class MoreDetailsPanel {
     this.plugin = plugin;
     this.currentPanel = null;
     this.boundOutsideClickHandler = this.handleOutsideClick.bind(this);
-    
-    // Cache DOM elements and reuse them
     this.elementCache = new Map();
   }
 
-  /**
-   * Creates and shows the detailed panel for a media item
-   * @param {Object} media - The media object from AniList
-   * @param {Object} entry - The list entry (null for search results)
-   * @param {HTMLElement} triggerElement - The element that triggered the panel
-   */
   async showPanel(media, entry = null, triggerElement) {
-    // Close any existing panel first
     this.closePanel();
 
-    // Create panel immediately with available data
     const panel = this.createPanel(media, entry);
     this.currentPanel = panel;
     this.positionPanel(panel, triggerElement);
     document.body.appendChild(panel);
 
-    // Add click-outside-to-close functionality immediately
     document.addEventListener('click', this.boundOutsideClickHandler);
     this.plugin.requestQueue.showGlobalLoader();
     
-    // Try to fetch more detailed data in background and update if needed
     if (this.shouldFetchDetailedData(media)) {
       this.fetchAndUpdatePanel(media.id, panel)
         .finally(() => {
-          // Always hide loader when fetch ends
           this.plugin.requestQueue.hideGlobalLoader();
         });
     } else {
-      // Nothing to fetch → hide loader right away
       this.plugin.requestQueue.hideGlobalLoader();
     }
   }
 
   shouldFetchDetailedData(media) {
-    // Only fetch if we're missing key data or airing info for anime
     const missingBasicData = !media.description || !media.genres || !media.averageScore;
     const isAnimeWithoutAiring = media.type === 'ANIME' && !media.nextAiringEpisode;
     
@@ -2022,34 +1883,30 @@ class MoreDetailsPanel {
   }
 
   async fetchAndUpdatePanel(mediaId, panel) {
-  try {
-    const detailedMedia = await this.fetchDetailedMediaData(mediaId);
-    
-    // Start MAL fetch immediately if we have MAL ID (don't wait)
-    let malDataPromise = null;
-    if (detailedMedia.idMal) {
-      malDataPromise = this.fetchMALData(detailedMedia.idMal, detailedMedia.type);
-    }
-    
-    // Update with AniList data first
-    if (this.currentPanel === panel && this.hasMoreData(detailedMedia)) {
-      this.updatePanelContent(panel, detailedMedia, null);
-    }
-    
-    // Then update again when MAL data arrives
-    if (malDataPromise) {
-      const malData = await malDataPromise;
-      if (this.currentPanel === panel && malData) {
-        this.updatePanelContent(panel, detailedMedia, malData);
+    try {
+      const detailedMedia = await this.fetchDetailedMediaData(mediaId);
+      
+      let malDataPromise = null;
+      if (detailedMedia.idMal) {
+        malDataPromise = this.fetchMALData(detailedMedia.idMal, detailedMedia.type);
       }
+      
+      if (this.currentPanel === panel && this.hasMoreData(detailedMedia)) {
+        this.updatePanelContent(panel, detailedMedia, null);
+      }
+      
+      if (malDataPromise) {
+        const malData = await malDataPromise;
+        if (this.currentPanel === panel && malData) {
+          this.updatePanelContent(panel, detailedMedia, malData);
+        }
+      }
+    } catch (error) {
+      console.error('Background fetch failed:', error);
     }
-  } catch (error) {
-    console.error('Background fetch failed:', error);
   }
-}
   
   hasMoreData(newMedia) {
-    // Check if new data has more information than current
     const hasBasicData = newMedia.description || newMedia.genres?.length > 0 || newMedia.averageScore > 0;
     const hasAiringData = newMedia.type === 'ANIME' && newMedia.nextAiringEpisode;
     
@@ -2057,73 +1914,65 @@ class MoreDetailsPanel {
   }
 
   updatePanelContent(panel, media, malData = null) {
-  // Only update sections that have new data
-  const content = panel.querySelector('.panel-content');
-  
-  // Update airing section if we got airing data for anime
-  if (media.type === 'ANIME' && media.nextAiringEpisode && !content.querySelector('.airing-section')) {
-    const airingSection = this.createAiringSection(media.nextAiringEpisode);
-    const metadataSection = content.querySelector('.metadata-section');
-    if (metadataSection) {
-      metadataSection.insertAdjacentElement('afterend', airingSection);
-    } else {
-      const headerSection = content.querySelector('.panel-header');
-      if (headerSection) {
-        headerSection.insertAdjacentElement('afterend', airingSection);
+    const content = panel.querySelector('.panel-content');
+    
+    if (media.type === 'ANIME' && media.nextAiringEpisode && !content.querySelector('.airing-section')) {
+      const airingSection = this.createAiringSection(media.nextAiringEpisode);
+      const metadataSection = content.querySelector('.metadata-section');
+      if (metadataSection) {
+        metadataSection.insertAdjacentElement('afterend', airingSection);
+      } else {
+        const headerSection = content.querySelector('.panel-header');
+        if (headerSection) {
+          headerSection.insertAdjacentElement('afterend', airingSection);
+        }
+      }
+    }
+    
+    if (media.description) {
+      const existingSynopsis = content.querySelector('.synopsis-section');
+      if (existingSynopsis) {
+        const newSynopsis = this.createSynopsisSection(media.description);
+        content.replaceChild(newSynopsis, existingSynopsis);
+      }
+    }
+
+    if (media.genres?.length > 0 && !content.querySelector('.genres-section')) {
+      const genresSection = this.createGenresSection(media.genres);
+      const synopsisSection = content.querySelector('.synopsis-section');
+      if (synopsisSection) {
+        content.insertBefore(genresSection, synopsisSection);
+      } else {
+        content.appendChild(genresSection);
+      }
+    }
+
+    if (media.idMal) {
+      const existingLinksSection = content.querySelector('.external-links-section');
+      if (existingLinksSection) {
+        const newLinksSection = this.createExternalLinksSection(media);
+        content.replaceChild(newLinksSection, existingLinksSection);
+      }
+    }
+
+    if (media.averageScore > 0 || malData) {
+      const existingStats = content.querySelector('.stats-section');
+      if (existingStats) {
+        const newStats = this.createStatisticsSection(media, malData);
+        content.replaceChild(newStats, existingStats);
       }
     }
   }
-  
-  // Update synopsis if we got one
-  if (media.description) {
-    const existingSynopsis = content.querySelector('.synopsis-section');
-    if (existingSynopsis) {
-      const newSynopsis = this.createSynopsisSection(media.description);
-      content.replaceChild(newSynopsis, existingSynopsis);
-    }
-  }
-
-  // Update genres if we got them
-  if (media.genres?.length > 0 && !content.querySelector('.genres-section')) {
-    const genresSection = this.createGenresSection(media.genres);
-    const synopsisSection = content.querySelector('.synopsis-section');
-    if (synopsisSection) {
-      content.insertBefore(genresSection, synopsisSection);
-    } else {
-      content.appendChild(genresSection);
-    }
-  }
-
-  // Update external links section if we got MAL ID
-  if (media.idMal) {
-    const existingLinksSection = content.querySelector('.external-links-section');
-    if (existingLinksSection) {
-      const newLinksSection = this.createExternalLinksSection(media);
-      content.replaceChild(newLinksSection, existingLinksSection);
-    }
-  }
-
-  // Update stats if we got them (now includes MAL data)
-  if (media.averageScore > 0 || malData) {
-    const existingStats = content.querySelector('.stats-section');
-    if (existingStats) {
-      const newStats = this.createStatisticsSection(media, malData);
-      content.replaceChild(newStats, existingStats);
-    }
-  }
-}
 
   async fetchDetailedMediaData(mediaId) {
     const query = this.getDetailedMediaQuery();
     const variables = { id: mediaId };
     
-    // Try the most likely method first
     let response;
     try {
       if (this.plugin.fetchZoroData) {
         response = await this.plugin.fetchZoroData(query, variables);
       } else {
-        // Direct API call
         const apiResponse = await fetch('https://graphql.anilist.co', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2142,41 +1991,38 @@ class MoreDetailsPanel {
     }
   }
 
-async fetchMALData(malId, mediaType) {
-  try {
-    const type = mediaType === 'MANGA' ? 'manga' : 'anime';
-    const response = await fetch(`https://api.jikan.moe/v4/${type}/${malId}`);
-    
-    if (!response.ok) {
-      throw new Error(`Jikan API error: ${response.status}`);
+  async fetchMALData(malId, mediaType) {
+    try {
+      const type = mediaType === 'MANGA' ? 'manga' : 'anime';
+      const response = await fetch(`https://api.jikan.moe/v4/${type}/${malId}`);
+      
+      if (!response.ok) {
+        throw new Error(`Jikan API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      return data.data;
+    } catch (error) {
+      console.error('Failed to fetch MAL data:', error);
+      return null;
     }
-    
-    const data = await response.json();
-    return data.data;
-  } catch (error) {
-    console.error('Failed to fetch MAL data:', error);
-    return null;
   }
-}
 
   getDetailedMediaQuery() {
-  return `query($id:Int){Media(id:$id){id type title{romaji english native}description(asHtml:false)format status season seasonYear averageScore genres nextAiringEpisode{airingAt episode timeUntilAiring}idMal}}`;
-}
+    return `query($id:Int){Media(id:$id){id type title{romaji english native}description(asHtml:false)format status season seasonYear averageScore genres nextAiringEpisode{airingAt episode timeUntilAiring}idMal}}`;
+  }
 
-getAniListUrl(mediaId, mediaType = 'ANIME') {
-  // Use your existing API method - assuming you have access to the API class through this.plugin
-  return this.plugin.getZoroUrl(mediaId, mediaType);
-}
+  getAniListUrl(mediaId, mediaType = 'ANIME') {
+    return this.plugin.getZoroUrl(mediaId, mediaType);
+  }
 
-getMyAnimeListUrl(malId, mediaType = 'ANIME') {
-  if (!malId) return null;
-  const type = mediaType === 'MANGA' ? 'manga' : 'anime';
-  return `https://myanimelist.net/${type}/${malId}`;
-}
-
+  getMyAnimeListUrl(malId, mediaType = 'ANIME') {
+    if (!malId) return null;
+    const type = mediaType === 'MANGA' ? 'manga' : 'anime';
+    return `https://myanimelist.net/${type}/${malId}`;
+  }
 
   createPanel(media, entry) {
-    // Use document fragment for better performance
     const fragment = document.createDocumentFragment();
     
     const panel = document.createElement('div');
@@ -2185,40 +2031,28 @@ getMyAnimeListUrl(malId, mediaType = 'ANIME') {
     const content = document.createElement('div');
     content.className = 'panel-content';
 
-   // Build sections efficiently
-const sections = [];
+    const sections = [];
 
-// Header section
-sections.push(this.createHeaderSection(media));
+    sections.push(this.createHeaderSection(media));
+    sections.push(this.createMetadataSection(media, entry));
 
-// Metadata section
-sections.push(this.createMetadataSection(media, entry));
+    if (media.type === 'ANIME' && media.nextAiringEpisode) {
+      sections.push(this.createAiringSection(media.nextAiringEpisode));
+    }
 
-// Airing section (only for anime with airing data)
-if (media.type === 'ANIME' && media.nextAiringEpisode) {
-  sections.push(this.createAiringSection(media.nextAiringEpisode));
-}
+    if (media.averageScore > 0) {
+      sections.push(this.createStatisticsSection(media));
+    }
 
-// Statistics section
-if (media.averageScore > 0) {
-  sections.push(this.createStatisticsSection(media));
-}
+    if (media.genres?.length > 0) {
+      sections.push(this.createGenresSection(media.genres));
+    }
 
-// Genres section
-if (media.genres?.length > 0) {
-  sections.push(this.createGenresSection(media.genres));
-}
+    sections.push(this.createSynopsisSection(media.description));
+    sections.push(this.createExternalLinksSection(media));
 
-
-// Synopsis section
-sections.push(this.createSynopsisSection(media.description));
-
-// External Links section
-sections.push(this.createExternalLinksSection(media));
-    // Append all sections at once
     sections.forEach(section => content.appendChild(section));
 
-    // Close button
     const closeBtn = document.createElement('button');
     closeBtn.className = 'panel-close-btn';
     closeBtn.innerHTML = '×';
@@ -2242,34 +2076,29 @@ sections.push(this.createExternalLinksSection(media));
     const airingInfo = document.createElement('div');
     airingInfo.className = 'airing-info';
 
-    const airingTime = new Date(nextAiringEpisode.airingAt * 1000); // Convert Unix timestamp to Date
+    const airingTime = new Date(nextAiringEpisode.airingAt * 1000);
 
-    // Episode number
     const episodeInfo = document.createElement('div');
     episodeInfo.className = 'airing-episode';
     episodeInfo.innerHTML = `<span class="airing-label">Episode:</span> <span class="airing-value">${nextAiringEpisode.episode}</span>`;
     airingInfo.appendChild(episodeInfo);
 
-    // Date
     const dateInfo = document.createElement('div');
     dateInfo.className = 'airing-date';
     dateInfo.innerHTML = `<span class="airing-label">Date:</span> <span class="airing-value">${this.formatAiringDate(airingTime)}</span>`;
     airingInfo.appendChild(dateInfo);
 
-    // Time
     const timeInfo = document.createElement('div');
     timeInfo.className = 'airing-time';
     timeInfo.innerHTML = `<span class="airing-label">Time:</span> <span class="airing-value">${this.formatAiringTimeOnly(airingTime)}</span>`;
     airingInfo.appendChild(timeInfo);
 
-    // Time until airing (countdown)
     if (nextAiringEpisode.timeUntilAiring > 0) {
       const countdownInfo = document.createElement('div');
       countdownInfo.className = 'airing-countdown';
       countdownInfo.innerHTML = `<span class="airing-label">In:</span> <span class="airing-value countdown-value">${this.formatTimeUntilAiring(nextAiringEpisode.timeUntilAiring)}</span>`;
       airingInfo.appendChild(countdownInfo);
 
-      // Optional: Start a live countdown timer
       this.startCountdown(countdownInfo.querySelector('.countdown-value'), nextAiringEpisode.timeUntilAiring);
     }
 
@@ -2278,7 +2107,6 @@ sections.push(this.createExternalLinksSection(media));
   }
 
   formatAiringDate(date) {
-    // Format: DD MMM YYYY (e.g., "25 Jul 2025")
     const options = {
       day: '2-digit',
       month: 'short',
@@ -2288,7 +2116,6 @@ sections.push(this.createExternalLinksSection(media));
   }
 
   formatAiringTimeOnly(date) {
-    // Format: HH:mm (e.g., "14:30")
     const options = {
       hour: '2-digit',
       minute: '2-digit',
@@ -2324,54 +2151,47 @@ sections.push(this.createExternalLinksSection(media));
       remainingSeconds--;
     };
 
-    // Update immediately
     updateCountdown();
-    
-    // Update every minute (60 seconds)
     const intervalId = setInterval(updateCountdown, 60000);
-    
-    // Store interval ID on the element so we can clear it when panel closes
     element.dataset.intervalId = intervalId;
   }
 
   createSynopsisSection(description) {
-  const section = document.createElement('div');
-  section.className = 'panel-section synopsis-section';
+    const section = document.createElement('div');
+    section.className = 'panel-section synopsis-section';
 
-  const title = document.createElement('h3');
-  title.className = 'section-title';
-  title.textContent = 'Synopsis';
-  section.appendChild(title);
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'Synopsis';
+    section.appendChild(title);
 
-  const synopsis = document.createElement('div');
-  synopsis.className = 'synopsis-content';
-  
-  if (!description || typeof description !== 'string' || !description.trim()) {
-    synopsis.className += ' synopsis-placeholder';
-    synopsis.textContent = 'Synopsis not available yet.';
+    const synopsis = document.createElement('div');
+    synopsis.className = 'synopsis-content';
+    
+    if (!description || typeof description !== 'string' || !description.trim()) {
+      synopsis.className += ' synopsis-placeholder';
+      synopsis.textContent = 'Synopsis not available yet.';
+      section.appendChild(synopsis);
+      return section;
+    }
+    
+    const cleanDescription = description
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]*>/g, '')
+      .replace(/\n\s*\n/g, '\n\n')
+      .trim();
+
+    if (!cleanDescription) {
+      synopsis.className += ' synopsis-placeholder';
+      synopsis.textContent = 'Synopsis is empty.';
+      section.appendChild(synopsis);
+      return section;
+    }
+    
+    synopsis.textContent = cleanDescription;
     section.appendChild(synopsis);
     return section;
   }
-  
-  // Clean the description
-  const cleanDescription = description
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<[^>]*>/g, '')
-    .replace(/\n\s*\n/g, '\n\n')
-    .trim();
-
-  if (!cleanDescription) {
-    synopsis.className += ' synopsis-placeholder';
-    synopsis.textContent = 'Synopsis is empty.';
-    section.appendChild(synopsis);
-    return section;
-  }
-  
-  // Just show the full description - no truncation or toggle
-  synopsis.textContent = cleanDescription;
-  section.appendChild(synopsis);
-  return section;
-}
 
   createMetadataSection(media, entry) {
     const section = document.createElement('div');
@@ -2385,7 +2205,6 @@ sections.push(this.createExternalLinksSection(media));
     const metaGrid = document.createElement('div');
     metaGrid.className = 'metadata-grid';
 
-    // Only add items that exist
     if (media.format) {
       this.addMetadataItem(metaGrid, 'Format', this.formatDisplayName(media.format));
     }
@@ -2398,45 +2217,39 @@ sections.push(this.createExternalLinksSection(media));
   }
 
   createStatisticsSection(media, malData = null) {
-  const section = document.createElement('div');
-  section.className = 'panel-section stats-section';
+    const section = document.createElement('div');
+    section.className = 'panel-section stats-section';
 
-  const title = document.createElement('h3');
-  title.className = 'section-title';
-  title.textContent = 'Statistics';
-  section.appendChild(title);
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'Statistics';
+    section.appendChild(title);
 
-  const statsGrid = document.createElement('div');
-  statsGrid.className = 'stats-grid';
+    const statsGrid = document.createElement('div');
+    statsGrid.className = 'stats-grid';
 
-  // AniList score
-  if (media.averageScore > 0) {
-     const scoreOutOf10 = (media.averageScore / 10).toFixed(1);
-    this.addStatItem(statsGrid, 'AniList Score', `${scoreOutOf10}`, 'score-stat anilist-stat');
+    if (media.averageScore > 0) {
+      const scoreOutOf10 = (media.averageScore / 10).toFixed(1);
+      this.addStatItem(statsGrid, 'AniList Score', `${scoreOutOf10}`, 'score-stat anilist-stat');
+    }
+
+    if (malData) {
+      if (malData.score) {
+        this.addStatItem(statsGrid, 'MAL Score', `${malData.score}`, 'score-stat mal-stat');
+      }
+      
+      if (malData.scored_by) {
+        this.addStatItem(statsGrid, 'MAL Ratings', malData.scored_by.toLocaleString(), 'count-stat');
+      }
+      
+      if (malData.rank) {
+        this.addStatItem(statsGrid, 'MAL Rank', `#${malData.rank}`, 'rank-stat');
+      }
+    }
+
+    section.appendChild(statsGrid);
+    return section;
   }
-
-
-
-  // MAL statistics
-  if (malData) {
-    if (malData.score) {
-      this.addStatItem(statsGrid, 'MAL Score', `${malData.score}`, 'score-stat mal-stat');
-    }
-    
-    if (malData.scored_by) {
-      this.addStatItem(statsGrid, 'MAL Ratings', malData.scored_by.toLocaleString(), 'count-stat');
-    }
-    
-    if (malData.rank) {
-      this.addStatItem(statsGrid, 'MAL Rank', `#${malData.rank}`, 'rank-stat');
-    }
-    
-    
-  }
-
-  section.appendChild(statsGrid);
-  return section;
-}
 
   addMetadataItem(container, label, value) {
     const item = document.createElement('div');
@@ -2456,14 +2269,12 @@ sections.push(this.createExternalLinksSection(media));
     const header = document.createElement('div');
     header.className = 'panel-header';
 
-    // Build title section efficiently
     const titleSection = document.createElement('div');
     titleSection.className = 'title-section';
     
     const mainTitle = media.title?.english || media.title?.romaji || 'Unknown Title';
     titleSection.innerHTML = `<h2 class="main-title">${mainTitle}</h2>`;
 
-    // Add alternative titles if they exist and are different
     if (media.title?.romaji && media.title?.english && media.title.romaji !== media.title.english) {
       titleSection.innerHTML += `<div class="alt-title">${media.title.romaji}</div>`;
     }
@@ -2473,7 +2284,6 @@ sections.push(this.createExternalLinksSection(media));
 
     header.appendChild(titleSection);
 
-    // Format and season info
     if (media.format || (media.season && media.seasonYear)) {
       const formatInfo = document.createElement('div');
       formatInfo.className = 'format-info';
@@ -2507,52 +2317,47 @@ sections.push(this.createExternalLinksSection(media));
     return section;
   }
 
+  createExternalLinksSection(media) {
+    console.log('Creating external links for media:', media);
+    console.log('Media idMal:', media.idMal);
+    
+    const section = document.createElement('div');
+    section.className = 'panel-section external-links-section';
 
-createExternalLinksSection(media) {
-  // DEBUG: Check what we're getting
-  console.log('Creating external links for media:', media);
-  console.log('Media idMal:', media.idMal);
-  
-  const section = document.createElement('div');
-  section.className = 'panel-section external-links-section';
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'External Links';
+    section.appendChild(title);
 
-  const title = document.createElement('h3');
-  title.className = 'section-title';
-  title.textContent = 'External Links';
-  section.appendChild(title);
+    const linksContainer = document.createElement('div');
+    linksContainer.className = 'external-links-container';
 
-  const linksContainer = document.createElement('div');
-  linksContainer.className = 'external-links-container';
-
-
-  // AniList button (always available since we have the media data)
-  const anilistBtn = document.createElement('button');
-  anilistBtn.className = 'external-link-btn anilist-btn';
-  anilistBtn.innerHTML = '🔗 View on AniList';
-  anilistBtn.onclick = (e) => {
-    e.stopPropagation();
-    window.open(this.getAniListUrl(media.id, media.type), '_blank');
-  };
-  linksContainer.appendChild(anilistBtn);
-
-  // MyAnimeList button (only if MAL ID is available)
-  if (media.idMal) {
-    console.log('MAL ID found, creating MAL button');
-    const malBtn = document.createElement('button');
-    malBtn.className = 'external-link-btn mal-btn';
-    malBtn.innerHTML = '🔗 View on MAL';
-    malBtn.onclick = (e) => {
+    const anilistBtn = document.createElement('button');
+    anilistBtn.className = 'external-link-btn anilist-btn';
+    anilistBtn.innerHTML = '🔗 View on AniList';
+    anilistBtn.onclick = (e) => {
       e.stopPropagation();
-      window.open(this.getMyAnimeListUrl(media.idMal, media.type), '_blank');
+      window.open(this.getAniListUrl(media.id, media.type), '_blank');
     };
-    linksContainer.appendChild(malBtn);
-  } else {
-    console.log('No MAL ID found for this media');
-  }
+    linksContainer.appendChild(anilistBtn);
 
-  section.appendChild(linksContainer);
-  return section;
-}
+    if (media.idMal) {
+      console.log('MAL ID found, creating MAL button');
+      const malBtn = document.createElement('button');
+      malBtn.className = 'external-link-btn mal-btn';
+      malBtn.innerHTML = '🔗 View on MAL';
+      malBtn.onclick = (e) => {
+        e.stopPropagation();
+        window.open(this.getMyAnimeListUrl(media.idMal, media.type), '_blank');
+      };
+      linksContainer.appendChild(malBtn);
+    } else {
+      console.log('No MAL ID found for this media');
+    }
+
+    section.appendChild(linksContainer);
+    return section;
+  }
 
   formatDisplayName(str) {
     if (!str) return '';
@@ -2568,9 +2373,7 @@ createExternalLinksSection(media) {
   }
 
   positionPanel(panel, triggerElement) {
-   // NEW – single line
-panel.className = 'zoro-more-details-panel';
-
+    panel.className = 'zoro-more-details-panel';
   }
 
   handleOutsideClick(event) {
@@ -2581,7 +2384,6 @@ panel.className = 'zoro-more-details-panel';
 
   closePanel() {
     if (this.currentPanel) {
-      // Clear any countdown timers
       const countdownElements = this.currentPanel.querySelectorAll('.countdown-value[data-interval-id]');
       countdownElements.forEach(element => {
         const intervalId = element.dataset.intervalId;
@@ -2597,31 +2399,25 @@ panel.className = 'zoro-more-details-panel';
   }
 }
 
-// Authentication
 class Authentication {
   constructor(plugin) {
-    this.plugin = plugin;        // gives us access to plugin.settings & requestQueue
+    this.plugin = plugin;
   }
 
-  /* ---------- constants ---------- */
   static ANILIST_AUTH_URL  = 'https://anilist.co/api/v2/oauth/authorize';
   static ANILIST_TOKEN_URL = 'https://anilist.co/api/v2/oauth/token';
   static REDIRECT_URI      = 'https://anilist.co/api/v2/oauth/pin';
 
-  /* ---------- public getter ---------- */
   get isLoggedIn() {
     return Boolean(this.plugin.settings.accessToken);
   }
 
-  /* ---------- OAuth helpers ---------- */
   async loginWithFlow() {
-    // 1. Ensure we have client credentials
     if (!this.plugin.settings.clientId) {
       new Notice('❌ Please enter your Client ID first.', 5000);
       return;
     }
 
-    // 2. Build auth url
     const { clientId } = this.plugin.settings;
     const authUrl =
       `${Authentication.ANILIST_AUTH_URL}?` +
@@ -2631,7 +2427,6 @@ class Authentication {
         response_type: 'code'
       }).toString();
 
-    // 3. Open browser
     new Notice('🔐 Opening AniList login page…', 3000);
     if (window.require) {
       const { shell } = window.require('electron');
@@ -2640,11 +2435,9 @@ class Authentication {
       window.open(authUrl, '_blank');
     }
 
-    // 4. Prompt for pin
     const pin = await this.promptModal('Paste the PIN code from the browser:');
     if (!pin) return;
 
-    // 5. Exchange pin → token
     await this.exchangePin(pin);
   }
 
@@ -2656,7 +2449,6 @@ class Authentication {
     this.plugin.settings.clientSecret = '';
     await this.plugin.saveSettings();
 
-    // Clear caches
     this.plugin.cache.userData.clear();
     this.plugin.cache.mediaData.clear();
     this.plugin.cache.searchResults.clear();
@@ -2664,7 +2456,6 @@ class Authentication {
     new Notice('✅ Logged out & cleared credentials.', 3000);
   }
 
-  /* ---------- internal helpers ---------- */
   async exchangePin(pin) {
     const body = new URLSearchParams({
       grant_type:    'authorization_code',
@@ -2708,7 +2499,6 @@ class Authentication {
   }
 
   async promptModal(message) {
-    // Simple synchronous prompt (works in Obsidian)
     return new Promise((res) => {
       const val = prompt(message);
       res(val ? val.trim() : null);
@@ -2744,6 +2534,383 @@ class Authentication {
   }
 }
 
+class MALAuthentication {
+  constructor(plugin) {
+    this.plugin = plugin;
+  }
+
+  static MAL_AUTH_URL = 'https://myanimelist.net/v1/oauth2/authorize';
+  static MAL_TOKEN_URL = 'https://myanimelist.net/v1/oauth2/token';
+  static MAL_USER_URL = 'https://api.myanimelist.net/v2/users/@me';
+
+  get isLoggedIn() {
+    return Boolean(this.plugin.settings.malAccessToken && this.isTokenValid());
+  }
+
+  makeVerifier() {
+    const arr = new Uint8Array(32);
+    
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+      try {
+        crypto.getRandomValues(arr);
+      } catch (e) {
+        console.log('[MAL-AUTH] crypto.getRandomValues failed, using Math.random fallback', e);
+        for (let i = 0; i < arr.length; i++) {
+          arr[i] = Math.floor(Math.random() * 256);
+        }
+      }
+    } else {
+      console.log('[MAL-AUTH] crypto.getRandomValues not available, using Math.random');
+      for (let i = 0; i < arr.length; i++) {
+        arr[i] = Math.floor(Math.random() * 256);
+      }
+    }
+    
+    const verifier = btoa(String.fromCharCode(...arr))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '')
+      .substring(0, 128);
+    
+    return verifier;
+  }
+
+  makeChallenge(verifier) {
+    return verifier;
+  }
+
+  generateState() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      try {
+        return crypto.randomUUID();
+      } catch (e) {
+        console.log('[MAL-AUTH] crypto.randomUUID failed, using fallback', e);
+      }
+    }
+    
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
+    for (let i = 0; i < 32; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
+  }
+
+  async loginWithFlow() {
+    if (!this.plugin.settings.malClientId) {
+      new Notice('❌ Please enter your MAL Client ID first.', 5000);
+      return;
+    }
+    
+    if (this.isTokenValid()) {
+      new Notice('Already authenticated with MyAnimeList', 3000);
+      return;
+    }
+
+    this.verifier = this.makeVerifier();
+    const challenge = this.makeChallenge(this.verifier);
+    const state = this.generateState();
+
+    this.authState = state;
+
+    const params = new URLSearchParams({
+      response_type: 'code',
+      client_id: this.plugin.settings.malClientId,
+      redirect_uri: 'http://localhost:8080/callback',
+      code_challenge: challenge,
+      code_challenge_method: 'plain',
+      state: state
+    });
+
+    const authUrl = `${MALAuthentication.MAL_AUTH_URL}?${params.toString()}`;
+
+    new Notice('🔐 Opening MyAnimeList login page…', 3000);
+    if (window.require) {
+      const { shell } = window.require('electron');
+      await shell.openExternal(authUrl);
+    } else {
+      window.open(authUrl, '_blank');
+    }
+
+    const callbackUrl = await this.promptModal('Paste the FULL callback URL from the browser:');
+    if (!callbackUrl) return;
+
+    const code = this.extractAuthCode(callbackUrl);
+    if (!code) {
+      new Notice('❌ Could not extract authorization code from URL', 5000);
+      return;
+    }
+
+    await this.exchangeCodeForToken(code);
+  }
+
+  extractAuthCode(input) {
+    const trimmedInput = input.trim();
+    
+    if (!trimmedInput.includes('://') && !trimmedInput.includes('?') && !trimmedInput.includes('&')) {
+      if (/^[A-Za-z0-9_-]{20,}$/.test(trimmedInput)) {
+        return trimmedInput;
+      }
+    }
+    
+    let url;
+    try {
+      if (trimmedInput.startsWith('?')) {
+        url = new URL('http://localhost' + trimmedInput);
+      } else if (trimmedInput.includes('://')) {
+        url = new URL(trimmedInput);
+      } else {
+        const codeMatch = trimmedInput.match(/[?&]code=([^&\s]+)/);
+        if (codeMatch) {
+          return decodeURIComponent(codeMatch[1]);
+        }
+        return null;
+      }
+    } catch (e) {
+      const codeMatch = trimmedInput.match(/[?&]code=([^&\s]+)/);
+      if (codeMatch) {
+        return decodeURIComponent(codeMatch[1]);
+      }
+      return null;
+    }
+    
+    const code = url.searchParams.get('code');
+    if (code) {
+      return decodeURIComponent(code);
+    }
+    
+    const codeMatch = trimmedInput.match(/[?&]code=([^&\s]+)/);
+    if (codeMatch) {
+      return decodeURIComponent(codeMatch[1]);
+    }
+    
+    return null;
+  }
+
+  async exchangeCodeForToken(code) {
+    if (!code || code.length < 10) {
+      throw new Error('Invalid authorization code');
+    }
+
+    new Notice('Exchanging authorization code for tokens…');
+
+    const body = new URLSearchParams({
+      client_id: this.plugin.settings.malClientId,
+      code: code,
+      code_verifier: this.verifier,
+      grant_type: 'authorization_code',
+      redirect_uri: 'http://localhost:8080/callback'
+    });
+
+    if (this.plugin.settings.malClientSecret && this.plugin.settings.malClientSecret.trim()) {
+      body.append('client_secret', this.plugin.settings.malClientSecret.trim());
+    }
+
+    try {
+      const res = await this.plugin.requestQueue.add(() =>
+        requestUrl({
+          url: MALAuthentication.MAL_TOKEN_URL,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: body.toString(),
+          throw: false
+        })
+      );
+
+      if (res.status < 200 || res.status >= 300) {
+        const errorText = res.text || JSON.stringify(res.json) || 'Unknown error';
+        
+        let errorMsg = `Token exchange failed (HTTP ${res.status})`;
+        
+        try {
+          const errorData = res.json || (res.text ? JSON.parse(res.text) : {});
+          
+          if (errorData.error) {
+            errorMsg += `: ${errorData.error}`;
+            if (errorData.error_description) {
+              errorMsg += ` - ${errorData.error_description}`;
+            }
+          }
+          
+          if (errorData.error === 'invalid_client') {
+            errorMsg += '\n\nTip: Check your Client ID and Secret in settings. For apps without a secret, leave the Client Secret field empty.';
+          } else if (errorData.error === 'invalid_request') {
+            errorMsg += '\n\nTip: Ensure your Redirect URI exactly matches what\'s registered in your MAL app settings.';
+          } else if (errorData.error === 'invalid_grant') {
+            errorMsg += '\n\nTip: The authorization code may have expired or been used already. Please try authenticating again.';
+          }
+        } catch (parseError) {
+          errorMsg += `: ${errorText}`;
+        }
+        
+        throw new Error(errorMsg);
+      }
+
+      let data;
+      try {
+        data = res.json || (res.text ? JSON.parse(res.text) : null);
+      } catch (jsonError) {
+        throw new Error('Invalid response from MyAnimeList server');
+      }
+
+      if (!data.access_token) {
+        throw new Error('No access token received from MyAnimeList');
+      }
+
+      this.plugin.settings.malAccessToken = data.access_token;
+      this.plugin.settings.malRefreshToken = data.refresh_token;
+      this.plugin.settings.malTokenExpiry = Date.now() + (data.expires_in * 1000);
+      await this.plugin.saveSettings();
+
+      try {
+        await this.fetchUserInfo();
+        new Notice(`✅ Successfully authenticated with MAL! Welcome ${this.plugin.settings.malUserInfo?.name || 'user'} 🎉`, 4000);
+      } catch (userError) {
+        console.log('[MAL-AUTH] Failed to fetch user info but auth succeeded', userError);
+        new Notice('✅ Authentication successful! 🎉', 4000);
+      }
+
+    } catch (err) {
+      new Notice(`❌ MAL Auth failed: ${err.message}`, 5000);
+      throw err;
+    }
+  }
+
+  async fetchUserInfo() {
+    const res = await this.plugin.requestQueue.add(() =>
+      requestUrl({
+        url: MALAuthentication.MAL_USER_URL,
+        method: 'GET',
+        headers: { 
+          'Authorization': `Bearer ${this.plugin.settings.malAccessToken}`
+        },
+        throw: false
+      })
+    );
+    
+    if (res.status < 200 || res.status >= 300) {
+      throw new Error(`Could not fetch user info (HTTP ${res.status})`);
+    }
+    
+    this.plugin.settings.malUserInfo = res.json || (res.text ? JSON.parse(res.text) : null);
+    await this.plugin.saveSettings();
+  }
+
+  async refreshAccessToken() {
+    if (!this.plugin.settings.malRefreshToken) {
+      throw new Error('No refresh token available');
+    }
+    
+    const body = new URLSearchParams({
+      client_id: this.plugin.settings.malClientId,
+      refresh_token: this.plugin.settings.malRefreshToken,
+      grant_type: 'refresh_token'
+    });
+
+    if (this.plugin.settings.malClientSecret && this.plugin.settings.malClientSecret.trim()) {
+      body.append('client_secret', this.plugin.settings.malClientSecret.trim());
+    }
+
+    const res = await this.plugin.requestQueue.add(() =>
+      requestUrl({
+        url: MALAuthentication.MAL_TOKEN_URL,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+        throw: false
+      })
+    );
+
+    if (res.status < 200 || res.status >= 300) {
+      const errorText = res.text || JSON.stringify(res.json) || 'Unknown error';
+      throw new Error(`Token refresh failed (HTTP ${res.status}): ${errorText}`);
+    }
+
+    const data = res.json || (res.text ? JSON.parse(res.text) : null);
+    this.plugin.settings.malAccessToken = data.access_token;
+    this.plugin.settings.malRefreshToken = data.refresh_token || this.plugin.settings.malRefreshToken;
+    this.plugin.settings.malTokenExpiry = Date.now() + (data.expires_in * 1000);
+    await this.plugin.saveSettings();
+  }
+
+  isTokenValid() {
+    return !!(this.plugin.settings.malAccessToken && 
+              this.plugin.settings.malTokenExpiry && 
+              Date.now() < (this.plugin.settings.malTokenExpiry - 5 * 60 * 1000));
+  }
+
+  async checkTokenExpiry() {
+    if (this.isTokenValid()) return;
+    if (!this.plugin.settings.malRefreshToken) {
+      console.log('[MAL-AUTH] Token expired and no refresh token available');
+      return;
+    }
+    
+    try {
+      await this.refreshAccessToken();
+      console.log('[MAL-AUTH] Token automatically refreshed');
+    } catch (e) {
+      console.error('[MAL-AUTH] Automatic token refresh failed', e);
+      new Notice('MAL authentication expired. Please re-authenticate.', 5000);
+    }
+  }
+
+  async logout() {
+    this.plugin.settings.malAccessToken = '';
+    this.plugin.settings.malRefreshToken = '';
+    this.plugin.settings.malTokenExpiry = null;
+    this.plugin.settings.malUserInfo = null;
+    this.plugin.settings.malClientId = '';
+    this.plugin.settings.malClientSecret = '';
+    await this.plugin.saveSettings();
+
+    if (this.plugin.cache?.malData) {
+      this.plugin.cache.malData.clear();
+    }
+
+    new Notice('✅ Logged out from MyAnimeList & cleared credentials.', 3000);
+  }
+
+  async promptModal(message) {
+    return new Promise((res) => {
+      const val = prompt(message);
+      res(val ? val.trim() : null);
+    });
+  }
+
+  async ensureValidToken() {
+    if (!this.isLoggedIn) throw new Error('Not authenticated with MyAnimeList');
+    await this.checkTokenExpiry();
+    return true;
+  }
+  
+  async getAuthenticatedUsername() {
+    await this.ensureValidToken();
+
+    if (!this.plugin.settings.malUserInfo) {
+      await this.fetchUserInfo();
+    }
+
+    const name = this.plugin.settings.malUserInfo?.name;
+    if (!name) throw new Error('Could not fetch MAL username');
+    return name;
+  }
+
+  getAuthHeaders() { 
+    return this.isTokenValid() ? { Authorization: `Bearer ${this.plugin.settings.malAccessToken}` } : null; 
+  }
+  
+  isAuthenticated() { 
+    return this.isTokenValid(); 
+  }
+  
+  getUserInfo() { 
+    return this.plugin.settings.malUserInfo; 
+  }
+}
+
 class ClientIdModal extends Modal {
   constructor(app, onSubmit) {
     super(app);
@@ -2757,7 +2924,7 @@ class ClientIdModal extends Modal {
     contentEl.createEl('h2', { text: '🔑 Enter Client ID' });
     
     const desc = contentEl.createEl('p');
-    desc.setText('Enter your AniList application Client ID');
+    desc.setText('Enter your Zoro application Client ID');
     desc.addClass('auth-modal-desc');
     
     const inputContainer = contentEl.createEl('div', { cls: 'auth-input-container' });
@@ -2780,7 +2947,6 @@ class ClientIdModal extends Modal {
       cls: 'auth-button'
     });
     
-    // Centralized close modal function
     const closeModal = () => {
       this.close();
     };
@@ -2818,7 +2984,7 @@ class ClientSecretModal extends Modal {
     contentEl.createEl('h2', { text: '🔐 Enter Client Secret' });
     
     const desc = contentEl.createEl('p');
-    desc.setText('Enter your AniList application Client Secret');
+    desc.setText('Enter your Zoro application Client Secret');
     desc.addClass('auth-modal-desc');
     
     const inputContainer = contentEl.createEl('div', { cls: 'auth-input-container' });
@@ -2841,7 +3007,6 @@ class ClientSecretModal extends Modal {
       cls: 'auth-button'
     });
     
-    // Centralized close modal function
     const closeModal = () => {
       this.close();
     };
@@ -2902,7 +3067,6 @@ class AuthPinModal extends Modal {
       cls: 'auth-button'
     });
     
-    // Centralized close modal function
     const closeModal = () => {
       this.close();
     };
@@ -2935,7 +3099,7 @@ class AuthPinModal extends Modal {
     setTimeout(() => input.focus(), 100);
   }
 }
-// Theme
+
 class Theme {
   constructor(plugin) {
     this.plugin = plugin;
@@ -3123,13 +3287,13 @@ class Theme {
     }
   }
 }
-// Edit
+
 class Edit {
   constructor(plugin) {
     this.plugin = plugin;
   }
 
- createEditModal(entry, onSave, onCancel) {
+  createEditModal(entry, onSave, onCancel) {
     const modal = document.createElement('div');
     modal.className = 'zoro-edit-modal';
     const overlay = document.createElement('div');
@@ -3143,46 +3307,37 @@ class Edit {
     title.className = 'zoro-modal-title';
     title.textContent = entry.media.title.english || entry.media.title.romaji;
     
-    // --- Status Field ---
     const statusGroup = this.createStatusField(entry);
     const statusSelect = statusGroup.querySelector('.zoro-status-select');
     
-    // --- Score Field ---
     const scoreGroup = this.createScoreField(entry);
     const scoreInput = scoreGroup.querySelector('.zoro-score-input');
     
-    // --- Progress Field ---
     const progressGroup = this.createProgressField(entry);
     const progressInput = progressGroup.querySelector('.zoro-progress-input');
     
-    // --- Quick Buttons ---
     const quickProgressDiv = this.createQuickProgressButtons(entry, progressInput, statusSelect);
     
-    // --- Buttons ---
     const buttonContainer = this.createButtonContainer(entry, onSave, onCancel, modal);
     const saveBtn = buttonContainer.querySelector('.zoro-save-btn');
     const removeBtn = buttonContainer.querySelector('.zoro-remove-btn');
     const cancelBtn = buttonContainer.querySelector('.zoro-cancel-btn');
     
-    // Keyboard accessibility
     const escListener = this.createEscapeListener(onCancel, modal, () => {
         this.trySave(entry, onSave, saveBtn, statusSelect, scoreInput, progressInput, modal, escListener, closeModal);
     });
     
-    // Centralized close modal function
     const closeModal = () => {
         if (modal.parentNode) modal.parentNode.removeChild(modal);
         document.removeEventListener('keydown', escListener);
-        this.plugin.removeAllGlobalListeners();          // safest belt-and-braces
+        this.plugin.removeAllGlobalListeners();
     };
     
-    // Form submission
     form.onsubmit = async (e) => {
         e.preventDefault();
         await this.trySave(entry, onSave, saveBtn, statusSelect, scoreInput, progressInput, modal, escListener, closeModal);
     };
     
-    // Setup remove button functionality
     this.setupRemoveButton(removeBtn, entry, modal, closeModal);
     
     form.append(title, statusGroup, scoreGroup, progressGroup, quickProgressDiv, buttonContainer);
@@ -3190,15 +3345,13 @@ class Edit {
     modal.append(overlay, content);
     document.body.appendChild(modal);
     
-    // Setup modal interactions using closeModal
-    overlay.onclick = closeModal;                      // overlay click
-    if (cancelBtn) cancelBtn.onclick = closeModal;     // Cancel button
+    overlay.onclick = closeModal;
+    if (cancelBtn) cancelBtn.onclick = closeModal;
     
     this.plugin.addGlobalListener(document, 'keydown', escListener);
     
-    // Get and set favorite status
     this.setFavoriteStatus(entry, buttonContainer.querySelector('.zoro-fav-btn'));
-}
+  }
   
   createStatusField(entry) {
     const statusGroup = document.createElement('div');
@@ -3313,7 +3466,6 @@ class Edit {
     const buttonContainer = document.createElement('div');
     buttonContainer.className = 'zoro-modal-buttons';
 
-    // ❤️ Favorite toggle
     const favBtn = document.createElement('button');
     favBtn.className = 'zoro-modal-btn zoro-fav-btn';
     favBtn.type = 'button';
@@ -3368,15 +3520,13 @@ class Edit {
             body: JSON.stringify({ query: mutation, variables: { id: entry.id } })
           })
         );
-        // close modal & refresh view
         document.body.removeChild(modal);
         this.plugin.clearSingleEntryCache(
-  entry.media.id,
-  this.plugin.settings.defaultUsername || config.username,
-  config.mediaType
-);
+          entry.media.id,
+          this.plugin.settings.defaultUsername || config.username,
+          config.mediaType
+        );
 
-        // trigger re-render of the block that owns this entry
         const parentContainer = document.querySelector('.zoro-container');
         if (parentContainer) {
           const block = parentContainer.closest('.markdown-rendered')?.querySelector('code');
@@ -3435,7 +3585,6 @@ class Edit {
       const fav = mediaData?.isFavourite;
       favBtn.textContent = fav ? '❤️' : '🤍';
       
-      // Store the media type for later use
       favBtn.dataset.mediaType = mediaData?.type;
     } catch (e) {
       console.warn('Could not fetch favorite', e);
@@ -3447,10 +3596,8 @@ class Edit {
     favBtn.textContent = '⏳';
     
     try {
-      // Use the stored media type, or fall back to detection
       let mediaType = favBtn.dataset.mediaType;
       if (!mediaType) {
-        // Fallback detection - check for type field first, then episodes
         mediaType = entry.media.type || (entry.media.episodes ? 'ANIME' : 'MANGA');
       }
       
@@ -3472,7 +3619,6 @@ class Edit {
           }
         }`;
         
-      // Only include the relevant ID, don't pass null values
       const variables = {};
       if (isAnime) {
         variables.animeId = entry.media.id;
@@ -3498,7 +3644,6 @@ class Edit {
         throw new Error(res.json.errors[0].message);
       }
       
-      // Check if the media is now in favorites by looking at the response
       const toggleResult = res.json.data?.ToggleFavourite;
       let isFav = false;
       
@@ -3519,7 +3664,6 @@ class Edit {
     }
   }
 
-  // Save logic
   async trySave(entry, onSave, saveBtn, statusSelect, scoreInput, progressInput, modal, escListener, closeModal) {
     if (this.saving) return;
     this.saving = true;
@@ -3556,40 +3700,34 @@ class Edit {
     this.saving = false;
   }
 }
-// Prompt
+
 class Prompt {
   constructor(plugin) {
     this.plugin = plugin;
   }
 
   createAuthenticationPrompt() {
-    // Create modal wrapper
     const modal = document.createElement('div');
     modal.className = 'zoro-edit-modal';
     modal.setAttribute('role', 'dialog');
     modal.setAttribute('aria-modal', 'true');
     modal.setAttribute('aria-label', 'Authentication Required');
 
-    // Overlay
     const overlay = document.createElement('div');
     overlay.className = 'zoro-modal-overlay';
 
-    // Modal content container
     const content = document.createElement('div');
     content.className = 'zoro-modal-content auth-prompt';
 
-    // Title
     const title = document.createElement('h3');
     title.className = 'zoro-auth-title';
     title.textContent = '🔐 Authentication Required';
 
-    // Message
     const message = document.createElement('p');
     message.className = 'zoro-auth-message';
     
     message.textContent = 'You need to authenticate with AniList to edit your anime/manga entries. This will allow you to update your progress, scores, and status directly from Obsidian.';
 
-    // Feature list
     const featuresDiv = document.createElement('div');
     featuresDiv.className = 'zoro-auth-features';
 
@@ -3617,19 +3755,18 @@ class Prompt {
     featuresDiv.appendChild(featuresTitle);
     featuresDiv.appendChild(featuresList);
 
-    // Buttons
     const buttonContainer = document.createElement('div');
     buttonContainer.className = 'zoro-modal-buttons';
 
     const authenticateBtn = document.createElement('button');
     authenticateBtn.className = 'zoro-auth-button';
     
-    authenticateBtn.textContent = '🔑 Authenticate';
+    authenticateBtn.textContent = '🔑 Login';
     authenticateBtn.onclick = () => {
       closeModal();
       this.plugin.app.setting.open();
       this.plugin.app.setting.openTabById(this.plugin.manifest.id);
-      new Notice('📝 Please use optional login to authenticate');
+      new Notice('📝 Please use AniList to authenticate from settings');
     };
 
     const cancelBtn = document.createElement('button');
@@ -3640,7 +3777,6 @@ class Prompt {
     buttonContainer.appendChild(authenticateBtn);
     buttonContainer.appendChild(cancelBtn);
 
-    // Build modal
     content.appendChild(title);
     content.appendChild(message);
     content.appendChild(featuresDiv);
@@ -3650,10 +3786,8 @@ class Prompt {
     modal.appendChild(content);
     document.body.appendChild(modal);
 
-    // Focus and Esc key handling
     authenticateBtn.focus();
-  this.plugin.addGlobalListener(document, 'keydown', handleKeyDown);
-
+    this.plugin.addGlobalListener(document, 'keydown', handleKeyDown);
 
     overlay.onclick = closeModal;
 
@@ -3670,14 +3804,13 @@ class Prompt {
     }
   }
 }
-// Export
+
 class Export {
   constructor(plugin) {
     this.plugin = plugin;
   }
 
   async exportUnifiedListsToCSV() {
-    // decide which username to use
     let username = this.plugin.settings.authUsername;
     if (!username) username = this.plugin.settings.defaultUsername;
     if (!username) {
@@ -3709,7 +3842,7 @@ class Export {
     `;
 
     new Notice(`${useAuth ? '📥 Full' : '📥 Public'} export started…`, 4000);
-  const progress = this.createProgressNotice('📊 Exporting… 0 %');
+    const progress = this.createProgressNotice('📊 Exporting… 0 %');
     const fetchType = async type => {
       const headers = { 'Content-Type': 'application/json' };
       if (useAuth) {
@@ -3728,8 +3861,8 @@ class Export {
           })
         })
       );
-       const percent = type === 'ANIME' ? 50 : 100;
-     this.updateProgressNotice(progress, `📊 Exporting… ${percent} %`);
+      const percent = type === 'ANIME' ? 50 : 100;
+      this.updateProgressNotice(progress, `📊 Exporting… ${percent} %`);
       return res.json.data?.MediaListCollection?.lists || [];
     };
 
@@ -3777,7 +3910,6 @@ class Export {
     await this.plugin.app.workspace.openLinkText(fileName, '', false);
   }
 
-  /* ---------- helpers ---------- */
   dateToString(dateObj) {
     if (!dateObj || !dateObj.year) return '';
     return `${dateObj.year}-${String(dateObj.month || 0).padStart(2, '0')}-${String(dateObj.day || 0).padStart(2, '0')}`;
@@ -3791,29 +3923,26 @@ class Export {
     return str;
   }
   
-  // main.js – inside Export class
-createProgressNotice(message) {
-  // Keep the notice reference so we can update it
-  return new Notice(message, 0); // 0 = never auto-dismiss
+  createProgressNotice(message) {
+    return new Notice(message, 0);
+  }
+
+  updateProgressNotice(notice, message) {
+    notice.hide();
+    return new Notice(message, 0);
+  }
+
+  finishProgressNotice(notice, message) {
+    notice.hide();
+    new Notice(message, 4000);
+  }
 }
 
-updateProgressNotice(notice, message) {
-  // Dismiss old notice and show new one (Obsidian replaces in-place)
-  notice.hide();
-  return new Notice(message, 0);
-}
-
-finishProgressNotice(notice, message) {
-  notice.hide();
-  new Notice(message, 4000); // auto-dismiss after 4 s
-}
-
-}
-// Sample
 class Sample {
   constructor(plugin) {
     this.plugin = plugin;
   }
+
   async createSampleNotes() {
     try {
       let successCount = 0;
@@ -3944,14 +4073,14 @@ type: stats
   }
 
   async createSampleFolders() {
-  const { vault, workspace } = this.plugin.app;
-  const dashboards = [
-    {
-      folder: 'Anime Dashboard',
-      notes: [
-        {
-          name: 'Watching',
-          content: `\`\`\`zoro-search
+    const { vault, workspace } = this.plugin.app;
+    const dashboards = [
+      {
+        folder: 'Anime Dashboard',
+        notes: [
+          {
+            name: 'Watching',
+            content: `\`\`\`zoro-search
 mediaType: ANIME
 \`\`\`
 
@@ -3959,10 +4088,10 @@ mediaType: ANIME
 listType: CURRENT
 mediaType: ANIME
 \`\`\``
-        },
-        {
-          name: 'Planning',
-          content: `\`\`\`zoro-search
+          },
+          {
+            name: 'Planning',
+            content: `\`\`\`zoro-search
 mediaType: ANIME
 \`\`\`
 
@@ -3970,10 +4099,10 @@ mediaType: ANIME
 listType: PLANNING
 mediaType: ANIME
 \`\`\``
-        },
-        {
-          name: 'Repeating',
-          content: `\`\`\`zoro-search
+          },
+          {
+            name: 'Repeating',
+            content: `\`\`\`zoro-search
 mediaType: ANIME
 \`\`\`
 
@@ -3981,10 +4110,10 @@ mediaType: ANIME
 listType: REPEATING
 mediaType: ANIME
 \`\`\``
-        },
-        {
-          name: 'On Hold',
-          content: `\`\`\`zoro-search
+          },
+          {
+            name: 'On Hold',
+            content: `\`\`\`zoro-search
 mediaType: ANIME
 \`\`\`
 
@@ -3992,10 +4121,10 @@ mediaType: ANIME
 listType: PAUSED
 mediaType: ANIME
 \`\`\``
-        },
-        {
-          name: 'Completed',
-          content: `\`\`\`zoro-search
+          },
+          {
+            name: 'Completed',
+            content: `\`\`\`zoro-search
 mediaType: ANIME
 \`\`\`
 
@@ -4003,10 +4132,10 @@ mediaType: ANIME
 listType: COMPLETED
 mediaType: ANIME
 \`\`\``
-        },
-        {
-          name: 'Dropped',
-          content: `\`\`\`zoro-search
+          },
+          {
+            name: 'Dropped',
+            content: `\`\`\`zoro-search
 mediaType: ANIME
 \`\`\`
 
@@ -4014,21 +4143,21 @@ mediaType: ANIME
 listType: DROPPED
 mediaType: ANIME
 \`\`\``
-        },
-        {
-          name: 'Stats',
-          content: `\`\`\`zoro
+          },
+          {
+            name: 'Stats',
+            content: `\`\`\`zoro
 type: stats
 \`\`\``
-        }
-      ]
-    },
-    {
-      folder: 'Manga Dashboard',
-      notes: [
-        {
-          name: 'Reading',
-          content: `\`\`\`zoro-search
+          }
+        ]
+      },
+      {
+        folder: 'Manga Dashboard',
+        notes: [
+          {
+            name: 'Reading',
+            content: `\`\`\`zoro-search
 mediaType: MANGA
 \`\`\`
 
@@ -4036,10 +4165,10 @@ mediaType: MANGA
 listType: CURRENT
 mediaType: MANGA
 \`\`\``
-        },
-        {
-          name: 'Planning',
-          content: `\`\`\`zoro-search
+          },
+          {
+            name: 'Planning',
+            content: `\`\`\`zoro-search
 mediaType: MANGA
 \`\`\`
 
@@ -4047,10 +4176,10 @@ mediaType: MANGA
 listType: PLANNING
 mediaType: MANGA
 \`\`\``
-        },
-        {
-          name: 'Repeating',
-          content: `\`\`\`zoro-search
+          },
+          {
+            name: 'Repeating',
+            content: `\`\`\`zoro-search
 mediaType: MANGA
 \`\`\`
 
@@ -4058,10 +4187,10 @@ mediaType: MANGA
 listType: REPEATING
 mediaType: MANGA
 \`\`\``
-        },
-        {
-          name: 'On Hold',
-          content: `\`\`\`zoro-search
+          },
+          {
+            name: 'On Hold',
+            content: `\`\`\`zoro-search
 mediaType: MANGA
 \`\`\`
 
@@ -4069,10 +4198,10 @@ mediaType: MANGA
 listType: PAUSED
 mediaType: MANGA
 \`\`\``
-        },
-        {
-          name: 'Completed',
-          content: `\`\`\`zoro-search
+          },
+          {
+            name: 'Completed',
+            content: `\`\`\`zoro-search
 mediaType: MANGA
 \`\`\`
 
@@ -4080,10 +4209,10 @@ mediaType: MANGA
 listType: COMPLETED
 mediaType: MANGA
 \`\`\``
-        },
-        {
-          name: 'Dropped',
-          content: `\`\`\`zoro-search
+          },
+          {
+            name: 'Dropped',
+            content: `\`\`\`zoro-search
 mediaType: MANGA
 \`\`\`
 
@@ -4091,58 +4220,50 @@ mediaType: MANGA
 listType: DROPPED
 mediaType: MANGA
 \`\`\``
-        },
-        {
-          name: 'Stats',
-          content: `\`\`\`zoro
+          },
+          {
+            name: 'Stats',
+            content: `\`\`\`zoro
 type: stats
 \`\`\``
-        }
-      ]
-    }
-  ];
+          }
+        ]
+      }
+    ];
 
-  for (const { folder, notes } of dashboards) {
-    try {
-      // Create folder if missing
-      if (!vault.getAbstractFileByPath(folder)) {
-        await vault.createFolder(folder);
-      }
-      // Create notes within it
-      for (const { name, content } of notes) {
-        const path = `${folder}/${name}.md`;
-        if (!vault.getAbstractFileByPath(path)) {
-          await vault.create(path, content);
+    for (const { folder, notes } of dashboards) {
+      try {
+        if (!vault.getAbstractFileByPath(folder)) {
+          await vault.createFolder(folder);
         }
+        for (const { name, content } of notes) {
+          const path = `${folder}/${name}.md`;
+          if (!vault.getAbstractFileByPath(path)) {
+            await vault.create(path, content);
+          }
+        }
+        await workspace.openLinkText(notes[0].name, folder, false);
+      } catch (err) {
+        console.error(`[Zoro] Error creating "${folder}":`, err);
+        new Notice(`❌ Failed creating ${folder}: ${err.message}`, 5000);
       }
-      // Open the first note
-      await workspace.openLinkText(notes[0].name, folder, false);
-    } catch (err) {
-      console.error(`[Zoro] Error creating "${folder}":`, err);
-      new Notice(`❌ Failed creating ${folder}: ${err.message}`, 5000);
     }
+
+    new Notice('✅ Dashboards generated!', 4000);
   }
-
-  new Notice('✅ Dashboards generated!', 4000);
-}
 }
 
-// Settings
-class ZoroSettingTab extends PluginSettingTab { 
-  constructor(app, plugin) { 
-    super(app, plugin); 
-    this.plugin = plugin; 
+class ZoroSettingTab extends PluginSettingTab {
+  constructor(app, plugin) {
+    super(app, plugin);
+    this.plugin = plugin;
   }
-  
 
-  display() { 
-    
-    
+  display() {
     const { containerEl } = this;
-    
     containerEl.empty()
-    
-        const section = (title, startOpen = false) => {
+
+    const section = (title, startOpen = false) => {
       const head = containerEl.createEl('h2', { text: title });
       head.style.cursor = 'pointer';
       head.style.userSelect = 'none';
@@ -4156,45 +4277,37 @@ class ZoroSettingTab extends PluginSettingTab {
       return body;
     };
 
-// variables For headers
-        const Account  = section('👤 Account', true);
+    const Account = section('👤 Account', true);
     const Display = section('📺 Display');
     const Theme = section('🌌 Theme');
     const Guide = section('🧭 Guide');
     const Data = section('📤 Data');
-     const More = section('✨  More');
+    const More = section('✨  More');
     const Exp = section('🚧 Experimental');
     const About = section('ℹ️ About');
-    
-    
 
-    
     new Setting(Account)
-      .setName('🆔 Username')
-      .setDesc("Lets you access your public profile and stats — that's it" )
+      .setName('🆔 Public profile')
+      .setDesc("Lets you access AniList public profile and stats — that's it (No Authentication required).")
       .addText(text => text
-        .setPlaceholder('Enter your AniList username')
+        .setPlaceholder('AniList username')
         .setValue(this.plugin.settings.defaultUsername)
         .onChange(async (value) => {
           this.plugin.settings.defaultUsername = value.trim();
           await this.plugin.saveSettings();
         }));
-        
-        // Dynamic Authentication button
 
-const authSetting = new Setting(
-  Account)
-  .setName('🔓 Optional Login')
-  .setDesc('Lets you peek at your private profile and actually change stuff.');
+    const authSetting = new Setting(Account)
+      .setName('✳️ AniList')
+      .setDesc('Lets you peek at your private profile and actually change stuff.');
 
-authSetting.addButton(button => {
-  this.authButton = button;
-  this.updateAuthButton();
-  
-  button.onClick(async () => {
-    await this.handleAuthButtonClick();
-  });
-});
+    authSetting.addButton(button => {
+      this.authButton = button;
+      this.updateAuthButton();
+      button.onClick(async () => {
+        await this.handleAuthButtonClick();
+      });
+    });
 
     new Setting(Display)
       .setName('🧊 Layout')
@@ -4207,8 +4320,8 @@ authSetting.addButton(button => {
           this.plugin.settings.defaultLayout = value;
           await this.plugin.saveSettings();
         }));
-        
-        new Setting(Display)
+
+    new Setting(Display)
       .setName('🔲 Grid Columns')
       .setDesc('Number of columns in card grid layout')
       .addSlider(slider => slider
@@ -4260,179 +4373,222 @@ authSetting.addButton(button => {
           await this.plugin.saveSettings();
         }));
 
-    new Setting(More) // or Display section
-  .setName('⏳ Loading Icon')
-  .setDesc('Show loading animation during API requests')
-  .addToggle(toggle => toggle
-    .setValue(this.plugin.settings.showLoadingIcon)
-    .onChange(async (value) => {
-      this.plugin.settings.showLoadingIcon = value;
-      await this.plugin.saveSettings();
-    }));
+    new Setting(More)
+      .setName('⏳ Loading Icon')
+      .setDesc('Show loading animation during API requests')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.showLoadingIcon)
+        .onChange(async (value) => {
+          this.plugin.settings.showLoadingIcon = value;
+          await this.plugin.saveSettings();
+        }));
 
-new Setting(More)
-   .setName('🔗 Plain Titles')
-.setDesc('Show titles as plain text instead of clickable links.')
-    .addToggle(toggle => toggle
+    new Setting(More)
+      .setName('🔗 Plain Titles')
+      .setDesc('Show titles as plain text instead of clickable links.')
+      .addToggle(toggle => toggle
         .setValue(this.plugin.settings.hideUrlsInTitles)
         .onChange(async (value) => {
-            this.plugin.settings.hideUrlsInTitles = value;
-            await this.plugin.saveSettings();
+          this.plugin.settings.hideUrlsInTitles = value;
+          await this.plugin.saveSettings();
         }));
-    
-        
-/* ---- Unified Export button (always shown) ---- */
-new Setting(Data)
-.setName('🧾 Export your data')
-  .setDesc("Everything you've watched, rated, and maybe ghosted — neatly exported into a CSV.")
-  .addButton(btn => btn
-    .setButtonText('Export')
-    .setClass('mod-cta')
-    .onClick(async () => {
-      try {
-        await this.plugin.export.exportUnifiedListsToCSV();
-      } catch (err) {
-        new Notice(`❌ Export failed: ${err.message}`, 6000);
-      }
-    })
-  );
-  
-  
 
+    new Setting(Data)
+      .setName('🧾 Export your data')
+      .setDesc("Everything you've watched, rated, and maybe ghosted — neatly exported into a CSV.")
+      .addButton(btn => btn
+        .setButtonText('Export')
+        .setClass('mod-cta')
+        .onClick(async () => {
+          try {
+            await this.plugin.export.exportUnifiedListsToCSV();
+          } catch (err) {
+            new Notice(`❌ Export failed: ${err.message}`, 6000);
+          }
+        })
+      );
 
-new Setting(Theme)
-  .setName('Select Theme')
-  .setDesc('Pick a custom CSS file from the themes folder')
-  .addDropdown(async dropdown => {
-    // Populate
-    dropdown.addOption('', 'default');
-    const themes = await this.plugin.theme.getAvailableThemes();
-    themes.forEach(t => dropdown.addOption(t, t));
+    new Setting(Theme)
+      .setName('Select Theme')
+      .setDesc('Pick a custom CSS file from the themes folder')
+      .addDropdown(async dropdown => {
+        dropdown.addOption('', 'default');
+        const themes = await this.plugin.theme.getAvailableThemes();
+        themes.forEach(t => dropdown.addOption(t, t));
+        dropdown.setValue(this.plugin.settings.theme);
+        dropdown.onChange(async value => {
+          this.plugin.settings.theme = value;
+          await this.plugin.saveSettings();
+          await this.plugin.theme.applyTheme(value);
+        });
+      });
 
-    // Pre-select saved value
-    dropdown.setValue(this.plugin.settings.theme);
-
-    // On change: apply + save
-    dropdown.onChange(async value => {
-      this.plugin.settings.theme = value;
-      await this.plugin.saveSettings();
-      await this.plugin.theme.applyTheme(value);
-    });
-  });
-
-new Setting(Guide)
-  .setName('⚡ Sample Folders')
-  .setDesc('Builds two folders for you — anime and manga — with everything pre-filled: notes, lists, search, stats. (Recommended)')
-  .addButton(button =>
-    button
-      .setButtonText('Create Sample Folders')
-      .onClick(async () => {
-       await this.plugin.sample.createSampleFolders();
-      })
-  );
-new Setting(Guide)
-    .setName('🍜 Sample Notes')
-    .setDesc('Builds two notes for you — anime and manga — with everything pre-filled: lists, search, stats. Like instant noodles, but for your library.')
-    .addButton(button => button
-      .setButtonText('Create Note')
-      .setTooltip('Click to create sample notes in your vault')
-      .onClick(async () => {
-        await this.plugin.sample.createSampleNotes();
-        this.display();
-      })
-    );
-    
     new Setting(Guide)
-     .setName('🗝️ Need a Client ID?')
-    .setDesc('Click here to open the step-by-step guide for generating your AniList Client ID & Secret. Takes less than a minute—no typing, just copy and paste.')
+      .setName('⚡ Sample Folders')
+      .setDesc('Builds two folders for you — anime and manga — with everything pre-filled: notes, lists, search, stats. (Recommended)')
+      .addButton(button =>
+        button
+          .setButtonText('Create Sample Folders')
+          .onClick(async () => {
+            await this.plugin.sample.createSampleFolders();
+          })
+      );
+
+    new Setting(Guide)
+      .setName('🍜 Sample Notes')
+      .setDesc('Builds two notes for you — anime and manga — with everything pre-filled: lists, search, stats. Like instant noodles, but for your library.')
+      .addButton(button => button
+        .setButtonText('Create Note')
+        .setTooltip('Click to create sample notes in your vault')
+        .onClick(async () => {
+          await this.plugin.sample.createSampleNotes();
+          this.display();
+        })
+      );
+
+    new Setting(Guide)
+      .setName('🗝️ Need a Client ID?')
+      .setDesc('Click here to open the step-by-step guide for generating your AniList Client ID & Secret. Takes less than a minute—no typing, just copy and paste.')
       .addButton(button => button
         .setButtonText('Setup Guide')
         .onClick(() => {
           window.open('https://github.com/zara-kasi/zoro/blob/main/Docs/anilist-auth-setup.md', '_blank');
         }));
-        
-        
-        new Setting(About)
-  .setName('Author')
-  .setDesc(this.plugin.manifest.author);
-  new Setting(About)
-  .setName('Version')
-  .setDesc(this.plugin.manifest.version);
-new Setting(About)
-  .setName('Privacy')
-  .setDesc('Zoro only talks to the AniList API to fetch & update your media data. Nothing else is sent or shared—your data stays local.');
 
-new Setting(About)
-  .setName('GitHub')
-  .setDesc('Get more info or report an issue.')
-  .addButton(button =>
-    button
-    .setClass('mod-cta')
-      .setButtonText('Open GitHub')
-      .onClick(() => {
-        window.open('https://github.com/zara-kasi/zoro', '_blank');
-      })
-  );
-  
+    const malAuthSetting = new Setting(Exp)
+      .setName('🔓 MyAnimeList')
+      .setDesc('Authenticate with MyAnimeList to edit and view your MAL entries');
 
+    malAuthSetting.addButton(btn => {
+      this.malAuthButton = btn;
+      this.updateMALAuthButton();
+      btn.onClick(async () => {
+        await this.handleMALAuthButtonClick();
+      });
+    });
 
+    new Setting(About)
+      .setName('Author')
+      .setDesc(this.plugin.manifest.author);
+    new Setting(About)
+      .setName('Version')
+      .setDesc(this.plugin.manifest.version);
+    new Setting(About)
+      .setName('Privacy')
+      .setDesc('Zoro only talks to the AniList API to fetch & update your media data. Nothing else is sent or shared—your data stays local.');
 
+    new Setting(About)
+      .setName('GitHub')
+      .setDesc('Get more info or report an issue.')
+      .addButton(button =>
+        button
+          .setClass('mod-cta')
+          .setButtonText('Open GitHub')
+          .onClick(() => {
+            window.open('https://github.com/zara-kasi/zoro', '_blank');
+          })
+      );
   }
-  //  Dynamic Update of Auth button
-updateAuthButton() {
-  if (!this.authButton) return;
 
-  const { settings } = this.plugin;
-
-  if (!settings.clientId) {
-    this.authButton.setButtonText('Enter Client ID');
-    this.authButton.removeCta();
-  } else if (!settings.clientSecret) {
-    this.authButton.setButtonText('Enter Client Secret');
-    this.authButton.removeCta();
-  } else if (!settings.accessToken) {
-    this.authButton.setButtonText('Authenticate Now');
-    this.authButton.setCta();
-  } else {
-    this.authButton.setButtonText('Sign Out');
-    this.authButton.setWarning().removeCta();
+  updateAuthButton() {
+    if (!this.authButton) return;
+    const { settings } = this.plugin;
+    if (!settings.clientId) {
+      this.authButton.setButtonText('Enter Client ID');
+      this.authButton.removeCta();
+    } else if (!settings.clientSecret) {
+      this.authButton.setButtonText('Enter Client Secret');
+      this.authButton.removeCta();
+    } else if (!settings.accessToken) {
+      this.authButton.setButtonText('Authenticate Now');
+      this.authButton.setCta();
+    } else {
+      this.authButton.setButtonText('Sign Out');
+      this.authButton.setWarning().removeCta();
+    }
   }
-}
 
-async handleAuthButtonClick() {
-  const { settings } = this.plugin;
-
-  if (!settings.clientId) {
-    const modal = new ClientIdModal(this.app, async (clientId) => {
-      if (clientId?.trim()) {
-        settings.clientId = clientId.trim();
-        await this.plugin.saveSettings();
+  async handleAuthButtonClick() {
+    const { settings } = this.plugin;
+    if (!settings.clientId) {
+      const modal = new ClientIdModal(this.app, async (clientId) => {
+        if (clientId?.trim()) {
+          settings.clientId = clientId.trim();
+          await this.plugin.saveSettings();
+          this.updateAuthButton();
+        }
+      });
+      modal.open();
+    } else if (!settings.clientSecret) {
+      const modal = new ClientSecretModal(this.app, async (clientSecret) => {
+        if (clientSecret?.trim()) {
+          settings.clientSecret = clientSecret.trim();
+          await this.plugin.saveSettings();
+          this.updateAuthButton();
+        }
+      });
+      modal.open();
+    } else if (!settings.accessToken) {
+      await this.plugin.auth.loginWithFlow();
+      this.updateAuthButton();
+    } else {
+      if (confirm('⚠️ Are you sure you want to sign out?')) {
+        await this.plugin.auth.logout();
         this.updateAuthButton();
       }
-    });
-    modal.open();
-  } else if (!settings.clientSecret) {
-    const modal = new ClientSecretModal(this.app, async (clientSecret) => {
-      if (clientSecret?.trim()) {
-        settings.clientSecret = clientSecret.trim();
-        await this.plugin.saveSettings();
-        this.updateAuthButton();
+    }
+  }
+
+  updateMALAuthButton() {
+    if (!this.malAuthButton) return;
+    const { settings } = this.plugin;
+    if (!settings.malClientId) {
+      this.malAuthButton.setButtonText('Enter MAL Client ID');
+      this.malAuthButton.removeCta();
+    } else if (!settings.malClientSecret) {
+      this.malAuthButton.setButtonText('Enter MAL Client Secret');
+      this.malAuthButton.removeCta();
+    } else if (!settings.malAccessToken) {
+      this.malAuthButton.setButtonText('Authenticate Now');
+      this.malAuthButton.setCta();
+    } else {
+      this.malAuthButton.setButtonText('Sign Out');
+      this.malAuthButton.setWarning().removeCta();
+    }
+  }
+
+  async handleMALAuthButtonClick() {
+    const { settings } = this.plugin;
+    if (!settings.malClientId) {
+      const modal = new ClientIdModal(this.app, async (clientId) => {
+        if (clientId?.trim()) {
+          settings.malClientId = clientId.trim();
+          await this.plugin.saveSettings();
+          this.updateMALAuthButton();
+        }
+      });
+      modal.open();
+    } else if (!settings.malClientSecret) {
+      const modal = new ClientSecretModal(this.app, async (clientSecret) => {
+        if (clientSecret?.trim()) {
+          settings.malClientSecret = clientSecret.trim();
+          await this.plugin.saveSettings();
+          this.updateMALAuthButton();
+        }
+      });
+      modal.open();
+    } else if (!settings.malAccessToken) {
+      await this.plugin.malAuth.loginWithFlow();
+      this.updateMALAuthButton();
+    } else {
+      if (confirm('⚠️ Are you sure you want to sign out?')) {
+        await this.plugin.malAuth.logout();
+        this.updateMALAuthButton();
       }
-    });
-    modal.open();
-  } else if (!settings.accessToken) {
-    await this.plugin.auth.loginWithFlow();
-    this.updateAuthButton(); // refresh after login completes
-  } else {
-    if (confirm('⚠️ Are you sure you want to sign out?')) { 
-    await this.plugin.auth.logout();
-    this.updateAuthButton(); // refresh after logout
-  }
+    }
   }
 }
 
-
-}
 module.exports = {
   default: ZoroPlugin,
 };

@@ -1,43 +1,44 @@
-```anilist-search
+```zoro-search
 mediaType: ANIME
 ```
-# 👀Watching:
-```anilist
+
+# 👀 Watching:
+```zoro
 listType: CURRENT
 mediaType: ANIME
 ```
 
-# 📝Planning:
-```anilist
+# 📝 Planning:
+```zoro
 listType: PLANNING
 mediaType: ANIME
 ```
 
-# 🌀Repeating:
-```anilist
+# 🌀 Repeating:
+```zoro
 listType: REPEATING
 mediaType: ANIME
 ```
 
-# ⏸️On Hold:
-```anilist
+# ⏸️ On Hold:
+```zoro
 listType: PAUSED
 mediaType: ANIME
 ```
 
-# 🏁Completed:
-```anilist
+# 🏁 Completed:
+```zoro
 listType: COMPLETED
 mediaType: ANIME
 ```
 
-# 🗑️Dropped:
-```anilist
+# 🗑️ Dropped:
+```zoro
 listType: DROPPED
 mediaType: ANIME
 ```
 
-# 📊Stats:
-```anilist
+# 📊 Stats:
+```zoro
 type: stats
-```
+``` 

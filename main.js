@@ -15,6 +15,7 @@ const DEFAULT_SETTINGS = {
   gridColumns: getDefaultGridColumns(),
   theme: '', 
   hideUrlsInTitles: true,
+  forceScoreFormat: true,
   clientId: '',
   clientSecret: '',
   redirectUri: 'https://anilist.co/api/v2/oauth/pin',
@@ -866,7 +867,9 @@ class ZoroPlugin extends Plugin {
       console.error('[Zoro] Failed to inject CSS:', err);
     }
     
-    await this.theme.applyTheme(this.settings.theme);
+   if (this.settings.theme) {
+  await this.theme.applyTheme(this.settings.theme);
+}
 
     this.registerMarkdownCodeBlockProcessor('zoro', this.processor.processZoroCodeBlock.bind(this.processor));
     this.registerMarkdownCodeBlockProcessor('zoro-search', this.processor.processZoroSearchCodeBlock.bind(this.processor));
@@ -879,7 +882,7 @@ class ZoroPlugin extends Plugin {
   validateSettings(settings) {
     return {
       defaultUsername: typeof settings?.defaultUsername === 'string' ? settings.defaultUsername : '',
-      defaultLayout: ['card', 'list'].includes(settings?.defaultLayout) ? settings.defaultLayout : 'card',
+      defaultLayout: ['card', 'table'].includes(settings?.defaultLayout) ? settings.defaultLayout : 'card',
       gridColumns: Number.isInteger(settings?.gridColumns) ? settings.gridColumns : getDefaultGridColumns(),
       theme: typeof settings?.theme === 'string' ? settings.theme : '',
       showCoverImages: !!settings?.showCoverImages,
@@ -888,6 +891,7 @@ class ZoroPlugin extends Plugin {
       showGenres: !!settings?.showGenres,
       showLoadingIcon: typeof settings?.showLoadingIcon === 'boolean' ? settings.showLoadingIcon : true,
       hideUrlsInTitles: typeof settings?.hideUrlsInTitles === 'boolean' ? settings.hideUrlsInTitles : true,
+      forceScoreFormat: true,
       clientId: typeof settings?.clientId === 'string' ? settings.clientId : '',
       clientSecret: typeof settings?.clientSecret === 'string' ? settings.clientSecret : '',
       redirectUri: typeof settings?.redirectUri === 'string' ? settings.redirectUri : DEFAULT_SETTINGS.redirectUri,
@@ -946,11 +950,13 @@ class ZoroPlugin extends Plugin {
           await this.api.updateMediaListEntry(entry.media.id, updates);
           new Notice('✅ Updated!');
           
-          this.plugin.clearSingleEntryCache(
-            entry.media.id,
-            this.plugin.settings.defaultUsername || config.username,
-            config.mediaType
-          );
+          try {
+        this.plugin.clearSingleEntryCache(
+          entry.media.id,
+          this.plugin.settings.authUsername || this.plugin.settings.defaultUsername,
+          entry.media.type
+        );
+      } catch (e) {}
 
           const parent = statusEl.closest('.zoro-container');
           if (parent) {
@@ -1679,16 +1685,26 @@ class Render {
         }
         
         if (this.plugin.settings.showRatings) {
-          const score = isSearch ? media.averageScore : entry?.score;
-          if (score != null) {
-            const rating = document.createElement('span');
-            rating.className = 'score';
-            rating.textContent = `★ ${score}`;
-            overlay.appendChild(rating);
-          } else {
-            overlay.appendChild(document.createElement('span'));
-          }
-        }
+  const score = isSearch ? media.averageScore : entry?.score;
+  if (score != null) {
+    const rating = document.createElement('span');
+    rating.className = 'score';
+    
+    if (isSearch) {
+      rating.textContent = `★ ${(score / 10).toFixed(1)}`;
+    } else {
+      if (score > 10) {
+        rating.textContent = `★ ${(score / 10).toFixed(1)}`;
+      } else {
+        rating.textContent = `★ ${score.toFixed(1)}`;
+      }
+    }
+    
+    overlay.appendChild(rating);
+  } else {
+    overlay.appendChild(document.createElement('span'));
+  }
+}
         
         coverContainer.appendChild(overlay);
       }
@@ -2491,6 +2507,7 @@ class Authentication {
       }
       await this.plugin.saveSettings();
 
+      await this.forceScoreFormat();
       new Notice('✅ Authenticated successfully!', 4000);
     } catch (err) {
       new Notice(`❌ Auth failed: ${err.message}`, 5000);
@@ -2510,6 +2527,93 @@ class Authentication {
     return true;
   }
   
+  async forceScoreFormat() {
+  if (!this.plugin.settings.forceScoreFormat) return;
+  
+  await this.ensureValidToken();
+  
+  // First check current score format
+  const viewerQuery = `
+    query {
+      Viewer {
+        id
+        name
+        mediaListOptions {
+          scoreFormat
+        }
+      }
+    }
+  `;
+
+  try {
+    const currentResponse = await this.plugin.requestQueue.add(() =>
+      requestUrl({
+        url: 'https://graphql.anilist.co',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.plugin.settings.accessToken}`
+        },
+        body: JSON.stringify({ query: viewerQuery })
+      })
+    );
+
+    const currentFormat = currentResponse.json?.data?.Viewer?.mediaListOptions?.scoreFormat;
+    console.log('Current score format:', currentFormat);
+
+    if (currentFormat === 'POINT_10_DECIMAL') {
+      console.log('Score format already set to POINT_10_DECIMAL');
+      new Notice('✅ Score format already set to 0.0-10.0 scale', 2000);
+      return;
+    }
+
+    // Update score format
+    const mutation = `
+      mutation {
+        UpdateUser(scoreFormat: POINT_10_DECIMAL) {
+          id
+          name
+          mediaListOptions {
+            scoreFormat
+          }
+        }
+      }
+    `;
+
+    const response = await this.plugin.requestQueue.add(() =>
+      requestUrl({
+        url: 'https://graphql.anilist.co',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.plugin.settings.accessToken}`
+        },
+        body: JSON.stringify({ query: mutation })
+      })
+    );
+
+    if (response.json?.errors) {
+      const errorMsg = response.json.errors[0]?.message || 'Unknown error';
+      console.error('UpdateUser error:', response.json.errors);
+      throw new Error(errorMsg);
+    }
+    
+    const updatedFormat = response.json?.data?.UpdateUser?.mediaListOptions?.scoreFormat;
+    console.log('Updated score format to:', updatedFormat);
+    
+    if (updatedFormat === 'POINT_10_DECIMAL') {
+      new Notice('✅ Score format updated to 0.0-10.0 scale', 3000);
+      console.log('🎉 Score format successfully changed to POINT_10_DECIMAL');
+    } else {
+      throw new Error(`Score format not updated properly. Got: ${updatedFormat}`);
+    }
+    
+  } catch (err) {
+    console.error('Failed to update score format:', err);
+    new Notice(`❌ Could not update score format: ${err.message}`, 5000);
+  }
+}
+
   async getAuthenticatedUsername() {
     await this.ensureValidToken();
 
@@ -3101,6 +3205,8 @@ class AuthPinModal extends Modal {
 }
 
 class Theme {
+static THEME_REPO_URL = 'https://api.github.com/repos/zara-kasi/zoro/contents/Theme?ref=v1.0.1(test)';
+
   constructor(plugin) {
     this.plugin = plugin;
     this.themeStyleId = 'zoro-theme';
@@ -3113,6 +3219,56 @@ class Theme {
       '.zoro-auth-modal'
     ];
   }
+
+   async fetchRemoteThemes() {
+  try {
+    const res = await fetch(Theme.THEME_REPO_URL);
+    if (!res.ok) throw res.status;
+    const json = await res.json();
+    return json
+      .filter(item => item.type === 'file' && item.name.endsWith('.css'))
+      .map(item => item.name.replace('.css', ''));
+  } catch (e) {
+    console.warn('[Zoro] Remote theme list failed', e);
+    return [];
+  }
+}
+
+
+   async downloadTheme(name) {
+  const rawUrl = `https://raw.githubusercontent.com/zara-kasi/zoro/v1.0.1(test)/Theme/${encodeURIComponent(name)}.css`;
+  const localPath = `${this.plugin.manifest.dir}/themes/${name}.css`;
+  
+  try {
+    // Check if file exists and delete it
+    try {
+      await this.plugin.app.vault.adapter.stat(localPath);
+      // File exists, delete it
+      await this.plugin.app.vault.adapter.remove(localPath);
+    } catch (e) {
+      // File doesn't exist, continue with download
+    }
+
+    const res = await fetch(rawUrl);
+    if (!res.ok) throw res.status;
+    const css = await res.text();
+    
+    // Ensure themes directory exists
+    const themesDir = `${this.plugin.manifest.dir}/themes`;
+    try {
+      await this.plugin.app.vault.adapter.mkdir(themesDir);
+    } catch (e) {
+      // Directory already exists
+    }
+    
+    await this.plugin.app.vault.adapter.write(localPath, css);
+    new Notice(`✅ Theme "${name}" downloaded successfully`);
+    return true;
+  } catch (e) {
+    new Notice(`❌ Could not download "${name}": ${e}`);
+    return false;
+  }
+}
 
   async getAvailableThemes() {
     try {
@@ -3149,6 +3305,19 @@ class Theme {
     style.textContent = scopedCss;
     document.head.appendChild(style);
   }
+
+   async deleteTheme(name) {
+  const localPath = `${this.plugin.manifest.dir}/themes/${name}.css`;
+  
+  try {
+    await this.plugin.app.vault.adapter.remove(localPath);
+    new Notice(`✅ Theme "${name}" deleted successfully`);
+    return true;
+  } catch (e) {
+    new Notice(`❌ Could not delete "${name}": ${e}`);
+    return false;
+  }
+}
 
   scopeToPlugin(css) {
     const rules = this.extractCSSRules(css);
@@ -3521,11 +3690,13 @@ class Edit {
           })
         );
         document.body.removeChild(modal);
+        try {
         this.plugin.clearSingleEntryCache(
           entry.media.id,
-          this.plugin.settings.defaultUsername || config.username,
-          config.mediaType
+          this.plugin.settings.authUsername || this.plugin.settings.defaultUsername,
+          entry.media.type
         );
+      } catch (e) {}
 
         const parentContainer = document.querySelector('.zoro-container');
         if (parentContainer) {
@@ -3681,11 +3852,13 @@ class Edit {
         score: scoreInput.value === '' ? null : scoreVal,
         progress: parseInt(progressInput.value) || 0
       });
-      this.plugin.clearSingleEntryCache(
-        entry.media.id,
-        this.plugin.settings.authUsername || this.plugin.settings.defaultUsername,
-        entry.media.type
-      );
+      try {
+          this.plugin.clearSingleEntryCache(
+            entry.media.id,
+            this.plugin.settings.defaultUsername || this.plugin.settings.authUsername,
+            entry.media.type
+          );
+        } catch (e) {}
       
       closeModal();
     } catch (err) {
@@ -3938,320 +4111,120 @@ class Export {
   }
 }
 
-class Sample {
-  constructor(plugin) {
-    this.plugin = plugin;
-  }
-
-  async createSampleNotes() {
-    try {
-      let successCount = 0;
-      const errorMessages = [];
-
-      const firstNoteTitle  = 'Anime Dashboard';
-      const firstNoteContent = `\`\`\`zoro-search
-mediaType: ANIME
-\`\`\`
-
-# 👀 Watching:
-\`\`\`zoro
-listType: CURRENT
-mediaType: ANIME
-\`\`\`
-
-# 📝 Planning:
-\`\`\`zoro
-listType: PLANNING
-mediaType: ANIME
-\`\`\`
-
-# 🌀 Repeating:
-\`\`\`zoro
-listType: REPEATING
-mediaType: ANIME
-\`\`\`
-
-# ⏸️ On Hold:
-\`\`\`zoro
-listType: PAUSED
-mediaType: ANIME
-\`\`\`
-
-# 🏁 Completed:
-\`\`\`zoro
-listType: COMPLETED
-mediaType: ANIME
-\`\`\`
-
-# 🗑️ Dropped:
-\`\`\`zoro
-listType: DROPPED
-mediaType: ANIME
-\`\`\`
-
-# 📊 Stats:
-\`\`\`zoro
-type: stats
-\`\`\` 
-`;
-
-      const secondNoteTitle  = 'Manga Dashboard';
-      const secondNoteContent = `\`\`\`zoro-search
-mediaType: MANGA
-\`\`\`
-
-# 📖 Reading:
-\`\`\`zoro
-listType: CURRENT
-mediaType: MANGA
-\`\`\`
-
-# 📝 Planning:
-\`\`\`zoro
-listType: PLANNING
-mediaType: MANGA
-\`\`\`
-
-# 🌀 Repeating:
-\`\`\`zoro
-listType: REPEATING
-mediaType: MANGA
-\`\`\`
-
-# ⏸️ On Hold:
-\`\`\`zoro
-listType: PAUSED
-mediaType: MANGA
-\`\`\`
-
-# 🏁 Completed:
-\`\`\`zoro
-listType: COMPLETED
-mediaType: MANGA
-\`\`\`
-
-# 🗑️ Dropped:
-\`\`\`zoro
-listType: DROPPED
-mediaType: MANGA
-\`\`\`
-
-# 📊 Stats:
-\`\`\`zoro
-type: stats
-\`\`\` 
-`;
-
-      const notes = [
-        { title: firstNoteTitle, content: firstNoteContent },
-        { title: secondNoteTitle, content: secondNoteContent }
-      ];
-
-      for (const note of notes) {
-        const filePath = `${note.title}.md`;
-        const existing = this.plugin.app.vault.getAbstractFileByPath(filePath);
-        if (existing) {
-          errorMessages.push(`"${note.title}" already exists`);
-          continue;
-        }
-
-        await this.plugin.app.vault.create(filePath, note.content);
-        successCount++;
-      }
-
-      if (successCount) {
-        new Notice(`Created ${successCount} note${successCount > 1 ? 's' : ''}`, 4000);
-        const first = this.plugin.app.vault.getAbstractFileByPath(`${firstNoteTitle}.md`);
-        if (first) await this.plugin.app.workspace.openLinkText(firstNoteTitle, '', false);
-      }
-      if (errorMessages.length) new Notice(`Note: ${errorMessages.join(', ')}`, 5000);
-
-    } catch (err) {
-      console.error('Error creating notes:', err);
-      new Notice(`Failed to create notes: ${err.message}`, 5000);
-    }
-  }
-
-  async createSampleFolders() {
-    const { vault, workspace } = this.plugin.app;
-    const dashboards = [
-      {
-        folder: 'Anime Dashboard',
-        notes: [
-          {
-            name: 'Watching',
-            content: `\`\`\`zoro-search
-mediaType: ANIME
-\`\`\`
-
-\`\`\`zoro
-listType: CURRENT
-mediaType: ANIME
-\`\`\``
-          },
-          {
-            name: 'Planning',
-            content: `\`\`\`zoro-search
-mediaType: ANIME
-\`\`\`
-
-\`\`\`zoro
-listType: PLANNING
-mediaType: ANIME
-\`\`\``
-          },
-          {
-            name: 'Repeating',
-            content: `\`\`\`zoro-search
-mediaType: ANIME
-\`\`\`
-
-\`\`\`zoro
-listType: REPEATING
-mediaType: ANIME
-\`\`\``
-          },
-          {
-            name: 'On Hold',
-            content: `\`\`\`zoro-search
-mediaType: ANIME
-\`\`\`
-
-\`\`\`zoro
-listType: PAUSED
-mediaType: ANIME
-\`\`\``
-          },
-          {
-            name: 'Completed',
-            content: `\`\`\`zoro-search
-mediaType: ANIME
-\`\`\`
-
-\`\`\`zoro
-listType: COMPLETED
-mediaType: ANIME
-\`\`\``
-          },
-          {
-            name: 'Dropped',
-            content: `\`\`\`zoro-search
-mediaType: ANIME
-\`\`\`
-
-\`\`\`zoro
-listType: DROPPED
-mediaType: ANIME
-\`\`\``
-          },
-          {
-            name: 'Stats',
-            content: `\`\`\`zoro
-type: stats
-\`\`\``
-          }
-        ]
-      },
-      {
-        folder: 'Manga Dashboard',
-        notes: [
-          {
-            name: 'Reading',
-            content: `\`\`\`zoro-search
-mediaType: MANGA
-\`\`\`
-
-\`\`\`zoro
-listType: CURRENT
-mediaType: MANGA
-\`\`\``
-          },
-          {
-            name: 'Planning',
-            content: `\`\`\`zoro-search
-mediaType: MANGA
-\`\`\`
-
-\`\`\`zoro
-listType: PLANNING
-mediaType: MANGA
-\`\`\``
-          },
-          {
-            name: 'Repeating',
-            content: `\`\`\`zoro-search
-mediaType: MANGA
-\`\`\`
-
-\`\`\`zoro
-listType: REPEATING
-mediaType: MANGA
-\`\`\``
-          },
-          {
-            name: 'On Hold',
-            content: `\`\`\`zoro-search
-mediaType: MANGA
-\`\`\`
-
-\`\`\`zoro
-listType: PAUSED
-mediaType: MANGA
-\`\`\``
-          },
-          {
-            name: 'Completed',
-            content: `\`\`\`zoro-search
-mediaType: MANGA
-\`\`\`
-
-\`\`\`zoro
-listType: COMPLETED
-mediaType: MANGA
-\`\`\``
-          },
-          {
-            name: 'Dropped',
-            content: `\`\`\`zoro-search
-mediaType: MANGA
-\`\`\`
-
-\`\`\`zoro
-listType: DROPPED
-mediaType: MANGA
-\`\`\``
-          },
-          {
-            name: 'Stats',
-            content: `\`\`\`zoro
-type: stats
-\`\`\``
-          }
-        ]
-      }
-    ];
-
-    for (const { folder, notes } of dashboards) {
-      try {
-        if (!vault.getAbstractFileByPath(folder)) {
-          await vault.createFolder(folder);
-        }
-        for (const { name, content } of notes) {
-          const path = `${folder}/${name}.md`;
-          if (!vault.getAbstractFileByPath(path)) {
-            await vault.create(path, content);
-          }
-        }
-        await workspace.openLinkText(notes[0].name, folder, false);
-      } catch (err) {
-        console.error(`[Zoro] Error creating "${folder}":`, err);
-        new Notice(`❌ Failed creating ${folder}: ${err.message}`, 5000);
-      }
+ class Sample {
+    constructor(plugin) {
+        this.plugin = plugin;
     }
 
-    new Notice('✅ Dashboards generated!', 4000);
-  }
+    async createSampleNotes() {
+        const vault = this.plugin.app.vault;
+        const files = [
+            [
+                'Anime Dashboard.md',
+                'https://raw.githubusercontent.com/zara-kasi/zoro/f761efb598f50adf27cd0e5f966b502c24e162cf/Template/Anime%20Dashboard.md'
+            ],
+            [
+                'Manga Dashboard.md',
+                'https://raw.githubusercontent.com/zara-kasi/zoro/f761efb598f50adf27cd0e5f966b502c24e162cf/Template/Manga%20Dashboard.md'
+            ]
+        ];
+
+        let createdCount = 0;
+
+        for (const [fileName, fileUrl] of files) {
+            // Check if file already exists
+            if (vault.getAbstractFileByPath(fileName)) {
+                new Notice('⏭️ ' + fileName + ' already exists');
+                continue;
+            }
+
+            try {
+                // Fetch file content from remote URL
+                const response = await fetch(fileUrl);
+                
+                if (!response.ok) {
+                    throw new Error('HTTP ' + response.status);
+                }
+
+                const content = await response.text();
+                
+                // Create the file in vault
+                await vault.create(fileName, content);
+                new Notice('✅ ' + fileName);
+                createdCount++;
+                
+            } catch (error) {
+                new Notice('❌ ' + fileName + ': ' + error.message);
+            }
+        }
+
+        // Open the first file if any files were created
+        if (createdCount > 0) {
+            this.plugin.app.workspace.openLinkText(files[0][0], '', false);
+        }
+    }
+
+    async createSampleFolders() {
+        const vault = this.plugin.app.vault;
+        const folders = [
+            {
+                name: 'Anime Dashboard',
+                files: ['Watching.md', 'Planning.md', 'Repeating.md', 'On Hold.md', 'Completed.md', 'Dropped.md', 'Stats.md'],
+                firstFile: 'Watching.md'
+            },
+            {
+                name: 'Manga Dashboard', 
+                files: ['Reading.md', 'Planning.md', 'Repeating.md', 'On Hold.md', 'Completed.md', 'Dropped.md', 'Stats.md'],
+                firstFile: 'Reading.md'
+            }
+        ];
+
+        for (const folder of folders) {
+            // Check if folder already exists
+            if (vault.getAbstractFileByPath(folder.name)) {
+                new Notice('⏭️ ' + folder.name + ' already exists');
+                continue;
+            }
+
+            const baseUrl = 'https://raw.githubusercontent.com/zara-kasi/zoro/be78f10b1abdef4e929b89480f4cd368b0338204/Template/' + 
+                           encodeURIComponent(folder.name) + '/';
+
+            // Create the main folder
+            await vault.createFolder(folder.name);
+            let successfulFiles = 0;
+
+            // Download and create each template file
+            for (const templateFile of folder.files) {
+                try {
+                    const fileUrl = baseUrl + encodeURIComponent(templateFile);
+                    const response = await fetch(fileUrl);
+                    
+                    if (!response.ok) {
+                        continue; // Skip this file if download fails
+                    }
+
+                    const content = await response.text();
+                    const filePath = folder.name + '/' + templateFile;
+                    
+                    await vault.create(filePath, content);
+                    successfulFiles++;
+                    
+                } catch (error) {
+                    // Silently continue with next file if this one fails
+                    continue;
+                }
+            }
+
+            new Notice('✅ ' + folder.name + ' (' + successfulFiles + ' files)');
+
+            // Open the first file if any files were created successfully
+            if (successfulFiles > 0) {
+                this.plugin.app.workspace.openLinkText(folder.firstFile, folder.name, false);
+            }
+        }
+    }
 }
+
 
 class ZoroSettingTab extends PluginSettingTab {
   constructor(app, plugin) {
@@ -4278,9 +4251,9 @@ class ZoroSettingTab extends PluginSettingTab {
     };
 
     const Account = section('👤 Account', true);
+    const Guide = section('🧭 Guide');
     const Display = section('📺 Display');
     const Theme = section('🌌 Theme');
-    const Guide = section('🧭 Guide');
     const Data = section('📤 Data');
     const More = section('✨  More');
     const Exp = section('🚧 Experimental');
@@ -4392,7 +4365,20 @@ class ZoroSettingTab extends PluginSettingTab {
           this.plugin.settings.hideUrlsInTitles = value;
           await this.plugin.saveSettings();
         }));
-
+        
+        new Setting(More)
+  .setName('🧮 Score Scale')
+  .setDesc('Ensures all ratings use the 0.0–10.0 point scale.')
+  .addToggle(toggle => toggle
+    .setValue(this.plugin.settings.forceScoreFormat)
+    .onChange(async (value) => {
+      this.plugin.settings.forceScoreFormat = value;
+      await this.plugin.saveSettings();
+      if (value && this.plugin.auth.isLoggedIn) {
+        await this.plugin.auth.forceScoreFormat();
+      }
+    }));
+    
     new Setting(Data)
       .setName('🧾 Export your data')
       .setDesc("Everything you've watched, rated, and maybe ghosted — neatly exported into a CSV.")
@@ -4409,19 +4395,65 @@ class ZoroSettingTab extends PluginSettingTab {
       );
 
     new Setting(Theme)
-      .setName('Select Theme')
-      .setDesc('Pick a custom CSS file from the themes folder')
-      .addDropdown(async dropdown => {
-        dropdown.addOption('', 'default');
-        const themes = await this.plugin.theme.getAvailableThemes();
-        themes.forEach(t => dropdown.addOption(t, t));
-        dropdown.setValue(this.plugin.settings.theme);
-        dropdown.onChange(async value => {
-          this.plugin.settings.theme = value;
+  .setName('🎨 Apply')
+  .setDesc('Choose from available local themes')
+  .addDropdown(async dropdown => {
+    dropdown.addOption('', 'Default');
+    const localThemes = await this.plugin.theme.getAvailableThemes();
+    localThemes.forEach(t => dropdown.addOption(t, t));
+    dropdown.setValue(this.plugin.settings.theme || '');
+    dropdown.onChange(async name => {
+      this.plugin.settings.theme = name;
+      await this.plugin.saveSettings();
+      await this.plugin.theme.applyTheme(name);
+    });
+  });
+
+// 2. Download Section
+new Setting(Theme)
+  .setName('📥 Download')
+  .setDesc('Download themes from GitHub repository')
+  .addDropdown(dropdown => {
+    dropdown.addOption('', 'Select');
+    
+    this.plugin.theme.fetchRemoteThemes().then(remoteThemes => {
+      remoteThemes.forEach(t => dropdown.addOption(t, t));
+    });
+    
+    dropdown.onChange(async name => {
+      if (!name) return;
+      
+      const success = await this.plugin.theme.downloadTheme(name);
+      if (success) {
+        this.plugin.theme.showApplyButton(containerEl, name);
+      }
+      dropdown.setValue('');
+    });
+  });
+
+   new Setting(Theme)
+  .setName('🗑 Delete')
+  .setDesc('Remove downloaded themes from local storage')
+  .addDropdown(async dropdown => {
+    dropdown.addOption('', 'Select');
+    const localThemes = await this.plugin.theme.getAvailableThemes();
+    localThemes.forEach(t => dropdown.addOption(t, t));
+    
+    dropdown.onChange(async name => {
+      if (!name) return;
+      
+      const success = await this.plugin.theme.deleteTheme(name);
+      if (success) {
+        // If deleted theme was currently active, remove it
+        if (this.plugin.settings.theme === name) {
+          this.plugin.settings.theme = '';
           await this.plugin.saveSettings();
-          await this.plugin.theme.applyTheme(value);
-        });
-      });
+          await this.plugin.theme.applyTheme('');
+        }
+      }
+      dropdown.setValue('');
+    });
+  });
 
     new Setting(Guide)
       .setName('⚡ Sample Folders')

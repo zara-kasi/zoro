@@ -270,7 +270,7 @@
 /* Status Badge Colors */
 .status-current   { background: var(--color-green);  color: white; }
 .status-completed { background: var(--color-blue);   color: white; }
-.status-paused    { background: var(--color-yellow); color: var(--text-normal); }
+.status-paused    { background: var(--color-orange); color: var(--text-normal); }
 .status-dropped   { background: var(--color-red);    color: white; }
 .status-planning  { background: var(--color-purple); color: white; }
 .status-repeating { background: var(--color-cyan);   color: white; }
@@ -1487,4 +1487,12 @@ The panel will automatically adapt to the user's system theme preference:
 /* spacing between format badge and status badge */
 .media-details .format-badge + .status-badge {
   margin-left: 0.5em;
+}
+
+
+.zoro-more-details-panel .panel-content,
+.zoro-more-details-panel .panel-content * {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  cursor: text;
 }

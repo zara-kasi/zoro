@@ -1160,7 +1160,7 @@ class Api {
     `;
   }
 
-  getZoroUrl(mediaId, mediaType = 'ANIME') {
+  getAniListUrl(mediaId, mediaType = 'ANIME') {
     if (!mediaId || typeof mediaId !== 'number') {
       throw new Error(`Invalid mediaId: ${mediaId}`);
     }
@@ -1191,8 +1191,8 @@ class ZoroPlugin extends Plugin {
     this.prompt = new Prompt(this);
   }
 
-  getZoroUrl(mediaId, mediaType = 'ANIME') {
-    return this.api.getZoroUrl(mediaId, mediaType);
+  getAniListUrl(mediaId, mediaType = 'ANIME') {
+    return this.api.getAniListUrl(mediaId, mediaType);
   }
 
   async onload() {
@@ -1733,7 +1733,7 @@ class Render {
       tr.createEl('td', null, td =>
         td.createEl('a', {
           text: m.title.english || m.title.romaji,
-          href: this.plugin.getZoroUrl(m.id, config.mediaType),
+          href: this.plugin.getAniListUrl(m.id, config.mediaType),
           cls: 'zoro-title-link',
           target: '_blank'
         })
@@ -1779,7 +1779,7 @@ class Render {
     }
     const info = card.createDiv({ cls: 'media-info' });
     info.createEl('h3', null, h => {
-      h.createEl('a', { text: m.title.english || m.title.romaji, href: this.plugin.getZoroUrl(m.id, config.mediaType), cls: 'zoro-title-link', target: '_blank' });
+      h.createEl('a', { text: m.title.english || m.title.romaji, href: this.plugin.getAniListUrl(m.id, config.mediaType), cls: 'zoro-title-link', target: '_blank' });
     });
 
     const details = info.createDiv({ cls: 'media-details' });
@@ -2060,7 +2060,7 @@ class Render {
       title.textContent = media.title.english || media.title.romaji;
     } else {
       const titleLink = document.createElement('a');
-      titleLink.href = this.plugin.getZoroUrl(media.id, config.mediaType);
+      titleLink.href = this.plugin.getAniListUrl(media.id, config.mediaType);
       titleLink.target = '_blank';
       titleLink.textContent = media.title.english || media.title.romaji;
       titleLink.className = 'media-title-link';
@@ -2381,7 +2381,7 @@ class MoreDetailsPanel {
   }
 
   getAniListUrl(mediaId, mediaType = 'ANIME') {
-    return this.plugin.getZoroUrl(mediaId, mediaType);
+    return this.plugin.getAniListUrl(mediaId, mediaType);
   }
 
   getMyAnimeListUrl(malId, mediaType = 'ANIME') {
@@ -4414,7 +4414,7 @@ class Export {
           this.dateToString(m.startDate), this.dateToString(m.endDate),
           m.averageScore ?? '', this.csvEscape((m.genres || []).join(';')),
           this.csvEscape(m.studios?.nodes?.[0]?.name || ''),
-          this.csvEscape(this.plugin.getZoroUrl(m.id, m.type))
+          this.csvEscape(this.plugin.getAniListUrl(m.id, m.type))
         ];
         rows.push(row.join(','));
       }

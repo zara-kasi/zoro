@@ -28,6 +28,592 @@ const DEFAULT_SETTINGS = {
   malUserInfo: null,
 };
 
+class Cache {
+  constructor(config = {}) {
+    const {
+      ttlMap = {},
+      obsidianPlugin = null,
+      maxSize = 10000,
+      compressionThreshold = 1024,
+      batchSize = 100
+    } = config;
+
+    this.ttlMap = { userData: 30 * 60 * 1000, mediaData: 10 * 60 * 1000, searchResults: 2 * 60 * 1000, mediaDetails: 60 * 60 * 1000, malData: 60 * 60 * 1000, ...ttlMap };
+    this.stores = { userData: new Map(), mediaData: new Map(), searchResults: new Map() };
+    this.indexes = { byUser: new Map(), byMedia: new Map(), byTag: new Map() };
+    
+    
+    this.version = '3.0.0';
+    this.maxSize = maxSize;
+    this.compressionThreshold = compressionThreshold;
+    this.batchSize = batchSize;
+    this.obsidianPlugin = obsidianPlugin;
+    
+    this.intervals = { prune: null, refresh: null, save: null };
+    this.flags = { autoPrune: false, backgroundRefresh: false, debugMode: false };
+    this.stats = { hits: 0, misses: 0, sets: 0, deletes: 0, evictions: 0, compressions: 0 };
+    this.state = { loading: false, saving: false, lastSaved: null, lastLoaded: null };
+    
+    this.accessLog = new Map();
+    this.refreshCallbacks = new Map();
+    this.loadQueue = new Set();
+    this.saveQueue = new Set();
+  }
+
+  key(input) {
+    if (typeof input === 'string') return input;
+    if (!input || typeof input !== 'object') return String(input);
+    
+    const normalized = {};
+    Object.keys(input).sort().forEach(k => {
+      const val = input[k];
+      normalized[k] = val !== null && val !== undefined ? val : '';
+    });
+    return JSON.stringify(normalized);
+  }
+
+  structuredKey(scope, type, id, meta = {}) {
+    return this.key({ __scope: scope, __type: type, __id: String(id), ...meta });
+  }
+
+  isExpired(entry, scope, customTtl = null) {
+    const ttl = customTtl ?? entry.customTtl ?? this.ttlMap[scope] ?? 5 * 60 * 1000;
+    return (Date.now() - entry.timestamp) > ttl;
+  }
+
+  compress(data) {
+    const str = JSON.stringify(data);
+    if (str.length < this.compressionThreshold) return { data, compressed: false };
+    
+    try {
+      const compressed = this.simpleCompress(str);
+      this.stats.compressions++;
+      return { data: compressed, compressed: true, originalSize: str.length };
+    } catch {
+      return { data, compressed: false };
+    }
+  }
+
+  decompress(entry) {
+    if (!entry.compressed) return entry.data;
+    try {
+      return JSON.parse(this.simpleDecompress(entry.data));
+    } catch {
+      return entry.data;
+    }
+  }
+
+  simpleCompress(str) {
+    return btoa(encodeURIComponent(str)).replace(/[+/=]/g, m => ({ '+': '-', '/': '_', '=': '' }[m] || m));
+  }
+
+  simpleDecompress(compressed) {
+    const restored = compressed.replace(/[-_]/g, m => ({ '-': '+', '_': '/' }[m]));
+    const padded = restored + '='.repeat((4 - restored.length % 4) % 4);
+    return decodeURIComponent(atob(padded));
+  }
+
+  updateIndexes(key, entry, operation = 'set') {
+    try {
+      const parsed = JSON.parse(key);
+      const { __scope: scope, userId, username, mediaId, tags } = parsed;
+      
+      if (operation === 'delete') {
+        this.removeFromIndexes(key, { userId, username, mediaId, tags });
+        return;
+      }
+
+      if (userId || username) {
+        const userKey = userId || username;
+        if (!this.indexes.byUser.has(userKey)) this.indexes.byUser.set(userKey, new Set());
+        this.indexes.byUser.get(userKey).add(key);
+      }
+
+      if (mediaId) {
+        if (!this.indexes.byMedia.has(mediaId)) this.indexes.byMedia.set(mediaId, new Set());
+        this.indexes.byMedia.get(mediaId).add(key);
+      }
+
+      if (tags && Array.isArray(tags)) {
+        tags.forEach(tag => {
+          if (!this.indexes.byTag.has(tag)) this.indexes.byTag.set(tag, new Set());
+          this.indexes.byTag.get(tag).add(key);
+        });
+      }
+    } catch {}
+  }
+
+  removeFromIndexes(key, { userId, username, mediaId, tags }) {
+    const userKey = userId || username;
+    if (userKey && this.indexes.byUser.has(userKey)) {
+      this.indexes.byUser.get(userKey).delete(key);
+      if (this.indexes.byUser.get(userKey).size === 0) this.indexes.byUser.delete(userKey);
+    }
+
+    if (mediaId && this.indexes.byMedia.has(mediaId)) {
+      this.indexes.byMedia.get(mediaId).delete(key);
+      if (this.indexes.byMedia.get(mediaId).size === 0) this.indexes.byMedia.delete(mediaId);
+    }
+
+    if (tags && Array.isArray(tags)) {
+      tags.forEach(tag => {
+        if (this.indexes.byTag.has(tag)) {
+          this.indexes.byTag.get(tag).delete(key);
+          if (this.indexes.byTag.get(tag).size === 0) this.indexes.byTag.delete(tag);
+        }
+      });
+    }
+  }
+
+  enforceSize(scope) {
+    const store = this.stores[scope];
+    if (store.size <= this.maxSize) return 0;
+
+    const entries = Array.from(store.entries())
+      .map(([key, entry]) => ({ key, entry, lastAccess: this.accessLog.get(key) || 0 }))
+      .sort((a, b) => a.lastAccess - b.lastAccess);
+
+    const toEvict = entries.slice(0, store.size - this.maxSize + this.batchSize);
+    toEvict.forEach(({ key }) => {
+      store.delete(key);
+      this.updateIndexes(key, null, 'delete');
+      this.accessLog.delete(key);
+      this.stats.evictions++;
+    });
+
+    return toEvict.length;
+  }
+
+  get(key, options = {}) {
+    const { scope = 'userData', ttl = null, refreshCallback = null } = options;
+    const store = this.stores[scope];
+    if (!store) { this.stats.misses++; return null; }
+
+    const cacheKey = typeof key === 'object' ? this.key(key) : key;
+    const entry = store.get(cacheKey);
+    
+    this.accessLog.set(cacheKey, Date.now());
+    
+    if (!entry) {
+      this.stats.misses++;
+      this.log('MISS', scope, cacheKey);
+      this.maybeRefresh(cacheKey, scope, refreshCallback);
+      return null;
+    }
+
+    if (this.isExpired(entry, scope, ttl)) {
+      store.delete(cacheKey);
+      this.updateIndexes(cacheKey, entry, 'delete');
+      this.stats.misses++;
+      this.log('EXPIRED', scope, cacheKey);
+      this.maybeRefresh(cacheKey, scope, refreshCallback);
+      return null;
+    }
+
+    this.stats.hits++;
+    this.log('HIT', scope, cacheKey, Math.round((Date.now() - entry.timestamp) / 1000));
+    
+    if (this.shouldRefresh(entry, scope, ttl)) {
+      const callback = this.refreshCallbacks.get(`${scope}:${cacheKey}`);
+      if (callback) this.scheduleRefresh(cacheKey, scope, callback);
+    }
+
+    return this.decompress(entry);
+  }
+
+  set(key, value, options = {}) {
+    const { scope = 'userData', ttl = null, tags = [], refreshCallback = null } = options;
+    const store = this.stores[scope];
+    if (!store) return false;
+
+    const cacheKey = typeof key === 'object' ? this.key(key) : key;
+    const compressed = this.compress(value);
+    
+    const entry = {
+      ...compressed,
+      timestamp: Date.now(),
+      customTtl: ttl,
+      tags,
+      accessCount: 1
+    };
+
+    store.set(cacheKey, entry);
+    this.updateIndexes(cacheKey, entry);
+    this.enforceSize(scope);
+    
+    this.stats.sets++;
+    this.log('SET', scope, cacheKey, store.size);
+
+    if (refreshCallback) {
+      this.refreshCallbacks.set(`${scope}:${cacheKey}`, refreshCallback);
+    }
+
+    return true;
+  }
+
+  delete(key, options = {}) {
+    const { scope = 'userData' } = options;
+    const store = this.stores[scope];
+    if (!store) return false;
+
+    const cacheKey = typeof key === 'object' ? this.key(key) : key;
+    const entry = store.get(cacheKey);
+    const deleted = store.delete(cacheKey);
+    
+    if (deleted) {
+      this.updateIndexes(cacheKey, entry, 'delete');
+      this.accessLog.delete(cacheKey);
+      this.stats.deletes++;
+      this.log('DELETE', scope, cacheKey);
+    }
+    
+    return deleted;
+  }
+
+  invalidateByUser(userKey) {
+    const keys = this.indexes.byUser.get(userKey);
+    if (!keys) return 0;
+
+    let deleted = 0;
+    keys.forEach(key => {
+      for (const store of Object.values(this.stores)) {
+        if (store.delete(key)) deleted++;
+      }
+      this.accessLog.delete(key);
+    });
+
+    this.indexes.byUser.delete(userKey);
+    return deleted;
+  }
+
+  invalidateByMedia(mediaId) {
+    const keys = this.indexes.byMedia.get(String(mediaId));
+    if (!keys) return 0;
+
+    let deleted = 0;
+    keys.forEach(key => {
+      for (const store of Object.values(this.stores)) {
+        if (store.delete(key)) deleted++;
+      }
+      this.accessLog.delete(key);
+    });
+
+    this.indexes.byMedia.delete(String(mediaId));
+    return deleted;
+  }
+
+  invalidateByTag(tag) {
+    const keys = this.indexes.byTag.get(tag);
+    if (!keys) return 0;
+
+    let deleted = 0;
+    keys.forEach(key => {
+      for (const store of Object.values(this.stores)) {
+        if (store.delete(key)) deleted++;
+      }
+      this.accessLog.delete(key);
+    });
+
+    this.indexes.byTag.delete(tag);
+    return deleted;
+  }
+
+  clear(scope = null) {
+    if (scope) {
+      const store = this.stores[scope];
+      if (!store) return 0;
+      const count = store.size;
+      store.clear();
+      return count;
+    }
+
+    let total = 0;
+    Object.values(this.stores).forEach(store => {
+      total += store.size;
+      store.clear();
+    });
+    
+    Object.values(this.indexes).forEach(index => index.clear());
+    this.accessLog.clear();
+    this.refreshCallbacks.clear();
+    
+    this.log('CLEAR_ALL', 'all', '', total);
+    return total;
+  }
+
+  pruneExpired(scope = null) {
+    const scopes = scope ? [scope] : Object.keys(this.stores);
+    let total = 0;
+
+    scopes.forEach(currentScope => {
+      const store = this.stores[currentScope];
+      if (!store) return;
+
+      const toDelete = [];
+      const now = Date.now();
+
+      for (const [key, entry] of store.entries()) {
+        const ttl = entry.customTtl ?? this.ttlMap[currentScope];
+        if ((now - entry.timestamp) > ttl) {
+          toDelete.push(key);
+        }
+      }
+
+      toDelete.forEach(key => {
+        const entry = store.get(key);
+        store.delete(key);
+        this.updateIndexes(key, entry, 'delete');
+        this.accessLog.delete(key);
+        total++;
+      });
+    });
+
+    return total;
+  }
+
+  shouldRefresh(entry, scope, customTtl) {
+    if (!this.flags.backgroundRefresh) return false;
+    const ttl = customTtl ?? entry.customTtl ?? this.ttlMap[scope];
+    return (Date.now() - entry.timestamp) > (ttl * 0.8);
+  }
+
+  maybeRefresh(key, scope, callback) {
+    if (callback && typeof callback === 'function') {
+      this.scheduleRefresh(key, scope, callback);
+    }
+  }
+
+  scheduleRefresh(key, scope, callback) {
+    if (this.loadQueue.has(`${scope}:${key}`)) return;
+    
+    this.loadQueue.add(`${scope}:${key}`);
+    
+    setTimeout(async () => {
+      try {
+        const newValue = await callback(key, scope);
+        if (newValue !== undefined) {
+          this.set(key, newValue, { scope, refreshCallback: callback });
+        }
+      } catch (error) {
+        this.log('REFRESH_ERROR', scope, key, error.message);
+      } finally {
+        this.loadQueue.delete(`${scope}:${key}`);
+      }
+    }, 0);
+  }
+
+  startAutoPrune(interval = 5 * 60 * 1000) {
+    this.stopAutoPrune();
+    this.intervals.prune = setInterval(() => this.pruneExpired(), interval);
+    this.flags.autoPrune = true;
+    return this;
+  }
+
+  stopAutoPrune() {
+    if (this.intervals.prune) {
+      clearInterval(this.intervals.prune);
+      this.intervals.prune = null;
+    }
+    this.flags.autoPrune = false;
+    return this;
+  }
+
+  startBackgroundRefresh(interval = 10 * 60 * 1000) {
+    this.flags.backgroundRefresh = true;
+    return this;
+  }
+
+  stopBackgroundRefresh() {
+    this.flags.backgroundRefresh = false;
+    return this;
+  }
+
+  startIncrementalSave(interval = 2 * 60 * 1000) {
+    this.stopIncrementalSave();
+    this.intervals.save = setInterval(() => this.saveToDisk(), interval);
+    return this;
+  }
+
+  stopIncrementalSave() {
+    if (this.intervals.save) {
+      clearInterval(this.intervals.save);
+      this.intervals.save = null;
+    }
+    return this;
+  }
+
+  async saveToDisk() {
+    if (this.state.saving) return false;
+    this.state.saving = true;
+
+    try {
+      const payload = {
+        version: this.version,
+        timestamp: Date.now(),
+        stats: { ...this.stats },
+        data: {},
+        indexes: {
+          byUser: Array.from(this.indexes.byUser.entries()).map(([k, v]) => [k, Array.from(v)]),
+          byMedia: Array.from(this.indexes.byMedia.entries()).map(([k, v]) => [k, Array.from(v)]),
+          byTag: Array.from(this.indexes.byTag.entries()).map(([k, v]) => [k, Array.from(v)])
+        }
+      };
+
+      for (const [scope, store] of Object.entries(this.stores)) {
+        payload.data[scope] = Array.from(store.entries());
+      }
+
+      if (this.obsidianPlugin?.app?.vault?.adapter) {
+        const adapter = this.obsidianPlugin.app.vault.adapter;
+        const pluginDir = `${this.obsidianPlugin.manifest.dir}`;
+        const cachePath = `${pluginDir}/cache.json`;
+        
+        await adapter.write(cachePath, JSON.stringify(payload));
+        this.log('SAVE_SUCCESS', 'system', cachePath, 'Obsidian file system');
+      } else if (this.obsidianPlugin?.saveData) {
+        const existingData = await this.obsidianPlugin.loadData() || {};
+        existingData.__cache = payload;
+        await this.obsidianPlugin.saveData(existingData);
+        this.log('SAVE_SUCCESS', 'system', 'data.json.__cache', 'Plugin data nested');
+      }
+
+      this.state.lastSaved = Date.now();
+      return true;
+    } catch (error) {
+      this.log('SAVE_ERROR', 'system', '', error.message);
+      return false;
+    } finally {
+      this.state.saving = false;
+    }
+  }
+
+  async loadFromDisk() {
+    if (this.state.loading) return 0;
+    this.state.loading = true;
+
+    try {
+      let data;
+      
+      if (this.obsidianPlugin?.app?.vault?.adapter) {
+        const adapter = this.obsidianPlugin.app.vault.adapter;
+        const pluginDir = `${this.obsidianPlugin.manifest.dir}`;
+        const cachePath = `${pluginDir}/cache.json`;
+        
+        try {
+          const raw = await adapter.read(cachePath);
+          data = JSON.parse(raw);
+          this.log('LOAD_SUCCESS', 'system', cachePath, 'Obsidian file system');
+        } catch (error) {
+          if (!error.message.includes('ENOENT')) {
+            this.log('LOAD_ERROR', 'system', cachePath, error.message);
+          }
+          data = null;
+        }
+      } else if (this.obsidianPlugin?.loadData) {
+        const pluginData = await this.obsidianPlugin.loadData() || {};
+        data = pluginData.__cache || null;
+        this.log('LOAD_SUCCESS', 'system', 'data.json.__cache', 'Plugin data nested');
+      }
+
+      if (!data) {
+        this.log('LOAD_EMPTY', 'system', '', 'No cache data found');
+        return 0;
+      }
+
+      let loaded = 0;
+      const now = Date.now();
+
+      for (const [scope, entries] of Object.entries(data.data || {})) {
+        const store = this.stores[scope];
+        if (!store || !Array.isArray(entries)) continue;
+
+        for (const [key, entry] of entries) {
+          if (!entry?.timestamp) continue;
+          
+          const ttl = entry.customTtl ?? this.ttlMap[scope];
+          if ((now - entry.timestamp) < ttl) {
+            store.set(key, entry);
+            this.updateIndexes(key, entry);
+            loaded++;
+          }
+        }
+      }
+
+      if (data.indexes) {
+        Object.entries(data.indexes).forEach(([indexType, entries]) => {
+          if (this.indexes[indexType] && Array.isArray(entries)) {
+            entries.forEach(([key, values]) => {
+              this.indexes[indexType].set(key, new Set(values));
+            });
+          }
+        });
+      }
+
+      this.state.lastLoaded = Date.now();
+      this.log('LOAD_COMPLETE', 'system', '', `${loaded} entries loaded`);
+      return loaded;
+    } catch (error) {
+      this.log('LOAD_ERROR', 'system', '', error.message);
+      return 0;
+    } finally {
+      this.state.loading = false;
+    }
+  }
+
+  getStats() {
+    const total = this.stats.hits + this.stats.misses;
+    const hitRate = total > 0 ? (this.stats.hits / total * 100).toFixed(1) : '0.0';
+    
+    return {
+      ...this.stats,
+      hitRate: `${hitRate}%`,
+      totalRequests: total,
+      cacheSize: Object.values(this.stores).reduce((sum, store) => sum + store.size, 0),
+      indexSize: Object.values(this.indexes).reduce((sum, index) => sum + index.size, 0)
+    };
+  }
+
+  log(operation, scope, key, extra = '') {
+    if (!this.flags.debugMode) return;
+    const truncated = key.length > 50 ? key.slice(0, 47) + '...' : key;
+    console.log(`[Cache] ${operation}: ${scope}:${truncated} ${extra}`);
+  }
+
+  debug() {
+    console.group('[Cache] Debug Report');
+    console.log('Stats:', this.getStats());
+    console.log('State:', this.state);
+    console.log('Flags:', this.flags);
+    
+    Object.entries(this.stores).forEach(([scope, store]) => {
+      if (store.size > 0) {
+        console.log(`${scope}: ${store.size} entries`);
+      }
+    });
+    
+    console.groupEnd();
+    return this;
+  }
+
+  enableDebug(enabled = true) {
+    this.flags.debugMode = enabled;
+    return this;
+  }
+
+  destroy() {
+    Object.values(this.intervals).forEach(interval => {
+      if (interval) clearInterval(interval);
+    });
+    
+    this.clear();
+    this.loadQueue.clear();
+    this.saveQueue.clear();
+    
+    Object.keys(this.stats).forEach(key => this.stats[key] = 0);
+    this.state = { loading: false, saving: false, lastSaved: null, lastLoaded: null };
+  }
+}
+
 class RequestQueue {
   constructor(plugin) {
     this.plugin = plugin;
@@ -79,7 +665,6 @@ class Api {
     this.plugin = plugin;
     this.requestQueue = plugin.requestQueue;
     this.cache = plugin.cache;
-    this.cacheTimeout = plugin.cacheTimeout;
   }
 
   createCacheKey(config) {
@@ -124,7 +709,7 @@ class Api {
     }
   }
 
-  async fetchZoroData(config) {
+  async fetchAniListData(config) {
     const cacheKey = this.createCacheKey(config);
     
     let cacheType;
@@ -137,15 +722,8 @@ class Api {
     } else {
       cacheType = 'userData';
     }
-    
-    const ttlMap = {
-      userData: 30 * 60 * 1000,
-      mediaData: 10 * 60 * 1000,
-      searchResults: 2 * 60 * 1000
-    };
-    const cacheTtl = ttlMap[cacheType] || this.plugin.cacheTimeout;
-
-    const cached = !config.nocache && this.plugin.getFromCache(cacheType, cacheKey, cacheTtl);
+    const cacheTtl = null;
+    const cached = !config.nocache && this.plugin.cache.get(cacheKey, { scope: cacheType, ttl: cacheTtl });
     if (cached) {
       console.log(`[Zoro] Cache HIT for ${cacheType}: ${cacheKey.substring(0, 50)}...`);
       return cached;
@@ -220,13 +798,13 @@ class Api {
         throw new Error('AniList returned no data.');
       }
       
-      this.plugin.setToCache(cacheType, cacheKey, result.data);
+      this.plugin.cache.set(cacheKey, result.data, { scope: cacheType });
       console.log(`[Zoro] Cached data for ${cacheType}: ${cacheKey.substring(0, 50)}...`);
       
       return result.data;
 
     } catch (error) {
-      console.error('[Zoro] fetchZoroData() failed:', error);
+      console.error('[Zoro] fetchAniListData() failed:', error);
       throw error;
     }
   }
@@ -272,7 +850,7 @@ class Api {
         throw new Error(`AniList update error: ${message}`);
       }
       
-      this.plugin.clearCacheForMedia(mediaId);
+      this.plugin.cache.invalidateByMedia(mediaId);
       
       return result.data.SaveMediaListEntry;
 
@@ -292,7 +870,7 @@ class Api {
         mediaId: parseInt(mediaId)
       };
       
-      const response = await this.fetchZoroData(config);
+      const response = await this.fetchAniListData(config);
       return response.MediaList !== null;
     } catch (error) {
       console.warn('Error checking media list status:', error);
@@ -599,14 +1177,7 @@ class ZoroPlugin extends Plugin {
   constructor(app, manifest) {
     super(app, manifest);
     this.globalListeners = [];
-    this.cache = {
-      userData: new Map(),
-      mediaData: new Map(),
-      searchResults: new Map() 
-    };
-    this.requestQueue = new RequestQueue();
-    this.cacheTimeout = 4 * 60 * 1000;
-    this.pruneInterval = setInterval(() => this.pruneCache(), 60 * 1000);
+    this.cache = new Cache({ obsidianPlugin: this });
     this.requestQueue = new RequestQueue(this);
     this.api = new Api(this);
     this.auth = new Authentication(this);
@@ -624,229 +1195,6 @@ class ZoroPlugin extends Plugin {
     return this.api.getZoroUrl(mediaId, mediaType);
   }
 
-  pruneCache() {
-    const now = Date.now();
-    let totalPruned = 0;
-    const ttlMap = {
-      userData: 30 * 60 * 1000,
-      mediaData: 10 * 60 * 1000,
-      searchResults: 2 * 60 * 1000
-    };
-    
-    for (const [cacheType, map] of Object.entries(this.cache)) {
-      const ttl = ttlMap[cacheType] || this.cacheTimeout;
-      let pruned = 0;
-      
-      for (const [key, entry] of map.entries()) {
-        if (now - entry.timestamp > ttl) {
-          map.delete(key);
-          pruned++;
-        }
-      }
-      
-      if (pruned > 0) {
-        console.log(`[Zoro] Pruned ${pruned} expired entries from ${cacheType} cache`);
-        totalPruned += pruned;
-      }
-    }
-    
-    if (totalPruned > 0) {
-      console.log(`[Zoro] Total cache entries pruned: ${totalPruned}`);
-    }
-  }
-
-  getFromCache(type, key, customTtl = null) {
-    const cacheMap = this.cache[type];
-    if (!cacheMap) {
-      console.warn(`[Zoro] Invalid cache type: ${type}`);
-      return null;
-    }
-    
-    const entry = cacheMap.get(key);
-    if (!entry) {
-      return null;
-    }
-    
-    const ttl = customTtl ?? this.cacheTimeout;
-    const age = Date.now() - entry.timestamp;
-    
-    if (age > ttl) {
-      cacheMap.delete(key);
-      console.log(`[Zoro] Expired cache entry removed from ${type}: age=${age}ms, ttl=${ttl}ms`);
-      return null;
-    }
-    
-    return entry.value;
-  }
-
-  setToCache(type, key, value) {
-    const cacheMap = this.cache[type];
-    if (!cacheMap) {
-      console.warn(`[Zoro] Invalid cache type: ${type}`);
-      return;
-    }
-    
-    cacheMap.set(key, {
-      value,
-      timestamp: Date.now()
-    });
-    
-    console.log(`[Zoro] Cached data in ${type}: ${cacheMap.size} total entries`);
-  }
-
-  clearCacheForMedia(mediaId) {
-    const id = parseInt(mediaId, 10);
-    if (!id) {
-      console.warn(`[Zoro] Invalid mediaId for cache clearing: ${mediaId}`);
-      return;
-    }
-
-    let totalCleared = 0;
-
-    const prune = (map, cacheType, exactKeys) => {
-      let cleared = 0;
-      for (const key of Array.from(map.keys())) {
-        try {
-          const parsed = JSON.parse(key);
-          if (exactKeys.some(k => parsed[k] === id)) {
-            map.delete(key);
-            cleared++;
-            console.log(`[Zoro] Cleared ${cacheType} cache key: ${key.substring(0, 80)}...`);
-          }
-        } catch (e) {
-          continue;
-        }
-      }
-      return cleared;
-    };
-
-    totalCleared += prune(this.cache.mediaData, 'mediaData', ['mediaId']);
-    totalCleared += prune(this.cache.userData, 'userData', ['mediaId']);
-    totalCleared += prune(this.cache.searchResults, 'searchResults', ['mediaId']);
-
-    console.log(`[Zoro] Cleared ${totalCleared} cache entries for media ${id}`);
-    this.clearListCaches();
-  }
-
-  clearSingleEntryCache(mediaId, username, mediaType = 'ANIME') {
-    const id = parseInt(mediaId, 10);
-    if (!id || !username) return;
-
-    const listKey = JSON.stringify({
-      username,
-      type: 'list',
-      listType: 'CURRENT',
-      mediaType
-    });
-
-    this.cache.userData.delete(listKey);
-
-    const singleKey = JSON.stringify({
-      username,
-      type: 'single',
-      mediaId: id,
-      mediaType
-    });
-    this.cache.mediaData.delete(singleKey);
-
-    console.log(`[Zoro] Invalidated cache for media ${id} (user: ${username})`);
-  }
-
-  clearListCaches() {
-    const beforeCount = this.cache.userData.size;
-    this.cache.userData.clear();
-    console.log(`[Zoro] Cleared ${beforeCount} user data cache entries`);
-  }
-
-  async saveCacheToStorage() {
-    try {
-      const cacheData = {};
-      let totalEntries = 0;
-      
-      for (const [type, map] of Object.entries(this.cache)) {
-        const entries = Array.from(map.entries());
-        cacheData[type] = entries;
-        totalEntries += entries.length;
-      }
-      
-      localStorage.setItem('zoro-cache', JSON.stringify(cacheData));
-      console.log(`[Zoro] Saved ${totalEntries} cache entries to storage`);
-    } catch (e) {
-      console.warn('[Zoro] Failed to save cache to storage:', e);
-    }
-  }
-
-  async loadCacheFromStorage() {
-    try {
-      const saved = localStorage.getItem('zoro-cache');
-      if (!saved) {
-        console.log('[Zoro] No cached data found in storage');
-        return;
-      }
-      
-      const cacheData = JSON.parse(saved);
-      let loadedCount = 0;
-      let expiredCount = 0;
-      
-      const ttlMap = {
-        userData: 30 * 60 * 1000,
-        mediaData: 10 * 60 * 1000,
-        searchResults: 2 * 60 * 1000
-      };
-      
-      for (const [type, entries] of Object.entries(cacheData)) {
-        if (this.cache[type] && Array.isArray(entries)) {
-          const ttl = ttlMap[type] || this.cacheTimeout;
-          
-          entries.forEach(([key, value]) => {
-            if (value && typeof value.timestamp === 'number') {
-              const age = Date.now() - value.timestamp;
-              if (age < ttl) {
-                this.cache[type].set(key, value);
-                loadedCount++;
-              } else {
-                expiredCount++;
-              }
-            }
-          });
-        }
-      }
-      
-      console.log(`[Zoro] Loaded ${loadedCount} cached items from storage (${expiredCount} expired)`);
-    } catch (e) {
-      console.warn('[Zoro] Failed to load cache from storage:', e);
-      localStorage.removeItem('zoro-cache');
-    }
-  }
-
-  debugCache() {
-    console.log('=== ZORO CACHE DEBUG ===');
-    let totalEntries = 0;
-    
-    for (const [type, map] of Object.entries(this.cache)) {
-      console.log(`\n${type.toUpperCase()} CACHE: ${map.size} entries`);
-      totalEntries += map.size;
-      
-      if (map.size > 0) {
-        let count = 0;
-        for (const [key, entry] of map.entries()) {
-          if (count < 3) {
-            const age = Date.now() - entry.timestamp;
-            const keyPreview = key.length > 100 ? key.substring(0, 100) + '...' : key;
-            console.log(`  [${count + 1}] Age: ${Math.round(age/1000)}s | Key: ${keyPreview}`);
-          }
-          count++;
-        }
-        if (map.size > 3) {
-          console.log(`  ... and ${map.size - 3} more entries`);
-        }
-      }
-    }
-    
-    console.log(`\nTOTAL CACHE ENTRIES: ${totalEntries}`);
-    console.log('========================');
-  }
-
   async onload() {
     console.log('[Zoro] Plugin loading...');
     this.render = new Render(this);
@@ -858,7 +1206,7 @@ class ZoroPlugin extends Plugin {
       console.error('[Zoro] Failed to load settings:', err);
     }
     
-    await this.loadCacheFromStorage();
+    await this.cache.loadFromDisk(); this.cache.startAutoPrune(10 * 60 * 1000);
     
     try {
       this.injectCSS();
@@ -866,6 +1214,7 @@ class ZoroPlugin extends Plugin {
     } catch (err) {
       console.error('[Zoro] Failed to inject CSS:', err);
     }
+    
     
    if (this.settings.theme) {
   await this.theme.applyTheme(this.settings.theme);
@@ -951,11 +1300,7 @@ class ZoroPlugin extends Plugin {
           new Notice('✅ Updated!');
           
           try {
-        this.plugin.clearSingleEntryCache(
-          entry.media.id,
-          this.plugin.settings.authUsername || this.plugin.settings.defaultUsername,
-          entry.media.type
-        );
+        this.plugin.cache.invalidateByMedia(String(mediaId));
       } catch (e) {}
 
           const parent = statusEl.closest('.zoro-container');
@@ -1022,28 +1367,22 @@ class ZoroPlugin extends Plugin {
   onunload() {
     console.log('[Zoro] Unloading plugin...');
 
-    this.saveCacheToStorage();
-
-    if (this.pruneInterval) {
-      clearInterval(this.pruneInterval);
-      this.pruneInterval = null;
-    }
-
-    this.cache.userData.clear();
-    this.cache.mediaData.clear();
-    this.cache.searchResults.clear();
+    this.cache.stopAutoPrune()
+       .stopBackgroundRefresh()
+              .destroy();
 
     this.theme.removeTheme();
     const styleId = 'zoro-plugin-styles';
     const existingStyle = document.getElementById(styleId);
     if (existingStyle) {
-      existingStyle.remove();
-      console.log(`Removed style element with ID: ${styleId}`);
+        existingStyle.remove();
+        console.log(`Removed style element with ID: ${styleId}`);
     }
-      
+
     const loader = document.getElementById('zoro-global-loader');
     if (loader) loader.remove();
-  }
+}
+
 }
 
 class Processor {
@@ -1077,7 +1416,7 @@ class Processor {
 
       const doFetch = async () => {
         try {
-          const data = await this.plugin.api.fetchZoroData(config);
+          const data = await this.plugin.api.fetchAniListData(config);
           
           el.empty();
           
@@ -1160,7 +1499,7 @@ class Processor {
 
       try {
         const config = this.parseInlineLink(href);
-        const data = await this.plugin.api.fetchZoroData(config);
+        const data = await this.plugin.api.fetchAniListData(config);
 
         const container = document.createElement('span');
         container.className = 'zoro-inline-container';
@@ -1327,7 +1666,7 @@ class Render {
         resultsDiv.innerHTML = '';
         resultsDiv.appendChild(this.createListSkeleton(5));
         
-        const data = await this.plugin.api.fetchZoroData({ ...config, search: term, page: 1, perPage: 5 });
+        const data = await this.plugin.api.fetchAniListData({ ...config, search: term, page: 1, perPage: 5 });
         
         resultsDiv.innerHTML = '';
         this.renderSearchResults(resultsDiv, data.Page.media, config);
@@ -1867,7 +2206,6 @@ class MoreDetailsPanel {
     this.plugin = plugin;
     this.currentPanel = null;
     this.boundOutsideClickHandler = this.handleOutsideClick.bind(this);
-    this.elementCache = new Map();
   }
 
   async showPanel(media, entry = null, triggerElement) {
@@ -1981,48 +2319,62 @@ class MoreDetailsPanel {
   }
 
   async fetchDetailedMediaData(mediaId) {
-    const query = this.getDetailedMediaQuery();
-    const variables = { id: mediaId };
-    
-    let response;
-    try {
-      if (this.plugin.fetchZoroData) {
-        response = await this.plugin.fetchZoroData(query, variables);
-      } else {
-        const apiResponse = await fetch('https://graphql.anilist.co', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query, variables })
-        });
-        response = await apiResponse.json();
-      }
+  const cacheKey = `details:${mediaId}`;
+  const cached   = this.plugin.cache.get(cacheKey, { scope: 'mediaDetails' });
+  if (cached) return cached;
 
-      if (response?.data?.Media) {
-        return response.data.Media;
-      }
-      throw new Error('No media data received');
-    } catch (error) {
-      console.error('API fetch failed:', error);
-      throw error;
+  const query     = this.getDetailedMediaQuery();
+  const variables = { id: mediaId };
+
+  let response;
+  try {
+    if (this.plugin.fetchAniListData) {
+      response = await this.plugin.fetchAniListData(query, variables);
+    } else {
+      const apiResponse = await fetch('https://graphql.anilist.co', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, variables })
+      });
+      response = await apiResponse.json();
     }
+
+    if (!response?.data?.Media)
+      throw new Error('No media data received');
+
+    const data = response.data.Media;
+    this.plugin.cache.set(cacheKey, data, { scope: 'mediaDetails' });
+    return data;
+
+  } catch (error) {
+    console.error('API fetch failed:', error);
+    throw error;
   }
+}
 
   async fetchMALData(malId, mediaType) {
-    try {
-      const type = mediaType === 'MANGA' ? 'manga' : 'anime';
-      const response = await fetch(`https://api.jikan.moe/v4/${type}/${malId}`);
-      
-      if (!response.ok) {
-        throw new Error(`Jikan API error: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      return data.data;
-    } catch (error) {
-      console.error('Failed to fetch MAL data:', error);
-      return null;
-    }
+  if (!malId) return null;
+
+  const cacheKey = `mal:${malId}:${mediaType}`;
+  const cached   = this.plugin.cache.get(cacheKey, { scope: 'malData' });
+  if (cached) return cached;
+
+  try {
+    const type     = mediaType === 'MANGA' ? 'manga' : 'anime';
+    const response = await fetch(`https://api.jikan.moe/v4/${type}/${malId}`);
+
+    if (!response.ok)
+      throw new Error(`Jikan API error: ${response.status}`);
+
+    const data = (await response.json())?.data;
+    this.plugin.cache.set(cacheKey, data, { scope: 'malData' });
+    return data;
+
+  } catch (error) {
+    console.error('Failed to fetch MAL data:', error);
+    return null;
   }
+}
 
   getDetailedMediaQuery() {
     return `query($id:Int){Media(id:$id){id type title{romaji english native}description(asHtml:false)format status season seasonYear averageScore genres nextAiringEpisode{airingAt episode timeUntilAiring}idMal}}`;
@@ -2464,11 +2816,10 @@ class Authentication {
     this.plugin.settings.clientId     = '';
     this.plugin.settings.clientSecret = '';
     await this.plugin.saveSettings();
-
-    this.plugin.cache.userData.clear();
-    this.plugin.cache.mediaData.clear();
-    this.plugin.cache.searchResults.clear();
-
+    if (this.plugin.settings.authUsername) {
+   this.plugin.cache.invalidateByUser(this.plugin.settings.authUsername);
+ }
+    this.plugin.cache.clear();
     new Notice('✅ Logged out & cleared credentials.', 3000);
   }
 
@@ -2506,6 +2857,7 @@ class Authentication {
         this.plugin.settings.tokenExpiry = Date.now() + data.expires_in * 1000;
       }
       await this.plugin.saveSettings();
+      this.plugin.cache.invalidateByUser(await this.getAuthenticatedUsername());
 
       await this.forceScoreFormat();
       new Notice('✅ Authenticated successfully!', 4000);
@@ -2563,7 +2915,6 @@ class Authentication {
 
     if (currentFormat === 'POINT_10_DECIMAL') {
       console.log('Score format already set to POINT_10_DECIMAL');
-      new Notice('✅ Score format already set to 0.0-10.0 scale', 2000);
       return;
     }
 
@@ -2867,6 +3218,7 @@ class MALAuthentication {
       this.plugin.settings.malRefreshToken = data.refresh_token;
       this.plugin.settings.malTokenExpiry = Date.now() + (data.expires_in * 1000);
       await this.plugin.saveSettings();
+      this.plugin.cache.invalidateByUser(this.plugin.settings.malUserInfo?.name);
 
       try {
         await this.fetchUserInfo();
@@ -2969,11 +3321,12 @@ class MALAuthentication {
     this.plugin.settings.malClientId = '';
     this.plugin.settings.malClientSecret = '';
     await this.plugin.saveSettings();
-
-    if (this.plugin.cache?.malData) {
-      this.plugin.cache.malData.clear();
-    }
-
+    if (this.plugin.settings.malUserInfo?.name) {
+    this.plugin.cache.invalidateByUser(this.plugin.settings.malUserInfo.name);
+   }
+    
+   this.plugin.cache.clear('malData');
+   this.plugin.cache.clear();
     new Notice('✅ Logged out from MyAnimeList & cleared credentials.', 3000);
   }
 
@@ -3691,11 +4044,7 @@ class Edit {
         );
         document.body.removeChild(modal);
         try {
-        this.plugin.clearSingleEntryCache(
-          entry.media.id,
-          this.plugin.settings.authUsername || this.plugin.settings.defaultUsername,
-          entry.media.type
-        );
+        this.plugin.cache.invalidateByMedia(String(mediaId));
       } catch (e) {}
 
         const parentContainer = document.querySelector('.zoro-container');
@@ -3853,11 +4202,7 @@ class Edit {
         progress: parseInt(progressInput.value) || 0
       });
       try {
-          this.plugin.clearSingleEntryCache(
-            entry.media.id,
-            this.plugin.settings.defaultUsername || this.plugin.settings.authUsername,
-            entry.media.type
-          );
+          this.plugin.cache.invalidateByMedia(String(mediaId));
         } catch (e) {}
       
       closeModal();
@@ -4396,7 +4741,7 @@ class ZoroSettingTab extends PluginSettingTab {
 
     new Setting(Theme)
   .setName('🎨 Apply')
-  .setDesc('Choose from available local themes')
+  .setDesc('Choose from available themes')
   .addDropdown(async dropdown => {
     dropdown.addOption('', 'Default');
     const localThemes = await this.plugin.theme.getAvailableThemes();
@@ -4409,7 +4754,6 @@ class ZoroSettingTab extends PluginSettingTab {
     });
   });
 
-// 2. Download Section
 new Setting(Theme)
   .setName('📥 Download')
   .setDesc('Download themes from GitHub repository')
@@ -4454,10 +4798,19 @@ new Setting(Theme)
       dropdown.setValue('');
     });
   });
+  
+  new Setting(Guide)
+      .setName('🗝️ Need a Client ID?')
+      .setDesc('Takes less than a minute—no typing, just copy and paste.')
+      .addButton(button => button
+        .setButtonText('Setup Guide')
+        .onClick(() => {
+          window.open('https://github.com/zara-kasi/zoro/blob/main/Docs/anilist-auth-setup.md', '_blank');
+        }));
 
     new Setting(Guide)
       .setName('⚡ Sample Folders')
-      .setDesc('Builds two folders for you — anime and manga — with everything pre-filled: notes, lists, search, stats. (Recommended)')
+      .setDesc('(Recommended)')
       .addButton(button =>
         button
           .setButtonText('Create Sample Folders')
@@ -4465,27 +4818,6 @@ new Setting(Theme)
             await this.plugin.sample.createSampleFolders();
           })
       );
-
-    new Setting(Guide)
-      .setName('🍜 Sample Notes')
-      .setDesc('Builds two notes for you — anime and manga — with everything pre-filled: lists, search, stats. Like instant noodles, but for your library.')
-      .addButton(button => button
-        .setButtonText('Create Note')
-        .setTooltip('Click to create sample notes in your vault')
-        .onClick(async () => {
-          await this.plugin.sample.createSampleNotes();
-          this.display();
-        })
-      );
-
-    new Setting(Guide)
-      .setName('🗝️ Need a Client ID?')
-      .setDesc('Click here to open the step-by-step guide for generating your AniList Client ID & Secret. Takes less than a minute—no typing, just copy and paste.')
-      .addButton(button => button
-        .setButtonText('Setup Guide')
-        .onClick(() => {
-          window.open('https://github.com/zara-kasi/zoro/blob/main/Docs/anilist-auth-setup.md', '_blank');
-        }));
 
     const malAuthSetting = new Setting(Exp)
       .setName('🔓 MyAnimeList')

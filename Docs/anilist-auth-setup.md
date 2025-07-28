@@ -27,12 +27,37 @@ To login , you'll need to create your own **Client ID** and **Client Secret** fr
 
 ---
 
-## ✅ Done!
+# 🔐 How to Authenticate with AniList
 
-After saving, you'll see:
-- **ID** → This is your **Client ID**
-- **Secret** → This is your **Client Secret**
-- 
-Paste these into the Zoro Optional login settings inside Obsidian and hit **Authenticate**.
+Follow these steps to link your AniList account with Zoro:
 
-That’s it! 🎉 
+1. **Create an app on AniList** and copy your:
+   - **Client ID**
+   - **Client Secret**
+
+2. **Open the Zoro plugin settings** in Obsidian.
+
+3. Click the **"Enter Client ID"** button.  
+   → Paste your **Client ID** and confirm.
+
+4. The button will now change to **"Enter Client Secret"**.  
+   → Paste your **Client Secret** and confirm.
+
+5. The button will now say **"Authenticate"**.  
+   → Click it.
+
+6. You will be redirected to AniList.  
+   → Log in (if needed) and **authorize** the app.
+
+7. AniList will show you a **PIN code**.  
+   → Copy the PIN.
+
+8. Go back to Obsidian.  
+   → A prompt will appear — **paste the PIN** into it.
+
+9. Wait a moment.  
+   → You’ll see a ✅ **"Authenticated"** notification once the connection is successful.
+
+---
+
+✅ That’s it! Your AniList account is now securely connected to **Zoro**.

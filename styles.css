@@ -78,11 +78,11 @@
   --zoro-auth-btn-border-radius: 4px;
   --zoro-auth-btn-font-weight: bold;
   --zoro-cancel-btn-padding: 10px 20px;
-  --zoro-cancel-btn-border-radius: 4px;
+  --zoro-cancel-btn-border-radius: 5px;
 
   /* ---- Modal ---- */
   --zoro-modal-z-index: 1000;
-  --zoro-modal-overlay-opacity: 0.5;
+  --zoro-modal-overlay-opacity: 0.8;
   --zoro-modal-content-border-radius: 8px;
   --zoro-modal-content-padding: 20px;
   --zoro-modal-content-max-width: 500px;
@@ -383,29 +383,468 @@
   cursor: pointer;
 }
 
-/* Modal */
+/* Modern Minimal Edit Modal - Industry Standard */
 .zoro-edit-modal {
   position: fixed;
-  z-index: var(--zoro-modal-z-index);
-  top: 0; left: 0;
-  width: 100%; height: 100%;
+  z-index: var(--zoro-modal-z-index, 1000);
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   display: flex;
   justify-content: center;
   align-items: center;
+  animation: modalFadeIn 0.15s ease-out;
 }
+
 .zoro-modal-overlay {
   position: absolute;
-  width: 100%; height: 100%;
-  background-color: rgba(0, 0, 0, var(--zoro-modal-overlay-opacity));
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0);
+  cursor: pointer;
 }
+
 .zoro-modal-content {
-  background: var(--background-primary);
-  border-radius: var(--zoro-modal-content-border-radius);
-  padding: var(--zoro-modal-content-padding);
-  max-width: var(--zoro-modal-content-max-width);
-  width: var(--zoro-modal-content-width);
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 32px;
+  max-width: 420px;
+  width: calc(100vw - 48px);
   position: relative;
-  box-shadow: var(--zoro-modal-shadow);
+  box-shadow: 
+    0 24px 48px rgba(0, 0, 0, 0.4),
+    0 8px 16px rgba(0, 0, 0, 0.24);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  transform: scale(1);
+  animation: modalSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: default;
+}
+
+/* Close button in top-right corner - subtle and unobtrusive */
+.zoro-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 24px;
+  height: 24px;
+  border: none;
+  background: transparent;!important;
+  cursor: pointer;
+  border-radius: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted, #9ca9af);
+  font-size: 24px;
+  transition: all 0.15s ease;
+  outline: none;
+  opacity: 1;
+}
+
+.zoro-modal-close:hover {
+  color: var(--text-normal, #374151);
+  transform: scale(1.1);
+  opacity: 1;
+}
+
+.zoro-modal-close::before {
+  content: "×";
+  font-weight: 300;
+  line-height: 1;
+}
+
+/* Favorite button in top-left corner - rounded and small */
+.zoro-fav-btn {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 24px;
+  height: 24px;
+  background: transparent !important;
+  border: none;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  outline: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.6;
+}
+
+.zoro-fav-btn:hover {
+  transform: scale(1.1);
+  opacity: 1;
+  background: transparent !important;
+}
+
+.zoro-fav-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.theme-dark .zoro-modal-close,
+[data-theme="dark"] .zoro-modal-close {
+  color: var(--text-muted, #9ca9af);
+  opacity: 0.6;
+}
+
+.theme-dark .zoro-modal-close:hover,
+[data-theme="dark"] .zoro-modal-close:hover {
+  color: var(--text-normal, #d1d5db);
+  opacity: 1;
+}
+
+/* Dark mode support */
+.theme-dark .zoro-modal-content,
+[data-theme="dark"] .zoro-modal-content {
+  background: var(--background-primary, #1a1a1a);
+  border: 1px solid var(--background-modifier-border, rgba(255, 255, 255, 0.12));
+  box-shadow: 
+    0 24px 48px rgba(0, 0, 0, 0.4),
+    0 8px 16px rgba(0, 0, 0, 0.24);
+}
+
+.theme-dark .zoro-modal-overlay,
+[data-theme="dark"] .zoro-modal-overlay {
+  background: rgba(225, 225, 225, 0.2);
+}
+
+/* Animations */
+@keyframes modalFadeIn {
+  from { 
+    opacity: 0;
+  }
+  to { 
+    opacity: 1;
+  }
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Form structure */
+.zoro-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.zoro-modal-title {
+  margin: 0 0 24px 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-normal, #1a1a1a);
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  text-align: center;
+}
+
+.theme-dark .zoro-modal-title,
+[data-theme="dark"] .zoro-modal-title {
+  color: var(--text-normal, #ffffff);
+}
+
+/* Form fields */
+.zoro-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.zoro-form-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text-muted, #6b7280);
+  margin: 0;
+  line-height: 1.4;
+}
+
+.theme-dark .zoro-form-label,
+[data-theme="dark"] .zoro-form-label {
+  color: var(--text-muted, #9ca3af);
+}
+
+.zoro-form-input {
+  padding: 12px 16px;
+  border: 1.5px solid var(--background-modifier-border, #e5e7eb);
+  border-radius: 8px;
+  background: var(--background-primary, #ffffff);
+  color: var(--text-normal, #1a1a1a);
+  font-size: 14px;
+  font-family: inherit;
+  transition: all 0.15s ease;
+  outline: none;
+  appearance: none;
+}
+
+.zoro-form-input:focus {
+  border-color: var(--interactive-accent, #3b82f6);
+  box-shadow: 0 0 0 3px var(--interactive-accent-alpha, rgba(59, 130, 246, 0.1));
+}
+
+.theme-dark .zoro-form-input,
+[data-theme="dark"] .zoro-form-input {
+  background: var(--background-primary, #495057);
+  border-color: var(--background-modifier-border, rgba(255, 255, 255, 0.12));
+  color: var(--text-normal, #ffffff);
+}
+
+.theme-dark .zoro-form-input:focus,
+[data-theme="dark"] .zoro-form-input:focus {
+  border-color: var(--interactive-accent, #60a5fa);
+  box-shadow: 0 0 0 3px var(--interactive-accent-alpha, rgba(96, 165, 250, 0.15));
+}
+
+/* Select dropdown styling - removed dropdown arrow */
+.zoro-form-input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+.zoro-form-input[type="number"]::-webkit-outer-spin-button,
+.zoro-form-input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+select.zoro-form-input {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+
+/* Quick progress buttons */
+.zoro-quick-progress-buttons {
+  display: flex;
+  gap: 8px;
+  margin-top: -8px;
+}
+
+.zoro-quick-btn {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  border: 1px solid var(--background-modifier-border, #e5e7eb);
+  border-radius: 6px;
+  background: var(--background-secondary, #f9fafb);
+  color: var(--text-muted, #6b7280);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  outline: none;
+}
+
+.zoro-quick-btn:hover {
+  background: var(--background-modifier-hover, #f3f4f6);
+  color: var(--text-normal, #1a1a1a);
+  border-color: var(--background-modifier-border-hover, #d1d5db);
+  transform: translateY(-1px);
+}
+
+.zoro-quick-btn:active {
+  transform: translateY(0);
+}
+
+.zoro-complete-btn {
+  background: var(--interactive-accent, #3b82f6);
+  color: var(--text-on-accent, #ffffff);
+  border-color: var(--interactive-accent, #3b82f6);
+}
+
+.zoro-complete-btn:hover {
+  background: var(--interactive-accent-hover, #2563eb);
+  border-color: var(--interactive-accent-hover, #2563eb);
+  color: var(--text-on-accent, #ffffff);
+}
+
+.theme-dark .zoro-quick-btn,
+[data-theme="dark"] .zoro-quick-btn {
+  background: var(--background-secondary, #262626);
+  border-color: var(--background-modifier-border, rgba(255, 255, 255, 0.12));
+  color: var(--text-muted, #9ca3af);
+}
+
+.theme-dark .zoro-quick-btn:hover,
+[data-theme="dark"] .zoro-quick-btn:hover {
+  background: var(--background-modifier-hover, #374151);
+  color: var(--text-normal, #ffffff);
+  border-color: var(--background-modifier-border-hover, rgba(255, 255, 255, 0.2));
+}
+
+/* Modal buttons - only three buttons horizontally aligned */
+.zoro-modal-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 8px;
+}
+
+.zoro-modal-btn {
+  padding: 12px 24px;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: inherit;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 80px;
+  outline: none;
+  white-space: nowrap;
+}
+
+.zoro-save-btn {
+  background: var(--interactive-accent, #3b82f6);
+  color: var(--text-on-accent, #ffffff);
+  border-color: var(--interactive-accent, #3b82f6);
+}
+
+.zoro-save-btn:hover:not(:disabled) {
+  background: var(--interactive-accent-hover, #2563eb);
+  border-color: var(--interactive-accent-hover, #2563eb);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.zoro-cancel-btn {
+  background: transparent;
+  color: var(--text-muted, #6b7280);
+  border-color: var(--background-modifier-border, #e5e7eb);
+}
+
+.zoro-cancel-btn:hover {
+  background: var(--background-modifier-hover, #f3f4f6);
+  color: var(--text-normal, #1a1a1a);
+  border-color: var(--background-modifier-border-hover, #d1d5db);
+}
+
+.zoro-remove-btn {
+  background: transparent;
+  color: var(--text-muted, #6b7280);
+  border-color: var(--background-modifier-border, #e5e7eb);
+}
+
+.zoro-remove-btn:hover {
+  background: var(--color-red, #ef4444);
+  color: var(--text-on-accent, #ffffff);
+  border-color: var(--color-red, #ef4444);
+  transform: translateY(-1px);
+}
+
+/* Dark mode button styles - removed cancel button */
+.theme-dark .zoro-remove-btn,
+[data-theme="dark"] .zoro-remove-btn {
+  color: var(--text-muted, #9ca3af);
+  border-color: var(--background-modifier-border, rgba(255, 255, 255, 0.12));
+}
+
+.theme-dark .zoro-remove-btn:hover,
+[data-theme="dark"] .zoro-remove-btn:hover {
+  background: var(--color-red, #dc2626);
+  color: var(--text-on-accent, #ffffff);
+  border-color: var(--color-red, #dc2626);
+}
+
+/* Disabled state */
+.zoro-modal-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.zoro-quick-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* Error state */
+.zoro-modal-error {
+  background: var(--background-modifier-error, #fef2f2);
+  color: var(--color-red, #dc2626);
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin: 8px 0;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--color-red-alpha, rgba(220, 38, 38, 0.2));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.zoro-modal-error::before {
+  content: "⚠️";
+  flex-shrink: 0;
+}
+
+.theme-dark .zoro-modal-error,
+[data-theme="dark"] .zoro-modal-error {
+  background: var(--background-modifier-error, rgba(220, 38, 38, 0.1));
+  color: var(--color-red, #f87171);
+  border-color: var(--color-red-alpha, rgba(248, 113, 113, 0.3));
+}
+
+/* Mobile responsive */
+@media (max-width: 480px) {
+  .zoro-modal-content {
+    margin: 16px;
+    padding: 24px;
+    max-width: none;
+    width: calc(100vw - 32px);
+    border-radius: 16px;
+  }
+  
+  .zoro-modal-buttons {
+    flex-direction: row;
+    gap: 8px;
+    justify-content: center;
+  }
+  
+  .zoro-modal-btn {
+    flex: 1;
+    justify-content: center;
+  }
+  
+  .zoro-quick-progress-buttons {
+    justify-content: space-between;
+  }
+  
+  .zoro-quick-btn {
+    flex: 1;
+    justify-content: center;
+  }
+}
+
+/* Focus ring for accessibility */
+.zoro-modal-btn:focus-visible,
+.zoro-quick-btn:focus-visible,
+.zoro-form-input:focus-visible,
+.zoro-modal-close:focus-visible {
+  outline: 2px solid var(--interactive-accent, #3b82f6);
+  outline-offset: 2px;
+}
+
+/* Smooth transitions for theme switching */
+.zoro-edit-modal *,
+.zoro-edit-modal *::before,
+.zoro-edit-modal *::after {
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
 /* Auth Modal */
@@ -1489,10 +1928,249 @@ The panel will automatically adapt to the user's system theme preference:
   margin-left: 0.5em;
 }
 
-
-.zoro-more-details-panel .panel-content,
-.zoro-more-details-panel .panel-content * {
-  user-select: text !important;
-  -webkit-user-select: text !important;
-  cursor: text;
+.zoro-modal-error {
+  background: var(--background-modifier-error);
+  color: var(--text-on-accent);
+  padding: 8px 12px;
+  border-radius: 4px;
+  margin: 8px 0;
+  font-size: var(--font-ui-smaller);
 }
+
+/* ===== MODERN SKELETON STYLES FOR OBSIDIAN ===== */
+
+/* Base CSS Variables - Minimal Gray Design */
+.zoro-search-skeleton,
+.zoro-stats-skeleton,
+.zoro-card.zoro-skeleton {
+  --skeleton-base: #f8f9fa;
+  --skeleton-mid: #e9ecef;
+  --skeleton-light: #f1f3f4;
+  --skeleton-border: #dee2e6;
+  --skeleton-shadow: rgba(0, 0, 0, 0.03);
+  --skeleton-hover-shadow: rgba(0, 0, 0, 0.06);
+}
+
+/* Obsidian Dark Theme Support */
+.theme-dark .zoro-search-skeleton,
+.theme-dark .zoro-stats-skeleton,
+.theme-dark .zoro-card.zoro-skeleton {
+  --skeleton-base: #343a40;
+  --skeleton-mid: #495057;
+  --skeleton-light: #6c757d;
+  --skeleton-border: #495057;
+  --skeleton-shadow: rgba(0, 0, 0, 0.1);
+  --skeleton-hover-shadow: rgba(0, 0, 0, 0.15);
+}
+
+/* ===== BASE SKELETON ELEMENTS ===== */
+
+.zoro-skeleton {
+  pointer-events: none;
+  user-select: none;
+  position: relative;
+  transition: all 0.2s ease;
+}
+
+/* Cover Image Skeleton */
+.skeleton-cover {
+  width: 100%;
+  height: 200px;
+  background: var(--skeleton-base);
+  border-radius: 8px;
+  margin-bottom: 16px;
+  border: 1px solid var(--skeleton-border);
+  position: relative;
+  overflow: hidden;
+}
+
+.skeleton-cover::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(90deg, 
+    transparent 0%, 
+    var(--skeleton-mid) 50%, 
+    transparent 100%);
+  opacity: 0.5;
+}
+
+/* Title Skeleton */
+.skeleton-title {
+  background: var(--skeleton-mid);
+  height: 16px;
+  width: 80%;
+  border-radius: 4px;
+  margin-bottom: 12px;
+  position: relative;
+}
+
+.skeleton-title::after {
+  content: '';
+  position: absolute;
+  bottom: -10px;
+  left: 0;
+  width: 60%;
+  height: 14px;
+  background: var(--skeleton-light);
+  border-radius: 4px;
+}
+
+/* Badge Skeleton */
+.skeleton-badge {
+  background: var(--skeleton-light);
+  height: 14px;
+  width: 60px;
+  border-radius: 12px;
+  display: inline-block;
+  margin-right: 8px;
+}
+
+.skeleton-badge:last-child {
+  margin-right: 0;
+  width: 45px;
+}
+
+/* ===== SEARCH SKELETON SPECIFIC ===== */
+
+.zoro-search-input:disabled {
+  background: var(--skeleton-base);
+  border: 1px solid var(--skeleton-border);
+  border-radius: 6px;
+  color: transparent;
+  cursor: not-allowed;
+}
+
+.zoro-search-input:disabled::placeholder {
+  color: var(--skeleton-mid);
+  opacity: 0.6;
+}
+
+/* Search Cards - Simple Variations */
+.zoro-search-skeleton .zoro-cards-grid .zoro-skeleton:nth-child(2) .skeleton-cover {
+  background: var(--skeleton-mid);
+}
+
+.zoro-search-skeleton .zoro-cards-grid .zoro-skeleton:nth-child(3) .skeleton-cover {
+  background: var(--skeleton-light);
+}
+
+/* ===== STATS SKELETON SPECIFIC ===== */
+
+.skeleton-avatar {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: var(--skeleton-mid);
+  margin-bottom: 12px;
+  position: relative;
+}
+
+.skeleton-stat-section {
+  background: var(--skeleton-base);
+  height: 80px;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  border: 1px solid var(--skeleton-border);
+  position: relative;
+}
+
+.zoro-stats-skeleton .skeleton-title {
+  width: 70%;
+  margin-bottom: 16px;
+}
+
+/* ===== LIST SKELETON VARIATIONS ===== */
+
+.zoro-card.zoro-skeleton:nth-child(even) .skeleton-cover {
+  background: var(--skeleton-mid);
+}
+
+.zoro-card.zoro-skeleton:nth-child(3n) .skeleton-cover {
+  background: var(--skeleton-light);
+}
+
+/* ===== HOVER EFFECTS ===== */
+
+.zoro-skeleton:hover .skeleton-cover {
+  background: var(--skeleton-mid);
+  transition: background 0.2s ease;
+}
+
+.zoro-skeleton:hover .skeleton-stat-section {
+  background: var(--skeleton-mid);
+  transition: background 0.2s ease;
+}
+
+/* ===== RESPONSIVE DESIGN ===== */
+
+@media (max-width: 768px) {
+  .skeleton-cover {
+    height: 160px;
+    border-radius: 6px;
+    margin-bottom: 12px;
+  }
+  
+  .skeleton-title {
+    height: 14px;
+  }
+  
+  .skeleton-badge {
+    height: 12px;
+    width: 50px;
+  }
+  
+  .skeleton-avatar {
+    width: 50px;
+    height: 50px;
+  }
+  
+  .skeleton-stat-section {
+    height: 70px;
+    border-radius: 4px;
+  }
+}
+
+@media (max-width: 480px) {
+  .skeleton-cover {
+    height: 140px;
+  }
+  
+  .skeleton-title {
+    width: 85%;
+  }
+  
+  .skeleton-badge {
+    width: 40px;
+    height: 10px;
+  }
+}
+
+/* ===== LAYOUT IMPROVEMENTS ===== */
+
+.zoro-user-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.zoro-stats-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+/* ===== SUBTLE ANIMATIONS FOR OBSIDIAN ===== */
+
+.skeleton-cover,
+.skeleton-title,
+.skeleton-badge,
+.skeleton-avatar,
+.skeleton-stat-section {
+  transition: background 0.2s ease;
+}
+

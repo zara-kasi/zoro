@@ -1,254 +1,1498 @@
-/* styles.css */
 
-/* ─── Container Styles ─── */
-.anilist-container {
-  margin: 1rem 0;
-  padding: 0 0.1rem;             /* ← horizontal padding off the screen edge */
+:root {
+  /* ---- Container & Layout ---- */
+  --zoro-container-margin: 1rem 0;
+  --zoro-container-padding: 0 0.1rem;
+
+  /* ---- Grid ---- */
+  --zoro-grid-gap: 1rem;
+  --zoro-grid-gap-mobile: 0.75rem;
+  --zoro-grid-margin: 1rem 0;
+
+  /* ---- Card Shell ---- */
+  --zoro-card-border-radius: 8px;
+  --zoro-card-border-width: 1px;
+  --zoro-card-cover-aspect-ratio: 2 / 3;
+  --zoro-card-padding: 0.5rem 0.75rem;
+  --zoro-card-gap: 0.3rem;
+
+  /* ---- Typography ---- */
+  --zoro-title-font-size: 0.9rem;
+  --zoro-title-font-weight: 600;
+  --zoro-title-line-height: 1.2;
+  --zoro-single-title-font-size: 1rem;
+  --zoro-badge-font-size: 0.7rem;
+  --zoro-badge-font-weight: 500;
+  --zoro-progress-font-size: 0.75rem;
+  --zoro-progress-font-weight: 500;
+  --zoro-genre-font-size: 0.65rem;
+  --zoro-genre-font-weight: 500;
+
+  /* ---- Badges ---- */
+  --zoro-badge-padding: 0.1rem 0.4rem;
+  --zoro-badge-border-radius: 12px;
+  --zoro-badge-letter-spacing: 0.1px;
+  --zoro-progress-padding: 0.1rem 0.2rem;
+  --zoro-progress-border-radius: 4px;
+  --zoro-genre-padding: 0.1rem 0.3rem;
+  --zoro-genre-border-radius: 10px;
+
+  /* ---- Details & Genres ---- */
+  --zoro-details-gap: 0.2rem;
+  --zoro-genres-gap: 0.2rem;
+  --zoro-genres-margin-top: 0.3rem;
+
+  /* ---- Table ---- */
+  --zoro-table-margin: 1rem 0;
+  --zoro-table-border-radius: 8px;
+  --zoro-table-header-padding: 1rem;
+  --zoro-table-header-font-weight: 600;
+  --zoro-table-cell-padding: 0.8rem 1rem;
+  --zoro-table-border-width: 1px;
+
+  /* ---- User Stats ---- */
+  --zoro-user-stats-padding: 1.5rem;
+  --zoro-user-stats-margin: 1rem 0;
+  --zoro-user-stats-border-radius: 8px;
+  --zoro-user-stats-border-width: 1px;
+  --zoro-user-header-gap: 1rem;
+  --zoro-user-header-margin-bottom: 1.5rem;
+  --zoro-user-header-padding-bottom: 1rem;
+
+  /* ---- Error Box ---- */
+  --zoro-error-padding: 0.75rem;
+  --zoro-error-border-radius: 8px;
+  --zoro-error-border-width: 1px;
+  --zoro-error-margin: 1rem 0;
+  --zoro-error-box-padding: 12px 16px;
+  --zoro-error-box-margin-top: 12px;
+  --zoro-error-box-border-radius: 6px;
+  --zoro-error-box-font-size: 13px;
+  --zoro-error-box-border-left-width: 4px;
+
+  /* ---- Buttons ---- */
+  --zoro-retry-btn-margin-top: 10px;
+  --zoro-retry-btn-padding: 6px 12px;
+  --zoro-retry-btn-border-radius: 4px;
+  --zoro-auth-btn-padding: 10px 20px;
+  --zoro-auth-btn-border-radius: 4px;
+  --zoro-auth-btn-font-weight: bold;
+  --zoro-cancel-btn-padding: 10px 20px;
+  --zoro-cancel-btn-border-radius: 4px;
+
+  /* ---- Modal ---- */
+  --zoro-modal-z-index: 1000;
+  --zoro-modal-overlay-opacity: 0.5;
+  --zoro-modal-content-border-radius: 8px;
+  --zoro-modal-content-padding: 20px;
+  --zoro-modal-content-max-width: 500px;
+  --zoro-modal-content-width: 90%;
+  --zoro-modal-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+
+  /* ---- Auth Modal ---- */
+  --zoro-auth-modal-padding: 2rem;
+  --zoro-auth-modal-max-width: 450px;
+  --zoro-auth-modal-border-radius: 8px;
+  --zoro-auth-title-font-size: 1.4rem;
+  --zoro-auth-title-font-weight: 600;
+  --zoro-auth-title-margin-bottom: 1rem;
+  --zoro-auth-desc-font-size: 0.9rem;
+  --zoro-auth-desc-line-height: 1.4;
+  --zoro-auth-desc-margin-bottom: 1.5rem;
+  --zoro-auth-input-padding: 0.875rem 1rem;
+  --zoro-auth-input-border-width: 2px;
+  --zoro-auth-input-border-radius: 8px;
+  --zoro-auth-input-font-size: 1rem;
+  --zoro-auth-input-margin-bottom: 1.5rem;
+  --zoro-auth-button-padding: 0.75rem 1.5rem;
+  --zoro-auth-button-border-radius: 6px;
+  --zoro-auth-button-font-size: 0.9rem;
+  --zoro-auth-button-font-weight: 500;
+  --zoro-auth-button-min-width: 90px;
+  --zoro-auth-button-gap: 0.75rem;
+  --zoro-pin-input-font-size: 1.1rem;
+  --zoro-pin-input-letter-spacing: 0.5px;
+  --zoro-auth-focus-shadow: 0 0 0 3px;
+
+  /* ---- Animations ---- */
+  --zoro-transition-duration: 0.2s;
+  --zoro-hover-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  --zoro-fade-in-duration: 0.3s;
+  --zoro-scale-hover: 1.02;
+  --zoro-brightness-hover: 1.1;
+
+  /* ---- Mobile Breakpoints ---- */
+  --zoro-mobile-breakpoint: 480px;
+  --zoro-tablet-breakpoint: 600px;
+  --zoro-auth-mobile-max-width: 350px;
+  --zoro-auth-mobile-padding: 1.5rem;
+  --zoro-mobile-title-font-size: 0.9rem;
+  --zoro-mobile-user-header-font-size: 1.3rem;
+
+  /* ---- Settings Button ---- */
+  --zoro-setting-btn-font-size: 0.85rem;
+  --zoro-setting-btn-padding: 0.5rem 1rem;
+  --zoro-setting-btn-max-width: 200px;
+  --zoro-setting-btn-mobile-font-size: 1rem;
+}
+
+/* ==================================================================
+   ORIGINAL STYLES (unchanged, only using the variables above)
+   ================================================================== */
+
+/* Container */
+.zoro-container {
+  margin: var(--zoro-container-margin);
+  padding: var(--zoro-container-padding);
   font-family: var(--font-interface);
 }
 
-/* ─── Error Styles ─── */
-.anilist-error {
+/* Errors */
+.zoro-error {
   color: var(--text-error);
   background: var(--background-modifier-error);
-  padding: 0.75rem;            /* slightly smaller */
-  border-radius: 8px;
-  border: 1px solid var(--border-color);
-  margin: 1rem 0;
+  padding: var(--zoro-error-padding);
+  border-radius: var(--zoro-error-border-radius);
+  border: var(--zoro-error-border-width) solid var(--border-color);
+  margin: var(--zoro-error-margin);
 }
 
-/* ─── Card Layout Styles ─── */
-/* 2-column pack, tighter cards, bigger gap */
-.anilist-cards-grid {
+.zoro-error-box {
+  background: var(--background-modifier-error);
+  border-left: var(--zoro-error-box-border-left-width) solid var(--color-red);
+  padding: var(--zoro-error-box-padding);
+  margin-top: var(--zoro-error-box-margin-top);
+  border-radius: var(--zoro-error-box-border-radius);
+  font-size: var(--zoro-error-box-font-size);
+  color: var(--text-normal);
+  white-space: pre-wrap;
+}
+
+/* Grid */
+.zoro-cards-grid {
   display: grid;
-  grid-template-columns: repeat(var(--anilist-grid-columns, 2), minmax(0, 1fr));
-  gap: 1rem;
-  margin: 1rem 0;
+  grid-template-columns: repeat(var(--zoro-grid-columns, 2), minmax(0, 1fr));
+  gap: var(--zoro-grid-gap);
+  margin: var(--zoro-grid-margin);
   padding: 0;
   list-style: none;
 }
-
 @media (max-width: 480px) {
-  .anilist-cards-grid {
-    gap: 0.75rem;              /* slightly smaller on narrow screens */
+  .zoro-cards-grid {
+    gap: var(--zoro-grid-gap-mobile);
   }
 }
 
-.anilist-card,
-.anilist-single-card {
+/* === Grid Column Count via CSS Variable (no inline JS) ========== */
+.zoro-cards-grid {
+  --zoro-grid-columns: 2;      /* default value */
+}
+
+@media (min-width: 768px) {
+  .zoro-cards-grid {
+    --zoro-grid-columns: 5;    /* desktop value */
+  }
+}
+
+
+/* Cards */
+.zoro-card,
+.zoro-single-card {
   background: var(--background-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
+  border: var(--zoro-card-border-width) solid var(--border-color);
+  border-radius: var(--zoro-card-border-radius);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: box-shadow 0.2s ease;
+  transition: box-shadow var(--zoro-transition-duration) ease;
   margin: 0;
   padding: 0;
   list-style: none;
 }
-
-/* Hover shadow */
-.anilist-card:hover,
-.anilist-single-card:hover {
-  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+.zoro-card:hover,
+.zoro-single-card:hover {
+  box-shadow: var(--zoro-hover-shadow);
 }
 
-/* Cover image on top, forced 2:3 ratio (original) */
-.anilist-card .media-cover,
-.anilist-single-card .media-cover {
+/* Cover */
+.zoro-card .media-cover,
+.zoro-single-card .media-cover {
   width: 100%;
-  aspect-ratio: 2 / 3;
+  aspect-ratio: var(--zoro-card-cover-aspect-ratio);
   object-fit: cover;
   flex-shrink: 0;
 }
 
-/* Info block under the cover */
-.anilist-card .media-info,
-.anilist-single-card .media-info {
-  padding: 0.5rem 0.75rem;     /* tighter padding */
+/* Info */
+.zoro-card .media-info,
+.zoro-single-card .media-info {
+  padding: var(--zoro-card-padding);
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;                 /* smaller internal gaps */
+  gap: var(--zoro-card-gap);
 }
 
-/* Title styling – clamp to one line */
-.anilist-card h4,
-.anilist-single-card h3 {
+/* Titles */
+.zoro-card h4,
+.zoro-single-card h3 {
   margin: 0;
-  font-size: 0.9rem;           /* smaller font */
-  font-weight: 600;
+  font-size: var(--zoro-title-font-size);
+  font-weight: var(--zoro-title-font-weight);
   color: var(--text-normal);
-  line-height: 1.2;
+  line-height: var(--zoro-title-line-height);
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
+  text-overflow: clip;
+}
+.zoro-single-card h3 {
+  font-size: var(--zoro-single-title-font-size);
 }
 
-/* Slight bump on single-card titles */
-.anilist-single-card h3 {
-  font-size: 1rem;
-}
-
-/* Media details: status, progress, score */
+/* Details */
 .media-details {
   display: flex;
-  gap: 0.2rem;
+  gap: var(--zoro-details-gap);
   align-items: center;
   flex-wrap: wrap;
 }
 
-/* Format badges */
-.format-badge {
-  padding: 0.1rem 0.4rem;
-  border-radius: 12px;
-  font-size: 0.1rem;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.1px;
-}
-
-/* Status badges */
+/* Badges */
+.format-badge,
 .status-badge {
-  padding: 0.1rem 0.4rem;
-  border-radius: 12px;
-  font-size: 0.1rem;
-  font-weight: 500;
+  padding: var(--zoro-badge-padding);
+  border-radius: var(--zoro-badge-border-radius);
+  font-size: var(--zoro-badge-font-size);
+  font-weight: var(--zoro-badge-font-weight);
   text-transform: uppercase;
-  letter-spacing: 0.1px;
+  letter-spacing: var(--zoro-badge-letter-spacing);
 }
 
-
-/* Badge colors */
+/* Status Badge Colors */
 .status-current   { background: var(--color-green);  color: white; }
 .status-completed { background: var(--color-blue);   color: white; }
-.status-paused    { background: var(--color-yellow); color: var(--text-normal); }
+.status-paused    { background: var(--color-orange); color: var(--text-normal); }
 .status-dropped   { background: var(--color-red);    color: white; }
 .status-planning  { background: var(--color-purple); color: white; }
 .status-repeating { background: var(--color-cyan);   color: white; }
+.status-add       { background: var(--color-pink);   color: white; }
 
-/* Progress and Score pills */
+
+/* Progress & Score */
 .progress,
 .score {
-  padding: 0.1rem 0.2rem;
+  padding: var(--zoro-progress-padding);
   background: var(--background-modifier-border);
-  border-radius: 4px;
-  font-size: 0.75rem;
-  font-weight: 500;
+  border-radius: var(--zoro-progress-border-radius);
+  font-size: var(--zoro-progress-font-size);
+  font-weight: var(--zoro-progress-font-weight);
 }
-
 .score {
   color: var(--color-orange);
 }
 
-/* Genre tags */
+/* Genres */
 .genres {
   display: flex;
-  gap: 0.2rem;
+  gap: var(--zoro-genres-gap);
   flex-wrap: wrap;
-  margin-top: 0.3rem;
+  margin-top: var(--zoro-genres-margin-top);
 }
-
 .genre-tag {
   background: var(--background-modifier-hover);
   color: var(--text-muted);
-  padding: 0.1rem 0.3rem;
-  border-radius: 10px;
-  font-size: 0.65rem;
-  font-weight: 500;
+  padding: var(--zoro-genre-padding);
+  border-radius: var(--zoro-genre-border-radius);
+  font-size: var(--zoro-genre-font-size);
+  font-weight: var(--zoro-genre-font-weight);
 }
 
-/* ─── Table Layout Styles (unchanged) ─── */
-.anilist-table {
+/* Table */
+.zoro-table {
   width: 100%;
   border-collapse: collapse;
-  margin: 1rem 0;
+  margin: var(--zoro-table-margin);
   background: var(--background-secondary);
-  border-radius: 8px;
+  border-radius: var(--zoro-table-border-radius);
   overflow: hidden;
 }
-
-.anilist-table th {
+.zoro-table th {
   background: var(--background-modifier-hover);
   color: var(--text-normal);
-  padding: 1rem;
+  padding: var(--zoro-table-header-padding);
   text-align: left;
-  font-weight: 600;
-  border-bottom: 1px solid var(--border-color);
+  font-weight: var(--zoro-table-header-font-weight);
+  border-bottom: var(--zoro-table-border-width) solid var(--border-color);
 }
-
-.anilist-table td {
-  padding: 0.8rem 1rem;
-  border-bottom: 1px solid var(--border-color);
+.zoro-table td {
+  padding: var(--zoro-table-cell-padding);
+  border-bottom: var(--zoro-table-border-width) solid var(--border-color);
   color: var(--text-normal);
 }
-
-.anilist-table tr:hover {
+.zoro-table tr:hover {
   background: var(--background-modifier-hover);
 }
 
-/* ─── User Stats Styles (unchanged) ─── */
-.anilist-user-stats {
+/* User Stats */
+.zoro-user-stats {
   background: var(--background-secondary);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  padding: 1.5rem;
-  margin: 1rem 0;
+  border: var(--zoro-user-stats-border-width) solid var(--border-color);
+  border-radius: var(--zoro-user-stats-border-radius);
+  padding: var(--zoro-user-stats-padding);
+  margin: var(--zoro-user-stats-margin);
 }
-
 .user-header {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid var(--border-color);
+  gap: var(--zoro-user-header-gap);
+  margin-bottom: var(--zoro-user-header-margin-bottom);
+  padding-bottom: var(--zoro-user-header-padding-bottom);
+  border-bottom: var(--zoro-table-border-width) solid var(--border-color);
 }
 
-/* ─── Mobile-specific adjustments (unchanged) ─── */
-@media (max-width: 480px) {
-  .anilist-card,
-  .anilist-single-card {
-    text-align: center;
-  }
+/* Buttons */
+.zoro-retry-btn {
+  margin-top: var(--zoro-retry-btn-margin-top);
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+  border: none;
+  padding: var(--zoro-retry-btn-padding);
+  border-radius: var(--zoro-retry-btn-border-radius);
+  cursor: pointer;
+}
+.zoro-retry-btn:hover {
+  background: var(--interactive-accent-hover);
+}
+.zoro-auth-button {
+  background: linear-gradient(45deg, #02A9FF, #3B82F6);
+  color: white;
+  font-weight: var(--zoro-auth-btn-font-weight);
+  padding: var(--zoro-auth-btn-padding);
+  border-radius: var(--zoro-auth-btn-border-radius);
+  border: none;
+  cursor: pointer;
+}
+.zoro-auth-button:hover {
+  background: linear-gradient(45deg, #0284C7, #2563EB);
+}
+.zoro-cancel-button {
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  padding: var(--zoro-cancel-btn-padding);
+  border-radius: var(--zoro-cancel-btn-border-radius);
+  border: none;
+  cursor: pointer;
 }
 
-/* ─── Dark mode (unchanged) ─── */
-.theme-dark .anilist-card,
-.theme-dark .anilist-single-card,
-.theme-dark .anilist-user-stats {
+/* Modal */
+.zoro-edit-modal {
+  position: fixed;
+  z-index: var(--zoro-modal-z-index);
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.zoro-modal-overlay {
+  position: absolute;
+  width: 100%; height: 100%;
+  background-color: rgba(0, 0, 0, var(--zoro-modal-overlay-opacity));
+}
+.zoro-modal-content {
+  background: var(--background-primary);
+  border-radius: var(--zoro-modal-content-border-radius);
+  padding: var(--zoro-modal-content-padding);
+  max-width: var(--zoro-modal-content-max-width);
+  width: var(--zoro-modal-content-width);
+  position: relative;
+  box-shadow: var(--zoro-modal-shadow);
+}
+
+/* Auth Modal */
+.zoro-auth-title {
+  text-align: center;
+  margin-bottom: var(--zoro-auth-title-margin-bottom);
+  color: var(--text-normal);
+}
+.zoro-auth-message {
+  text-align: center;
+  margin-bottom: var(--zoro-auth-desc-margin-bottom);
+  color: var(--text-muted);
+  line-height: var(--zoro-auth-desc-line-height);
+}
+.zoro-auth-features {
+  margin-bottom: var(--zoro-auth-desc-margin-bottom);
+}
+.zoro-auth-features-title {
+  margin-bottom: 10px;
+  color: var(--text-normal);
+}
+.zoro-auth-feature-list {
+  padding-left: 20px;
+  color: var(--text-normal);
+}
+.zoro-auth-feature-list li {
+  margin-bottom: 5px;
+}
+.zoro-modal-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-top: var(--zoro-auth-desc-margin-bottom);
+}
+.auth-modal {
+  padding: var(--zoro-auth-modal-padding);
+  max-width: var(--zoro-auth-modal-max-width);
+  margin: 0 auto;
+  background: var(--background-primary);
+  border-radius: var(--zoro-auth-modal-border-radius);
+}
+.auth-modal h2 {
+  margin-bottom: var(--zoro-auth-title-margin-bottom);
+  text-align: center;
+  color: var(--text-normal);
+  font-size: var(--zoro-auth-title-font-size);
+  font-weight: var(--zoro-auth-title-font-weight);
+}
+.auth-modal-desc {
+  margin-bottom: var(--zoro-auth-desc-margin-bottom);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--zoro-auth-desc-font-size);
+  line-height: var(--zoro-auth-desc-line-height);
+}
+.auth-input-container {
+  margin-bottom: var(--zoro-auth-input-margin-bottom);
+}
+.auth-input {
+  width: 100%;
+  padding: var(--zoro-auth-input-padding);
+  border: var(--zoro-auth-input-border-width) solid var(--background-modifier-border);
+  border-radius: var(--zoro-auth-input-border-radius);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-size: var(--zoro-auth-input-font-size);
+  transition: all var(--zoro-transition-duration) ease;
+  font-family: var(--font-interface);
+}
+.auth-input:focus {
+  outline: none;
+  border-color: var(--interactive-accent);
+  box-shadow: var(--zoro-auth-focus-shadow) var(--interactive-accent-hover);
+}
+.auth-input::placeholder {
+  color: var(--text-muted);
+}
+.pin-input {
+  font-family: var(--font-monospace);
+  letter-spacing: var(--zoro-pin-input-letter-spacing);
+  text-align: center;
+  font-size: var(--zoro-pin-input-font-size);
+}
+.auth-button-container {
+  display: flex;
+  gap: var(--zoro-auth-button-gap);
+  justify-content: flex-end;
+}
+.auth-button {
+  padding: var(--zoro-auth-button-padding);
+  border: none;
+  border-radius: var(--zoro-auth-button-border-radius);
+  font-size: var(--zoro-auth-button-font-size);
+  font-weight: var(--zoro-auth-button-font-weight);
+  cursor: pointer;
+  transition: all var(--zoro-transition-duration) ease;
+  min-width: var(--zoro-auth-button-min-width);
+  font-family: var(--font-interface);
+}
+.auth-button:not(.mod-cta) {
+  background: var(--interactive-normal);
+  color: var(--text-normal);
+  border: 1px solid var(--background-modifier-border);
+}
+.auth-button:not(.mod-cta):hover {
+  background: var(--interactive-hover);
+}
+.auth-button.mod-cta {
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+.auth-button.mod-cta:hover {
+  background: var(--interactive-accent-hover);
+}
+.submit-button.ready {
+  background: var(--color-green);
+  transform: scale(var(--zoro-scale-hover));
+}
+.submit-button.ready:hover {
+  background: var(--color-green);
+  filter: brightness(var(--zoro-brightness-hover));
+}
+.pin-modal {
+  border: var(--zoro-auth-input-border-width) solid var(--interactive-accent);
+}
+.pin-modal h2 {
+  color: var(--interactive-accent);
+}
+
+/* Settings Button override */
+.setting-item .setting-item-control button {
+  font-size: var(--zoro-setting-btn-font-size) !important;
+  padding: var(--zoro-setting-btn-padding) !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: var(--zoro-setting-btn-max-width) !important;
+}
+
+/* Dark mode overrides */
+.theme-dark .zoro-card,
+.theme-dark .zoro-single-card,
+.theme-dark .zoro-user-stats {
   background: var(--background-secondary);
   border-color: var(--border-color);
 }
-
-.theme-dark .anilist-table {
+.theme-dark .zoro-table {
   background: var(--background-secondary);
 }
 
-/* ─── Fade-in animation ─── */
+/* Animations */
 @keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.zoro-container > * {
+  animation: fadeIn var(--zoro-fade-in-duration) ease;
+}
+
+/* Mobile */
+@media (max-width: 480px) {
+  .zoro-card,
+  .zoro-single-card {
+    text-align: center;
+  }
+  .auth-modal {
+    padding: var(--zoro-auth-mobile-padding);
+    max-width: var(--zoro-auth-mobile-max-width);
+  }
+  .auth-button-container {
+    flex-direction: column;
+  }
+  .auth-button {
+    width: 100%;
+  }
+  .setting-item .setting-item-control button {
+    max-width: 100% !important;
+    font-size: var(--zoro-setting-btn-mobile-font-size) !important;
+  }
+}
+@media (max-width: 600px) {
+  .zoro-card h4,
+  .zoro-single-card h3 {
+    font-size: var(--zoro-mobile-title-font-size);
+  }
+  .user-header h3 {
+    font-size: var(--zoro-mobile-user-header-font-size);
+  }
+}
+
+/* Title link styles */
+.anilist-title-link {
+  color: var(--text-normal);
+  text-decoration: none;
+  display: block;
+  transition: color 0.2s ease;
+}
+.anilist-title-link:hover {
+  color: var(--interactive-accent);
+  text-decoration: underline;
+}
+
+/* Hover & loading animations */
+.zoro-card {
+  transition: all var(--zoro-transition-duration) ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+.zoro-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+  border-color: var(--interactive-accent);
+}
+.zoro-card.loading {
+  opacity: 0.6;
+  pointer-events: none;
+  position: relative;
+  overflow: hidden;
+}
+.zoro-card.loading::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.1), transparent);
+  animation: shimmer 1.5s infinite;
+}
+@keyframes shimmer {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+.genre-tag {
+  transition: all var(--zoro-transition-duration) ease;
+}
+.genre-tag:hover {
+  background: var(--interactive-hover);
+  color: var(--text-normal);
+}
+
+/* Input alignment override */
+.zoro-form-input {
+  text-align: right;
+}
+
+/* Edit Modal shell (unchanged) */
+.zoro-edit-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.zoro-modal-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, var(--zoro-modal-overlay-opacity));
+  backdrop-filter: blur(5px);
+}
+.zoro-modal-content {
+  background: rgba(255, 255, 255, var(--zoro-modal-overlay-opacity));
+  color: #222;
+  border-radius: var(--zoro-modal-content-border-radius);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .25);
+  width: 340px;
+  max-width: var(--zoro-modal-content-width);
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 24px;
+}
+.zoro-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.zoro-modal-title {
+  margin: 0 0 12px;
+  font-size: 1.25rem;
+  font-weight: 600;
+  text-align: center;
+}
+.zoro-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.zoro-form-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #f1f1f11;
+}
+.zoro-form-input,
+.zoro-status-select {
+  padding: 8px 10px;
+  border: 1px solid #bbb;
+  border-radius: 4px;
+  font-size: 1rem;
+  transition: border-color 0.2s;
+  text-align: left;
+}
+.zoro-form-input:focus,
+.zoro-status-select:focus {
+  border-color: #0077ff;
+  outline: none;
+}
+.zoro-quick-progress-buttons {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+.zoro-quick-btn {
+  background: #f1f1f1;
+  border: 1px solid #d0d0d0;
+  border-radius: 4px;
+  padding: 6px 10px;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+.zoro-quick-btn:hover {
+  background: #e5e5e5;
+}
+.zoro-modal-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.zoro-modal-btn {
+  padding: 8px 14px;
+  font-size: 0.875rem;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.zoro-save-btn {
+  background: #0077ff;
+  color: #fff;
+}
+.zoro-remove-btn {
+  background: #ff3b30;
+  color: #fff;
+}
+.zoro-cancel-btn {
+  background: #e5e5ea;
+  color: #222;
+}
+.zoro-fav-btn {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  padding: 0 6px;
+  cursor: pointer;
+}
+
+/* Dark mode for modal */
+@media (prefers-color-scheme: dark) {
+  .zoro-modal-content {
+  background: rgba(0, 0, 0, var(--zoro-modal-overlay-opacity));
+    color: #e5e5e5;
+  }
+  .zoro-form-input,
+  .zoro-status-select {
+    background: #3a3a3a;
+    border-color: #555;
+    color: #e5e5e5;
+  }
+  .zoro-quick-btn,
+  .zoro-cancel-btn {
+    background: #3a3a3a;
+    border-color: #555;
+    color: #e5e5e5;
+  }
+  .zoro-save-btn   { background: #0a84ff; }
+  .zoro-remove-btn { background: #ff453a; }
+}
+
+}
+
+/ Blur-glass skeleton (frosted, glass-like shimmer) /
+.zoro-skeleton,
+.zoro-card.zoro-skeleton {
+background: rgba(var(--mono-rgb-100), .04);
+backdrop-filter: blur(8px);
+border: 1px solid rgba(var(--mono-rgb-100), .08);
+border-radius: 12px;
+overflow: hidden;
+position: relative;
+}
+
+/ The shimmering wave /
+.zoro-skeleton::before,
+.zoro-card.zoro-skeleton::before {
+content: "";
+position: absolute;
+inset: 0;
+background: linear-gradient(
+105deg,
+transparent 30%,
+rgba(var(--mono-rgb-100), .05) 50%,
+transparent 70%
+);
+animation: blurShimmer 2s infinite;
+}
+
+/ Blurred placeholders inside /
+.skeleton-cover,
+.skeleton-title,
+.skeleton-badge,
+.skeleton-avatar,
+.skeleton-stat-section {
+background: rgba(var(--mono-rgb-100), .08);
+filter: blur(1px);
+border-radius: inherit;
+}
+
+/ Keep original sizes /
+.skeleton-cover  { width: 100%; height: 150px; }
+.skeleton-title  { height: 20px; width: 80%; margin: 10px 0; }
+.skeleton-badge  { height: 16px; width: 60px; display: inline-block; margin-right: 8px; }
+.skeleton-avatar { width: 48px; height: 48px; border-radius: 50%; }
+.skeleton-stat-section { height: 120px; }
+
+@keyframes blurShimmer {
+0%   { transform: translateX(-100%); }
+100% { transform: translateX(100%); }
+}
+
+/ Dark-mode fine-tune /
+.theme-dark .zoro-skeleton,
+.theme-dark .zoro-card.zoro-skeleton {
+background: rgba(var(--mono-rgb-0), .06);
+border-color: rgba(var(--mono-rgb-0), .12);
+}
+.theme-dark .zoro-skeleton::before,
+.theme-dark .zoro-card.zoro-skeleton::before {
+background: linear-gradient(
+105deg,
+transparent 30%,
+rgba(var(--mono-rgb-0), .06) 50%,
+transparent 70%
+);
+}
+
+
+/* CSS Variables for theme support */
+:root {
+  /* Dark theme (default) */
+  --panel-bg: #1a1a1a;
+  --panel-header-bg: linear-gradient(135deg, #2a2a2a, #1a1a1a);
+  --panel-text-primary: #ffffff;
+  --panel-text-secondary: #b0b0b0;
+  --panel-text-tertiary: #888888;
+  --panel-border: rgba(255, 255, 255, 0.1);
+  --panel-border-light: rgba(255, 255, 255, 0.05);
+  --panel-overlay: rgba(0, 0, 0, 0.5);
+  --panel-shadow: 0 20px 40px rgba(0, 0, 0, 0.8);
+  --panel-section-bg: rgba(255, 255, 255, 0.03);
+  --panel-section-hover: rgba(255, 255, 255, 0.06);
+  --panel-button-bg: rgba(255, 255, 255, 0.1);
+  --panel-button-hover: rgba(255, 255, 255, 0.2);
+  --panel-genre-bg: rgba(255, 255, 255, 0.1);
+  --panel-genre-hover: rgba(255, 255, 255, 0.15);
+  --panel-scrollbar-track: rgba(255, 255, 255, 0.05);
+  --panel-scrollbar-thumb: rgba(255, 255, 255, 0.2);
+  --panel-scrollbar-thumb-hover: rgba(255, 255, 255, 0.3);
+  --panel-airing-bg: rgba(34, 197, 94, 0.05);
+  --panel-loading-text: #6b7280;
+}
+
+/* Light theme - automatically applies when system prefers light */
+@media (prefers-color-scheme: light) {
+  :root {
+    --panel-bg: #ffffff;
+    --panel-header-bg: linear-gradient(135deg, #fffafc, #f1f5f9);
+    --panel-text-primary: #1f2937;
+    --panel-text-secondary: #4b5563;
+    --panel-text-tertiary: #6b7280;
+    --panel-border: rgba(0, 0, 0, 0.1);
+    --panel-border-light: rgba(0, 0, 0, 0.05);
+    --panel-overlay: rgba(0, 0, 0, 0);
+    --panel-shadow: 0 20px 40px rgba(0, 0, 0, 0.15);
+    --panel-section-bg: rgba(0, 0, 0, 0.02);
+    --panel-section-hover: rgba(0, 0, 0, 0.04);
+    --panel-button-bg: rgba(0, 0, 0, 0.05);
+    --panel-button-hover: rgba(0, 0, 0, 0.1);
+    --panel-genre-bg: rgba(0, 0, 0, 0.08);
+    --panel-genre-hover: rgba(0, 0, 0, 0.12);
+    --panel-scrollbar-track: rgba(0, 0, 0, 0.05);
+    --panel-scrollbar-thumb: rgba(0, 0, 0, 0.2);
+    --panel-scrollbar-thumb-hover: rgba(0, 0, 0, 0.3);
+    --panel-airing-bg: rgba(34, 197, 94, 0.08);
+    --panel-loading-text: #9ca3af;
+  }
+}
+
+/* Background blur overlay */
+.zoro-more-details-panel::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--panel-overlay);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: -1;
+}
+
+/* Main panel container */
+.zoro-more-details-panel {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1000;
+  max-height: 80vh;
+  max-width: 90vw;
+  width: 600px;
+  background: var(--panel-bg);
+  border-radius: 12px;
+  box-shadow: var(--panel-shadow);
+  color: var(--panel-text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow: hidden;
+  animation: panelSlideIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes panelSlideIn {
   from {
     opacity: 0;
-    transform: translateY(10px);
+    transform: translate(-50%, -50%) scale(0.9);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translate(-50%, -50%) scale(1);
   }
 }
 
-.anilist-container > * {
-  animation: fadeIn 0.3s ease;
+/* Close button */
+.panel-close-btn {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  background: var(--panel-button-bg);
+  border: none;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  color: var(--panel-text-primary);
+  font-size: 20px;
+  font-weight: bold;
+  cursor: pointer;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
 }
 
-/* ─── Responsive text scaling ─── */
-@media (max-width: 600px) {
-  .anilist-card h4,
-  .anilist-single-card h3 {
-    font-size: 0.9rem;
-  }
+.panel-close-btn:hover {
+  background: var(--panel-button-hover);
+  transform: scale(1.1);
+}
 
-  .user-header h3 {
-    font-size: 1.3rem;
+/* Panel content container */
+.panel-content {
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 0;
+}
+
+/* Custom scrollbar */
+.panel-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.panel-content::-webkit-scrollbar-track {
+  background: var(--panel-scrollbar-track);
+}
+
+.panel-content::-webkit-scrollbar-thumb {
+  background: var(--panel-scrollbar-thumb);
+  border-radius: 4px;
+}
+
+.panel-content::-webkit-scrollbar-thumb:hover {
+  background: var(--panel-scrollbar-thumb-hover);
+}
+
+/* Header section */
+.panel-header {
+  background: var(--panel-header-bg);
+  padding: 24px 24px 20px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.title-section {
+  margin-bottom: 12px;
+}
+
+.main-title {
+  font-size: 24px;
+  font-weight: 700;
+  margin: 0 0 8px 0;
+  line-height: 1.2;
+  color: var(--panel-text-primary);
+}
+
+.alt-title {
+  font-size: 16px;
+  color: var(--panel-text-secondary);
+  margin-bottom: 4px;
+}
+
+.native-title {
+  font-size: 14px;
+  color: var(--panel-text-tertiary);
+}
+
+.format-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.format-badge-large {
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.season-info {
+  color: var(--panel-text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Panel sections */
+.panel-section {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--panel-border-light);
+}
+
+.panel-section:last-child {
+  border-bottom: none;
+  padding-bottom: 24px;
+}
+
+.section-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 16px 0;
+  color: var(--panel-text-primary);
+  display: flex;
+  align-items: center;
+}
+
+.section-title::before {
+  content: '';
+  width: 4px;
+  height: 18px;
+  background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+  border-radius: 2px;
+  margin-right: 12px;
+}
+
+/* Metadata section */
+.metadata-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 12px;
+}
+
+.metadata-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.metadata-label {
+  color: var(--panel-text-secondary);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.metadata-value {
+  color: var(--panel-text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Airing section */
+.airing-section {
+  background: var(--panel-airing-bg);
+  border-left: 4px solid #22c55e;
+  margin: 0 10px;
+  padding: 20px 24px;
+}
+
+.airing-info {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+}
+
+.airing-episode,
+.airing-date,
+.airing-time,
+.airing-countdown {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.airing-label {
+  color: var(--panel-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.airing-value {
+  color: #22c55e;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.countdown-value {
+  color: #fbbf24;
+  font-weight: 700;
+}
+
+/* Statistics section */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 16px;
+}
+
+.stat-item {
+  background: var(--panel-section-bg);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+  transition: all 0.2s ease;
+}
+
+.stat-item:hover {
+  background: var(--panel-section-hover);
+  transform: translateY(-2px);
+}
+
+.stat-label {
+  display: block;
+  color: var(--panel-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.stat-value {
+  display: block;
+  color: var(--panel-text-primary);
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.score-stat.anilist-stat .stat-value {
+  color: #3b82f6;
+}
+
+.score-stat.mal-stat .stat-value {
+  color: #2e51a2;
+}
+
+.rank-stat .stat-value {
+  color: #fbbf24;
+}
+
+.count-stat .stat-value {
+  color: #22c55e;
+}
+
+.loading .stat-value {
+  color: var(--panel-loading-text);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+/* Genres section */
+.genres-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.genre-tag {
+  background: var(--panel-genre-bg);
+  color: var(--panel-text-primary);
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.genre-tag:hover {
+  background: var(--panel-genre-hover);
+  transform: translateY(-1px);
+}
+
+/* External links section */
+.external-links-container {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.external-link-btn {
+  padding: 12px 20px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  overflow: hidden;
+}
+
+.external-link-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s ease;
+}
+
+.external-link-btn:hover::before {
+  left: 100%;
+}
+
+.anilist-btn {
+  background: linear-gradient(135deg, #02a9ff, #0284c7);
+  color: white;
+}
+
+.anilist-btn:hover {
+  background: linear-gradient(135deg, #0284c7, #0369a1);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(2, 169, 255, 0.3);
+}
+
+.mal-btn {
+  background: linear-gradient(135deg, #2e51a2, #1e3a72);
+  color: white;
+}
+
+.mal-btn:hover {
+  background: linear-gradient(135deg, #1e3a72, #1e40af);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(46, 81, 162, 0.3);
+}
+
+/* Synopsis section */
+.synopsis-content {
+  color: var(--panel-text-secondary);
+  line-height: 1.6;
+  font-size: 14px;
+}
+
+.synopsis-placeholder {
+  color: var(--panel-text-tertiary);
+  font-style: italic;
+}
+
+.expand-synopsis-btn {
+  background: none;
+  border: none;
+  color: #3b82f6;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  margin-top: 12px;
+  padding: 4px 0;
+  transition: color 0.2s ease;
+}
+
+.expand-synopsis-btn:hover {
+  color: #60a5fa;
+  text-decoration: underline;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .zoro-more-details-panel {
+    width: 95vw;
+    max-height: 90vh;
   }
+  
+  .panel-header {
+    padding: 20px 16px 16px;
+  }
+  
+  .panel-section {
+    padding: 16px;
+  }
+  
+  .main-title {
+    font-size: 20px;
+  }
+  
+  .stats-grid {
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 12px;
+  }
+  
+  .stat-item {
+    padding: 12px;
+  }
+  
+  .stat-value {
+    font-size: 16px;
+  }
+  
+  .external-links-container {
+    flex-direction: column;
+  }
+  
+  .external-link-btn {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .zoro-more-details-panel {
+    width: 100vw;
+    max-height: 100vh;
+    border-radius: 0;
+  }
+  
+  .metadata-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .airing-info {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* 
+The panel will automatically adapt to the user's system theme preference:
+- Dark mode when system is set to dark
+- Light mode when system is set to light
+- No JavaScript or manual toggling required!
+*/
+
+
+/* === Global Loader ===================================================== */
+#zoro-global-loader {
+  position: fixed;
+  bottom: 10px;
+  left: 10px;
+  font-size: 16px;
+  z-index: 9999;
+  display: none;                     /* hidden by default */
+}
+
+#zoro-global-loader.zoro-show {
+  display: block;                    /* revealed when needed */
+}
+
+/* === Cover Image Container ============================================ */
+.cover-container {
+  position: relative;
+  display: inline-block;
+}
+
+.media-cover.pressed {
+  opacity: 0.7;
+}
+
+.media-info h4 a.hovered {
+  opacity: 0.7;
+}
+
+.media-cover {
+  transition: opacity 0.1s ease;
+}
+
+.media-info h4 a {
+  transition: opacity 0.1s ease;
+}
+
+.pressable-cover {
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+  transition: opacity 0.1s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.cover-overlay {
+  position: absolute;
+  bottom: 9px;
+  left: 1px;
+  right: 1px;
+  padding: 0px 0px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  pointer-events: none;
+}
+
+.media-title-link {
+  text-decoration: none;
+  color: inherit;
+  border: none;
+  outline: none;
+  transition: opacity 0.1s ease;
+}
+
+.media-title-link:hover {
+  opacity: 0.7;
+}
+
+.format-badge {
+  display: inline-block;
+  width: 24px;
+  text-align: left;
+  min-width: 24px;
+}
+
+
+/* === More-Details Modal ============================================ */
+.zoro-more-details-panel {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1000;
+  max-height: 80vh;
+  max-width: 90vw;
+  width: 600px;
+}
+
+/* spacing between format badge and status badge */
+.media-details .format-badge + .status-badge {
+  margin-left: 0.5em;
+}
+
+
+.zoro-more-details-panel .panel-content,
+.zoro-more-details-panel .panel-content * {
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  cursor: text;
 }

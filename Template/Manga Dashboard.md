@@ -1,40 +1,44 @@
-```anilist-search
+```zoro-search
 mediaType: MANGA
-layout: card
 ```
-# 📖Reading:
-```anilist
+
+# 📖 Reading:
+```zoro
 listType: CURRENT
 mediaType: MANGA
 ```
 
-# 📝Planning:
-```anilist
+# 📝 Planning:
+```zoro
 listType: PLANNING
 mediaType: MANGA
 ```
-# 🌀Repeating:
-```anilist
+
+# 🌀 Repeating:
+```zoro
 listType: REPEATING
 mediaType: MANGA
 ```
-# ⏸️On Hold:
-```anilist
+
+# ⏸️ On Hold:
+```zoro
 listType: PAUSED
 mediaType: MANGA
 ```
 
-# 🏁Completed:
-```anilist
+# 🏁 Completed:
+```zoro
 listType: COMPLETED
 mediaType: MANGA
 ```
-# 🗑️Dropped:
-```anilist
+
+# 🗑️ Dropped:
+```zoro
 listType: DROPPED
 mediaType: MANGA
 ```
-# 📊Stats:
-```anilist
+
+# 📊 Stats:
+```zoro
 type: stats
-```
+``` 

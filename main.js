@@ -42,8 +42,7 @@ class Cache {
     this.stores = { userData: new Map(), mediaData: new Map(), searchResults: new Map() };
     this.indexes = { byUser: new Map(), byMedia: new Map(), byTag: new Map() };
     
-    
-    this.version = '3.0.0';
+    this.version = '3.1.0';
     this.maxSize = maxSize;
     this.compressionThreshold = compressionThreshold;
     this.batchSize = batchSize;
@@ -58,6 +57,27 @@ class Cache {
     this.refreshCallbacks = new Map();
     this.loadQueue = new Set();
     this.saveQueue = new Set();
+    
+    // Enhanced persistence tracking
+    this.persistenceQueue = new Set();
+    this.lastPersistTime = 0;
+    this.saveDebounceTimer = null;
+    this.criticalSaveMode = false;
+    
+    // Auto-load on initialization if plugin is available
+    if (this.obsidianPlugin) {
+      this.initializeCache();
+    }
+  }
+
+  async initializeCache() {
+    try {
+      await this.loadFromDisk();
+      this.startIncrementalSave(30000); // Save every 30 seconds
+      this.startAutoPrune(300000); // Prune every 5 minutes
+    } catch (error) {
+      this.log('INIT_ERROR', 'system', '', error.message);
+    }
   }
 
   key(input) {
@@ -181,6 +201,8 @@ class Cache {
       this.stats.evictions++;
     });
 
+    // Schedule save after eviction
+    this.schedulePersistence();
     return toEvict.length;
   }
 
@@ -207,6 +229,7 @@ class Cache {
       this.stats.misses++;
       this.log('EXPIRED', scope, cacheKey);
       this.maybeRefresh(cacheKey, scope, refreshCallback);
+      this.schedulePersistence(); // Save after expiry cleanup
       return null;
     }
 
@@ -248,6 +271,8 @@ class Cache {
       this.refreshCallbacks.set(`${scope}:${cacheKey}`, refreshCallback);
     }
 
+    // Schedule immediate persistence for new data
+    this.schedulePersistence(true);
     return true;
   }
 
@@ -265,6 +290,7 @@ class Cache {
       this.accessLog.delete(cacheKey);
       this.stats.deletes++;
       this.log('DELETE', scope, cacheKey);
+      this.schedulePersistence();
     }
     
     return deleted;
@@ -283,6 +309,7 @@ class Cache {
     });
 
     this.indexes.byUser.delete(userKey);
+    this.schedulePersistence();
     return deleted;
   }
 
@@ -299,6 +326,7 @@ class Cache {
     });
 
     this.indexes.byMedia.delete(String(mediaId));
+    this.schedulePersistence();
     return deleted;
   }
 
@@ -315,6 +343,7 @@ class Cache {
     });
 
     this.indexes.byTag.delete(tag);
+    this.schedulePersistence();
     return deleted;
   }
 
@@ -324,6 +353,7 @@ class Cache {
       if (!store) return 0;
       const count = store.size;
       store.clear();
+      this.schedulePersistence();
       return count;
     }
 
@@ -338,6 +368,7 @@ class Cache {
     this.refreshCallbacks.clear();
     
     this.log('CLEAR_ALL', 'all', '', total);
+    this.schedulePersistence();
     return total;
   }
 
@@ -368,6 +399,9 @@ class Cache {
       });
     });
 
+    if (total > 0) {
+      this.schedulePersistence();
+    }
     return total;
   }
 
@@ -402,9 +436,30 @@ class Cache {
     }, 0);
   }
 
+  // Enhanced persistence scheduling
+  schedulePersistence(immediate = false) {
+    if (immediate) {
+      this.criticalSaveMode = true;
+    }
+
+    if (this.saveDebounceTimer) {
+      clearTimeout(this.saveDebounceTimer);
+    }
+
+    const delay = immediate ? 100 : 2000; // 100ms for immediate, 2s for normal
+    this.saveDebounceTimer = setTimeout(() => {
+      this.saveToDisk();
+    }, delay);
+  }
+
   startAutoPrune(interval = 5 * 60 * 1000) {
     this.stopAutoPrune();
-    this.intervals.prune = setInterval(() => this.pruneExpired(), interval);
+    this.intervals.prune = setInterval(() => {
+      const pruned = this.pruneExpired();
+      if (pruned > 0) {
+        this.log('AUTO_PRUNE', 'system', '', `${pruned} entries pruned`);
+      }
+    }, interval);
     this.flags.autoPrune = true;
     return this;
   }
@@ -428,9 +483,13 @@ class Cache {
     return this;
   }
 
-  startIncrementalSave(interval = 2 * 60 * 1000) {
+  startIncrementalSave(interval = 30 * 1000) {
     this.stopIncrementalSave();
-    this.intervals.save = setInterval(() => this.saveToDisk(), interval);
+    this.intervals.save = setInterval(() => {
+      if (Date.now() - this.lastPersistTime > interval / 2) {
+        this.saveToDisk();
+      }
+    }, interval);
     return this;
   }
 
@@ -456,34 +515,72 @@ class Cache {
           byUser: Array.from(this.indexes.byUser.entries()).map(([k, v]) => [k, Array.from(v)]),
           byMedia: Array.from(this.indexes.byMedia.entries()).map(([k, v]) => [k, Array.from(v)]),
           byTag: Array.from(this.indexes.byTag.entries()).map(([k, v]) => [k, Array.from(v)])
-        }
+        },
+        accessLog: Array.from(this.accessLog.entries())
       };
 
       for (const [scope, store] of Object.entries(this.stores)) {
         payload.data[scope] = Array.from(store.entries());
       }
 
+      let saved = false;
+
+      // Primary save method: Direct file in plugin directory
       if (this.obsidianPlugin?.app?.vault?.adapter) {
-        const adapter = this.obsidianPlugin.app.vault.adapter;
-        const pluginDir = `${this.obsidianPlugin.manifest.dir}`;
-        const cachePath = `${pluginDir}/cache.json`;
-        
-        await adapter.write(cachePath, JSON.stringify(payload));
-        this.log('SAVE_SUCCESS', 'system', cachePath, 'Obsidian file system');
-      } else if (this.obsidianPlugin?.saveData) {
-        const existingData = await this.obsidianPlugin.loadData() || {};
-        existingData.__cache = payload;
-        await this.obsidianPlugin.saveData(existingData);
-        this.log('SAVE_SUCCESS', 'system', 'data.json.__cache', 'Plugin data nested');
+        try {
+          const adapter = this.obsidianPlugin.app.vault.adapter;
+          const pluginDir = `${this.obsidianPlugin.manifest.dir}`;
+          const cachePath = `${pluginDir}/cache.json`;
+          
+          await adapter.write(cachePath, JSON.stringify(payload, null, 2));
+          this.log('SAVE_SUCCESS', 'system', cachePath, 'Direct file write');
+          saved = true;
+        } catch (error) {
+          this.log('SAVE_WARNING', 'system', 'cache.json', `Direct write failed: ${error.message}`);
+        }
       }
 
-      this.state.lastSaved = Date.now();
-      return true;
+      // Backup save method: Temporary file with atomic write
+      if (!saved && this.obsidianPlugin?.app?.vault?.adapter) {
+        try {
+          const adapter = this.obsidianPlugin.app.vault.adapter;
+          const pluginDir = `${this.obsidianPlugin.manifest.dir}`;
+          const tempPath = `${pluginDir}/cache.tmp`;
+          const cachePath = `${pluginDir}/cache.json`;
+          
+          await adapter.write(tempPath, JSON.stringify(payload));
+          
+          // Atomic move (if supported)
+          try {
+            await adapter.remove(cachePath);
+          } catch {}
+          await adapter.rename(tempPath, cachePath);
+          
+          this.log('SAVE_SUCCESS', 'system', cachePath, 'Atomic write');
+          saved = true;
+        } catch (error) {
+          this.log('SAVE_WARNING', 'system', 'cache.tmp', `Atomic write failed: ${error.message}`);
+        }
+      }
+
+      if (saved) {
+        this.state.lastSaved = Date.now();
+        this.lastPersistTime = Date.now();
+        this.criticalSaveMode = false;
+        return true;
+      } else {
+        this.log('SAVE_ERROR', 'system', '', 'All save methods failed');
+        return false;
+      }
     } catch (error) {
       this.log('SAVE_ERROR', 'system', '', error.message);
       return false;
     } finally {
       this.state.saving = false;
+      if (this.saveDebounceTimer) {
+        clearTimeout(this.saveDebounceTimer);
+        this.saveDebounceTimer = null;
+      }
     }
   }
 
@@ -492,8 +589,9 @@ class Cache {
     this.state.loading = true;
 
     try {
-      let data;
+      let data = null;
       
+      // Primary load method: Direct file from plugin directory
       if (this.obsidianPlugin?.app?.vault?.adapter) {
         const adapter = this.obsidianPlugin.app.vault.adapter;
         const pluginDir = `${this.obsidianPlugin.manifest.dir}`;
@@ -502,27 +600,30 @@ class Cache {
         try {
           const raw = await adapter.read(cachePath);
           data = JSON.parse(raw);
-          this.log('LOAD_SUCCESS', 'system', cachePath, 'Obsidian file system');
+          this.log('LOAD_SUCCESS', 'system', cachePath, 'Direct file read');
         } catch (error) {
-          if (!error.message.includes('ENOENT')) {
-            this.log('LOAD_ERROR', 'system', cachePath, error.message);
+          if (!error.message.includes('ENOENT') && !error.message.includes('not exist')) {
+            this.log('LOAD_WARNING', 'system', cachePath, error.message);
           }
-          data = null;
         }
-      } else if (this.obsidianPlugin?.loadData) {
-        const pluginData = await this.obsidianPlugin.loadData() || {};
-        data = pluginData.__cache || null;
-        this.log('LOAD_SUCCESS', 'system', 'data.json.__cache', 'Plugin data nested');
       }
 
       if (!data) {
         this.log('LOAD_EMPTY', 'system', '', 'No cache data found');
+        this.state.lastLoaded = Date.now();
+        return 0;
+      }
+
+      // Version compatibility check
+      if (data.version && this.compareVersions(data.version, '3.0.0') < 0) {
+        this.log('LOAD_WARNING', 'system', '', `Old cache version ${data.version}, clearing`);
         return 0;
       }
 
       let loaded = 0;
       const now = Date.now();
 
+      // Load cache data
       for (const [scope, entries] of Object.entries(data.data || {})) {
         const store = this.stores[scope];
         if (!store || !Array.isArray(entries)) continue;
@@ -539,6 +640,7 @@ class Cache {
         }
       }
 
+      // Load indexes
       if (data.indexes) {
         Object.entries(data.indexes).forEach(([indexType, entries]) => {
           if (this.indexes[indexType] && Array.isArray(entries)) {
@@ -549,7 +651,20 @@ class Cache {
         });
       }
 
+      // Load access log
+      if (data.accessLog && Array.isArray(data.accessLog)) {
+        data.accessLog.forEach(([key, timestamp]) => {
+          this.accessLog.set(key, timestamp);
+        });
+      }
+
+      // Restore stats (partial)
+      if (data.stats) {
+        this.stats.compressions = data.stats.compressions || 0;
+      }
+
       this.state.lastLoaded = Date.now();
+      this.lastPersistTime = Date.now();
       this.log('LOAD_COMPLETE', 'system', '', `${loaded} entries loaded`);
       return loaded;
     } catch (error) {
@@ -558,6 +673,20 @@ class Cache {
     } finally {
       this.state.loading = false;
     }
+  }
+
+  compareVersions(a, b) {
+    const partsA = a.split('.').map(Number);
+    const partsB = b.split('.').map(Number);
+    
+    for (let i = 0; i < Math.max(partsA.length, partsB.length); i++) {
+      const partA = partsA[i] || 0;
+      const partB = partsB[i] || 0;
+      
+      if (partA > partB) return 1;
+      if (partA < partB) return -1;
+    }
+    return 0;
   }
 
   getStats() {
@@ -569,7 +698,9 @@ class Cache {
       hitRate: `${hitRate}%`,
       totalRequests: total,
       cacheSize: Object.values(this.stores).reduce((sum, store) => sum + store.size, 0),
-      indexSize: Object.values(this.indexes).reduce((sum, index) => sum + index.size, 0)
+      indexSize: Object.values(this.indexes).reduce((sum, index) => sum + index.size, 0),
+      lastSaved: this.state.lastSaved ? new Date(this.state.lastSaved).toLocaleString() : 'Never',
+      lastLoaded: this.state.lastLoaded ? new Date(this.state.lastLoaded).toLocaleString() : 'Never'
     };
   }
 
@@ -600,20 +731,34 @@ class Cache {
     return this;
   }
 
-  destroy() {
+  // Enhanced destroy method with guaranteed save
+  async destroy() {
+    // Stop all intervals first
     Object.values(this.intervals).forEach(interval => {
       if (interval) clearInterval(interval);
     });
     
-    this.clear();
+    // Clear timers
+    if (this.saveDebounceTimer) {
+      clearTimeout(this.saveDebounceTimer);
+      this.saveDebounceTimer = null;
+    }
+    
+    // Force final save
+    this.criticalSaveMode = true;
+    await this.saveToDisk();
+    
+    // Clear all data
     this.loadQueue.clear();
     this.saveQueue.clear();
+    this.persistenceQueue.clear();
     
     Object.keys(this.stats).forEach(key => this.stats[key] = 0);
     this.state = { loading: false, saving: false, lastSaved: null, lastLoaded: null };
+    
+    this.log('DESTROY', 'system', '', 'Cache destroyed and saved');
   }
 }
-
 
 class RequestQueue {
   constructor(plugin) {
@@ -1215,17 +1360,6 @@ class ZoroPlugin extends Plugin {
     
     await this.cache.loadFromDisk(); this.cache.startAutoPrune(5 * 60 * 1000);
     
-    this.addCommand({
-  id: 'show-cache-stats',
-  name: 'Show Cache Stats',
-  callback: () => {
-    const s = this.cache.getStats();
-    new Notice(`Cache: ${s.hitRate} | ${s.cacheSize} entries`);
-    console.table(s);
-  }
-});
-
-
     try {
       this.injectCSS();
       console.log('[Zoro] CSS injected.');
@@ -4552,7 +4686,7 @@ class Export {
               status progress score(format: POINT_10_DECIMAL) repeat
               startedAt { year month day } completedAt { year month day }
               media {
-                id type format
+                id idMal type format
                 title { romaji english native }
                 episodes chapters volumes
                 startDate { year month day } endDate { year month day }
@@ -4604,7 +4738,7 @@ class Export {
       'StartedAt', 'CompletedAt', 'MediaID', 'Type', 'Format',
       'TitleRomaji', 'TitleEnglish', 'TitleNative',
       'Episodes', 'Chapters', 'Volumes',
-      'MediaStart', 'MediaEnd', 'AverageScore', 'Genres', 'MainStudio', 'URL'
+      'MediaStart', 'MediaEnd', 'AverageScore', 'Genres', 'MainStudio', 'URL','MAL_ID'
     ];
     rows.push(headers.join(','));
 
@@ -4620,7 +4754,7 @@ class Export {
           this.dateToString(m.startDate), this.dateToString(m.endDate),
           m.averageScore ?? '', this.csvEscape((m.genres || []).join(';')),
           this.csvEscape(m.studios?.nodes?.[0]?.name || ''),
-          this.csvEscape(this.plugin.getAniListUrl(m.id, m.type))
+          this.csvEscape(this.plugin.getAniListUrl(m.id, m.type)), m.idMal ?? ''
         ];
         rows.push(row.join(','));
       }
@@ -4633,6 +4767,77 @@ class Export {
     new Notice(`✅ CSV saved to vault: ${fileName}`, 4000);
     await this.plugin.app.workspace.openLinkText(fileName, '', false);
   }
+  
+  async exportMALListsToCSV() {
+  if (!this.plugin.malAuth.isLoggedIn) {
+    new Notice('❌ Please authenticate with MyAnimeList first.', 4000);
+    return;
+  }
+
+  const username = this.plugin.settings.malUserInfo?.name;
+  if (!username) {
+    new Notice('❌ Could not fetch MAL username.', 4000);
+    return;
+  }
+
+  new Notice('📥 Exporting MyAnimeList…', 3000);
+  const progress = this.createProgressNotice('📊 MAL export 0 %');
+
+  const fetchType = async type => {
+    const headers = this.plugin.malAuth.getAuthHeaders();
+    const apiType = type === 'ANIME' ? 'anime' : 'manga';
+    const url = `https://api.myanimelist.net/v2/users/@me/${apiType}list?fields=list_status,media{title,start_date,end_date,num_episodes,num_chapters,status}&limit=1000&nsfw=true`;
+
+    const res = await this.plugin.requestQueue.add(() =>
+      requestUrl({ url, method: 'GET', headers })
+    );
+      return (res.json?.data || []).map(item => ({
+    ...item,
+    _type: type
+  }));
+    this.updateProgressNotice(progress, `📊 MAL export ${type === 'ANIME' ? 50 : 100} %`);
+    return res.json?.data || [];
+  };
+
+  const [anime, manga] = await Promise.all([
+    fetchType('ANIME'),
+    fetchType('MANGA')
+  ]);
+
+  const rows = [];
+  const headers = [
+    'Type','Status','Progress','Score','Title','Start','End','Episodes','Chapters','Mean','MAL_ID','URL'
+  ];
+  rows.push(headers.join(','));
+
+  [...anime, ...manga].forEach(item => {
+    const m = item.node;
+    const s = item.list_status;
+    const type = item._type;
+    rows.push([
+      type,
+      s.status,
+      s.num_episodes_watched || s.num_chapters_read || 0,
+      s.score || '',
+      this.csvEscape(m.title),
+      this.dateToString(s.start_date),
+      this.dateToString(s.finish_date),
+      m.num_episodes || '',
+      m.num_chapters || '',
+      m.mean || '',
+      m.id,
+      this.csvEscape(`https://myanimelist.net/${type.toLowerCase()}/${m.id}`)
+    ].join(','));
+  });
+
+  const csv = rows.join('\n');
+  const fileName = `MAL_${username}_${new Date().toISOString().slice(0, 10)}.csv`;
+  await this.plugin.app.vault.create(fileName, csv);
+  new Notice(`✅ MAL CSV saved: ${fileName}`, 4000);
+  await this.plugin.app.workspace.openLinkText(fileName, '', false);
+}
+
+
 
   dateToString(dateObj) {
     if (!dateObj || !dateObj.year) return '';
@@ -4802,17 +5007,18 @@ class ZoroSettingTab extends PluginSettingTab {
     };
 
     const Account = section('👤 Account', true);
-    const Guide = section('🧭 Guide');
+    const Setup = section('🧭 Setup');
     const Display = section('📺 Display');
     const Theme = section('🌌 Theme');
     const More = section('✨  More');
     const Data = section('📤 Data');
-    const Exp = section('🚧 Experimental');
+    const Cache = section('🔁 Cache');
+    const Exp = section('🚧 Upcoming');
     const About = section('ℹ️ About');
 
     new Setting(Account)
       .setName('🆔 Public profile')
-      .setDesc("Lets you access AniList public profile and stats — that's it (No Authentication required).")
+      .setDesc("View your AniList profile and stats — no login needed.")
       .addText(text => text
         .setPlaceholder('AniList username')
         .setValue(this.plugin.settings.defaultUsername)
@@ -4832,6 +5038,26 @@ class ZoroSettingTab extends PluginSettingTab {
         await this.handleAuthButtonClick();
       });
     });
+    
+    new Setting(Setup)
+      .setName('🗝️ Authentication ?')
+      .setDesc('Takes less than a minute—no typing, just copy and paste.')
+      .addButton(button => button
+        .setButtonText('Guide')
+        .onClick(() => {
+          window.open('https://github.com/zara-kasi/zoro/blob/main/Docs/anilist-auth-setup.md', '_blank');
+        }));
+
+    new Setting(Setup)
+      .setName('⚡ Sample Folders')
+      .setDesc('(Recommended)')
+      .addButton(button =>
+        button
+          .setButtonText('Create')
+          .onClick(async () => {
+            await this.plugin.sample.createSampleFolders();
+          })
+      );
 
     new Setting(Display)
       .setName('🧊 Layout')
@@ -4934,7 +5160,7 @@ class ZoroSettingTab extends PluginSettingTab {
       .setName('🧾 Export your data')
       .setDesc("Everything you've watched, rated, and maybe ghosted — neatly exported into a CSV.")
       .addButton(btn => btn
-        .setButtonText('Export')
+        .setButtonText('AniList')
         .setClass('mod-cta')
         .onClick(async () => {
           try {
@@ -4946,20 +5172,31 @@ class ZoroSettingTab extends PluginSettingTab {
       );
       
       new Setting(Data)
-  .setName('🧹 Clear Cache')
-  .setDesc('Delete all cached data (user, media, search results).')
   .addButton(btn => btn
-    .setButtonText('Clear Cache')
-    .setWarning()
+    .setButtonText('MAL')
+    .setClass('mod-cta')
     .onClick(async () => {
-      if (confirm('⚠️ This will delete ALL cached data. Continue?')) {
-        const cleared = this.plugin.cache.clear();
-        new Notice(`✅ Cache cleared (${cleared} entries)`, 3000);
+      try {
+        await this.plugin.export.exportMALListsToCSV();
+      } catch (err) {
+        new Notice(`❌ MAL export failed: ${err.message}`, 6000);
       }
     })
   );
-
-
+  
+  new Setting(Data)
+      .setName('️📚 Data Migration')
+      .setDesc('Instructions to export from MAL and import into AniList (and vice versa).')
+      .addButton(button =>
+        button
+          .setClass('mod-cta')
+          .setButtonText('Open')
+          .onClick(() => {
+            window.open('https://github.com/zara-kasi/zoro/blob/62ce085c71b45c29c0dc61a061c8dedc1d7a7189/Docs/data.md', '_blank');
+          })
+      );
+  
+      
     new Setting(Theme)
   .setName('🎨 Apply')
   .setDesc('Choose from available themes')
@@ -5019,30 +5256,40 @@ new Setting(Theme)
       dropdown.setValue('');
     });
   });
-  
-  new Setting(Guide)
-      .setName('🗝️ Need a Client ID?')
-      .setDesc('Takes less than a minute—no typing, just copy and paste.')
-      .addButton(button => button
-        .setButtonText('Setup Guide')
-        .onClick(() => {
-          window.open('https://github.com/zara-kasi/zoro/blob/main/Docs/anilist-auth-setup.md', '_blank');
-        }));
-
-    new Setting(Guide)
-      .setName('⚡ Sample Folders')
-      .setDesc('(Recommended)')
-      .addButton(button =>
-        button
-          .setButtonText('Create Sample Folders')
-          .onClick(async () => {
-            await this.plugin.sample.createSampleFolders();
-          })
+      
+      new Setting(Cache)
+  .setName('📊 Cache Stats')
+  .setDesc('Show live cache usage and hit-rate in a pop-up.')
+  .addButton(btn => btn
+    .setButtonText('Show Stats')
+    .onClick(() => {
+      const s = this.plugin.cache.getStats();
+      new Notice(
+        `Cache: ${s.hitRate} | ${s.cacheSize} entries | Hits ${s.hits} | Misses ${s.misses}`,
+        8000
       );
+      console.table(s);
+    })
+  );
+
+      new Setting(Cache)
+  .setName('🧹 Clear Cache')
+  .setDesc('Delete all cached data (user, media, search results).')
+  .addButton(btn => btn
+    .setButtonText('Clear Cache')
+    .setWarning()
+    .onClick(async () => {
+      if (confirm('⚠️ This will delete ALL cached data. Continue?')) {
+        const cleared = this.plugin.cache.clear();
+        new Notice(`✅ Cache cleared (${cleared} entries)`, 3000);
+      }
+    })
+  );
+
 
     const malAuthSetting = new Setting(Exp)
-      .setName('🔓 MyAnimeList')
-      .setDesc('Authenticate with MyAnimeList to edit and view your MAL entries');
+      .setName('🗾 MyAnimeList')
+      .setDesc('Lets you edit and view your MAL entries.');
 
     malAuthSetting.addButton(btn => {
       this.malAuthButton = btn;
@@ -5128,10 +5375,10 @@ new Setting(Theme)
     if (!this.malAuthButton) return;
     const { settings } = this.plugin;
     if (!settings.malClientId) {
-      this.malAuthButton.setButtonText('Enter MAL Client ID');
+      this.malAuthButton.setButtonText('Enter Client ID');
       this.malAuthButton.removeCta();
     } else if (!settings.malClientSecret) {
-      this.malAuthButton.setButtonText('Enter MAL Client Secret');
+      this.malAuthButton.setButtonText('Enter Client Secret');
       this.malAuthButton.removeCta();
     } else if (!settings.malAccessToken) {
       this.malAuthButton.setButtonText('Authenticate Now');

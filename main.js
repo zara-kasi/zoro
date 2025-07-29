@@ -2833,6 +2833,14 @@ card.dataset.mediaId = media.id;
     }
 
     card.appendChild(info);
+    
+
+const heart = document.createElement('span');
+heart.className = 'zoro-heart';
+if (!media.isFavourite) heart.style.display = 'none';
+card.appendChild(heart);
+
+
     return card;
   }
 
@@ -4987,7 +4995,8 @@ favContainer.appendChild(elements.favoriteBtn);
       }
       
       entry.media.isFavourite = isFav;
-      
+      document.querySelectorAll(`[data-media-id="${entry.media.id}"] .zoro-heart`)
+  .forEach(h => h.style.display = entry.media.isFavourite ? '' : 'none');
       this.invalidateCache(entry);
       this.updateAllFavoriteButtons(entry);
       
@@ -5034,6 +5043,7 @@ favContainer.appendChild(elements.favoriteBtn);
       this.showModalError(modalElement.querySelector('.zoro-edit-form'), `Remove failed: ${e.message}`);
       removeBtn.disabled = false;
       removeBtn.textContent = '🗑️';
+
     }
   }
 

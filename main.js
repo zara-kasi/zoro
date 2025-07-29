@@ -1701,9 +1701,16 @@ class Processor {
         skeleton = this.plugin.render.createStatsSkeleton();
       } else if (config.type === 'single') {
         skeleton = this.plugin.render.createListSkeleton(1);
+      }  else if (config.type === 'trending') {
+  const trending = new Trending(this.plugin);
+  await trending.renderTrendingBlock(el, config);
+  return;
+
+
       } else {
         skeleton = this.plugin.render.createListSkeleton();
       }
+      
       
       el.empty();
       el.appendChild(skeleton);
@@ -1752,6 +1759,8 @@ class Processor {
         () => this.processZoroCodeBlock(source, el, ctx)
       );
     }
+    
+    
   }
 
   async processZoroSearchCodeBlock(source, el, ctx) {
@@ -1864,6 +1873,8 @@ class Processor {
 
   // Respect explicit values; only fall back if missing
   if (!config.type) config.type = 'list';
+  if (config.type === 'trending') config.type = 'trending';   // do NOT map to 'search'
+
   if (!config.listType && config.type === 'list') config.listType = 'CURRENT';
   if (!config.mediaType) config.mediaType = 'ANIME';
   if (!config.layout) config.layout = this.plugin.settings.defaultLayout || 'card';
@@ -3444,6 +3455,44 @@ class MoreDetailsPanel {
   
   
 }
+
+class Trending {
+  constructor(plugin) { this.plugin = plugin; }
+
+  async renderTrendingBlock(el, config) {
+    el.empty();
+    el.appendChild(this.plugin.render.createListSkeleton(10));
+
+    try {
+      const type = (config.mediaType || 'ANIME').toLowerCase();
+      const url = `https://api.jikan.moe/v4/top/${type}?filter=airing&limit=20`;
+      const resp = await this.plugin.requestQueue.add(() => fetch(url).then(r => r.json()));
+      const unique = [];
+      const seen = new Set();
+      (resp.data || []).forEach(item => {
+        if (!seen.has(item.mal_id)) {
+          seen.add(item.mal_id);
+          unique.push(item);
+        }
+      });
+      const top20 = unique.slice(0, 20).map(item => ({
+        id: item.mal_id,
+        title: { romaji: item.title || '', english: item.title_english, native: item.title_japanese },
+        coverImage: { large: item.images?.jpg?.large_image_url },
+        format: item.type,
+        averageScore: item.score ? Math.round(item.score * 10) : null,
+        genres: item.genres?.map(g => g.name) || [],
+        episodes: item.episodes,
+        chapters: type === 'manga' ? item.chapters : undefined
+      }));
+      el.empty();
+      this.plugin.render.renderSearchResults(el, top20, { layout: config.layout || 'card', mediaType: config.mediaType || 'ANIME' });
+    } catch (err) {
+      this.plugin.renderError(el, err.message, 'Trending');
+    }
+  }
+}
+
 
 class Authentication {
   constructor(plugin) {
@@ -5416,7 +5465,8 @@ class Export {
         const folders = [
             {
                 name: 'Anime Dashboard',
-                files: ['Watching.md', 'Planning.md', 'Repeating.md', 'On Hold.md', 'Completed.md', 'Dropped.md', 'Stats.md'],
+                files: ['Watching.md', 'Planning.md', 'Repeating.md', 'On Hold.md', 'Completed.md', 'Dropped.md',
+                'Trending.md','Stats.md'],
                 firstFile: 'Watching.md'
             },
             {
@@ -5433,7 +5483,7 @@ class Export {
                 continue;
             }
 
-            const baseUrl = 'https://raw.githubusercontent.com/zara-kasi/zoro/be78f10b1abdef4e929b89480f4cd368b0338204/Template/' + 
+            const baseUrl = 'https://raw.githubusercontent.com/zara-kasi/zoro/main/Template/' + 
                            encodeURIComponent(folder.name) + '/';
 
             // Create the main folder

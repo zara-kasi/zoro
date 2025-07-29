@@ -16,6 +16,12 @@ const DEFAULT_SETTINGS = {
   theme: '', 
   hideUrlsInTitles: true,
   forceScoreFormat: true,
+  showAvatar: true,
+  showFavorites: true,
+  showBreakdowns: true,
+  showTimeStats: true,
+  statsLayout: 'enhanced',
+  statsTheme: 'auto',
   clientId: '',
   clientSecret: '',
   redirectUri: 'https://anilist.co/api/v2/oauth/pin',
@@ -890,7 +896,7 @@ class Api {
       }
       
       if (config.type === 'stats') {
-        query = this.getUserStatsQuery();
+        query = this.getUserStatsQuery({    mediaType: config.mediaType || 'ANIME',    layout: config.layout || 'card'  });
         variables = { username: config.username };
       } else if (config.type === 'single') {
         query = this.getSingleMediaQuery();
@@ -1192,51 +1198,197 @@ class Api {
     `;
   }
 
-  getUserStatsQuery({ mediaType = 'ANIME', layout = 'card', useViewer = false } = {}) {
-    const typeKey = mediaType.toLowerCase();
+  // Enhanced API method with extended data fetching capabilities
+getUserStatsQuery({ 
+  mediaType = 'ANIME', 
+  layout = 'enhanced', 
+  useViewer = false,
+  includeGenres = true,
+  includeStatus = true,
+  includeHistory = false // Future: for time-series data
+} = {}) {
+  const typeKey = mediaType.toLowerCase();
 
-    const statFields = {
-      compact: `
+  // Enhanced stat fields with better categorization
+  const statFields = {
+    minimal: `
+      count
+      meanScore
+    `,
+    standard: `
+      count
+      meanScore
+      standardDeviation
+      episodesWatched
+      chaptersRead
+      minutesWatched
+      volumesRead
+    `,
+    enhanced: `
+      count
+      meanScore
+      standardDeviation
+      episodesWatched
+      minutesWatched
+      chaptersRead
+      volumesRead
+      scores {
+        score
+        count
+      }
+      lengths {
+        length
+        count
+      }
+      releaseYears {
+        releaseYear
+        count
+      }
+      startYears {
+        startYear
+        count
+      }
+      formats {
+        format
+        count
+      }
+      statuses {
+        status
+        count
+      }
+    `,
+    complete: `
+      count
+      meanScore
+      standardDeviation
+      episodesWatched
+      minutesWatched
+      chaptersRead
+      volumesRead
+      scores {
+        score
+        count
+      }
+      lengths {
+        length
+        count
+      }
+      releaseYears {
+        releaseYear
+        count
+      }
+      startYears {
+        startYear
+        count
+      }
+      formats {
+        format
+        count
+      }
+      statuses {
+        status
+        count
+      }
+      genres {
+        genre
         count
         meanScore
-      `,
-      card: `
-        count
-        meanScore
-        standardDeviation
-      `,
-      full: `
-        count
-        meanScore
-        standardDeviation
-        episodesWatched
         minutesWatched
-        chaptersRead
-        volumesRead
-      `
-    };
-
-    const selectedFields = statFields[layout] || statFields.card;
-    const viewerPrefix = useViewer ? 'Viewer' : `User(name: $username)`;
-
-    return `
-      query ($username: String) {
-        ${viewerPrefix} {
+      }
+      tags {
+        tag
+        count
+        meanScore
+        minutesWatched
+      }
+      staff {
+        staff {
+          id
+          name {
+            full
+          }
+        }
+        count
+        meanScore
+      }
+      studios {
+        studio {
           id
           name
-          avatar {
-            large
-            medium
-          }
-          statistics {
-            ${typeKey} {
-              ${selectedFields}
+        }
+        count
+        meanScore
+      }
+    `
+  };
+
+  const selectedFields = statFields[layout] || statFields.enhanced;
+  const viewerPrefix = useViewer ? 'Viewer' : `User(name: $username)`;
+
+  // Build the query dynamically based on options
+  let queryParts = [
+    `id`,
+    `name`,
+    `avatar {
+      large
+      medium
+    }`,
+    `statistics {
+      ${typeKey} {
+        ${selectedFields}
+      }
+    }`
+  ];
+
+  // Add user profile data for enhanced context
+  if (layout === 'enhanced' || layout === 'complete') {
+    queryParts.push(`
+      options {
+        displayAdultContent
+      }
+      mediaListOptions {
+        scoreFormat
+        rowOrder
+      }
+      favourites {
+        anime {
+          nodes {
+            id
+            title {
+              romaji
+              english
             }
+            coverImage {
+              medium
+            }
+            meanScore
+          }
+        }
+        manga {
+          nodes {
+            id
+            title {
+              romaji
+              english
+            }
+            coverImage {
+              medium
+            }
+            meanScore
           }
         }
       }
-    `;
+    `);
   }
+
+  return `
+    query ($username: String) {
+      ${viewerPrefix} {
+        ${queryParts.join('\n        ')}
+      }
+    }
+  `;
+}
 
   getSearchMediaQuery(layout = 'card') {
     const mediaFields = {
@@ -1427,6 +1579,8 @@ class ZoroPlugin extends Plugin {
       await this.saveData(this.settings);
     }
   }
+  
+  
 
   addGlobalListener(el, type, fn) {
     el.addEventListener(type, fn);
@@ -1452,6 +1606,17 @@ class ZoroPlugin extends Plugin {
     () => {
     }
   );
+}
+
+  getStatsConfig() {
+  return {
+    showAvatar: this.settings.showAvatar ?? true,
+    showFavorites: this.settings.showFavorites ?? true,
+    showBreakdowns: this.settings.showBreakdowns ?? true,
+    showTimeStats: this.settings.showTimeStats ?? true,
+    layout: this.settings.statsLayout ?? 'enhanced', // minimal, standard, enhanced
+    theme: this.settings.statsTheme ?? 'auto' // auto, light, dark
+  };
 }
 
   injectCSS() {
@@ -1673,32 +1838,39 @@ class Processor {
   }
 
   parseCodeBlockConfig(source) {
-    const config = {};
-    const lines = source.split('\n').filter(line => line.trim());
-    
-    for (const line of lines) {
-      const [key, value] = line.split(':').map(s => s.trim());
-      if (key && value) {
-        config[key] = value;
-      }
-    }
-    
-    if (!config.username) {
-      if (this.plugin.settings.defaultUsername) {
-        config.username = this.plugin.settings.defaultUsername;
-      } else if (this.plugin.settings.accessToken) {
-        config.useAuthenticatedUser = true;
-      } else {
-        throw new Error('Username is required. Please set a default username in plugin settings, authenticate, or specify one in the code block.');
-      }
-    }
-    
-    config.listType = config.listType || 'CURRENT';
-    config.layout = config.layout || this.plugin.settings.defaultLayout;
-    config.mediaType = config.mediaType || 'ANIME';
-    
-    return config;
+  const config = {};
+  const lines = source.split('\n').filter(l => l.trim());
+
+  for (let line of lines) {
+    line = line.trim();
+    if (!line || line.startsWith('#')) continue;          // ignore blank / comment lines
+    const colon = line.indexOf(':');
+    if (colon === -1) continue;                            // no key–value separator
+    const key   = line.slice(0, colon).trim();
+    const value = line.slice(colon + 1).trim();
+    if (key && value) config[key] = value;
   }
+
+  // Only apply defaults when nothing was supplied
+  if (!config.username) {
+    if (this.plugin.settings.defaultUsername) {
+      config.username = this.plugin.settings.defaultUsername;
+    } else if (this.plugin.settings.accessToken) {
+      config.useAuthenticatedUser = true;
+    } else {
+      throw new Error('Username is required. Please set a default username in plugin settings, authenticate, or specify one in the code block.');
+    }
+  }
+
+  // Respect explicit values; only fall back if missing
+  if (!config.type) config.type = 'list';
+  if (!config.listType && config.type === 'list') config.listType = 'CURRENT';
+  if (!config.mediaType) config.mediaType = 'ANIME';
+  if (!config.layout) config.layout = this.plugin.settings.defaultLayout || 'card';
+
+  return config;
+}
+
 
   parseSearchCodeBlockConfig(source) {
     const config = { type: 'search' };
@@ -1942,27 +2114,393 @@ class Render {
     }
   }
 
-  renderUserStats(el, user) {
-    el.empty(); el.className = 'zoro-container';
-    if (!user?.statistics) { el.createDiv({ cls: 'zoro-error-box', text: 'Stats unavailable' }); return; }
+  // Enhanced render method with modular, theme-aware design
+renderUserStats(el, user, options = {}) {
+  const {
+    showAvatar = true,
+    showFavorites = true,
+    showBreakdowns = true,
+    showTimeStats = true,
+    layout = 'enhanced',
+    theme = 'auto' // auto, light, dark
+  } = options;
 
-    const container = el.createDiv({ cls: 'zoro-user-stats' });
-    container.createDiv({ cls: 'zoro-user-header' }, div => {
-      div.createEl('img', { cls: 'zoro-user-avatar', attr: { src: user.avatar?.medium || '', alt: user.name } });
-      div.createEl('h3', { text: user.name });
+  el.empty();
+  el.className = `zoro-container zoro-stats-container zoro-stats-${layout}`;
+  
+  // Add theme class
+  if (theme !== 'auto') {
+    el.classList.add(`zoro-theme-${theme}`);
+  }
+
+  if (!user) {
+    this._renderError(el, 'No user data available');
+    return;
+  }
+
+  if (!user.statistics) {
+    this._renderError(el, 'Statistics unavailable for this user');
+    return;
+  }
+
+  const frag = document.createDocumentFragment();
+
+  // Render header section
+  if (showAvatar) {
+    this._renderHeader(frag, user);
+  }
+
+  // Render main stats sections
+  this._renderMainStats(frag, user, { showTimeStats, showBreakdowns });
+
+  // Render additional insights
+  if (showBreakdowns && layout !== 'minimal') {
+    this._renderStatsBreakdowns(frag, user);
+  }
+
+  // Render favorites section
+  if (showFavorites && user.favourites && layout === 'enhanced') {
+    this._renderFavorites(frag, user.favourites);
+  }
+
+  el.appendChild(frag);
+
+  // Trigger entrance animation
+  requestAnimationFrame(() => {
+    el.classList.add('zoro-stats-loaded');
+  });
+}
+
+// Private helper methods for modular rendering
+
+_renderError(el, message) {
+  const errorEl = el.createDiv({ 
+    cls: 'zoro-error-box',
+    text: message 
+  });
+  errorEl.createEl('small', { 
+    text: 'Check your username and try again',
+    cls: 'zoro-error-hint'
+  });
+}
+
+_renderHeader(frag, user) {
+  const header = frag.createDiv({ cls: 'zoro-stats-header' });
+  
+  if (user.avatar?.medium) {
+    const avatarContainer = header.createDiv({ cls: 'zoro-avatar-container' });
+    const avatar = avatarContainer.createEl('img', {
+      cls: 'zoro-stats-avatar',
+      attr: { 
+        src: user.avatar.medium, 
+        alt: `${user.name}'s avatar`,
+        loading: 'lazy' 
+      },
     });
-
-    const grid = container.createDiv({ cls: 'zoro-stats-grid' });
-    ['anime', 'manga'].forEach(type => {
-      const stats = user.statistics[type];
-      if (!stats) return;
-      const sec = grid.createDiv({ cls: 'zoro-stat-section' });
-      sec.createEl('h4', { text: type.charAt(0).toUpperCase() + type.slice(1) });
-      ['count', 'meanScore', 'episodesWatched', 'chaptersRead'].forEach(k => {
-        if (stats[k] != null) sec.createDiv({ cls: 'zoro-stat-item', text: `${k}: ${stats[k].toLocaleString?.() ?? stats[k]}` });
-      });
+    
+    // Add loading placeholder
+    avatar.addEventListener('load', () => {
+      avatarContainer.classList.add('zoro-avatar-loaded');
     });
   }
+
+  const userInfo = header.createDiv({ cls: 'zoro-user-info' });
+  const nameLink = userInfo.createEl('a', {
+    cls: 'zoro-stats-username external-link',
+    text: user.name,
+    href: `https://anilist.co/user/${user.name}`,
+    target: '_blank',
+  });
+  
+  const profileHint = userInfo.createEl('span', {
+    cls: 'zoro-profile-hint',
+    text: 'View full profile'
+  });
+}
+
+_renderMainStats(frag, user, options) {
+  const { showTimeStats, showBreakdowns } = options;
+  const statsSection = frag.createDiv({ cls: 'zoro-stats-section zoro-main-stats' });
+  
+  const grid = statsSection.createDiv({ cls: 'zoro-stats-grid' });
+
+  ['anime', 'manga'].forEach(type => {
+    const stats = user.statistics[type];
+    if (!stats || stats.count === 0) return;
+
+    const card = this._createStatsCard(grid, type, stats, { showTimeStats, showBreakdowns });
+  });
+}
+
+_createStatsCard(container, type, stats, options) {
+  const { showTimeStats, showBreakdowns } = options;
+  const card = container.createDiv({ 
+    cls: 'zoro-stats-card zoro-stats-card-main',
+    attr: { 'data-type': type }
+  });
+
+  // Card header
+  const header = card.createDiv({ cls: 'zoro-card-header' });
+  header.createEl('h3', { 
+    text: type.toUpperCase(), 
+    cls: 'zoro-stats-type-title' 
+  });
+
+  // Primary stats
+  const primaryStats = card.createDiv({ cls: 'zoro-primary-stats' });
+  this._renderPrimaryStat(primaryStats, 'Total', stats.count, 'zoro-stat-count');
+  
+  if (stats.meanScore > 0) {
+    this._renderPrimaryStat(primaryStats, 'Mean Score', 
+      `${stats.meanScore.toFixed(1)}/10`, 'zoro-stat-score');
+  }
+
+  // Secondary stats grid
+  const secondaryGrid = card.createDiv({ cls: 'zoro-secondary-stats' });
+  
+  const secondaryStats = this._getSecondaryStats(type, stats, showTimeStats);
+  secondaryStats.forEach(({ label, value, className }) => {
+    if (value != null && value !== 0) {
+      this._renderSecondaryStat(secondaryGrid, label, value, className);
+    }
+  });
+
+  return card;
+}
+
+_getSecondaryStats(type, stats, showTimeStats) {
+  const baseStats = [
+    { 
+      label: 'Std Deviation', 
+      value: stats.standardDeviation ? stats.standardDeviation.toFixed(2) : null,
+      className: 'zoro-stat-deviation'
+    }
+  ];
+
+  if (type === 'anime') {
+    baseStats.push(
+      { 
+        label: 'Episodes', 
+        value: stats.episodesWatched,
+        className: 'zoro-stat-episodes'
+      }
+    );
+    
+    if (showTimeStats && stats.minutesWatched) {
+      const hours = Math.floor(stats.minutesWatched / 60);
+      const days = Math.floor(hours / 24);
+      let timeValue = `${hours.toLocaleString()}h`;
+      
+      if (days > 0) {
+        timeValue = `${days.toLocaleString()}d ${(hours % 24)}h`;
+      }
+      
+      baseStats.push({
+        label: 'Time Watched',
+        value: timeValue,
+        className: 'zoro-stat-time'
+      });
+    }
+  } else {
+    baseStats.push(
+      { 
+        label: 'Chapters', 
+        value: stats.chaptersRead,
+        className: 'zoro-stat-chapters'
+      },
+      { 
+        label: 'Volumes', 
+        value: stats.volumesRead,
+        className: 'zoro-stat-volumes'
+      }
+    );
+  }
+
+  return baseStats.filter(stat => stat.value != null);
+}
+
+_renderPrimaryStat(container, label, value, className = '') {
+  const statEl = container.createDiv({ cls: `zoro-primary-stat ${className}` });
+  statEl.createEl('div', { cls: 'zoro-stat-value-primary', text: value });
+  statEl.createEl('div', { cls: 'zoro-stat-label-primary', text: label });
+}
+
+_renderSecondaryStat(container, label, value, className = '') {
+  const statEl = container.createDiv({ cls: `zoro-secondary-stat ${className}` });
+  statEl.createEl('span', { cls: 'zoro-stat-label-secondary', text: label });
+  statEl.createEl('span', { cls: 'zoro-stat-value-secondary', text: value.toLocaleString?.() ?? value });
+}
+
+_renderStatsBreakdowns(frag, user) {
+  const hasBreakdowns = this._hasBreakdownData(user);
+  if (!hasBreakdowns) return;
+
+  const breakdownSection = frag.createDiv({ cls: 'zoro-stats-section zoro-breakdowns' });
+  breakdownSection.createEl('h3', { 
+    text: 'Detailed Breakdowns', 
+    cls: 'zoro-section-title' 
+  });
+
+  const breakdownGrid = breakdownSection.createDiv({ cls: 'zoro-breakdown-grid' });
+
+  ['anime', 'manga'].forEach(type => {
+    const stats = user.statistics[type];
+    if (!stats) return;
+
+    this._renderTypeBreakdowns(breakdownGrid, type, stats);
+  });
+}
+
+_hasBreakdownData(user) {
+  return ['anime', 'manga'].some(type => {
+    const stats = user.statistics[type];
+    return stats && (stats.statuses || stats.scores || stats.genres || stats.formats);
+  });
+}
+
+_renderTypeBreakdowns(container, type, stats) {
+  if (!stats || stats.count === 0) return;
+
+  const typeSection = container.createDiv({ 
+    cls: 'zoro-breakdown-type',
+    attr: { 'data-type': type }
+  });
+
+  // Status breakdown
+  if (stats.statuses?.length) {
+    this._renderBreakdownChart(typeSection, 'Status Distribution', stats.statuses, 'status');
+  }
+
+  // Score distribution
+  if (stats.scores?.length) {
+    const validScores = stats.scores.filter(s => s.score > 0);
+    if (validScores.length) {
+      this._renderBreakdownChart(typeSection, 'Score Distribution', validScores, 'score');
+    }
+  }
+
+  // Format breakdown
+  if (stats.formats?.length) {
+    this._renderBreakdownChart(typeSection, 'Format Distribution', stats.formats, 'format');
+  }
+
+  // Top genres (limit to top 5)
+  if (stats.genres?.length) {
+    const topGenres = stats.genres
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5);
+    this._renderBreakdownChart(typeSection, 'Top Genres', topGenres, 'genre');
+  }
+}
+
+_renderBreakdownChart(container, title, data, keyField) {
+  const chartContainer = container.createDiv({ cls: 'zoro-breakdown-chart' });
+  chartContainer.createEl('h4', { text: title, cls: 'zoro-breakdown-title' });
+
+  const chartEl = chartContainer.createDiv({ cls: 'zoro-chart-container' });
+  
+  // Simple bar chart representation (preparing for future chart library)
+  const maxCount = Math.max(...data.map(item => item.count));
+  
+  data.forEach(item => {
+    const barContainer = chartEl.createDiv({ cls: 'zoro-chart-bar-container' });
+    const barLabel = barContainer.createDiv({ 
+      cls: 'zoro-chart-label',
+      text: item[keyField] || item.status || item.genre || item.format
+    });
+    
+    const barWrapper = barContainer.createDiv({ cls: 'zoro-chart-bar-wrapper' });
+    const bar = barWrapper.createDiv({ 
+      cls: 'zoro-chart-bar',
+      attr: { 'data-type': keyField }
+    });
+    const barValue = barWrapper.createDiv({ 
+      cls: 'zoro-chart-value',
+      text: item.count
+    });
+    
+    // Set bar width as percentage
+    const percentage = (item.count / maxCount) * 100;
+    bar.style.width = `${percentage}%`;
+    
+    // Add delay for staggered animation
+    const index = data.indexOf(item);
+    bar.style.animationDelay = `${index * 0.1}s`;
+  });
+
+  // Add chart metadata for future chart library integration
+  chartEl.setAttribute('data-chart-type', 'horizontal-bar');
+  chartEl.setAttribute('data-chart-data', JSON.stringify(data));
+  chartEl.setAttribute('data-chart-key', keyField);
+}
+
+_renderFavorites(frag, favourites) {
+  const hasAnime = favourites.anime?.nodes?.length > 0;
+  const hasManga = favourites.manga?.nodes?.length > 0;
+  
+  if (!hasAnime && !hasManga) return;
+
+  const favSection = frag.createDiv({ cls: 'zoro-stats-section zoro-favorites' });
+  favSection.createEl('h3', { 
+    text: 'Favorites', 
+    cls: 'zoro-section-title' 
+  });
+
+  const favGrid = favSection.createDiv({ cls: 'zoro-favorites-grid' });
+
+  if (hasAnime) {
+    this._renderFavoriteType(favGrid, 'anime', favourites.anime.nodes.slice(0, 6));
+  }
+  
+  if (hasManga) {
+    this._renderFavoriteType(favGrid, 'manga', favourites.manga.nodes.slice(0, 6));
+  }
+}
+
+_renderFavoriteType(container, type, items) {
+  const typeContainer = container.createDiv({ 
+    cls: 'zoro-favorite-type',
+    attr: { 'data-type': type }
+  });
+  
+  typeContainer.createEl('h4', { 
+    text: `Favorite ${type.charAt(0).toUpperCase() + type.slice(1)}`,
+    cls: 'zoro-favorite-type-title'
+  });
+
+  const itemsGrid = typeContainer.createDiv({ cls: 'zoro-favorite-items' });
+  
+  items.forEach(item => {
+    const itemEl = itemsGrid.createDiv({ cls: 'zoro-favorite-item' });
+    
+    if (item.coverImage?.medium) {
+      const img = itemEl.createEl('img', {
+        cls: 'zoro-favorite-cover',
+        attr: {
+          src: item.coverImage.medium,
+          alt: item.title?.romaji || item.title?.english || 'Cover',
+          loading: 'lazy'
+        }
+      });
+    }
+    
+    const info = itemEl.createDiv({ cls: 'zoro-favorite-info' });
+    const title = item.title?.english || item.title?.romaji || 'Unknown Title';
+    info.createEl('div', { 
+      cls: 'zoro-favorite-title',
+      text: title,
+      attr: { title: title }
+    });
+    
+    if (item.meanScore) {
+      info.createEl('div', { 
+        cls: 'zoro-favorite-score',
+        text: `★ ${item.meanScore/10}`
+      });
+    }
+  });
+}
+
 
   renderMediaListChunked(el, entries, config, chunkSize = 20) {
     el.empty();

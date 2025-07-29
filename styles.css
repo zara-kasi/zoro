@@ -2166,8 +2166,7 @@ The panel will automatically adapt to the user's system theme preference:
 .zoro-loading{display:flex;align-items:center;justify-content:center;gap:var(--zoro-space-2);padding:var(--zoro-space-8);color:var(--zoro-text-secondary)}
 .zoro-loading::before{content:'';width:20px;height:20px;border:2px solid var(--zoro-border);border-top-color:var(--zoro-primary);border-radius:50%;animation:spin 1s linear infinite}
 
-.zoro-stats-header{display:flex;align-items:center;gap:var(--zoro-space-4);margin-bottom:var(--zoro-space-6);padding-bottom:var(--zoro-space-4);border-bottom:2px solid var(--zoro-border);position:relative}
-.zoro-stats-header::after{content:'';position:absolute;bottom:-2px;left:0;width:60px;height:2px;background:var(--zoro-primary);border-radius:1px}
+.zoro-stats-header{display:flex;align-items:flex-start;gap:var(--zoro-space-4);margin-bottom:var(--zoro-space-6);padding-bottom:var(--zoro-space-4);border-bottom:2px solid var(--zoro-border);position:relative}
 
 .zoro-avatar-container{position:relative;flex-shrink:0}
 .zoro-stats-avatar{width:64px;height:64px;border-radius:50%;border:3px solid var(--zoro-border);background:var(--zoro-bg-secondary);object-fit:cover;transition:all var(--zoro-duration-normal) ease;opacity:0;transform:scale(.9)}
@@ -2178,10 +2177,8 @@ The panel will automatically adapt to the user's system theme preference:
 .zoro-avatar-loaded .zoro-avatar-container::before{display:none}
 
 .zoro-user-info{display:flex;flex-direction:column;gap:var(--zoro-space-1);min-width:0}
-.zoro-stats-username{font-size:var(--zoro-text-xl);font-weight:600;color:var(--zoro-text-primary);text-decoration:none;transition:color var(--zoro-duration-fast) ease;display:flex;align-items:center;gap:var(--zoro-space-2)}
+.zoro-stats-username{font-size:var(--zoro-text-xl);font-weight:600;color:var(--zoro-text-primary);text-decoration:none;transition:color var(--zoro-duration-fast) ease}
 .zoro-stats-username:hover{color:var(--zoro-primary)}
-.zoro-stats-username::after{content:'↗';font-size:var(--zoro-text-sm);opacity:.6;transition:opacity var(--zoro-duration-fast) ease}
-.zoro-stats-username:hover::after{opacity:1}
 .zoro-profile-hint{font-size:var(--zoro-text-sm);color:var(--zoro-text-secondary);font-weight:500}
 
 .zoro-stats-section{margin-bottom:var(--zoro-space-8)}
@@ -2265,7 +2262,7 @@ The panel will automatically adapt to the user's system theme preference:
 .zoro-favorite-score::before{content:'★';color:#fbbf24}
 
 @keyframes slideInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
-@keyframes fillBar{from{width:0%}to{width:var(--bar-width,100%)}}
+@keyframes fillBar{from{width:0%}to{width:var(--bar-width,0%)}}
 @keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
 @keyframes shimmerBar{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
 @keyframes spin{to{transform:rotate(360deg)}}

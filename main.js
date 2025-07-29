@@ -4236,7 +4236,7 @@ class AuthPinModal extends Modal {
 }
 
 class Theme {
-static THEME_REPO_URL = 'https://api.github.com/repos/zara-kasi/zoro/contents/Theme?ref=v1.0.1(test)';
+static THEME_REPO_URL = 'https://api.github.com/repos/zara-kasi/zoro/contents/Theme?ref=main';
 
   constructor(plugin) {
     this.plugin = plugin;
@@ -4267,7 +4267,7 @@ static THEME_REPO_URL = 'https://api.github.com/repos/zara-kasi/zoro/contents/Th
 
 
    async downloadTheme(name) {
-  const rawUrl = `https://raw.githubusercontent.com/zara-kasi/zoro/v1.0.1(test)/Theme/${encodeURIComponent(name)}.css`;
+  const rawUrl = `https://raw.githubusercontent.com/zara-kasi/zoro/main/Theme/${encodeURIComponent(name)}.css`;
   const localPath = `${this.plugin.manifest.dir}/themes/${name}.css`;
   
   try {
@@ -5410,55 +5410,8 @@ class Export {
         this.plugin = plugin;
     }
 
-    async createSampleNotes() {
-        const vault = this.plugin.app.vault;
-        const files = [
-            [
-                'Anime Dashboard.md',
-                'https://raw.githubusercontent.com/zara-kasi/zoro/f761efb598f50adf27cd0e5f966b502c24e162cf/Template/Anime%20Dashboard.md'
-            ],
-            [
-                'Manga Dashboard.md',
-                'https://raw.githubusercontent.com/zara-kasi/zoro/f761efb598f50adf27cd0e5f966b502c24e162cf/Template/Manga%20Dashboard.md'
-            ]
-        ];
-
-        let createdCount = 0;
-
-        for (const [fileName, fileUrl] of files) {
-            // Check if file already exists
-            if (vault.getAbstractFileByPath(fileName)) {
-                new Notice('⏭️ ' + fileName + ' already exists');
-                continue;
-            }
-
-            try {
-                // Fetch file content from remote URL
-                const response = await fetch(fileUrl);
-                
-                if (!response.ok) {
-                    throw new Error('HTTP ' + response.status);
-                }
-
-                const content = await response.text();
-                
-                // Create the file in vault
-                await vault.create(fileName, content);
-                new Notice('✅ ' + fileName);
-                createdCount++;
-                
-            } catch (error) {
-                new Notice('❌ ' + fileName + ': ' + error.message);
-            }
-        }
-
-        // Open the first file if any files were created
-        if (createdCount > 0) {
-            this.plugin.app.workspace.openLinkText(files[0][0], '', false);
-        }
-    }
-
     async createSampleFolders() {
+      new Notice('Creating…', 3000);
         const vault = this.plugin.app.vault;
         const folders = [
             {

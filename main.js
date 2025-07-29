@@ -2419,9 +2419,9 @@ _renderBreakdownChart(container, title, data, keyField) {
       text: item.count
     });
     
-    // Set bar width as percentage
-    const percentage = (item.count / maxCount) * 100;
-    bar.style.width = `${percentage}%`;
+// Set bar width as CSS variable for animation
+const percentage = (item.count / maxCount) * 100;
+bar.style.setProperty('--bar-width', `${percentage}%`);
     
     // Add delay for staggered animation
     const index = data.indexOf(item);

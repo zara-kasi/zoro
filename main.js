@@ -4885,7 +4885,7 @@ favContainer.appendChild(elements.favoriteBtn);
         mediaType = entry.media.type || (entry.media.episodes ? 'ANIME' : 'MANGA');
       }
       
-      const isAnime = mediaType === 'ANIME';
+     const isAnime = (entry.media.type || mediaType) === 'ANIME';
       
       const mutation = `
         mutation ToggleFav($animeId: Int, $mangaId: Int) {

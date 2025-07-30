@@ -44,46 +44,43 @@ class Cache {
       batchSize = 100
     } = config;
 
-    this.ttlMap = { 
-      userData: 30 * 60 * 1000, 
-      mediaData: 10 * 60 * 1000, 
-      searchResults: 2 * 60 * 1000, 
-      mediaDetails: 60 * 60 * 1000, 
-      malData: 60 * 60 * 1000, 
-      ...ttlMap 
-    };
-    
+    this.ttlMap = { userData: 30 * 60 * 1000, mediaData: 10 * 60 * 1000, searchResults: 2 * 60 * 1000, mediaDetails: 60 * 60 * 1000, malData: 60 * 60 * 1000, ...ttlMap };
     this.stores = { userData: new Map(), mediaData: new Map(), searchResults: new Map() };
     this.indexes = { byUser: new Map(), byMedia: new Map(), byTag: new Map() };
     
-    Object.assign(this, {
-      version: '3.1.0',
-      maxSize,
-      compressionThreshold,
-      batchSize,
-      obsidianPlugin,
-      intervals: { prune: null, refresh: null, save: null },
-      flags: { autoPrune: false, backgroundRefresh: false, debugMode: false },
-      stats: { hits: 0, misses: 0, sets: 0, deletes: 0, evictions: 0, compressions: 0 },
-      state: { loading: false, saving: false, lastSaved: null, lastLoaded: null },
-      accessLog: new Map(),
-      refreshCallbacks: new Map(),
-      loadQueue: new Set(),
-      saveQueue: new Set(),
-      persistenceQueue: new Set(),
-      lastPersistTime: 0,
-      saveDebounceTimer: null,
-      criticalSaveMode: false
-    });
+    this.version = '3.1.0';
+    this.maxSize = maxSize;
+    this.compressionThreshold = compressionThreshold;
+    this.batchSize = batchSize;
+    this.obsidianPlugin = obsidianPlugin;
     
-    if (this.obsidianPlugin) this.initializeCache();
+    this.intervals = { prune: null, refresh: null, save: null };
+    this.flags = { autoPrune: false, backgroundRefresh: false, debugMode: false };
+    this.stats = { hits: 0, misses: 0, sets: 0, deletes: 0, evictions: 0, compressions: 0 };
+    this.state = { loading: false, saving: false, lastSaved: null, lastLoaded: null };
+    
+    this.accessLog = new Map();
+    this.refreshCallbacks = new Map();
+    this.loadQueue = new Set();
+    this.saveQueue = new Set();
+    
+    // Enhanced persistence tracking
+    this.persistenceQueue = new Set();
+    this.lastPersistTime = 0;
+    this.saveDebounceTimer = null;
+    this.criticalSaveMode = false;
+    
+    // Auto-load on initialization if plugin is available
+    if (this.obsidianPlugin) {
+      this.initializeCache();
+    }
   }
 
   async initializeCache() {
     try {
       await this.loadFromDisk();
-      this.startIncrementalSave(30000);
-      this.startAutoPrune(300000);
+      this.startIncrementalSave(30000); // Save every 30 seconds
+      this.startAutoPrune(300000); // Prune every 5 minutes
     } catch (error) {
       this.log('INIT_ERROR', 'system', '', error.message);
     }
@@ -95,7 +92,8 @@ class Cache {
     
     const normalized = {};
     Object.keys(input).sort().forEach(k => {
-      normalized[k] = input[k] ?? '';
+      const val = input[k];
+      normalized[k] = val !== null && val !== undefined ? val : '';
     });
     return JSON.stringify(normalized);
   }
@@ -143,42 +141,54 @@ class Cache {
 
   updateIndexes(key, entry, operation = 'set') {
     try {
-      const { userId, username, mediaId, tags } = JSON.parse(key);
+      const parsed = JSON.parse(key);
+      const { __scope: scope, userId, username, mediaId, tags } = parsed;
       
       if (operation === 'delete') {
         this.removeFromIndexes(key, { userId, username, mediaId, tags });
         return;
       }
 
-      this.addToIndex(this.indexes.byUser, userId || username, key);
-      this.addToIndex(this.indexes.byMedia, mediaId, key);
-      
-      if (Array.isArray(tags)) {
-        tags.forEach(tag => this.addToIndex(this.indexes.byTag, tag, key));
+      if (userId || username) {
+        const userKey = userId || username;
+        if (!this.indexes.byUser.has(userKey)) this.indexes.byUser.set(userKey, new Set());
+        this.indexes.byUser.get(userKey).add(key);
+      }
+
+      if (mediaId) {
+        if (!this.indexes.byMedia.has(mediaId)) this.indexes.byMedia.set(mediaId, new Set());
+        this.indexes.byMedia.get(mediaId).add(key);
+      }
+
+      if (tags && Array.isArray(tags)) {
+        tags.forEach(tag => {
+          if (!this.indexes.byTag.has(tag)) this.indexes.byTag.set(tag, new Set());
+          this.indexes.byTag.get(tag).add(key);
+        });
       }
     } catch {}
   }
 
-  addToIndex(index, indexKey, key) {
-    if (!indexKey) return;
-    if (!index.has(indexKey)) index.set(indexKey, new Set());
-    index.get(indexKey).add(key);
-  }
-
   removeFromIndexes(key, { userId, username, mediaId, tags }) {
-    this.removeFromIndex(this.indexes.byUser, userId || username, key);
-    this.removeFromIndex(this.indexes.byMedia, mediaId, key);
-    
-    if (Array.isArray(tags)) {
-      tags.forEach(tag => this.removeFromIndex(this.indexes.byTag, tag, key));
+    const userKey = userId || username;
+    if (userKey && this.indexes.byUser.has(userKey)) {
+      this.indexes.byUser.get(userKey).delete(key);
+      if (this.indexes.byUser.get(userKey).size === 0) this.indexes.byUser.delete(userKey);
     }
-  }
 
-  removeFromIndex(index, indexKey, key) {
-    if (!indexKey || !index.has(indexKey)) return;
-    const set = index.get(indexKey);
-    set.delete(key);
-    if (set.size === 0) index.delete(indexKey);
+    if (mediaId && this.indexes.byMedia.has(mediaId)) {
+      this.indexes.byMedia.get(mediaId).delete(key);
+      if (this.indexes.byMedia.get(mediaId).size === 0) this.indexes.byMedia.delete(mediaId);
+    }
+
+    if (tags && Array.isArray(tags)) {
+      tags.forEach(tag => {
+        if (this.indexes.byTag.has(tag)) {
+          this.indexes.byTag.get(tag).delete(key);
+          if (this.indexes.byTag.get(tag).size === 0) this.indexes.byTag.delete(tag);
+        }
+      });
+    }
   }
 
   enforceSize(scope) {
@@ -186,28 +196,26 @@ class Cache {
     if (store.size <= this.maxSize) return 0;
 
     const entries = Array.from(store.entries())
-      .map(([key, entry]) => ({ key, lastAccess: this.accessLog.get(key) || 0 }))
-      .sort((a, b) => a.lastAccess - b.lastAccess)
-      .slice(0, store.size - this.maxSize + this.batchSize);
+      .map(([key, entry]) => ({ key, entry, lastAccess: this.accessLog.get(key) || 0 }))
+      .sort((a, b) => a.lastAccess - b.lastAccess);
 
-    entries.forEach(({ key }) => {
+    const toEvict = entries.slice(0, store.size - this.maxSize + this.batchSize);
+    toEvict.forEach(({ key }) => {
       store.delete(key);
       this.updateIndexes(key, null, 'delete');
       this.accessLog.delete(key);
       this.stats.evictions++;
     });
 
+    // Schedule save after eviction
     this.schedulePersistence();
-    return entries.length;
+    return toEvict.length;
   }
 
   get(key, options = {}) {
     const { scope = 'userData', ttl = null, refreshCallback = null } = options;
     const store = this.stores[scope];
-    if (!store) { 
-      this.stats.misses++; 
-      return null; 
-    }
+    if (!store) { this.stats.misses++; return null; }
 
     const cacheKey = typeof key === 'object' ? this.key(key) : key;
     const entry = store.get(cacheKey);
@@ -227,7 +235,7 @@ class Cache {
       this.stats.misses++;
       this.log('EXPIRED', scope, cacheKey);
       this.maybeRefresh(cacheKey, scope, refreshCallback);
-      this.schedulePersistence();
+      this.schedulePersistence(); // Save after expiry cleanup
       return null;
     }
 
@@ -269,6 +277,7 @@ class Cache {
       this.refreshCallbacks.set(`${scope}:${cacheKey}`, refreshCallback);
     }
 
+    // Schedule immediate persistence for new data
     this.schedulePersistence(true);
     return true;
   }
@@ -293,27 +302,56 @@ class Cache {
     return deleted;
   }
 
-  invalidateByIndex(indexType, key) {
-    const index = this.indexes[indexType];
-    const keys = index?.get(key);
+  invalidateByUser(userKey) {
+    const keys = this.indexes.byUser.get(userKey);
     if (!keys) return 0;
 
     let deleted = 0;
     keys.forEach(key => {
-      Object.values(this.stores).forEach(store => {
+      for (const store of Object.values(this.stores)) {
         if (store.delete(key)) deleted++;
-      });
+      }
       this.accessLog.delete(key);
     });
 
-    index.delete(key);
+    this.indexes.byUser.delete(userKey);
     this.schedulePersistence();
     return deleted;
   }
 
-  invalidateByUser(userKey) { return this.invalidateByIndex('byUser', userKey); }
-  invalidateByMedia(mediaId) { return this.invalidateByIndex('byMedia', String(mediaId)); }
-  invalidateByTag(tag) { return this.invalidateByIndex('byTag', tag); }
+  invalidateByMedia(mediaId) {
+    const keys = this.indexes.byMedia.get(String(mediaId));
+    if (!keys) return 0;
+
+    let deleted = 0;
+    keys.forEach(key => {
+      for (const store of Object.values(this.stores)) {
+        if (store.delete(key)) deleted++;
+      }
+      this.accessLog.delete(key);
+    });
+
+    this.indexes.byMedia.delete(String(mediaId));
+    this.schedulePersistence();
+    return deleted;
+  }
+
+  invalidateByTag(tag) {
+    const keys = this.indexes.byTag.get(tag);
+    if (!keys) return 0;
+
+    let deleted = 0;
+    keys.forEach(key => {
+      for (const store of Object.values(this.stores)) {
+        if (store.delete(key)) deleted++;
+      }
+      this.accessLog.delete(key);
+    });
+
+    this.indexes.byTag.delete(tag);
+    this.schedulePersistence();
+    return deleted;
+  }
 
   clear(scope = null) {
     if (scope) {
@@ -325,11 +363,11 @@ class Cache {
       return count;
     }
 
-    const total = Object.values(this.stores).reduce((sum, store) => {
-      const size = store.size;
+    let total = 0;
+    Object.values(this.stores).forEach(store => {
+      total += store.size;
       store.clear();
-      return sum + size;
-    }, 0);
+    });
     
     Object.values(this.indexes).forEach(index => index.clear());
     this.accessLog.clear();
@@ -343,13 +381,14 @@ class Cache {
   pruneExpired(scope = null) {
     const scopes = scope ? [scope] : Object.keys(this.stores);
     let total = 0;
-    const now = Date.now();
 
     scopes.forEach(currentScope => {
       const store = this.stores[currentScope];
       if (!store) return;
 
       const toDelete = [];
+      const now = Date.now();
+
       for (const [key, entry] of store.entries()) {
         const ttl = entry.customTtl ?? this.ttlMap[currentScope];
         if ((now - entry.timestamp) > ttl) {
@@ -366,7 +405,9 @@ class Cache {
       });
     });
 
-    if (total > 0) this.schedulePersistence();
+    if (total > 0) {
+      this.schedulePersistence();
+    }
     return total;
   }
 
@@ -383,10 +424,9 @@ class Cache {
   }
 
   scheduleRefresh(key, scope, callback) {
-    const refreshKey = `${scope}:${key}`;
-    if (this.loadQueue.has(refreshKey)) return;
+    if (this.loadQueue.has(`${scope}:${key}`)) return;
     
-    this.loadQueue.add(refreshKey);
+    this.loadQueue.add(`${scope}:${key}`);
     
     setTimeout(async () => {
       try {
@@ -397,25 +437,34 @@ class Cache {
       } catch (error) {
         this.log('REFRESH_ERROR', scope, key, error.message);
       } finally {
-        this.loadQueue.delete(refreshKey);
+        this.loadQueue.delete(`${scope}:${key}`);
       }
     }, 0);
   }
 
+  // Enhanced persistence scheduling
   schedulePersistence(immediate = false) {
-    if (immediate) this.criticalSaveMode = true;
+    if (immediate) {
+      this.criticalSaveMode = true;
+    }
 
-    if (this.saveDebounceTimer) clearTimeout(this.saveDebounceTimer);
+    if (this.saveDebounceTimer) {
+      clearTimeout(this.saveDebounceTimer);
+    }
 
-    const delay = immediate ? 100 : 2000;
-    this.saveDebounceTimer = setTimeout(() => this.saveToDisk(), delay);
+    const delay = immediate ? 100 : 2000; // 100ms for immediate, 2s for normal
+    this.saveDebounceTimer = setTimeout(() => {
+      this.saveToDisk();
+    }, delay);
   }
 
   startAutoPrune(interval = 5 * 60 * 1000) {
     this.stopAutoPrune();
     this.intervals.prune = setInterval(() => {
       const pruned = this.pruneExpired();
-      if (pruned > 0) this.log('AUTO_PRUNE', 'system', '', `${pruned} entries pruned`);
+      if (pruned > 0) {
+        this.log('AUTO_PRUNE', 'system', '', `${pruned} entries pruned`);
+      }
     }, interval);
     this.flags.autoPrune = true;
     return this;
@@ -458,32 +507,6 @@ class Cache {
     return this;
   }
 
-  async saveWithMethod(adapter, pluginDir, payload) {
-    const cachePath = `${pluginDir}/cache.json`;
-    
-    try {
-      await adapter.write(cachePath, JSON.stringify(payload, null, 2));
-      this.log('SAVE_SUCCESS', 'system', cachePath, 'Direct file write');
-      return true;
-    } catch (error) {
-      this.log('SAVE_WARNING', 'system', 'cache.json', `Direct write failed: ${error.message}`);
-    }
-
-    try {
-      const tempPath = `${pluginDir}/cache.tmp`;
-      await adapter.write(tempPath, JSON.stringify(payload));
-      
-      try { await adapter.remove(cachePath); } catch {}
-      await adapter.rename(tempPath, cachePath);
-      
-      this.log('SAVE_SUCCESS', 'system', cachePath, 'Atomic write');
-      return true;
-    } catch (error) {
-      this.log('SAVE_WARNING', 'system', 'cache.tmp', `Atomic write failed: ${error.message}`);
-      return false;
-    }
-  }
-
   async saveToDisk() {
     if (this.state.saving) return false;
     this.state.saving = true;
@@ -493,32 +516,68 @@ class Cache {
         version: this.version,
         timestamp: Date.now(),
         stats: { ...this.stats },
-        data: Object.fromEntries(
-          Object.entries(this.stores).map(([scope, store]) => [scope, Array.from(store.entries())])
-        ),
-        indexes: Object.fromEntries(
-          Object.entries(this.indexes).map(([type, index]) => 
-            [type, Array.from(index.entries()).map(([k, v]) => [k, Array.from(v)])]
-          )
-        ),
+        data: {},
+        indexes: {
+          byUser: Array.from(this.indexes.byUser.entries()).map(([k, v]) => [k, Array.from(v)]),
+          byMedia: Array.from(this.indexes.byMedia.entries()).map(([k, v]) => [k, Array.from(v)]),
+          byTag: Array.from(this.indexes.byTag.entries()).map(([k, v]) => [k, Array.from(v)])
+        },
         accessLog: Array.from(this.accessLog.entries())
       };
 
-      const adapter = this.obsidianPlugin?.app?.vault?.adapter;
-      if (adapter) {
-        const pluginDir = this.obsidianPlugin.manifest.dir;
-        const saved = await this.saveWithMethod(adapter, pluginDir, payload);
-        
-        if (saved) {
-          this.state.lastSaved = Date.now();
-          this.lastPersistTime = Date.now();
-          this.criticalSaveMode = false;
-          return true;
+      for (const [scope, store] of Object.entries(this.stores)) {
+        payload.data[scope] = Array.from(store.entries());
+      }
+
+      let saved = false;
+
+      // Primary save method: Direct file in plugin directory
+      if (this.obsidianPlugin?.app?.vault?.adapter) {
+        try {
+          const adapter = this.obsidianPlugin.app.vault.adapter;
+          const pluginDir = `${this.obsidianPlugin.manifest.dir}`;
+          const cachePath = `${pluginDir}/cache.json`;
+          
+          await adapter.write(cachePath, JSON.stringify(payload, null, 2));
+          this.log('SAVE_SUCCESS', 'system', cachePath, 'Direct file write');
+          saved = true;
+        } catch (error) {
+          this.log('SAVE_WARNING', 'system', 'cache.json', `Direct write failed: ${error.message}`);
         }
       }
 
-      this.log('SAVE_ERROR', 'system', '', 'All save methods failed');
-      return false;
+      // Backup save method: Temporary file with atomic write
+      if (!saved && this.obsidianPlugin?.app?.vault?.adapter) {
+        try {
+          const adapter = this.obsidianPlugin.app.vault.adapter;
+          const pluginDir = `${this.obsidianPlugin.manifest.dir}`;
+          const tempPath = `${pluginDir}/cache.tmp`;
+          const cachePath = `${pluginDir}/cache.json`;
+          
+          await adapter.write(tempPath, JSON.stringify(payload));
+          
+          // Atomic move (if supported)
+          try {
+            await adapter.remove(cachePath);
+          } catch {}
+          await adapter.rename(tempPath, cachePath);
+          
+          this.log('SAVE_SUCCESS', 'system', cachePath, 'Atomic write');
+          saved = true;
+        } catch (error) {
+          this.log('SAVE_WARNING', 'system', 'cache.tmp', `Atomic write failed: ${error.message}`);
+        }
+      }
+
+      if (saved) {
+        this.state.lastSaved = Date.now();
+        this.lastPersistTime = Date.now();
+        this.criticalSaveMode = false;
+        return true;
+      } else {
+        this.log('SAVE_ERROR', 'system', '', 'All save methods failed');
+        return false;
+      }
     } catch (error) {
       this.log('SAVE_ERROR', 'system', '', error.message);
       return false;
@@ -538,9 +597,11 @@ class Cache {
     try {
       let data = null;
       
-      const adapter = this.obsidianPlugin?.app?.vault?.adapter;
-      if (adapter) {
-        const cachePath = `${this.obsidianPlugin.manifest.dir}/cache.json`;
+      // Primary load method: Direct file from plugin directory
+      if (this.obsidianPlugin?.app?.vault?.adapter) {
+        const adapter = this.obsidianPlugin.app.vault.adapter;
+        const pluginDir = `${this.obsidianPlugin.manifest.dir}`;
+        const cachePath = `${pluginDir}/cache.json`;
         
         try {
           const raw = await adapter.read(cachePath);
@@ -559,6 +620,7 @@ class Cache {
         return 0;
       }
 
+      // Version compatibility check
       if (data.version && this.compareVersions(data.version, '3.0.0') < 0) {
         this.log('LOAD_WARNING', 'system', '', `Old cache version ${data.version}, clearing`);
         return 0;
@@ -567,12 +629,13 @@ class Cache {
       let loaded = 0;
       const now = Date.now();
 
-      Object.entries(data.data || {}).forEach(([scope, entries]) => {
+      // Load cache data
+      for (const [scope, entries] of Object.entries(data.data || {})) {
         const store = this.stores[scope];
-        if (!store || !Array.isArray(entries)) return;
+        if (!store || !Array.isArray(entries)) continue;
 
-        entries.forEach(([key, entry]) => {
-          if (!entry?.timestamp) return;
+        for (const [key, entry] of entries) {
+          if (!entry?.timestamp) continue;
           
           const ttl = entry.customTtl ?? this.ttlMap[scope];
           if ((now - entry.timestamp) < ttl) {
@@ -580,9 +643,10 @@ class Cache {
             this.updateIndexes(key, entry);
             loaded++;
           }
-        });
-      });
+        }
+      }
 
+      // Load indexes
       if (data.indexes) {
         Object.entries(data.indexes).forEach(([indexType, entries]) => {
           if (this.indexes[indexType] && Array.isArray(entries)) {
@@ -593,12 +657,14 @@ class Cache {
         });
       }
 
+      // Load access log
       if (data.accessLog && Array.isArray(data.accessLog)) {
         data.accessLog.forEach(([key, timestamp]) => {
           this.accessLog.set(key, timestamp);
         });
       }
 
+      // Restore stats (partial)
       if (data.stats) {
         this.stats.compressions = data.stats.compressions || 0;
       }
@@ -657,7 +723,9 @@ class Cache {
     console.log('Flags:', this.flags);
     
     Object.entries(this.stores).forEach(([scope, store]) => {
-      if (store.size > 0) console.log(`${scope}: ${store.size} entries`);
+      if (store.size > 0) {
+        console.log(`${scope}: ${store.size} entries`);
+      }
     });
     
     console.groupEnd();
@@ -669,20 +737,27 @@ class Cache {
     return this;
   }
 
+  // Enhanced destroy method with guaranteed save
   async destroy() {
+    // Stop all intervals first
     Object.values(this.intervals).forEach(interval => {
       if (interval) clearInterval(interval);
     });
     
+    // Clear timers
     if (this.saveDebounceTimer) {
       clearTimeout(this.saveDebounceTimer);
       this.saveDebounceTimer = null;
     }
     
+    // Force final save
     this.criticalSaveMode = true;
     await this.saveToDisk();
     
-    [this.loadQueue, this.saveQueue, this.persistenceQueue].forEach(queue => queue.clear());
+    // Clear all data
+    this.loadQueue.clear();
+    this.saveQueue.clear();
+    this.persistenceQueue.clear();
     
     Object.keys(this.stats).forEach(key => this.stats[key] = 0);
     this.state = { loading: false, saving: false, lastSaved: null, lastLoaded: null };
@@ -693,14 +768,11 @@ class Cache {
 
 class RequestQueue {
   constructor(plugin) {
-    Object.assign(this, {
-      plugin,
-      queue: [],
-      delay: 700,
-      isProcessing: false
-    });
+    this.plugin = plugin;
+    this.queue = [];
+    this.delay = 700;
+    this.isProcessing = false;
   }
-
   add(requestFn) {
     return new Promise((resolve, reject) => {
       this.queue.push({ requestFn, resolve, reject });
@@ -708,24 +780,27 @@ class RequestQueue {
     });
   }
 
-  toggleLoader(show) {
+  showGlobalLoader() {
     if (!this.plugin?.settings?.showLoadingIcon) return;
-    document.getElementById('zoro-global-loader')?.classList.toggle('zoro-show', show);
+    document.getElementById('zoro-global-loader')?.classList.add('zoro-show');
+  }
+
+  hideGlobalLoader() {
+    document.getElementById('zoro-global-loader')?.classList.remove('zoro-show');
   }
 
   async process() {
     if (this.isProcessing || !this.queue.length) {
-      if (!this.queue.length) this.toggleLoader(false);
+      if (!this.queue.length) this.hideGlobalLoader();
       return;
     }
-    
     this.isProcessing = true;
-    if (this.queue.length === 1) this.toggleLoader(true);
+    if (this.queue.length === 1) this.showGlobalLoader();
 
     const { requestFn, resolve, reject } = this.queue.shift();
-    
     try {
-      resolve(await requestFn());
+      const result = await requestFn();
+      resolve(result);
     } catch (err) {
       reject(err);
     } finally {
@@ -742,21 +817,14 @@ class Api {
     this.plugin = plugin;
     this.requestQueue = plugin.requestQueue;
     this.cache = plugin.cache;
-    
-    this.cacheTypeMap = {
-      stats: 'userData',
-      single: 'mediaData',
-      search: 'searchResults'
-    };
-    
-    this.apiUrl = 'https://graphql.anilist.co';
-    this.authUrl = 'https://anilist.co/api/v2/oauth/token';
   }
 
   createCacheKey(config) {
-    const sorted = {};
-    Object.keys(config).sort().forEach(key => sorted[key] = config[key]);
-    return JSON.stringify(sorted);
+    const sortedConfig = {};
+    Object.keys(config).sort().forEach(key => {
+      sortedConfig[key] = config[key];
+    });
+    return JSON.stringify(sortedConfig);
   }
 
   async makeObsidianRequest(code, redirectUri) {
@@ -765,25 +833,28 @@ class Api {
       client_id: this.plugin.settings.clientId,
       client_secret: this.plugin.settings.clientSecret || '',
       redirect_uri: redirectUri,
-      code
+      code: code
     });
+
+    const headers = {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json',
+    };
 
     try {
       const response = await this.requestQueue.add(() => requestUrl({
-        url: this.authUrl,
+        url: 'https://anilist.co/api/v2/oauth/token',
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Accept': 'application/json'
-        },
+        headers,
         body: body.toString()
       }));
 
-      if (!response?.json || typeof response.json !== 'object') {
+      if (!response || typeof response.json !== 'object') {
         throw new Error('Invalid response structure from AniList.');
       }
 
       return response.json;
+
     } catch (err) {
       console.error('[Zoro] Obsidian requestUrl failed:', err);
       throw new Error('Failed to authenticate with AniList via Obsidian requestUrl.');
@@ -792,18 +863,27 @@ class Api {
 
   async fetchAniListData(config) {
     const cacheKey = this.createCacheKey(config);
-    const cacheType = this.cacheTypeMap[config.type] || 'userData';
     
-    if (!config.nocache) {
-      const cached = this.cache.get(cacheKey, { scope: cacheType });
-      if (cached) {
-        console.log(`[Zoro] Cache HIT for ${cacheType}: ${cacheKey.substring(0, 50)}...`);
-        return cached;
-      }
+    let cacheType;
+    if (config.type === 'stats') {
+      cacheType = 'userData';
+    } else if (config.type === 'single') {
+      cacheType = 'mediaData';
+    } else if (config.type === 'search') {
+      cacheType = 'searchResults';
+    } else {
+      cacheType = 'userData';
+    }
+    const cacheTtl = null;
+    const cached = !config.nocache && this.plugin.cache.get(cacheKey, { scope: cacheType, ttl: cacheTtl });
+    if (cached) {
+      console.log(`[Zoro] Cache HIT for ${cacheType}: ${cacheKey.substring(0, 50)}...`);
+      return cached;
     }
 
     console.log(`[Zoro] Cache MISS for ${cacheType}: ${cacheKey.substring(0, 50)}...`);
 
+    let query, variables;
     try {
       const headers = {
         'Content-Type': 'application/json',
@@ -812,13 +892,38 @@ class Api {
       
       if (this.plugin.settings.accessToken) {
         await this.plugin.auth.ensureValidToken();
-        headers.Authorization = `Bearer ${this.plugin.settings.accessToken}`;
+        headers['Authorization'] = `Bearer ${this.plugin.settings.accessToken}`;
       }
       
-      const { query, variables } = this.buildQuery(config);
+      if (config.type === 'stats') {
+        query = this.getUserStatsQuery({    mediaType: config.mediaType || 'ANIME',    layout: config.layout || 'card'  });
+        variables = { username: config.username };
+      } else if (config.type === 'single') {
+        query = this.getSingleMediaQuery();
+        variables = {
+          username: config.username,
+          mediaId: parseInt(config.mediaId),
+          type: config.mediaType
+        };
+      } else if (config.type === 'search') {
+        query = this.getSearchMediaQuery(config.layout);
+        variables = {
+          search: config.search,
+          type: config.mediaType,
+          page: config.page || 1,
+          perPage: config.perPage || 5,
+        };
+      } else {
+        query = this.getMediaListQuery(config.layout);
+        variables = {
+          username: config.username,
+          status: config.listType,
+          type: config.mediaType || 'ANIME',
+        };
+      }
       
       const response = await this.requestQueue.add(() => requestUrl({
-        url: this.apiUrl,
+        url: 'https://graphql.anilist.co',
         method: 'POST',
         headers,
         body: JSON.stringify({ query, variables })
@@ -827,70 +932,33 @@ class Api {
       const result = response.json;
       if (!result) throw new Error('Empty response from AniList.');
       
-      if (result.errors?.length > 0) {
-        this.handleApiErrors(result.errors);
+      if (result.errors && result.errors.length > 0) {
+        const firstError = result.errors[0];
+        const isPrivate = firstError.message?.includes('Private') || firstError.message?.includes('permission');
+
+        if (isPrivate) {
+          if (this.plugin.settings.accessToken) {
+            throw new Error('🚫 List is private and this token has no permission.');
+          } else {
+            throw new Error('🔒 List is private. Please authenticate to access it.');
+          }
+        }
+        throw new Error(firstError.message || 'AniList returned an unknown error.');
       }
       
       if (!result.data) {
         throw new Error('AniList returned no data.');
       }
       
-      this.cache.set(cacheKey, result.data, { scope: cacheType });
+      this.plugin.cache.set(cacheKey, result.data, { scope: cacheType });
       console.log(`[Zoro] Cached data for ${cacheType}: ${cacheKey.substring(0, 50)}...`);
       
       return result.data;
+
     } catch (error) {
       console.error('[Zoro] fetchAniListData() failed:', error);
       throw error;
     }
-  }
-
-  buildQuery(config) {
-    const queryMap = {
-      stats: () => ({
-        query: this.getUserStatsQuery({ mediaType: config.mediaType || 'ANIME', layout: config.layout || 'card' }),
-        variables: { username: config.username }
-      }),
-      single: () => ({
-        query: this.getSingleMediaQuery(),
-        variables: {
-          username: config.username,
-          mediaId: parseInt(config.mediaId),
-          type: config.mediaType
-        }
-      }),
-      search: () => ({
-        query: this.getSearchMediaQuery(config.layout),
-        variables: {
-          search: config.search,
-          type: config.mediaType,
-          page: config.page || 1,
-          perPage: config.perPage || 5
-        }
-      })
-    };
-
-    return queryMap[config.type]?.() || {
-      query: this.getMediaListQuery(config.layout),
-      variables: {
-        username: config.username,
-        status: config.listType,
-        type: config.mediaType || 'ANIME'
-      }
-    };
-  }
-
-  handleApiErrors(errors) {
-    const firstError = errors[0];
-    const isPrivate = firstError.message?.includes('Private') || firstError.message?.includes('permission');
-
-    if (isPrivate) {
-      const message = this.plugin.settings.accessToken
-        ? '🚫 List is private and this token has no permission.'
-        : '🔒 List is private. Please authenticate to access it.';
-      throw new Error(message);
-    }
-    throw new Error(firstError.message || 'AniList returned an unknown error.');
   }
 
   async updateMediaListEntry(mediaId, updates) {
@@ -902,18 +970,23 @@ class Api {
       const mutation = `
         mutation ($mediaId: Int, $status: MediaListStatus, $score: Float, $progress: Int) {
           SaveMediaListEntry(mediaId: $mediaId, status: $status, score: $score, progress: $progress) {
-            id status score progress
+            id
+            status
+            score
+            progress
           }
         }
       `;
       
-      const variables = { mediaId };
-      if (updates.status !== undefined) variables.status = updates.status;
-      if (updates.score !== undefined && updates.score !== null) variables.score = updates.score;
-      if (updates.progress !== undefined) variables.progress = updates.progress;
+      const variables = {
+        mediaId,
+        ...(updates.status !== undefined && { status: updates.status }),
+        ...(updates.score !== undefined && updates.score !== null && { score: updates.score }),
+        ...(updates.progress !== undefined && { progress: updates.progress }),
+      };
       
       const response = await this.requestQueue.add(() => requestUrl({
-        url: this.apiUrl,
+        url: 'https://graphql.anilist.co',
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -923,13 +996,16 @@ class Api {
       }));
 
       const result = response.json;
+
       if (!result || result.errors?.length > 0) {
         const message = result.errors?.[0]?.message || 'Unknown mutation error';
         throw new Error(`AniList update error: ${message}`);
       }
       
-      this.cache.invalidateByMedia(mediaId);
+      this.plugin.cache.invalidateByMedia(mediaId);
+      
       return result.data.SaveMediaListEntry;
+
     } catch (error) {
       console.error('[Zoro] updateMediaListEntry failed:', error);
       throw new Error(`❌ Failed to update entry: ${error.message}`);
@@ -940,11 +1016,13 @@ class Api {
     if (!this.plugin.settings.accessToken) return false;
     
     try {
-      const response = await this.fetchAniListData({
+      const config = {
         type: 'single',
-        mediaType,
+        mediaType: mediaType,
         mediaId: parseInt(mediaId)
-      });
+      };
+      
+      const response = await this.fetchAniListData(config);
       return response.MediaList !== null;
     } catch (error) {
       console.warn('Error checking media list status:', error);
@@ -952,34 +1030,75 @@ class Api {
     }
   }
 
-  getMediaFields(layout = 'card') {
-    const fields = {
+  getMediaListQuery(layout = 'card') {
+    const baseFields = `
+      id
+      status
+      score
+      progress
+    `;
+
+    const mediaFields = {
       compact: `
         id
-        title { romaji }
-        coverImage { medium }
+        title {
+          romaji
+        }
+        coverImage {
+          medium
+        }
       `,
       card: `
         id
-        title { romaji english native }
-        coverImage { large medium }
-        format averageScore status genres episodes chapters isFavourite
+        title {
+          romaji
+          english
+          native
+        }
+        coverImage {
+          large
+          medium
+        }
+        format
+        averageScore
+        status
+        genres
+        episodes
+        chapters
+        isFavourite
       `,
       full: `
         id
-        title { romaji english native }
-        coverImage { large medium }
-        episodes chapters genres format averageScore status isFavourite
-        startDate { year month day }
-        endDate { year month day }
+        title {
+          romaji
+          english
+          native
+        }
+        coverImage {
+          large
+          medium
+        }
+        episodes
+        chapters
+        genres
+        format
+        averageScore
+        status
+        startDate {
+          year
+          month
+          day
+        }
+        endDate {
+          year
+          month
+          day
+        }
+        isFavourite
       `
     };
-    return fields[layout] || fields.card;
-  }
 
-  getMediaListQuery(layout = 'card') {
-    const baseFields = `id status score progress`;
-    const mediaFields = this.getMediaFields(layout);
+    const fields = mediaFields[layout] || mediaFields.card;
 
     return `
       query ($username: String, $status: MediaListStatus, $type: MediaType) {
@@ -987,7 +1106,9 @@ class Api {
           lists {
             entries {
               ${baseFields}
-              media { ${mediaFields} }
+              media {
+                ${fields}
+              }
             }
           }
         }
@@ -996,95 +1117,348 @@ class Api {
   }
 
   getSingleMediaQuery(layout = 'card') {
-    const baseFields = `id status score progress`;
-    const mediaFields = this.getMediaFields(layout);
+    const baseFields = `
+      id
+      status
+      score
+      progress
+    `;
+
+    const mediaFields = {
+      compact: `
+        id
+        title {
+          romaji
+        }
+        coverImage {
+          medium
+        }
+      `,
+      card: `
+        id
+        title {
+          romaji
+          english
+          native
+        }
+        coverImage {
+          large
+          medium
+        }
+        format
+        averageScore
+        status
+        genres
+        episodes
+        chapters
+        isFavourite
+      `,
+      full: `
+        id
+        title {
+          romaji
+          english
+          native
+        }
+        coverImage {
+          large
+          medium
+        }
+        episodes
+        chapters
+        genres
+        format
+        averageScore
+        status
+        startDate {
+          year
+          month
+          day
+        }
+        endDate {
+          year
+          month
+          day
+        }
+        isFavourite
+      `
+    };
+
+    const selectedMediaFields = mediaFields[layout] || mediaFields.card;
 
     return `
       query ($username: String, $mediaId: Int, $type: MediaType) {
         MediaList(userName: $username, mediaId: $mediaId, type: $type) {
           ${baseFields}
-          media { ${mediaFields} }
+          media {
+            ${selectedMediaFields}
+          }
         }
       }
     `;
   }
 
-  getUserStatsQuery({ 
-    mediaType = 'ANIME', 
-    layout = 'enhanced', 
-    useViewer = false,
-    includeGenres = true,
-    includeStatus = true,
-    includeHistory = false
-  } = {}) {
-    const typeKey = mediaType.toLowerCase();
+  // Enhanced API method with extended data fetching capabilities
+getUserStatsQuery({ 
+  mediaType = 'ANIME', 
+  layout = 'enhanced', 
+  useViewer = false,
+  includeGenres = true,
+  includeStatus = true,
+  includeHistory = false // Future: for time-series data
+} = {}) {
+  const typeKey = mediaType.toLowerCase();
 
-    const statFields = {
-      minimal: `count meanScore`,
-      standard: `
-        count meanScore standardDeviation
-        episodesWatched chaptersRead minutesWatched volumesRead
+  // Enhanced stat fields with better categorization
+  const statFields = {
+    minimal: `
+      count
+      meanScore
+    `,
+    standard: `
+      count
+      meanScore
+      standardDeviation
+      episodesWatched
+      chaptersRead
+      minutesWatched
+      volumesRead
+    `,
+    enhanced: `
+      count
+      meanScore
+      standardDeviation
+      episodesWatched
+      minutesWatched
+      chaptersRead
+      volumesRead
+      scores {
+        score
+        count
+      }
+      lengths {
+        length
+        count
+      }
+      releaseYears {
+        releaseYear
+        count
+      }
+      startYears {
+        startYear
+        count
+      }
+      formats {
+        format
+        count
+      }
+      statuses {
+        status
+        count
+      }
+    `,
+    complete: `
+      count
+      meanScore
+      standardDeviation
+      episodesWatched
+      minutesWatched
+      chaptersRead
+      volumesRead
+      scores {
+        score
+        count
+      }
+      lengths {
+        length
+        count
+      }
+      releaseYears {
+        releaseYear
+        count
+      }
+      startYears {
+        startYear
+        count
+      }
+      formats {
+        format
+        count
+      }
+      statuses {
+        status
+        count
+      }
+      genres {
+        genre
+        count
+        meanScore
+        minutesWatched
+      }
+      tags {
+        tag
+        count
+        meanScore
+        minutesWatched
+      }
+      staff {
+        staff {
+          id
+          name {
+            full
+          }
+        }
+        count
+        meanScore
+      }
+      studios {
+        studio {
+          id
+          name
+        }
+        count
+        meanScore
+      }
+    `
+  };
+
+  const selectedFields = statFields[layout] || statFields.enhanced;
+  const viewerPrefix = useViewer ? 'Viewer' : `User(name: $username)`;
+
+  // Build the query dynamically based on options
+  let queryParts = [
+    `id`,
+    `name`,
+    `avatar {
+      large
+      medium
+    }`,
+    `statistics {
+      ${typeKey} {
+        ${selectedFields}
+      }
+    }`
+  ];
+
+  // Add user profile data for enhanced context
+  if (layout === 'enhanced' || layout === 'complete') {
+    queryParts.push(`
+      options {
+        displayAdultContent
+      }
+      mediaListOptions {
+        scoreFormat
+        rowOrder
+      }
+      favourites {
+        anime {
+          nodes {
+            id
+            title {
+              romaji
+              english
+            }
+            coverImage {
+              medium
+            }
+            meanScore
+          }
+        }
+        manga {
+          nodes {
+            id
+            title {
+              romaji
+              english
+            }
+            coverImage {
+              medium
+            }
+            meanScore
+          }
+        }
+      }
+    `);
+  }
+
+  return `
+    query ($username: String) {
+      ${viewerPrefix} {
+        ${queryParts.join('\n        ')}
+      }
+    }
+  `;
+}
+
+  getSearchMediaQuery(layout = 'card') {
+    const mediaFields = {
+      compact: `
+        id
+        title {
+          romaji
+        }
+        coverImage {
+          medium
+        }
       `,
-      enhanced: `
-        count meanScore standardDeviation
-        episodesWatched minutesWatched chaptersRead volumesRead
-        scores { score count }
-        lengths { length count }
-        releaseYears { releaseYear count }
-        startYears { startYear count }
-        formats { format count }
-        statuses { status count }
+      card: `
+        id
+        title {
+          romaji
+          english
+          native
+        }
+        coverImage {
+          large
+          medium
+        }
+        format
+        averageScore
+        status
+        genres
+        episodes
+        chapters
+        isFavourite
       `,
-      complete: `
-        count meanScore standardDeviation
-        episodesWatched minutesWatched chaptersRead volumesRead
-        scores { score count }
-        lengths { length count }
-        releaseYears { releaseYear count }
-        startYears { startYear count }
-        formats { format count }
-        statuses { status count }
-        genres { genre count meanScore minutesWatched }
-        tags { tag count meanScore minutesWatched }
-        staff { staff { id name { full } } count meanScore }
-        studios { studio { id name } count meanScore }
+      full: `
+        id
+        title {
+          romaji
+          english
+          native
+        }
+        coverImage {
+          large
+          medium
+        }
+        episodes
+        chapters
+        genres
+        format
+        averageScore
+        status
+        startDate {
+          year
+          month
+          day
+        }
+        endDate {
+          year
+          month
+          day
+        }
+        isFavourite
       `
     };
 
-    const selectedFields = statFields[layout] || statFields.enhanced;
-    const viewerPrefix = useViewer ? 'Viewer' : `User(name: $username)`;
-
-    let queryParts = [
-      `id name`,
-      `avatar { large medium }`,
-      `statistics { ${typeKey} { ${selectedFields} } }`
-    ];
-
-    if (layout === 'enhanced' || layout === 'complete') {
-      queryParts.push(`
-        options { displayAdultContent }
-        mediaListOptions { scoreFormat rowOrder }
-        favourites {
-          anime { nodes { id title { romaji english } coverImage { medium } meanScore } }
-          manga { nodes { id title { romaji english } coverImage { medium } meanScore } }
-        }
-      `);
-    }
-
-    return `
-      query ($username: String) {
-        ${viewerPrefix} { ${queryParts.join(' ')} }
-      }
-    `;
-  }
-
-  getSearchMediaQuery(layout = 'card') {
-    const fields = this.getMediaFields(layout);
+    const fields = mediaFields[layout] || mediaFields.card;
 
     return `
       query ($search: String, $type: MediaType, $page: Int, $perPage: Int) {
         Page(page: $page, perPage: $perPage) {
-          media(search: $search, type: $type) { ${fields} }
+          media(search: $search, type: $type) {
+            ${fields}
+          }
         }
       }
     `;
@@ -1096,7 +1470,9 @@ class Api {
     }
 
     const type = String(mediaType).toUpperCase();
-    const urlType = ['ANIME', 'MANGA'].includes(type) ? type.toLowerCase() : 'anime';
+    const validTypes = ['ANIME', 'MANGA'];
+    const urlType = validTypes.includes(type) ? type.toLowerCase() : 'anime';
+
     return `https://anilist.co/${urlType}/${mediaId}`;
   }
 }
@@ -1105,10 +1481,6 @@ class ZoroPlugin extends Plugin {
   constructor(app, manifest) {
     super(app, manifest);
     this.globalListeners = [];
-    this.initializeComponents();
-  }
-
-  initializeComponents() {
     this.cache = new Cache({ obsidianPlugin: this });
     this.requestQueue = new RequestQueue(this);
     this.api = new Api(this);
@@ -1131,79 +1503,58 @@ class ZoroPlugin extends Plugin {
     console.log('[Zoro] Plugin loading...');
     this.render = new Render(this);
     
-    await this.initializeSettings();
-    await this.initializeCache();
-    this.setupUI();
-    this.registerProcessors();
-    
-    this.addSettingTab(new ZoroSettingTab(this.app, this));
-    console.log('[Zoro] Plugin loaded successfully.');
-  }
-
-  async initializeSettings() {
     try {
       await this.loadSettings();
       console.log('[Zoro] Settings loaded.');
     } catch (err) {
       console.error('[Zoro] Failed to load settings:', err);
     }
-  }
-
-  async initializeCache() {
-    await this.cache.loadFromDisk();
-    this.cache.startAutoPrune(5 * 60 * 1000);
-  }
-
-  setupUI() {
+    
+    await this.cache.loadFromDisk(); this.cache.startAutoPrune(5 * 60 * 1000);
+    
     try {
       this.injectCSS();
-      if (this.settings.theme) {
-        this.theme.applyTheme(this.settings.theme);
-      }
-      console.log('[Zoro] UI setup complete.');
+      console.log('[Zoro] CSS injected.');
     } catch (err) {
-      console.error('[Zoro] Failed to setup UI:', err);
+      console.error('[Zoro] Failed to inject CSS:', err);
     }
-  }
+    
+    
+   if (this.settings.theme) {
+  await this.theme.applyTheme(this.settings.theme);
+}
 
-  registerProcessors() {
     this.registerMarkdownCodeBlockProcessor('zoro', this.processor.processZoroCodeBlock.bind(this.processor));
     this.registerMarkdownCodeBlockProcessor('zoro-search', this.processor.processZoroSearchCodeBlock.bind(this.processor));
     this.registerMarkdownPostProcessor(this.processor.processInlineLinks.bind(this.processor));
+    
+    this.addSettingTab(new ZoroSettingTab(this.app, this));
+    console.log('[Zoro] Plugin loaded successfully.');
   }
 
   validateSettings(settings) {
-    const validators = {
-      string: (val, def = '') => typeof val === 'string' ? val : def,
-      boolean: (val, def = false) => typeof val === 'boolean' ? val : def,
-      number: (val, def = null) => typeof val === 'number' ? val : def,
-      object: (val, def = null) => typeof val === 'object' ? val : def,
-      layout: (val) => ['card', 'table'].includes(val) ? val : 'card',
-      gridColumns: (val) => Number.isInteger(val) ? val : getDefaultGridColumns()
-    };
-
     return {
-      defaultUsername: validators.string(settings?.defaultUsername),
-      defaultLayout: validators.layout(settings?.defaultLayout),
-      gridColumns: validators.gridColumns(settings?.gridColumns),
-      theme: validators.string(settings?.theme),
-      showCoverImages: validators.boolean(settings?.showCoverImages),
-      showRatings: validators.boolean(settings?.showRatings),
-      showProgress: validators.boolean(settings?.showProgress),
-      showGenres: validators.boolean(settings?.showGenres),
-      showLoadingIcon: validators.boolean(settings?.showLoadingIcon, true),
-      hideUrlsInTitles: validators.boolean(settings?.hideUrlsInTitles, true),
+      defaultUsername: typeof settings?.defaultUsername === 'string' ? settings.defaultUsername : '',
+      defaultLayout: ['card', 'table'].includes(settings?.defaultLayout) ? settings.defaultLayout : 'card',
+      gridColumns: Number.isInteger(settings?.gridColumns) ? settings.gridColumns : getDefaultGridColumns(),
+      theme: typeof settings?.theme === 'string' ? settings.theme : '',
+      showCoverImages: !!settings?.showCoverImages,
+      showRatings: !!settings?.showRatings,
+      showProgress: !!settings?.showProgress,
+      showGenres: !!settings?.showGenres,
+      showLoadingIcon: typeof settings?.showLoadingIcon === 'boolean' ? settings.showLoadingIcon : true,
+      hideUrlsInTitles: typeof settings?.hideUrlsInTitles === 'boolean' ? settings.hideUrlsInTitles : true,
       forceScoreFormat: true,
-      clientId: validators.string(settings?.clientId),
-      clientSecret: validators.string(settings?.clientSecret),
-      redirectUri: validators.string(settings?.redirectUri, DEFAULT_SETTINGS.redirectUri),
-      accessToken: validators.string(settings?.accessToken),
-      malClientId: validators.string(settings?.malClientId),
-      malClientSecret: validators.string(settings?.malClientSecret),
-      malAccessToken: validators.string(settings?.malAccessToken),
-      malRefreshToken: validators.string(settings?.malRefreshToken),
-      malTokenExpiry: validators.number(settings?.malTokenExpiry),
-      malUserInfo: validators.object(settings?.malUserInfo)
+      clientId: typeof settings?.clientId === 'string' ? settings.clientId : '',
+      clientSecret: typeof settings?.clientSecret === 'string' ? settings.clientSecret : '',
+      redirectUri: typeof settings?.redirectUri === 'string' ? settings.redirectUri : DEFAULT_SETTINGS.redirectUri,
+      accessToken: typeof settings?.accessToken === 'string' ? settings.accessToken : '',
+      malClientId: typeof settings?.malClientId === 'string' ? settings.malClientId : '',
+      malClientSecret: typeof settings?.malClientSecret === 'string' ? settings.malClientSecret : '',
+      malAccessToken: typeof settings?.malAccessToken === 'string' ? settings.malAccessToken : '',
+      malRefreshToken: typeof settings?.malRefreshToken === 'string' ? settings.malRefreshToken : '',
+      malTokenExpiry: typeof settings?.malTokenExpiry === 'number' ? settings.malTokenExpiry : null,
+      malUserInfo: typeof settings?.malUserInfo === 'object' ? settings.malUserInfo : null,
     };
   }
 
@@ -1222,13 +1573,14 @@ class ZoroPlugin extends Plugin {
     const saved = await this.loadData() || {};
     const merged = Object.assign({}, DEFAULT_SETTINGS, saved);
     this.settings = this.validateSettings(merged);
-    
     if (!this.settings.clientSecret) {
       const secret = await this.promptForSecret("Paste your client secret:");
       this.settings.clientSecret = secret.trim();
       await this.saveData(this.settings);
     }
   }
+  
+  
 
   addGlobalListener(el, type, fn) {
     el.addEventListener(type, fn);
@@ -1243,65 +1595,49 @@ class ZoroPlugin extends Plugin {
   }
 
   handleEditClick(e, entry, statusEl) {
-    e.preventDefault();
-    e.stopPropagation();
+  e.preventDefault();
+  e.stopPropagation();
 
-    this.edit.createEditModal(
-      entry,
-      async updates => {
-        await this.api.updateMediaListEntry(entry.media.id, updates);
-      },
-      () => {}
-    );
-  }
+  this.edit.createEditModal(
+    entry,
+    async updates => {
+      await this.api.updateMediaListEntry(entry.media.id, updates);
+    },
+    () => {
+    }
+  );
+}
 
   getStatsConfig() {
-    const defaults = {
-      showAvatar: true,
-      showFavorites: true,
-      showBreakdowns: true,
-      showTimeStats: true,
-      layout: 'enhanced',
-      theme: 'auto'
-    };
-
-    return {
-      showAvatar: this.settings.showAvatar ?? defaults.showAvatar,
-      showFavorites: this.settings.showFavorites ?? defaults.showFavorites,
-      showBreakdowns: this.settings.showBreakdowns ?? defaults.showBreakdowns,
-      showTimeStats: this.settings.showTimeStats ?? defaults.showTimeStats,
-      layout: this.settings.statsLayout ?? defaults.layout,
-      theme: this.settings.statsTheme ?? defaults.theme
-    };
-  }
+  return {
+    showAvatar: this.settings.showAvatar ?? true,
+    showFavorites: this.settings.showFavorites ?? true,
+    showBreakdowns: this.settings.showBreakdowns ?? true,
+    showTimeStats: this.settings.showTimeStats ?? true,
+    layout: this.settings.statsLayout ?? 'enhanced', // minimal, standard, enhanced
+    theme: this.settings.statsTheme ?? 'auto' // auto, light, dark
+  };
+}
 
   injectCSS() {
-    this.removeExistingStyles();
-    this.createStyles();
-    this.createGlobalLoader();
-  }
-
-  removeExistingStyles() {
-    const existingStyle = document.getElementById('zoro-plugin-styles');
+    const styleId = 'zoro-plugin-styles';
+    const existingStyle = document.getElementById(styleId);
     if (existingStyle) existingStyle.remove();
-  }
-
-  createStyles() {
-    const css = `.zoro-container { /* styles */ }`;
+    
+    const css = `
+      .zoro-container { /* styles */ }
+    `;
     
     const style = document.createElement('style');
-    style.id = 'zoro-plugin-styles';
+    style.id = styleId;
     style.textContent = css;
     document.head.appendChild(style);
-  }
 
-  createGlobalLoader() {
     this.globalLoader = document.createElement('div');
-    Object.assign(this.globalLoader, {
-      id: 'zoro-global-loader',
-      textContent: '⏳',
-      className: 'zoro-global-loader'
-    });
+    this.globalLoader.id = 'zoro-global-loader';
+    this.globalLoader.textContent = '⏳';
+    this.globalLoader.className = 'zoro-global-loader';
+
     document.body.appendChild(this.globalLoader);
   }
 
@@ -1318,75 +1654,119 @@ class ZoroPlugin extends Plugin {
     wrapper.createEl('strong', { text: `❌ ${context || 'Something went wrong'}` });
     wrapper.createEl('pre', { text: message });
 
-    const retryButton = wrapper.createEl('button', { 
-      text: onRetry ? '🔄 Retry' : 'Reload Note', 
-      cls: 'zoro-retry-btn' 
-    });
-
-    retryButton.onclick = () => {
-      el.empty();
-      onRetry ? onRetry() : this.app.workspace.activeLeaf.rebuildView();
-    };
-  }
-
-  cleanup() {
-    this.cache.stopAutoPrune().stopBackgroundRefresh().destroy();
-    this.theme.removeTheme();
-    this.removeExistingStyles();
-    
-    const loader = document.getElementById('zoro-global-loader');
-    if (loader) loader.remove();
+    if (onRetry) {
+      wrapper.createEl('button', { text: '🔄 Retry', cls: 'zoro-retry-btn' })
+            .onclick = () => {
+              el.empty();
+              onRetry();
+            };
+    } else {
+      wrapper.createEl('button', { text: 'Reload Note', cls: 'zoro-retry-btn' })
+            .onclick = () => this.app.workspace.activeLeaf.rebuildView();
+    }
   }
 
   onunload() {
     console.log('[Zoro] Unloading plugin...');
-    this.cleanup();
-  }
+
+    this.cache.stopAutoPrune()
+       .stopBackgroundRefresh()
+              .destroy();
+
+    this.theme.removeTheme();
+    const styleId = 'zoro-plugin-styles';
+    const existingStyle = document.getElementById(styleId);
+    if (existingStyle) {
+        existingStyle.remove();
+        console.log(`Removed style element with ID: ${styleId}`);
+    }
+
+    const loader = document.getElementById('zoro-global-loader');
+    if (loader) loader.remove();
+}
+
 }
 
 class Processor {
   constructor(plugin) {
     this.plugin = plugin;
-    
-    this.renderMap = {
-      stats: (el, data, config) => this.plugin.render.renderUserStats(el, data.User),
-      single: (el, data, config) => this.plugin.render.renderSingleMedia(el, data.MediaList, config),
-      default: (el, data, config) => {
-        const entries = data.MediaListCollection.lists.flatMap(list => list.entries);
-        this.plugin.render.renderMediaList(el, entries, config);
-      }
-    };
-
-    this.skeletonMap = {
-      stats: () => this.plugin.render.createStatsSkeleton(),
-      single: () => this.plugin.render.createListSkeleton(1),
-      default: () => this.plugin.render.createListSkeleton()
-    };
   }
 
   async processZoroCodeBlock(source, el, ctx) {
     try {
       const config = this.parseCodeBlockConfig(source) || {};
+      let skeleton;
       
-      if (config.type === 'trending') {
-        const trending = new Trending(this.plugin);
-        await trending.renderTrendingBlock(el, config);
-        return;
+      if (config.type === 'stats') {
+        skeleton = this.plugin.render.createStatsSkeleton();
+      } else if (config.type === 'single') {
+        skeleton = this.plugin.render.createListSkeleton(1);
+      }  else if (config.type === 'trending') {
+  const trending = new Trending(this.plugin);
+  await trending.renderTrendingBlock(el, config);
+  return;
+
+
+      } else {
+        skeleton = this.plugin.render.createListSkeleton();
       }
       
-      this.showSkeleton(el, config);
-      await this.processConfig(config);
-      await this.fetchAndRender(el, config);
       
+      el.empty();
+      el.appendChild(skeleton);
+
+      if (config.useAuthenticatedUser) {
+        const authUsername = await this.plugin.auth.getAuthenticatedUsername();
+        if (!authUsername) {
+          throw new Error('❌ Could not retrieve authenticated username...');
+        }
+        config.username = authUsername;
+      }
+
+      const doFetch = async () => {
+        try {
+          const data = await this.plugin.api.fetchAniListData(config);
+          
+          el.empty();
+          
+          if (config.type === 'stats') {
+            this.plugin.render.renderUserStats(el, data.User);
+          } else if (config.type === 'single') {
+            this.plugin.render.renderSingleMedia(el, data.MediaList, config);
+          } else {
+            const entries = data.MediaListCollection.lists.flatMap(list => list.entries);
+            this.plugin.render.renderMediaList(el, entries, config);
+          }
+          
+        } catch (err) {
+          el.empty();
+          this.plugin.renderError(el, err.message,
+            'Failed to load list',
+            doFetch
+          );
+        }
+      };
+      
+      await doFetch();
+
     } catch (error) {
-      this.handleError(el, error, 'Code block', () => this.processZoroCodeBlock(source, el, ctx));
+      el.empty();
+      console.error('[Zoro] Code block processing error:', error);
+      this.plugin.renderError(
+        el,
+        error.message || 'Unknown error occurred.',
+        'Code block',
+        () => this.processZoroCodeBlock(source, el, ctx)
+      );
     }
+    
+    
   }
 
   async processZoroSearchCodeBlock(source, el, ctx) {
     try {
       const config = this.parseSearchCodeBlockConfig(source);
-      
+
       if (this.plugin.settings.debugMode) {
         console.log('[Zoro] Search block config:', config);
       }
@@ -1394,13 +1774,27 @@ class Processor {
       el.createEl('div', { text: '🔍 Searching Zoro...', cls: 'zoro-loading-placeholder' });
       
       const doSearch = async () => {
-        await this.plugin.render.renderSearchInterface(el, config);
+        try {
+          await this.plugin.render.renderSearchInterface(el, config);
+        } catch (err) {
+          el.empty();
+          this.plugin.renderError(el, err.message,
+            'Search failed',
+            doSearch
+          );
+        }
       };
       
-      await this.executeWithErrorHandling(doSearch, el, 'Search failed', doSearch);
-      
+      await doSearch();
     } catch (error) {
-      this.handleError(el, error, 'Search block', () => this.processZoroSearchCodeBlock(source, el, ctx));
+      console.error('[Zoro] Search block processing error:', error);
+      el.empty();
+      this.plugin.renderError(
+        el,
+        error.message || 'Failed to process Zoro search block.',
+        'Search block',
+        () => this.processZoroSearchCodeBlock(source, el, ctx)
+      );
     }
   }
 
@@ -1408,202 +1802,139 @@ class Processor {
     const inlineLinks = el.querySelectorAll('a[href^="zoro:"]');
 
     for (const link of inlineLinks) {
-      await this.processInlineLink(link, ctx);
-    }
-  }
-
-  async processInlineLink(link, ctx) {
-    const href = link.getAttribute('href');
-    const placeholder = this.createPlaceholder('🔄 Loading Zoro...');
-    link.replaceWith(placeholder);
-
-    try {
-      const config = this.parseInlineLink(href);
-      const data = await this.plugin.api.fetchAniListData(config);
-      const container = this.createInlineContainer();
+      const href = link.getAttribute('href');
       
-      const renderFn = this.renderMap[config.type] || this.renderMap.default;
-      renderFn(container, data, config);
+      const placeholder = document.createElement('span');
+      placeholder.textContent = '🔄 Loading Zoro...';
+      link.replaceWith(placeholder);
 
-      placeholder.replaceWith(container);
-      ctx.addChild({ unload: () => container.remove() });
+      try {
+        const config = this.parseInlineLink(href);
+        const data = await this.plugin.api.fetchAniListData(config);
 
-    } catch (error) {
-      console.warn(`[Zoro] Inline link failed for ${href}:`, error);
-      const container = this.createInlineContainer();
-      const retry = () => this.processInlineLinks(placeholder.parentElement, ctx);
-      this.plugin.renderError(container, error.message, 'Inline link', retry);
-      placeholder.replaceWith(container);
-    }
-  }
+        const container = document.createElement('span');
+        container.className = 'zoro-inline-container';
+        
+        if (config.type === 'stats') {
+          this.plugin.render.renderUserStats(container, data.User);
+        } else if (config.type === 'single') {
+          this.plugin.render.renderSingleMedia(container, data.MediaList, config);
+        } else {
+          const entries = data.MediaListCollection.lists.flatMap(list => list.entries);
+          this.plugin.render.renderMediaList(container, entries, config);
+        }
 
-  showSkeleton(el, config) {
-    const skeletonFn = this.skeletonMap[config.type] || this.skeletonMap.default;
-    el.empty();
-    el.appendChild(skeletonFn());
-  }
+        placeholder.replaceWith(container);
 
-  async processConfig(config) {
-    if (config.useAuthenticatedUser) {
-      const authUsername = await this.plugin.auth.getAuthenticatedUsername();
-      if (!authUsername) {
-        throw new Error('❌ Could not retrieve authenticated username...');
+        ctx.addChild({
+          unload: () => {
+            container.remove();
+          }
+        });
+
+      } catch (error) {
+        console.warn(`[Zoro] Inline link failed for ${href}:`, error);
+
+        const container = document.createElement('span');
+        container.className = 'zoro-inline-container';
+
+        const retry = () => this.processInlineLinks(el, ctx);
+        this.plugin.renderError(container, error.message, 'Inline link', retry);
+
+        placeholder.replaceWith(container);
       }
-      config.username = authUsername;
     }
-  }
-
-  async fetchAndRender(el, config) {
-    const doFetch = async () => {
-      const data = await this.plugin.api.fetchAniListData(config);
-      el.empty();
-      const renderFn = this.renderMap[config.type] || this.renderMap.default;
-      renderFn(el, data, config);
-    };
-
-    await this.executeWithErrorHandling(doFetch, el, 'Failed to load list', doFetch);
-  }
-
-  async executeWithErrorHandling(fn, el, errorContext, retryFn) {
-    try {
-      await fn();
-    } catch (err) {
-      el.empty();
-      this.plugin.renderError(el, err.message, errorContext, retryFn);
-    }
-  }
-
-  createPlaceholder(text) {
-    const placeholder = document.createElement('span');
-    placeholder.textContent = text;
-    return placeholder;
-  }
-
-  createInlineContainer() {
-    const container = document.createElement('span');
-    container.className = 'zoro-inline-container';
-    return container;
-  }
-
-  handleError(el, error, context, retryFn) {
-    el.empty();
-    console.error(`[Zoro] ${context} processing error:`, error);
-    this.plugin.renderError(el, error.message || 'Unknown error occurred.', context, retryFn);
   }
 
   parseCodeBlockConfig(source) {
-    const config = this.parseKeyValuePairs(source);
-    this.applyConfigDefaults(config);
-    return config;
+  const config = {};
+  const lines = source.split('\n').filter(l => l.trim());
+
+  for (let line of lines) {
+    line = line.trim();
+    if (!line || line.startsWith('#')) continue;          // ignore blank / comment lines
+    const colon = line.indexOf(':');
+    if (colon === -1) continue;                            // no key–value separator
+    const key   = line.slice(0, colon).trim();
+    const value = line.slice(colon + 1).trim();
+    if (key && value) config[key] = value;
   }
 
-  parseKeyValuePairs(source) {
-    const config = {};
-    const lines = source.split('\n').filter(l => l.trim());
-
-    for (let line of lines) {
-      line = line.trim();
-      if (!line || line.startsWith('#')) continue;
-      
-      const colonIndex = line.indexOf(':');
-      if (colonIndex === -1) continue;
-      
-      const key = line.slice(0, colonIndex).trim();
-      const value = line.slice(colonIndex + 1).trim();
-      
-      if (key && value) config[key] = value;
+  // Only apply defaults when nothing was supplied
+  if (!config.username) {
+    if (this.plugin.settings.defaultUsername) {
+      config.username = this.plugin.settings.defaultUsername;
+    } else if (this.plugin.settings.accessToken) {
+      config.useAuthenticatedUser = true;
+    } else {
+      throw new Error('Username is required. Please set a default username in plugin settings, authenticate, or specify one in the code block.');
     }
-    return config;
   }
 
-  applyConfigDefaults(config) {
-    if (!config.username) {
-      if (this.plugin.settings.defaultUsername) {
-        config.username = this.plugin.settings.defaultUsername;
-      } else if (this.plugin.settings.accessToken) {
-        config.useAuthenticatedUser = true;
-      } else {
-        throw new Error('Username is required. Please set a default username in plugin settings, authenticate, or specify one in the code block.');
-      }
-    }
+  // Respect explicit values; only fall back if missing
+  if (!config.type) config.type = 'list';
+  if (config.type === 'trending') config.type = 'trending';   // do NOT map to 'search'
 
-    const defaults = {
-      type: 'list',
-      listType: config.type === 'list' ? 'CURRENT' : undefined,
-      mediaType: 'ANIME',
-      layout: this.plugin.settings.defaultLayout || 'card'
-    };
+  if (!config.listType && config.type === 'list') config.listType = 'CURRENT';
+  if (!config.mediaType) config.mediaType = 'ANIME';
+  if (!config.layout) config.layout = this.plugin.settings.defaultLayout || 'card';
 
-    Object.entries(defaults).forEach(([key, defaultValue]) => {
-      if (!config[key] && defaultValue !== undefined) {
-        config[key] = defaultValue;
-      }
-    });
+  return config;
+}
 
-    if (config.type === 'trending') config.type = 'trending';
-  }
 
   parseSearchCodeBlockConfig(source) {
     const config = { type: 'search' };
-    const parsed = this.parseKeyValuePairs(source);
-    Object.assign(config, parsed);
+    const lines = source.split('\n').filter(line => line.trim());
+    
+    for (const line of lines) {
+      const [key, value] = line.split(':').map(s => s.trim());
+      if (key && value) {
+        config[key] = value;
+      }
+    }
     
     config.layout = config.layout || this.plugin.settings.defaultLayout || 'card';
     config.mediaType = config.mediaType || 'ANIME';
+    config.layout = config.layout || this.plugin.settings.defaultLayout;
     
     return config;
   }
 
   parseInlineLink(href) {
     const [base, hash] = href.replace('zoro:', '').split('#');
+
     const parts = base.split('/');
-    
-    const { username, pathParts } = this.extractUserAndPath(parts);
-    const config = this.buildConfigFromPath(username, pathParts);
-    
-    if (hash) {
-      this.applyHashModifiers(config, hash);
-    }
+    let username, pathParts;
 
-    return config;
-  }
-
-  extractUserAndPath(parts) {
     if (parts[0] === '') {
       if (!this.plugin.settings.defaultUsername) {
         throw new Error('⚠️ Default username not set. Configure it in plugin settings.');
       }
-      return {
-        username: this.plugin.settings.defaultUsername,
-        pathParts: parts.slice(1)
-      };
+      username = this.plugin.settings.defaultUsername;
+      pathParts = parts.slice(1);
+    } else {
+      if (parts.length < 2) {
+        throw new Error('❌ Invalid Zoro inline link format.');
+      }
+      username = parts[0];
+      pathParts = parts.slice(1);
     }
-    
-    if (parts.length < 2) {
-      throw new Error('❌ Invalid Zoro inline link format.');
-    }
-    
-    return {
-      username: parts[0],
-      pathParts: parts.slice(1)
-    };
-  }
 
-  buildConfigFromPath(username, pathParts) {
     const config = {
-      username,
+      username: username,
       layout: 'card',
       type: 'list'
     };
 
-    const [main, second] = pathParts;
+    const main = pathParts[0];
+    const second = pathParts[1];
 
     if (main === 'stats') {
       config.type = 'stats';
     } else if (main === 'anime' || main === 'manga') {
       config.type = 'single';
       config.mediaType = main.toUpperCase();
-      
       if (!second || isNaN(parseInt(second))) {
         throw new Error('⚠️ Invalid media ID for anime/manga inline link.');
       }
@@ -1612,20 +1943,19 @@ class Processor {
       config.listType = main.toUpperCase();
     }
 
-    return config;
-  }
-
-  applyHashModifiers(config, hash) {
-    const hashParts = hash.split(',');
-    const layouts = ['compact', 'card', 'minimal', 'full'];
-    
-    for (const mod of hashParts) {
-      if (layouts.includes(mod)) {
-        config.layout = mod;
-      } else if (mod === 'nocache') {
-        config.nocache = true;
+    if (hash) {
+      const hashParts = hash.split(',');
+      for (const mod of hashParts) {
+        if (mod === 'compact' || mod === 'card' || mod === 'minimal' || mod === 'full') {
+          config.layout = mod;
+        }
+        if (mod === 'nocache') {
+          config.nocache = true;
+        }
       }
     }
+
+    return config;
   }
 }
 
@@ -2575,39 +2905,47 @@ class MoreDetailsPanel {
 
   async showPanel(media, entry = null, triggerElement) {
     this.closePanel();
+
     const panel = this.createPanel(media, entry);
     this.currentPanel = panel;
     this.positionPanel(panel, triggerElement);
     document.body.appendChild(panel);
+
     document.addEventListener('click', this.boundOutsideClickHandler);
-    
     this.plugin.requestQueue.showGlobalLoader();
     
     if (this.shouldFetchDetailedData(media)) {
       this.fetchAndUpdatePanel(media.id, panel)
-        .finally(() => this.plugin.requestQueue.hideGlobalLoader());
+        .finally(() => {
+          this.plugin.requestQueue.hideGlobalLoader();
+        });
     } else {
       this.plugin.requestQueue.hideGlobalLoader();
     }
   }
 
   shouldFetchDetailedData(media) {
-    return !media.description || !media.genres || !media.averageScore || 
-           (media.type === 'ANIME' && !media.nextAiringEpisode);
+    const missingBasicData = !media.description || !media.genres || !media.averageScore;
+    const isAnimeWithoutAiring = media.type === 'ANIME' && !media.nextAiringEpisode;
+    
+    return missingBasicData || isAnimeWithoutAiring;
   }
 
   async fetchAndUpdatePanel(mediaId, panel) {
     try {
       const detailedMedia = await this.fetchDetailedMediaData(mediaId);
-      const malPromise = detailedMedia.idMal ? 
-        this.fetchMALData(detailedMedia.idMal, detailedMedia.type) : null;
+      
+      let malDataPromise = null;
+      if (detailedMedia.idMal) {
+        malDataPromise = this.fetchMALData(detailedMedia.idMal, detailedMedia.type);
+      }
       
       if (this.currentPanel === panel && this.hasMoreData(detailedMedia)) {
         this.updatePanelContent(panel, detailedMedia, null);
       }
       
-      if (malPromise) {
-        const malData = await malPromise;
+      if (malDataPromise) {
+        const malData = await malDataPromise;
         if (this.currentPanel === panel && malData) {
           this.updatePanelContent(panel, detailedMedia, malData);
         }
@@ -2618,117 +2956,163 @@ class MoreDetailsPanel {
   }
   
   hasMoreData(newMedia) {
-    return newMedia.description || newMedia.genres?.length > 0 || 
-           newMedia.averageScore > 0 || 
-           (newMedia.type === 'ANIME' && newMedia.nextAiringEpisode);
+    const hasBasicData = newMedia.description || newMedia.genres?.length > 0 || newMedia.averageScore > 0;
+    const hasAiringData = newMedia.type === 'ANIME' && newMedia.nextAiringEpisode;
+    
+    return hasBasicData || hasAiringData;
   }
 
   updatePanelContent(panel, media, malData = null) {
     const content = panel.querySelector('.panel-content');
     
-    // Update airing section
     if (media.type === 'ANIME' && media.nextAiringEpisode && !content.querySelector('.airing-section')) {
       const airingSection = this.createAiringSection(media.nextAiringEpisode);
-      const insertAfter = content.querySelector('.metadata-section') || content.querySelector('.panel-header');
-      insertAfter?.insertAdjacentElement('afterend', airingSection);
+      const metadataSection = content.querySelector('.metadata-section');
+      if (metadataSection) {
+        metadataSection.insertAdjacentElement('afterend', airingSection);
+      } else {
+        const headerSection = content.querySelector('.panel-header');
+        if (headerSection) {
+          headerSection.insertAdjacentElement('afterend', airingSection);
+        }
+      }
     }
     
-    // Update synopsis
     if (media.description) {
-      this.replaceSection(content, '.synopsis-section', () => this.createSynopsisSection(media.description));
+      const existingSynopsis = content.querySelector('.synopsis-section');
+      if (existingSynopsis) {
+        const newSynopsis = this.createSynopsisSection(media.description);
+        content.replaceChild(newSynopsis, existingSynopsis);
+      }
     }
 
-    // Update genres
     if (media.genres?.length > 0 && !content.querySelector('.genres-section')) {
       const genresSection = this.createGenresSection(media.genres);
       const synopsisSection = content.querySelector('.synopsis-section');
-      synopsisSection ? content.insertBefore(genresSection, synopsisSection) : content.appendChild(genresSection);
+      if (synopsisSection) {
+        content.insertBefore(genresSection, synopsisSection);
+      } else {
+        content.appendChild(genresSection);
+      }
     }
 
-    // Update external links and stats
     if (media.idMal) {
-      this.replaceSection(content, '.external-links-section', () => this.createExternalLinksSection(media));
+      const existingLinksSection = content.querySelector('.external-links-section');
+      if (existingLinksSection) {
+        const newLinksSection = this.createExternalLinksSection(media);
+        content.replaceChild(newLinksSection, existingLinksSection);
+      }
     }
-    
-    if (media.averageScore > 0 || malData) {
-      this.replaceSection(content, '.stats-section', () => this.createStatisticsSection(media, malData));
-    }
-  }
 
-  replaceSection(content, selector, createFn) {
-    const existing = content.querySelector(selector);
-    if (existing) content.replaceChild(createFn(), existing);
+    if (media.averageScore > 0 || malData) {
+      const existingStats = content.querySelector('.stats-section');
+      if (existingStats) {
+        const newStats = this.createStatisticsSection(media, malData);
+        content.replaceChild(newStats, existingStats);
+      }
+    }
   }
 
   async fetchDetailedMediaData(mediaId) {
-    const cacheKey = `details:${mediaId}`;
-    const cached = this.plugin.cache.get(cacheKey, { scope: 'mediaDetails' });
-    if (cached) return cached;
+  const cacheKey = `details:${mediaId}`;
+  const cached   = this.plugin.cache.get(cacheKey, { scope: 'mediaDetails' });
+  if (cached) return cached;
 
-    const query = `query($id:Int){Media(id:$id){id type title{romaji english native}description(asHtml:false)format status season seasonYear averageScore genres nextAiringEpisode{airingAt episode timeUntilAiring}idMal}}`;
-    const variables = { id: mediaId };
+  const query     = this.getDetailedMediaQuery();
+  const variables = { id: mediaId };
 
-    try {
-      let response;
-      if (this.plugin.fetchAniListData) {
-        response = await this.plugin.fetchAniListData(query, variables);
-      } else {
-        const apiResponse = await fetch('https://graphql.anilist.co', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query, variables })
-        });
-        response = await apiResponse.json();
-      }
-
-      if (!response?.data?.Media) throw new Error('No media data received');
-      
-      const data = response.data.Media;
-      this.plugin.cache.set(cacheKey, data, { scope: 'mediaDetails' });
-      return data;
-    } catch (error) {
-      console.error('API fetch failed:', error);
-      throw error;
+  let response;
+  try {
+    if (this.plugin.fetchAniListData) {
+      response = await this.plugin.fetchAniListData(query, variables);
+    } else {
+      const apiResponse = await fetch('https://graphql.anilist.co', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query, variables })
+      });
+      response = await apiResponse.json();
     }
+
+    if (!response?.data?.Media)
+      throw new Error('No media data received');
+
+    const data = response.data.Media;
+    this.plugin.cache.set(cacheKey, data, { scope: 'mediaDetails' });
+    return data;
+
+  } catch (error) {
+    console.error('API fetch failed:', error);
+    throw error;
   }
+}
 
   async fetchMALData(malId, mediaType) {
+  if (!malId) return null;
+
+  const cacheKey = `mal:${malId}:${mediaType}`;
+  const cached   = this.plugin.cache.get(cacheKey, { scope: 'malData' });
+  if (cached) return cached;
+
+  try {
+    const type     = mediaType === 'MANGA' ? 'manga' : 'anime';
+    const response = await fetch(`https://api.jikan.moe/v4/${type}/${malId}`);
+
+    if (!response.ok)
+      throw new Error(`Jikan API error: ${response.status}`);
+
+    const data = (await response.json())?.data;
+    this.plugin.cache.set(cacheKey, data, { scope: 'malData' });
+    return data;
+
+  } catch (error) {
+    console.error('Failed to fetch MAL data:', error);
+    return null;
+  }
+}
+
+  getDetailedMediaQuery() {
+    return `query($id:Int){Media(id:$id){id type title{romaji english native}description(asHtml:false)format status season seasonYear averageScore genres nextAiringEpisode{airingAt episode timeUntilAiring}idMal}}`;
+  }
+
+  getAniListUrl(mediaId, mediaType = 'ANIME') {
+    return this.plugin.getAniListUrl(mediaId, mediaType);
+  }
+
+  getMyAnimeListUrl(malId, mediaType = 'ANIME') {
     if (!malId) return null;
-
-    const cacheKey = `mal:${malId}:${mediaType}`;
-    const cached = this.plugin.cache.get(cacheKey, { scope: 'malData' });
-    if (cached) return cached;
-
-    try {
-      const type = mediaType === 'MANGA' ? 'manga' : 'anime';
-      const response = await fetch(`https://api.jikan.moe/v4/${type}/${malId}`);
-      if (!response.ok) throw new Error(`Jikan API error: ${response.status}`);
-
-      const data = (await response.json())?.data;
-      this.plugin.cache.set(cacheKey, data, { scope: 'malData' });
-      return data;
-    } catch (error) {
-      console.error('Failed to fetch MAL data:', error);
-      return null;
-    }
+    const type = mediaType === 'MANGA' ? 'manga' : 'anime';
+    return `https://myanimelist.net/${type}/${malId}`;
   }
 
   createPanel(media, entry) {
+    const fragment = document.createDocumentFragment();
+    
     const panel = document.createElement('div');
     panel.className = 'zoro-more-details-panel';
 
     const content = document.createElement('div');
     content.className = 'panel-content';
 
-    const sections = [
-      this.createHeaderSection(media),
-      this.createMetadataSection(media, entry),
-      ...(media.type === 'ANIME' && media.nextAiringEpisode ? [this.createAiringSection(media.nextAiringEpisode)] : []),
-      ...(media.averageScore > 0 ? [this.createStatisticsSection(media)] : []),
-      ...(media.genres?.length > 0 ? [this.createGenresSection(media.genres)] : []),
-      this.createSynopsisSection(media.description),
-      this.createExternalLinksSection(media)
-    ];
+    const sections = [];
+
+    sections.push(this.createHeaderSection(media));
+    sections.push(this.createMetadataSection(media, entry));
+
+    if (media.type === 'ANIME' && media.nextAiringEpisode) {
+      sections.push(this.createAiringSection(media.nextAiringEpisode));
+    }
+
+    if (media.averageScore > 0) {
+      sections.push(this.createStatisticsSection(media));
+    }
+
+    if (media.genres?.length > 0) {
+      sections.push(this.createGenresSection(media.genres));
+    }
+
+    sections.push(this.createSynopsisSection(media.description));
+    sections.push(this.createExternalLinksSection(media));
 
     sections.forEach(section => content.appendChild(section));
 
@@ -2737,34 +3121,47 @@ class MoreDetailsPanel {
     closeBtn.innerHTML = '×';
     closeBtn.onclick = () => this.closePanel();
 
-    panel.append(closeBtn, content);
+    panel.appendChild(closeBtn);
+    panel.appendChild(content);
+
     return panel;
   }
 
   createAiringSection(nextAiringEpisode) {
-    const section = this.createSection('airing-section', 'Next Airing');
+    const section = document.createElement('div');
+    section.className = 'panel-section airing-section';
+
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'Next Airing';
+    section.appendChild(title);
+
     const airingInfo = document.createElement('div');
     airingInfo.className = 'airing-info';
 
     const airingTime = new Date(nextAiringEpisode.airingAt * 1000);
-    const items = [
-      ['Episode', nextAiringEpisode.episode, 'airing-episode'],
-      ['Date', this.formatAiringDate(airingTime), 'airing-date'],
-      ['Time', this.formatAiringTimeOnly(airingTime), 'airing-time']
-    ];
 
-    items.forEach(([label, value, className]) => {
-      const item = document.createElement('div');
-      item.className = className;
-      item.innerHTML = `<span class="airing-label">${label}:</span> <span class="airing-value">${value}</span>`;
-      airingInfo.appendChild(item);
-    });
+    const episodeInfo = document.createElement('div');
+    episodeInfo.className = 'airing-episode';
+    episodeInfo.innerHTML = `<span class="airing-label">Episode:</span> <span class="airing-value">${nextAiringEpisode.episode}</span>`;
+    airingInfo.appendChild(episodeInfo);
+
+    const dateInfo = document.createElement('div');
+    dateInfo.className = 'airing-date';
+    dateInfo.innerHTML = `<span class="airing-label">Date:</span> <span class="airing-value">${this.formatAiringDate(airingTime)}</span>`;
+    airingInfo.appendChild(dateInfo);
+
+    const timeInfo = document.createElement('div');
+    timeInfo.className = 'airing-time';
+    timeInfo.innerHTML = `<span class="airing-label">Time:</span> <span class="airing-value">${this.formatAiringTimeOnly(airingTime)}</span>`;
+    airingInfo.appendChild(timeInfo);
 
     if (nextAiringEpisode.timeUntilAiring > 0) {
       const countdownInfo = document.createElement('div');
       countdownInfo.className = 'airing-countdown';
       countdownInfo.innerHTML = `<span class="airing-label">In:</span> <span class="airing-value countdown-value">${this.formatTimeUntilAiring(nextAiringEpisode.timeUntilAiring)}</span>`;
       airingInfo.appendChild(countdownInfo);
+
       this.startCountdown(countdownInfo.querySelector('.countdown-value'), nextAiringEpisode.timeUntilAiring);
     }
 
@@ -2772,32 +3169,36 @@ class MoreDetailsPanel {
     return section;
   }
 
-  createSection(className, title) {
-    const section = document.createElement('div');
-    section.className = `panel-section ${className}`;
-    const titleEl = document.createElement('h3');
-    titleEl.className = 'section-title';
-    titleEl.textContent = title;
-    section.appendChild(titleEl);
-    return section;
-  }
-
   formatAiringDate(date) {
-    return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+    const options = {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    };
+    return date.toLocaleDateString('en-GB', options);
   }
 
   formatAiringTimeOnly(date) {
-    return date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false });
+    const options = {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    };
+    return date.toLocaleTimeString('en-GB', options);
   }
 
   formatTimeUntilAiring(seconds) {
-    const days = Math.floor(seconds / 86400);
-    const hours = Math.floor((seconds % 86400) / 3600);
+    const days = Math.floor(seconds / (24 * 3600));
+    const hours = Math.floor((seconds % (24 * 3600)) / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
 
-    if (days > 0) return `${days}d ${hours}h ${minutes}m`;
-    if (hours > 0) return `${hours}h ${minutes}m`;
-    return `${minutes}m`;
+    if (days > 0) {
+      return `${days}d ${hours}h ${minutes}m`;
+    } else if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    } else {
+      return `${minutes}m`;
+    }
   }
 
   startCountdown(element, initialSeconds) {
@@ -2808,6 +3209,7 @@ class MoreDetailsPanel {
         element.textContent = 'Aired!';
         return;
       }
+      
       element.textContent = this.formatTimeUntilAiring(remainingSeconds);
       remainingSeconds--;
     };
@@ -2818,63 +3220,94 @@ class MoreDetailsPanel {
   }
 
   createSynopsisSection(description) {
-    const section = this.createSection('synopsis-section', 'Synopsis');
+    const section = document.createElement('div');
+    section.className = 'panel-section synopsis-section';
+
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'Synopsis';
+    section.appendChild(title);
+
     const synopsis = document.createElement('div');
     synopsis.className = 'synopsis-content';
     
-    if (!description?.trim()) {
+    if (!description || typeof description !== 'string' || !description.trim()) {
       synopsis.className += ' synopsis-placeholder';
       synopsis.textContent = 'Synopsis not available yet.';
-    } else {
-      const cleanDescription = description
-        .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<[^>]*>/g, '')
-        .replace(/\n\s*\n/g, '\n\n')
-        .trim();
-      
-      synopsis.textContent = cleanDescription || 'Synopsis is empty.';
-      if (!cleanDescription) synopsis.className += ' synopsis-placeholder';
+      section.appendChild(synopsis);
+      return section;
     }
     
+    const cleanDescription = description
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]*>/g, '')
+      .replace(/\n\s*\n/g, '\n\n')
+      .trim();
+
+    if (!cleanDescription) {
+      synopsis.className += ' synopsis-placeholder';
+      synopsis.textContent = 'Synopsis is empty.';
+      section.appendChild(synopsis);
+      return section;
+    }
+    
+    synopsis.textContent = cleanDescription;
     section.appendChild(synopsis);
     return section;
   }
 
   createMetadataSection(media, entry) {
-    const section = this.createSection('metadata-section', 'Details');
+    const section = document.createElement('div');
+    section.className = 'panel-section metadata-section';
+
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'Details';
+    section.appendChild(title);
+
     const metaGrid = document.createElement('div');
     metaGrid.className = 'metadata-grid';
 
-    [
-      ['Format', media.format],
-      ['Status', media.status]
-    ].forEach(([label, value]) => {
-      if (value) this.addMetadataItem(metaGrid, label, this.formatDisplayName(value));
-    });
+    if (media.format) {
+      this.addMetadataItem(metaGrid, 'Format', this.formatDisplayName(media.format));
+    }
+    if (media.status) {
+      this.addMetadataItem(metaGrid, 'Status', this.formatDisplayName(media.status));
+    }
 
     section.appendChild(metaGrid);
     return section;
   }
 
   createStatisticsSection(media, malData = null) {
-    const section = this.createSection('stats-section', 'Statistics');
+    const section = document.createElement('div');
+    section.className = 'panel-section stats-section';
+
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'Statistics';
+    section.appendChild(title);
+
     const statsGrid = document.createElement('div');
     statsGrid.className = 'stats-grid';
 
     if (media.averageScore > 0) {
-      this.addStatItem(statsGrid, 'AniList Score', (media.averageScore / 10).toFixed(1), 'score-stat anilist-stat');
+      const scoreOutOf10 = (media.averageScore / 10).toFixed(1);
+      this.addStatItem(statsGrid, 'AniList Score', `${scoreOutOf10}`, 'score-stat anilist-stat');
     }
 
     if (malData) {
-      const stats = [
-        ['MAL Score', malData.score, 'score-stat mal-stat'],
-        ['MAL Ratings', malData.scored_by?.toLocaleString(), 'count-stat'],
-        ['MAL Rank', malData.rank ? `#${malData.rank}` : null, 'rank-stat']
-      ];
+      if (malData.score) {
+        this.addStatItem(statsGrid, 'MAL Score', `${malData.score}`, 'score-stat mal-stat');
+      }
       
-      stats.forEach(([label, value, className]) => {
-        if (value) this.addStatItem(statsGrid, label, value, className);
-      });
+      if (malData.scored_by) {
+        this.addStatItem(statsGrid, 'MAL Ratings', malData.scored_by.toLocaleString(), 'count-stat');
+      }
+      
+      if (malData.rank) {
+        this.addStatItem(statsGrid, 'MAL Rank', `#${malData.rank}`, 'rank-stat');
+      }
     }
 
     section.appendChild(statsGrid);
@@ -2905,16 +3338,12 @@ class MoreDetailsPanel {
     const mainTitle = media.title?.english || media.title?.romaji || 'Unknown Title';
     titleSection.innerHTML = `<h2 class="main-title">${mainTitle}</h2>`;
 
-    const titles = [
-      [media.title?.romaji, 'alt-title', media.title?.english !== media.title?.romaji],
-      [media.title?.native, 'native-title', true]
-    ];
-    
-    titles.forEach(([title, className, condition]) => {
-      if (title && condition) {
-        titleSection.innerHTML += `<div class="${className}">${title}</div>`;
-      }
-    });
+    if (media.title?.romaji && media.title?.english && media.title.romaji !== media.title.english) {
+      titleSection.innerHTML += `<div class="alt-title">${media.title.romaji}</div>`;
+    }
+    if (media.title?.native) {
+      titleSection.innerHTML += `<div class="native-title">${media.title.native}</div>`;
+    }
 
     header.appendChild(titleSection);
 
@@ -2922,12 +3351,15 @@ class MoreDetailsPanel {
       const formatInfo = document.createElement('div');
       formatInfo.className = 'format-info';
       
-      const parts = [
-        media.format ? `<span class="format-badge-large">${this.formatDisplayName(media.format)}</span>` : '',
-        (media.season && media.seasonYear) ? `<span class="season-info">${this.capitalize(media.season)} ${media.seasonYear}</span>` : ''
-      ].filter(Boolean);
+      let html = '';
+      if (media.format) {
+        html += `<span class="format-badge-large">${this.formatDisplayName(media.format)}</span>`;
+      }
+      if (media.season && media.seasonYear) {
+        html += `<span class="season-info">${this.capitalize(media.season)} ${media.seasonYear}</span>`;
+      }
       
-      formatInfo.innerHTML = parts.join('');
+      formatInfo.innerHTML = html;
       header.appendChild(formatInfo);
     }
 
@@ -2935,58 +3367,72 @@ class MoreDetailsPanel {
   }
 
   createGenresSection(genres) {
-    const section = this.createSection('genres-section', 'Genres');
-    const container = document.createElement('div');
-    container.className = 'genres-container';
-    container.innerHTML = genres.map(genre => `<span class="genre-tag">${genre}</span>`).join('');
-    section.appendChild(container);
+    const section = document.createElement('div');
+    section.className = 'panel-section genres-section';
+
+    section.innerHTML = `
+      <h3 class="section-title">Genres</h3>
+      <div class="genres-container">
+        ${genres.map(genre => `<span class="genre-tag">${genre}</span>`).join('')}
+      </div>
+    `;
+
     return section;
   }
 
   createExternalLinksSection(media) {
-    const section = this.createSection('external-links-section', 'External Links');
+    console.log('Creating external links for media:', media);
+    console.log('Media idMal:', media.idMal);
+    
+    const section = document.createElement('div');
+    section.className = 'panel-section external-links-section';
+
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'External Links';
+    section.appendChild(title);
+
     const linksContainer = document.createElement('div');
     linksContainer.className = 'external-links-container';
 
-    const buttons = [
-      ['🔗 View on AniList', 'anilist-btn', () => this.getAniListUrl(media.id, media.type)],
-      ...(media.idMal ? [['🔗 View on MAL', 'mal-btn', () => this.getMyAnimeListUrl(media.idMal, media.type)]] : [])
-    ];
+    const anilistBtn = document.createElement('button');
+    anilistBtn.className = 'external-link-btn anilist-btn';
+    anilistBtn.innerHTML = '🔗 View on AniList';
+    anilistBtn.onclick = (e) => {
+      e.stopPropagation();
+      window.open(this.getAniListUrl(media.id, media.type), '_blank');
+    };
+    linksContainer.appendChild(anilistBtn);
 
-    buttons.forEach(([text, className, urlFn]) => {
-      const btn = document.createElement('button');
-      btn.className = `external-link-btn ${className}`;
-      btn.innerHTML = text;
-      btn.onclick = e => {
+    if (media.idMal) {
+      console.log('MAL ID found, creating MAL button');
+      const malBtn = document.createElement('button');
+      malBtn.className = 'external-link-btn mal-btn';
+      malBtn.innerHTML = '🔗 View on MAL';
+      malBtn.onclick = (e) => {
         e.stopPropagation();
-        window.open(urlFn(), '_blank');
+        window.open(this.getMyAnimeListUrl(media.idMal, media.type), '_blank');
       };
-      linksContainer.appendChild(btn);
-    });
+      linksContainer.appendChild(malBtn);
+    } else {
+      console.log('No MAL ID found for this media');
+    }
 
     section.appendChild(linksContainer);
     return section;
   }
 
-  getAniListUrl(mediaId, mediaType = 'ANIME') {
-    return this.plugin.getAniListUrl(mediaId, mediaType);
-  }
-
-  getMyAnimeListUrl(malId, mediaType = 'ANIME') {
-    if (!malId) return null;
-    const type = mediaType === 'MANGA' ? 'manga' : 'anime';
-    return `https://myanimelist.net/${type}/${malId}`;
-  }
-
   formatDisplayName(str) {
-    return str?.replace(/_/g, ' ')
-      .split(' ')
-      .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-      .join(' ') || '';
+    if (!str) return '';
+    return str.replace(/_/g, ' ')
+              .split(' ')
+              .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+              .join(' ');
   }
 
   capitalize(str) {
-    return str ? str.charAt(0).toUpperCase() + str.slice(1).toLowerCase() : '';
+    if (!str) return '';
+    return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
   }
 
   positionPanel(panel, triggerElement) {
@@ -3001,92 +3447,69 @@ class MoreDetailsPanel {
 
   closePanel() {
     if (this.currentPanel) {
-      this.currentPanel.querySelectorAll('.countdown-value[data-interval-id]')
-        .forEach(element => {
-          const intervalId = element.dataset.intervalId;
-          if (intervalId) clearInterval(parseInt(intervalId));
-        });
+      const countdownElements = this.currentPanel.querySelectorAll('.countdown-value[data-interval-id]');
+      countdownElements.forEach(element => {
+        const intervalId = element.dataset.intervalId;
+        if (intervalId) {
+          clearInterval(parseInt(intervalId));
+        }
+      });
 
       document.removeEventListener('click', this.boundOutsideClickHandler);
       this.currentPanel.remove();
       this.currentPanel = null;
     }
   }
+  
+  
 }
 
 class Trending {
-  constructor(plugin) {
-    this.plugin = plugin;
-  }
+  constructor(plugin) { this.plugin = plugin; }
 
   async renderTrendingBlock(el, config) {
     el.empty();
     el.appendChild(this.plugin.render.createListSkeleton(10));
 
     try {
-      const data = await this.fetchTrendingData(config.mediaType);
-      const processedData = this.processJikanData(data, config.mediaType);
-      
-      el.empty();
-      this.plugin.render.renderSearchResults(el, processedData, {
-        layout: config.layout || 'card',
-        mediaType: config.mediaType || 'ANIME'
+      const type = (config.mediaType || 'ANIME').toLowerCase();
+      const url = `https://api.jikan.moe/v4/top/${type}?filter=airing&limit=20`;
+      const resp = await this.plugin.requestQueue.add(() => fetch(url).then(r => r.json()));
+      const unique = [];
+      const seen = new Set();
+      (resp.data || []).forEach(item => {
+        if (!seen.has(item.mal_id)) {
+          seen.add(item.mal_id);
+          unique.push(item);
+        }
       });
+      const top20 = unique.slice(0, 20).map(item => ({
+        id: item.mal_id,
+        title: { romaji: item.title || '', english: item.title_english, native: item.title_japanese },
+        coverImage: { large: item.images?.jpg?.large_image_url },
+        format: item.type,
+        averageScore: item.score ? Math.round(item.score * 10) : null,
+        genres: item.genres?.map(g => g.name) || [],
+        episodes: item.episodes,
+        chapters: type === 'manga' ? item.chapters : undefined
+      }));
+      el.empty();
+      this.plugin.render.renderSearchResults(el, top20, { layout: config.layout || 'card', mediaType: config.mediaType || 'ANIME' });
     } catch (err) {
       this.plugin.renderError(el, err.message, 'Trending');
     }
   }
-
-  async fetchTrendingData(mediaType = 'ANIME') {
-    const type = mediaType.toLowerCase();
-    const url = `https://api.jikan.moe/v4/top/${type}?filter=airing&limit=20`;
-    const response = await this.plugin.requestQueue.add(() => fetch(url).then(r => r.json()));
-    return response.data || [];
-  }
-
-  processJikanData(data, mediaType) {
-    const unique = this.removeDuplicates(data);
-    return unique.slice(0, 20).map(item => this.transformJikanItem(item, mediaType));
-  }
-
-  removeDuplicates(data) {
-    const seen = new Set();
-    return data.filter(item => {
-      if (seen.has(item.mal_id)) return false;
-      seen.add(item.mal_id);
-      return true;
-    });
-  }
-
-  transformJikanItem(item, mediaType) {
-    const isManga = mediaType?.toLowerCase() === 'manga';
-    
-    return {
-      id: item.mal_id,
-      title: {
-        romaji: item.title || '',
-        english: item.title_english,
-        native: item.title_japanese
-      },
-      coverImage: { large: item.images?.jpg?.large_image_url },
-      format: item.type,
-      averageScore: item.score ? Math.round(item.score * 10) : null,
-      genres: item.genres?.map(g => g.name) || [],
-      episodes: item.episodes,
-      ...(isManga && { chapters: item.chapters })
-    };
-  }
 }
+
 
 class Authentication {
   constructor(plugin) {
     this.plugin = plugin;
   }
 
-  static ANILIST_AUTH_URL = 'https://anilist.co/api/v2/oauth/authorize';
+  static ANILIST_AUTH_URL  = 'https://anilist.co/api/v2/oauth/authorize';
   static ANILIST_TOKEN_URL = 'https://anilist.co/api/v2/oauth/token';
-  static REDIRECT_URI = 'https://anilist.co/api/v2/oauth/pin';
-  static GRAPHQL_URL = 'https://graphql.anilist.co';
+  static REDIRECT_URI      = 'https://anilist.co/api/v2/oauth/pin';
 
   get isLoggedIn() {
     return Boolean(this.plugin.settings.accessToken);
@@ -3098,69 +3521,66 @@ class Authentication {
       return;
     }
 
-    const authUrl = this.buildAuthUrl();
+    const { clientId } = this.plugin.settings;
+    const authUrl =
+      `${Authentication.ANILIST_AUTH_URL}?` +
+      new URLSearchParams({
+        client_id:     clientId,
+        redirect_uri:  Authentication.REDIRECT_URI,
+        response_type: 'code'
+      }).toString();
+
     new Notice('🔐 Opening AniList login page…', 3000);
-    
-    await this.openUrl(authUrl);
-    
+    if (window.require) {
+      const { shell } = window.require('electron');
+      await shell.openExternal(authUrl);
+    } else {
+      window.open(authUrl, '_blank');
+    }
+
     const modal = AuthModal.aniListPin(this.plugin.app, async (pin) => {
   await this.exchangePin(pin);
 });
 modal.open();
   }
 
-  buildAuthUrl() {
-    const params = new URLSearchParams({
-      client_id: this.plugin.settings.clientId,
-      redirect_uri: Authentication.REDIRECT_URI,
-      response_type: 'code'
-    });
-    return `${Authentication.ANILIST_AUTH_URL}?${params}`;
-  }
-
-  async openUrl(url) {
-    if (window.require) {
-      const { shell } = window.require('electron');
-      await shell.openExternal(url);
-    } else {
-      window.open(url, '_blank');
-    }
-  }
-
   async logout() {
-    const settings = this.plugin.settings;
-    const username = settings.authUsername;
-    
-    Object.assign(settings, {
-      accessToken: '',
-      tokenExpiry: 0,
-      authUsername: '',
-      clientId: '',
-      clientSecret: ''
-    });
-    
+    this.plugin.settings.accessToken  = '';
+    this.plugin.settings.tokenExpiry  = 0;
+    this.plugin.settings.authUsername = '';
+    this.plugin.settings.clientId     = '';
+    this.plugin.settings.clientSecret = '';
     await this.plugin.saveSettings();
-    
-    if (username) this.plugin.cache.invalidateByUser(username);
+    if (this.plugin.settings.authUsername) {
+   this.plugin.cache.invalidateByUser(this.plugin.settings.authUsername);
+ }
     this.plugin.cache.clear();
-    
     new Notice('✅ Logged out & cleared credentials.', 3000);
   }
 
   async exchangePin(pin) {
     const body = new URLSearchParams({
-      grant_type: 'authorization_code',
-      code: pin.trim(),
-      client_id: this.plugin.settings.clientId,
+      grant_type:    'authorization_code',
+      code:          pin.trim(),
+      client_id:     this.plugin.settings.clientId,
       client_secret: this.plugin.settings.clientSecret || '',
-      redirect_uri: Authentication.REDIRECT_URI
+      redirect_uri:  Authentication.REDIRECT_URI
     });
 
+    const headers = {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      Accept:         'application/json'
+    };
+
     try {
-      const res = await this.makeRequest(Authentication.ANILIST_TOKEN_URL, 'POST', {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        Accept: 'application/json'
-      }, body.toString());
+      const res = await this.plugin.requestQueue.add(() =>
+        requestUrl({
+          url:    Authentication.ANILIST_TOKEN_URL,
+          method: 'POST',
+          headers,
+          body:   body.toString()
+        })
+      );
 
       const data = res.json;
       if (!data?.access_token) {
@@ -3171,11 +3591,10 @@ modal.open();
       if (data.expires_in) {
         this.plugin.settings.tokenExpiry = Date.now() + data.expires_in * 1000;
       }
-      
       await this.plugin.saveSettings();
       this.plugin.cache.invalidateByUser(await this.getAuthenticatedUsername());
+
       await this.forceScoreFormat();
-      
       new Notice('✅ Authenticated successfully!', 4000);
     } catch (err) {
       new Notice(`❌ Auth failed: ${err.message}`, 5000);
@@ -3183,24 +3602,7 @@ modal.open();
     }
   }
 
-  async makeRequest(url, method = 'POST', headers = {}, body = null) {
-    return this.plugin.requestQueue.add(() => 
-      requestUrl({ url, method, headers, body })
-    );
-  }
-
-  async makeGraphQLRequest(query, includeAuth = true) {
-    const headers = { 'Content-Type': 'application/json' };
-    if (includeAuth) {
-      await this.ensureValidToken();
-      headers.Authorization = `Bearer ${this.plugin.settings.accessToken}`;
-    }
-    
-    return this.makeRequest(Authentication.GRAPHQL_URL, 'POST', headers, 
-      JSON.stringify({ query })
-    );
-  }
-
+  
 
   async ensureValidToken() {
     if (!this.isLoggedIn) throw new Error('Not authenticated');
@@ -3208,39 +3610,77 @@ modal.open();
   }
   
   async forceScoreFormat() {
-    if (!this.plugin.settings.forceScoreFormat) return;
-    
-    try {
-      const currentFormat = await this.getCurrentScoreFormat();
-      
-      if (currentFormat === 'POINT_10_DECIMAL') {
-        console.log('Score format already set to POINT_10_DECIMAL');
-        return;
+  if (!this.plugin.settings.forceScoreFormat) return;
+  
+  await this.ensureValidToken();
+  
+  // First check current score format
+  const viewerQuery = `
+    query {
+      Viewer {
+        id
+        name
+        mediaListOptions {
+          scoreFormat
+        }
       }
-
-      await this.updateScoreFormat();
-    } catch (err) {
-      console.error('Failed to update score format:', err);
-      new Notice(`❌ Could not update score format: ${err.message}`, 5000);
     }
-  }
+  `;
 
-  async getCurrentScoreFormat() {
-    const query = `query { Viewer { mediaListOptions { scoreFormat } } }`;
-    const response = await this.makeGraphQLRequest(query);
-    return response.json?.data?.Viewer?.mediaListOptions?.scoreFormat;
-  }
+  try {
+    const currentResponse = await this.plugin.requestQueue.add(() =>
+      requestUrl({
+        url: 'https://graphql.anilist.co',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.plugin.settings.accessToken}`
+        },
+        body: JSON.stringify({ query: viewerQuery })
+      })
+    );
 
-  async updateScoreFormat() {
-    const mutation = `mutation { UpdateUser(scoreFormat: POINT_10_DECIMAL) { mediaListOptions { scoreFormat } } }`;
-    const response = await this.makeGraphQLRequest(mutation);
-    
+    const currentFormat = currentResponse.json?.data?.Viewer?.mediaListOptions?.scoreFormat;
+    console.log('Current score format:', currentFormat);
+
+    if (currentFormat === 'POINT_10_DECIMAL') {
+      console.log('Score format already set to POINT_10_DECIMAL');
+      return;
+    }
+
+    // Update score format
+    const mutation = `
+      mutation {
+        UpdateUser(scoreFormat: POINT_10_DECIMAL) {
+          id
+          name
+          mediaListOptions {
+            scoreFormat
+          }
+        }
+      }
+    `;
+
+    const response = await this.plugin.requestQueue.add(() =>
+      requestUrl({
+        url: 'https://graphql.anilist.co',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.plugin.settings.accessToken}`
+        },
+        body: JSON.stringify({ query: mutation })
+      })
+    );
+
     if (response.json?.errors) {
       const errorMsg = response.json.errors[0]?.message || 'Unknown error';
+      console.error('UpdateUser error:', response.json.errors);
       throw new Error(errorMsg);
     }
     
     const updatedFormat = response.json?.data?.UpdateUser?.mediaListOptions?.scoreFormat;
+    console.log('Updated score format to:', updatedFormat);
     
     if (updatedFormat === 'POINT_10_DECIMAL') {
       new Notice('✅ Score format updated to 0.0-10.0 scale', 3000);
@@ -3248,15 +3688,31 @@ modal.open();
     } else {
       throw new Error(`Score format not updated properly. Got: ${updatedFormat}`);
     }
+    
+  } catch (err) {
+    console.error('Failed to update score format:', err);
+    new Notice(`❌ Could not update score format: ${err.message}`, 5000);
   }
+}
 
   async getAuthenticatedUsername() {
+    await this.ensureValidToken();
+
     const query = `query { Viewer { name } }`;
-    const res = await this.makeGraphQLRequest(query);
-    
+    const res = await this.plugin.requestQueue.add(() =>
+      requestUrl({
+        url:     'https://graphql.anilist.co',
+        method:  'POST',
+        headers: {
+          'Content-Type':  'application/json',
+          Authorization:   `Bearer ${this.plugin.settings.accessToken}`
+        },
+        body: JSON.stringify({ query })
+      })
+    );
+
     const name = res.json?.data?.Viewer?.name;
     if (!name) throw new Error('Could not fetch username');
-    
     this.plugin.settings.authUsername = name;
     await this.plugin.saveSettings();
     return name;
@@ -3271,38 +3727,37 @@ class MALAuthentication {
   static MAL_AUTH_URL = 'https://myanimelist.net/v1/oauth2/authorize';
   static MAL_TOKEN_URL = 'https://myanimelist.net/v1/oauth2/token';
   static MAL_USER_URL = 'https://api.myanimelist.net/v2/users/@me';
-  static REDIRECT_URI = 'http://localhost:8080/callback';
 
   get isLoggedIn() {
     return Boolean(this.plugin.settings.malAccessToken && this.isTokenValid());
   }
 
-  generateSecureRandom(length) {
-    const arr = new Uint8Array(length);
+  makeVerifier() {
+    const arr = new Uint8Array(32);
     
     if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
       try {
         crypto.getRandomValues(arr);
-        return arr;
       } catch (e) {
         console.log('[MAL-AUTH] crypto.getRandomValues failed, using Math.random fallback', e);
+        for (let i = 0; i < arr.length; i++) {
+          arr[i] = Math.floor(Math.random() * 256);
+        }
+      }
+    } else {
+      console.log('[MAL-AUTH] crypto.getRandomValues not available, using Math.random');
+      for (let i = 0; i < arr.length; i++) {
+        arr[i] = Math.floor(Math.random() * 256);
       }
     }
     
-    console.log('[MAL-AUTH] crypto.getRandomValues not available, using Math.random');
-    for (let i = 0; i < arr.length; i++) {
-      arr[i] = Math.floor(Math.random() * 256);
-    }
-    return arr;
-  }
-
-  makeVerifier() {
-    const arr = this.generateSecureRandom(32);
-    return btoa(String.fromCharCode(...arr))
+    const verifier = btoa(String.fromCharCode(...arr))
       .replace(/\+/g, '-')
       .replace(/\//g, '_')
       .replace(/=/g, '')
       .substring(0, 128);
+    
+    return verifier;
   }
 
   makeChallenge(verifier) {
@@ -3319,7 +3774,11 @@ class MALAuthentication {
     }
     
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-    return Array.from({ length: 32 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
+    let result = '';
+    for (let i = 0; i < 32; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
   }
 
   async loginWithFlow() {
@@ -3336,10 +3795,27 @@ class MALAuthentication {
     this.verifier = this.makeVerifier();
     const challenge = this.makeChallenge(this.verifier);
     const state = this.generateState();
+
     this.authState = state;
 
-    const authUrl = this.buildAuthUrl(challenge, state);
-    await this.openUrl(authUrl, '🔐 Opening MyAnimeList login page…');
+    const params = new URLSearchParams({
+      response_type: 'code',
+      client_id: this.plugin.settings.malClientId,
+      redirect_uri: 'http://localhost:8080/callback',
+      code_challenge: challenge,
+      code_challenge_method: 'plain',
+      state: state
+    });
+
+    const authUrl = `${MALAuthentication.MAL_AUTH_URL}?${params.toString()}`;
+
+    new Notice('🔐 Opening MyAnimeList login page…', 3000);
+    if (window.require) {
+      const { shell } = window.require('electron');
+      await shell.openExternal(authUrl);
+    } else {
+      window.open(authUrl, '_blank');
+    }
 
     const modal = AuthModal.malCallback(this.plugin.app, async (callbackUrl) => {
   const code = this.extractAuthCode(callbackUrl);
@@ -3348,58 +3824,52 @@ class MALAuthentication {
     return;
   }
   await this.exchangeCodeForToken(code);
-  });
+});
 modal.open();
-return; 
-  }
-
-  buildAuthUrl(challenge, state) {
-    const params = new URLSearchParams({
-      response_type: 'code',
-      client_id: this.plugin.settings.malClientId,
-      redirect_uri: MALAuthentication.REDIRECT_URI,
-      code_challenge: challenge,
-      code_challenge_method: 'plain',
-      state: state
-    });
-    return `${MALAuthentication.MAL_AUTH_URL}?${params}`;
-  }
-
-  async openUrl(url, noticeText) {
-    new Notice(noticeText, 3000);
-    if (window.require) {
-      const { shell } = window.require('electron');
-      await shell.openExternal(url);
-    } else {
-      window.open(url, '_blank');
-    }
+return;
   }
 
   extractAuthCode(input) {
-    const trimmed = input.trim();
+    const trimmedInput = input.trim();
     
-    // Direct code check
-    if (!trimmed.includes('://') && !trimmed.includes('?') && !trimmed.includes('&')) {
-      if (/^[A-Za-z0-9_-]{20,}$/.test(trimmed)) return trimmed;
+    if (!trimmedInput.includes('://') && !trimmedInput.includes('?') && !trimmedInput.includes('&')) {
+      if (/^[A-Za-z0-9_-]{20,}$/.test(trimmedInput)) {
+        return trimmedInput;
+      }
     }
     
-    // Try URL parsing
+    let url;
     try {
-      const url = trimmed.startsWith('?') ? 
-        new URL('http://localhost' + trimmed) : 
-        trimmed.includes('://') ? new URL(trimmed) : null;
-      
-      if (url) {
-        const code = url.searchParams.get('code');
-        if (code) return decodeURIComponent(code);
+      if (trimmedInput.startsWith('?')) {
+        url = new URL('http://localhost' + trimmedInput);
+      } else if (trimmedInput.includes('://')) {
+        url = new URL(trimmedInput);
+      } else {
+        const codeMatch = trimmedInput.match(/[?&]code=([^&\s]+)/);
+        if (codeMatch) {
+          return decodeURIComponent(codeMatch[1]);
+        }
+        return null;
       }
     } catch (e) {
-      // Fall through to regex
+      const codeMatch = trimmedInput.match(/[?&]code=([^&\s]+)/);
+      if (codeMatch) {
+        return decodeURIComponent(codeMatch[1]);
+      }
+      return null;
     }
     
-    // Regex fallback
-    const codeMatch = trimmed.match(/[?&]code=([^&\s]+)/);
-    return codeMatch ? decodeURIComponent(codeMatch[1]) : null;
+    const code = url.searchParams.get('code');
+    if (code) {
+      return decodeURIComponent(code);
+    }
+    
+    const codeMatch = trimmedInput.match(/[?&]code=([^&\s]+)/);
+    if (codeMatch) {
+      return decodeURIComponent(codeMatch[1]);
+    }
+    
+    return null;
   }
 
   async exchangeCodeForToken(code) {
@@ -3407,118 +3877,90 @@ return;
       throw new Error('Invalid authorization code');
     }
 
-    new Notice('Exchanging authorization code for tokens…');
+    new Notice('Exchanging authorization code for tokens…',6000);
 
-    const body = this.buildTokenRequestBody(code);
-
-    try {
-      const res = await this.makeRequest(MALAuthentication.MAL_TOKEN_URL, body);
-      await this.handleTokenResponse(res);
-    } catch (err) {
-      new Notice(`❌ MAL Auth failed: ${err.message}`, 5000);
-      throw err;
-    }
-  }
-
-  buildTokenRequestBody(code) {
     const body = new URLSearchParams({
       client_id: this.plugin.settings.malClientId,
       code: code,
       code_verifier: this.verifier,
       grant_type: 'authorization_code',
-      redirect_uri: MALAuthentication.REDIRECT_URI
+      redirect_uri: 'http://localhost:8080/callback'
     });
 
-    const secret = this.plugin.settings.malClientSecret?.trim();
-    if (secret) body.append('client_secret', secret);
-    
-    return body;
-  }
-
-  async makeRequest(url, body, headers = {}) {
-    return this.plugin.requestQueue.add(() =>
-      requestUrl({
-        url,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          ...headers
-        },
-        body: body.toString(),
-        throw: false
-      })
-    );
-  }
-
-  async handleTokenResponse(res) {
-    if (res.status < 200 || res.status >= 300) {
-      throw new Error(this.buildTokenErrorMessage(res));
+    if (this.plugin.settings.malClientSecret && this.plugin.settings.malClientSecret.trim()) {
+      body.append('client_secret', this.plugin.settings.malClientSecret.trim());
     }
 
-    const data = this.parseResponse(res);
-    if (!data.access_token) {
-      throw new Error('No access token received from MyAnimeList');
-    }
-
-    await this.saveTokenData(data);
-    await this.postAuthSuccess();
-  }
-
-  buildTokenErrorMessage(res) {
-    const errorText = res.text || JSON.stringify(res.json) || 'Unknown error';
-    let errorMsg = `Token exchange failed (HTTP ${res.status})`;
-    
     try {
-      const errorData = res.json || (res.text ? JSON.parse(res.text) : {});
-      
-      if (errorData.error) {
-        errorMsg += `: ${errorData.error}`;
-        if (errorData.error_description) {
-          errorMsg += ` - ${errorData.error_description}`;
+      const res = await this.plugin.requestQueue.add(() =>
+        requestUrl({
+          url: MALAuthentication.MAL_TOKEN_URL,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+          },
+          body: body.toString(),
+          throw: false
+        })
+      );
+
+      if (res.status < 200 || res.status >= 300) {
+        const errorText = res.text || JSON.stringify(res.json) || 'Unknown error';
+        
+        let errorMsg = `Token exchange failed (HTTP ${res.status})`;
+        
+        try {
+          const errorData = res.json || (res.text ? JSON.parse(res.text) : {});
+          
+          if (errorData.error) {
+            errorMsg += `: ${errorData.error}`;
+            if (errorData.error_description) {
+              errorMsg += ` - ${errorData.error_description}`;
+            }
+          }
+          
+          if (errorData.error === 'invalid_client') {
+            errorMsg += '\n\nTip: Check your Client ID and Secret in settings. For apps without a secret, leave the Client Secret field empty.';
+          } else if (errorData.error === 'invalid_request') {
+            errorMsg += '\n\nTip: Ensure your Redirect URI exactly matches what\'s registered in your MAL app settings.';
+          } else if (errorData.error === 'invalid_grant') {
+            errorMsg += '\n\nTip: The authorization code may have expired or been used already. Please try authenticating again.';
+          }
+        } catch (parseError) {
+          errorMsg += `: ${errorText}`;
         }
         
-        const tips = {
-          invalid_client: 'Check your Client ID and Secret in settings. For apps without a secret, leave the Client Secret field empty.',
-          invalid_request: 'Ensure your Redirect URI exactly matches what\'s registered in your MAL app settings.',
-          invalid_grant: 'The authorization code may have expired or been used already. Please try authenticating again.'
-        };
-        
-        if (tips[errorData.error]) {
-          errorMsg += `\n\nTip: ${tips[errorData.error]}`;
-        }
+        throw new Error(errorMsg);
       }
-    } catch (parseError) {
-      errorMsg += `: ${errorText}`;
-    }
-    
-    return errorMsg;
-  }
 
-  parseResponse(res) {
-    try {
-      return res.json || (res.text ? JSON.parse(res.text) : null);
-    } catch (jsonError) {
-      throw new Error('Invalid response from MyAnimeList server');
-    }
-  }
+      let data;
+      try {
+        data = res.json || (res.text ? JSON.parse(res.text) : null);
+      } catch (jsonError) {
+        throw new Error('Invalid response from MyAnimeList server');
+      }
 
-  async saveTokenData(data) {
-    const settings = this.plugin.settings;
-    settings.malAccessToken = data.access_token;
-    settings.malRefreshToken = data.refresh_token;
-    settings.malTokenExpiry = Date.now() + (data.expires_in * 1000);
-    await this.plugin.saveSettings();
-    this.plugin.cache.invalidateByUser(settings.malUserInfo?.name);
-  }
+      if (!data.access_token) {
+        throw new Error('No access token received from MyAnimeList');
+      }
 
-  async postAuthSuccess() {
-    try {
-      await this.fetchUserInfo();
-      const username = this.plugin.settings.malUserInfo?.name || 'user';
-      new Notice(`✅ Successfully authenticated with MAL! Welcome ${username} 🎉`, 4000);
-    } catch (userError) {
-      console.log('[MAL-AUTH] Failed to fetch user info but auth succeeded', userError);
-      new Notice('✅ Authentication successful! 🎉', 4000);
+      this.plugin.settings.malAccessToken = data.access_token;
+      this.plugin.settings.malRefreshToken = data.refresh_token;
+      this.plugin.settings.malTokenExpiry = Date.now() + (data.expires_in * 1000);
+      await this.plugin.saveSettings();
+      this.plugin.cache.invalidateByUser(this.plugin.settings.malUserInfo?.name);
+
+      try {
+        await this.fetchUserInfo();
+        new Notice(`✅ Successfully authenticated with MAL! Welcome ${this.plugin.settings.malUserInfo?.name || 'user'} 🎉`, 4000);
+      } catch (userError) {
+        console.log('[MAL-AUTH] Failed to fetch user info but auth succeeded', userError);
+        new Notice('✅ Authentication successful! 🎉', 4000);
+      }
+
+    } catch (err) {
+      new Notice(`❌ MAL Auth failed: ${err.message}`, 5000);
+      throw err;
     }
   }
 
@@ -3527,7 +3969,9 @@ return;
       requestUrl({
         url: MALAuthentication.MAL_USER_URL,
         method: 'GET',
-        headers: { Authorization: `Bearer ${this.plugin.settings.malAccessToken}` },
+        headers: { 
+          'Authorization': `Bearer ${this.plugin.settings.malAccessToken}`
+        },
         throw: false
       })
     );
@@ -3536,7 +3980,7 @@ return;
       throw new Error(`Could not fetch user info (HTTP ${res.status})`);
     }
     
-    this.plugin.settings.malUserInfo = this.parseResponse(res);
+    this.plugin.settings.malUserInfo = res.json || (res.text ? JSON.parse(res.text) : null);
     await this.plugin.saveSettings();
   }
 
@@ -3551,27 +3995,36 @@ return;
       grant_type: 'refresh_token'
     });
 
-    const secret = this.plugin.settings.malClientSecret?.trim();
-    if (secret) body.append('client_secret', secret);
+    if (this.plugin.settings.malClientSecret && this.plugin.settings.malClientSecret.trim()) {
+      body.append('client_secret', this.plugin.settings.malClientSecret.trim());
+    }
 
-    const res = await this.makeRequest(MALAuthentication.MAL_TOKEN_URL, body);
+    const res = await this.plugin.requestQueue.add(() =>
+      requestUrl({
+        url: MALAuthentication.MAL_TOKEN_URL,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+        throw: false
+      })
+    );
 
     if (res.status < 200 || res.status >= 300) {
       const errorText = res.text || JSON.stringify(res.json) || 'Unknown error';
       throw new Error(`Token refresh failed (HTTP ${res.status}): ${errorText}`);
     }
 
-    const data = this.parseResponse(res);
-    const settings = this.plugin.settings;
-    settings.malAccessToken = data.access_token;
-    settings.malRefreshToken = data.refresh_token || settings.malRefreshToken;
-    settings.malTokenExpiry = Date.now() + (data.expires_in * 1000);
+    const data = res.json || (res.text ? JSON.parse(res.text) : null);
+    this.plugin.settings.malAccessToken = data.access_token;
+    this.plugin.settings.malRefreshToken = data.refresh_token || this.plugin.settings.malRefreshToken;
+    this.plugin.settings.malTokenExpiry = Date.now() + (data.expires_in * 1000);
     await this.plugin.saveSettings();
   }
 
   isTokenValid() {
-    const { malAccessToken, malTokenExpiry } = this.plugin.settings;
-    return !!(malAccessToken && malTokenExpiry && Date.now() < (malTokenExpiry - 5 * 60 * 1000));
+    return !!(this.plugin.settings.malAccessToken && 
+              this.plugin.settings.malTokenExpiry && 
+              Date.now() < (this.plugin.settings.malTokenExpiry - 5 * 60 * 1000));
   }
 
   async checkTokenExpiry() {
@@ -3591,27 +4044,23 @@ return;
   }
 
   async logout() {
-    const settings = this.plugin.settings;
-    const username = settings.malUserInfo?.name;
-    
-    Object.assign(settings, {
-      malAccessToken: '',
-      malRefreshToken: '',
-      malTokenExpiry: null,
-      malUserInfo: null,
-      malClientId: '',
-      malClientSecret: ''
-    });
-    
+    this.plugin.settings.malAccessToken = '';
+    this.plugin.settings.malRefreshToken = '';
+    this.plugin.settings.malTokenExpiry = null;
+    this.plugin.settings.malUserInfo = null;
+    this.plugin.settings.malClientId = '';
+    this.plugin.settings.malClientSecret = '';
     await this.plugin.saveSettings();
+    if (this.plugin.settings.malUserInfo?.name) {
+    this.plugin.cache.invalidateByUser(this.plugin.settings.malUserInfo.name);
+   }
     
-    if (username) this.plugin.cache.invalidateByUser(username);
-    this.plugin.cache.clear('malData');
-    this.plugin.cache.clear();
-    
+   this.plugin.cache.clear('malData');
+   this.plugin.cache.clear();
     new Notice('✅ Logged out from MyAnimeList & cleared credentials.', 3000);
   }
 
+  
 
   async ensureValidToken() {
     if (!this.isLoggedIn) throw new Error('Not authenticated with MyAnimeList');

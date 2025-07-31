@@ -2239,11 +2239,11 @@ renderMainStats(frag, user, options) {
     const stats = user.statistics[type];
     if (!stats || stats.count === 0) return;
 
-    const card = this._createStatsCard(grid, type, stats, { showTimeStats, showBreakdowns });
+    const card = this.createStatsCard(grid, type, stats, { showTimeStats, showBreakdowns });
   });
 }
 
-_createStatsCard(container, type, stats, options) {
+createStatsCard(container, type, stats, options) {
   const { showTimeStats, showBreakdowns } = options;
   const card = container.createDiv({ 
     cls: 'zoro-stats-card zoro-stats-card-main',
@@ -2343,7 +2343,7 @@ renderSecondaryStat(container, label, value, className = '') {
 }
 
 renderStatsBreakdowns(frag, user) {
-  const hasBreakdowns = this._hasBreakdownData(user);
+  const hasBreakdowns = this.hasBreakdownData(user);
   if (!hasBreakdowns) return;
 
   const breakdownSection = frag.createDiv({ cls: 'zoro-stats-section zoro-breakdowns' });
@@ -2362,7 +2362,7 @@ renderStatsBreakdowns(frag, user) {
   });
 }
 
-_hasBreakdownData(user) {
+hasBreakdownData(user) {
   return ['anime', 'manga'].some(type => {
     const stats = user.statistics[type];
     return stats && (stats.statuses || stats.scores || stats.genres || stats.formats);

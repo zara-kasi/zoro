@@ -4513,7 +4513,8 @@ class Edit {
     
     // Create all elements
     const title = this.createTitle(entry);
-    const closeBtn = this.createCloseButton(onCancel, modal);
+
+    const closeBtn = Edit.createCloseButton(() => this.closeModal(modal.container, onCancel));
     const favoriteBtn = this.createFavoriteButton(entry);
     const formFields = this.createFormFields(entry);
     const quickButtons = this.createQuickProgressButtons(entry, formFields.progress.input, formFields.status.input);
@@ -4571,17 +4572,16 @@ class Edit {
     return title;
   }
   
-  createCloseButton(onCancel, modal) {
-    const closeBtn = document.createElement('button');
-    closeBtn.className = this.config.buttons.close.class;
-    closeBtn.type = 'button';
-    closeBtn.setAttribute('aria-label', 'Close modal');
-    closeBtn.title = 'Close';
-    
-    closeBtn.onclick = () => this.closeModal(modal.container, onCancel);
-    
-    return closeBtn;
-  }
+  
+static createCloseButton(onClick) {
+    const btn = document.createElement('button');
+    btn.className = 'panel-close-btn';  // same style as More Details panel
+    btn.innerHTML = '×';
+    btn.title = 'Close';
+    btn.onclick = onClick;
+    return btn;
+}
+
   
   createFavoriteButton(entry) {
   const favBtn = document.createElement('button');
@@ -5161,7 +5161,6 @@ class Prompt {
 
     const cancelBtn = document.createElement('button');
     cancelBtn.className = 'zoro-close-btn';
-    cancelBtn.textContent = 'Cancel';
     cancelBtn.onclick = () => closeModal();
 
     buttonContainer.appendChild(authenticateBtn);

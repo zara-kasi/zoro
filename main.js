@@ -4584,18 +4584,20 @@ class Edit {
   }
   
   createFavoriteButton(entry) {
-    const favBtn = document.createElement('button');
-    favBtn.className = this.config.buttons.favorite.class;
-    favBtn.type = 'button';
-    favBtn.title = 'Toggle Favorite';
-    favBtn.textContent = entry.media.isFavourite ? 
-      this.config.buttons.favorite.hearts.filled : 
-      this.config.buttons.favorite.hearts.empty;
-    
-    favBtn.onclick = () => this.toggleFavorite(entry, favBtn);
-    
-    return favBtn;
-  }
+  const favBtn = document.createElement('button');
+  favBtn.className = this.config.buttons.favorite.class;
+  favBtn.type = 'button';
+  favBtn.title = 'Toggle Favorite';
+  
+  // Correctly set className, not textContent
+  favBtn.className = entry.media.isFavourite ? 
+    'zoro-fav-btn zoro-heart' : 
+    'zoro-fav-btn zoro-no-heart';
+  // Leave textContent empty for CSS hearts
+  
+  favBtn.onclick = () => this.toggleFavorite(entry, favBtn);
+  return favBtn;
+}
   
   createFormFields(entry) {
     const statusField = this.createStatusField(entry);
@@ -4876,73 +4878,70 @@ favContainer.appendChild(elements.favoriteBtn);
   }
 
 async toggleFavorite(entry, favBtn) {
-    favBtn.disabled = true;
-    
-    
-    try {
-      let mediaType = favBtn.dataset.mediaType;
-      if (!mediaType) {
-        mediaType = entry.media.type || (entry.media.episodes ? 'ANIME' : 'MANGA');
-      }
-      
-      const isAnime = mediaType === 'ANIME';
-      
-      const mutation = `
-        mutation ToggleFav($animeId: Int, $mangaId: Int) {
-          ToggleFavourite(animeId: $animeId, mangaId: $mangaId) {
-            anime { nodes { id } }
-            manga { nodes { id } }
-          }
-        }`;
-        
-      const variables = {};
-      if (isAnime) {
-        variables.animeId = entry.media.id;
-      } else {
-        variables.mangaId = entry.media.id;
-      }
-
-      const res = await this.plugin.requestQueue.add(() =>
-        requestUrl({
-          url: 'https://graphql.anilist.co',
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.plugin.settings.accessToken}`
-          },
-          body: JSON.stringify({ query: mutation, variables })
-        })
-      );
-      
-      if (res.json.errors) {
-        new Notice(`API Error: ${res.json.errors[0].message}`, 8000);
-        throw new Error(res.json.errors[0].message);
-      }
-      
-      const toggleResult = res.json.data?.ToggleFavourite;
-      let isFav = false;
-      
-      if (isAnime && toggleResult?.anime?.nodes) {
-        isFav = toggleResult.anime.nodes.some(node => node.id === entry.media.id);
-      } else if (!isAnime && toggleResult?.manga?.nodes) {
-        isFav = toggleResult.manga.nodes.some(node => node.id === entry.media.id);
-      }
-      
-      entry.media.isFavourite = isFav;
-      document.querySelectorAll(`[data-media-id="${entry.media.id}"] .zoro-heart`)
-  .forEach(h => h.style.display = entry.media.isFavourite ? '' : 'none');
-      this.invalidateCache(entry);
-      this.updateAllFavoriteButtons(entry);
-      
-      favBtn.className = isFav ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart';
-      new Notice(`${isFav ? 'Added to' : 'Removed from'} favorites!`, 3000);
-      
-    } catch (e) {
-      new Notice(`❌ Error: ${e.message || 'Unknown error'}`, 8000);
-    } finally {
-      favBtn.disabled = false;
+  favBtn.disabled = true;
+  
+  // Store the CURRENT state before the API call
+  const wasAlreadyFavorited = entry.media.isFavourite;
+  
+  try {
+    let mediaType = favBtn.dataset.mediaType;
+    if (!mediaType) {
+      mediaType = entry.media.type || (entry.media.episodes ? 'ANIME' : 'MANGA');
     }
+    
+    const isAnime = mediaType === 'ANIME';
+    
+    const mutation = `
+      mutation ToggleFav($animeId: Int, $mangaId: Int) {
+        ToggleFavourite(animeId: $animeId, mangaId: $mangaId) {
+          anime { nodes { id } }
+          manga { nodes { id } }
+        }
+      }`;
+      
+    const variables = {};
+    if (isAnime) {
+      variables.animeId = entry.media.id;
+    } else {
+      variables.mangaId = entry.media.id;
+    }
+
+    const res = await this.plugin.requestQueue.add(() =>
+      requestUrl({
+        url: 'https://graphql.anilist.co',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.plugin.settings.accessToken}`
+        },
+        body: JSON.stringify({ query: mutation, variables })
+      })
+    );
+    
+    if (res.json.errors) {
+      new Notice(`API Error: ${res.json.errors[0].message}`, 8000);
+      throw new Error(res.json.errors[0].message);
+    }
+    
+    // FIX: Simply toggle the previous state instead of parsing complex response
+    const isFav = !wasAlreadyFavorited;
+    
+    entry.media.isFavourite = isFav;
+    document.querySelectorAll(`[data-media-id="${entry.media.id}"] .zoro-heart`)
+      .forEach(h => h.style.display = entry.media.isFavourite ? '' : 'none');
+    
+    this.invalidateCache(entry);
+    this.updateAllFavoriteButtons(entry);
+    
+    favBtn.className = isFav ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart';
+    new Notice(`${isFav ? 'Added to' : 'Removed from'} favorites!`, 3000);
+    
+  } catch (e) {
+    new Notice(`❌ Error: ${e.message || 'Unknown error'}`, 8000);
+  } finally {
+    favBtn.disabled = false;
   }
+}
 
   async handleRemove(entry, modalElement) {
     if (!confirm('Remove this entry?')) return;
@@ -5053,9 +5052,11 @@ async toggleFavorite(entry, favBtn) {
   }
   
   updateAllFavoriteButtons(entry) {
-    document.querySelectorAll(`[data-media-id="${entry.media.id}"] .zoro-fav-btn`)
-      .forEach(btn => btn.textContent = entry.media.isFavourite ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart');
-  }
+  document.querySelectorAll(`[data-media-id="${entry.media.id}"] .zoro-fav-btn`)
+    .forEach(btn => {
+      btn.className = entry.media.isFavourite ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart';
+    });
+}
   
   refreshUI(entry) {
     const card = document.querySelector(`.zoro-container [data-media-id="${entry.media.id}"]`);

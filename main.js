@@ -4876,26 +4876,16 @@ favContainer.appendChild(elements.favoriteBtn);
   }
 
 async toggleFavorite(entry, favBtn) {
-    console.log('🚀 toggleFavorite started', { entry, favBtn });
-    
     favBtn.disabled = true;
-    console.log('🔒 Button disabled', { buttonElement: favBtn });
+    
     
     try {
       let mediaType = favBtn.dataset.mediaType;
-      console.log('📋 Initial mediaType from button dataset:', mediaType);
-      
       if (!mediaType) {
         mediaType = entry.media.type || (entry.media.episodes ? 'ANIME' : 'MANGA');
-        console.log('🎯 MediaType determined from entry:', {
-          entryType: entry.media.type,
-          hasEpisodes: !!entry.media.episodes,
-          finalMediaType: mediaType
-        });
       }
       
       const isAnime = mediaType === 'ANIME';
-      console.log('🎬 Media classification:', { mediaType, isAnime });
       
       const mutation = `
         mutation ToggleFav($animeId: Int, $mangaId: Int) {
@@ -4908,14 +4898,9 @@ async toggleFavorite(entry, favBtn) {
       const variables = {};
       if (isAnime) {
         variables.animeId = entry.media.id;
-        console.log('🎌 Setting animeId:', variables.animeId);
       } else {
         variables.mangaId = entry.media.id;
-        console.log('📚 Setting mangaId:', variables.mangaId);
       }
-      
-      console.log('📤 Making API request with:', { variables, mutation });
-      console.log('🔑 Using access token:', this.plugin.settings.accessToken ? 'Present' : 'Missing');
 
       const res = await this.plugin.requestQueue.add(() =>
         requestUrl({
@@ -4929,85 +4914,33 @@ async toggleFavorite(entry, favBtn) {
         })
       );
       
-      console.log('📥 API Response received:', { 
-        status: res.status, 
-        hasErrors: !!res.json.errors,
-        response: res
-      });
-      
       if (res.json.errors) {
-        console.error('❌ API Errors:', res.json.errors);
         new Notice(`API Error: ${res.json.errors[0].message}`, 8000);
         throw new Error(res.json.errors[0].message);
       }
       
       const toggleResult = res.json.data?.ToggleFavourite;
-      console.log('🔄 Toggle result:', toggleResult);
-      
       let isFav = false;
       
       if (isAnime && toggleResult?.anime?.nodes) {
         isFav = toggleResult.anime.nodes.some(node => node.id === entry.media.id);
-        console.log('🎬 Anime favorite check:', {
-          nodes: toggleResult.anime.nodes,
-          searchingForId: entry.media.id,
-          isFavorite: isFav
-        });
       } else if (!isAnime && toggleResult?.manga?.nodes) {
         isFav = toggleResult.manga.nodes.some(node => node.id === entry.media.id);
-        console.log('📚 Manga favorite check:', {
-          nodes: toggleResult.manga.nodes,
-          searchingForId: entry.media.id,
-          isFavorite: isFav
-        });
       }
       
-      console.log('💖 Final favorite status:', { 
-        previousStatus: entry.media.isFavourite,
-        newStatus: isFav 
-      });
-      
       entry.media.isFavourite = isFav;
-      
-      const heartElements = document.querySelectorAll(`[data-media-id="${entry.media.id}"] .zoro-heart`);
-      console.log('❤️ Updating heart elements:', {
-        selector: `[data-media-id="${entry.media.id}"] .zoro-heart`,
-        foundElements: heartElements.length,
-        showHearts: isFav
-      });
-      
-      heartElements.forEach(h => h.style.display = entry.media.isFavourite ? '' : 'none');
-      
-      console.log('🗄️ Invalidating cache for entry:', entry.media.id);
+      document.querySelectorAll(`[data-media-id="${entry.media.id}"] .zoro-heart`)
+  .forEach(h => h.style.display = entry.media.isFavourite ? '' : 'none');
       this.invalidateCache(entry);
-      
-      console.log('🔄 Updating all favorite buttons for media:', entry.media.id);
       this.updateAllFavoriteButtons(entry);
       
-      const newClassName = isFav ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart';
-      console.log('🎨 Updating button class:', {
-        oldClassName: favBtn.className,
-        newClassName: newClassName
-      });
-      favBtn.className = newClassName;
-      
-      const noticeMessage = `${isFav ? 'Added to' : 'Removed from'} favorites!`;
-      console.log('📢 Showing notice:', noticeMessage);
-      new Notice(noticeMessage, 3000);
-      
-      console.log('✅ toggleFavorite completed successfully');
+      favBtn.className = isFav ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart';
+      new Notice(`${isFav ? 'Added to' : 'Removed from'} favorites!`, 3000);
       
     } catch (e) {
-      console.error('❌ Error in toggleFavorite:', {
-        error: e,
-        message: e.message,
-        stack: e.stack
-      });
       new Notice(`❌ Error: ${e.message || 'Unknown error'}`, 8000);
     } finally {
       favBtn.disabled = false;
-      console.log('🔓 Button re-enabled', { buttonElement: favBtn });
-      console.log('🏁 toggleFavorite function ended');
     }
   }
 

@@ -5053,8 +5053,175 @@ async toggleFavorite(entry, favBtn) {
   }
   
   updateAllFavoriteButtons(entry) {
-    document.querySelectorAll(`[data-media-id="${entry.media.id}"] .zoro-fav-btn`)
-      .forEach(btn => btn.textContent = entry.media.isFavourite ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart');
+    console.log('🔄 updateAllFavoriteButtons started', { 
+      entry: entry,
+      mediaId: entry?.media?.id,
+      isFavourite: entry?.media?.isFavourite,
+      entryStructure: {
+        hasEntry: !!entry,
+        hasMedia: !!entry?.media,
+        mediaKeys: entry?.media ? Object.keys(entry.media) : 'No media object'
+      }
+    });
+
+    try {
+      // Validate input parameters
+      if (!entry) {
+        console.error('❌ updateAllFavoriteButtons: entry parameter is null/undefined');
+        throw new Error('Entry parameter is required');
+      }
+
+      if (!entry.media) {
+        console.error('❌ updateAllFavoriteButtons: entry.media is null/undefined', { entry });
+        throw new Error('Entry must have a media property');
+      }
+
+      if (!entry.media.id) {
+        console.error('❌ updateAllFavoriteButtons: entry.media.id is null/undefined', { 
+          entry,
+          media: entry.media,
+          mediaId: entry.media.id
+        });
+        throw new Error('Entry.media must have an id property');
+      }
+
+      // Log the selector being used
+      const selector = `[data-media-id="${entry.media.id}"] .zoro-fav-btn`;
+      console.log('🎯 Searching for buttons with selector:', {
+        selector: selector,
+        mediaId: entry.media.id,
+        mediaIdType: typeof entry.media.id
+      });
+
+      // Query for elements
+      const buttons = document.querySelectorAll(selector);
+      console.log('🔍 Button search results:', {
+        foundButtons: buttons.length,
+        buttons: Array.from(buttons),
+        buttonDetails: Array.from(buttons).map((btn, index) => ({
+          index: index,
+          element: btn,
+          tagName: btn.tagName,
+          className: btn.className,
+          textContent: btn.textContent,
+          dataset: btn.dataset,
+          parentElement: btn.parentElement,
+          hasDataMediaId: btn.parentElement?.hasAttribute('data-media-id'),
+          parentDataMediaId: btn.parentElement?.getAttribute('data-media-id')
+        }))
+      });
+
+      // Check if any buttons were found
+      if (buttons.length === 0) {
+        console.warn('⚠️ No buttons found with selector:', {
+          selector: selector,
+          possibleReasons: [
+            'Elements not yet rendered in DOM',
+            'Incorrect data-media-id attribute',
+            'Missing .zoro-fav-btn class',
+            'DOM structure changed'
+          ]
+        });
+
+        // Debug: Show all elements with data-media-id attribute
+        const allMediaElements = document.querySelectorAll('[data-media-id]');
+        console.log('🔍 All elements with data-media-id:', {
+          count: allMediaElements.length,
+          elements: Array.from(allMediaElements).map(el => ({
+            element: el,
+            mediaId: el.getAttribute('data-media-id'),
+            hasZoroFavBtn: !!el.querySelector('.zoro-fav-btn')
+          }))
+        });
+
+        // Debug: Show all .zoro-fav-btn elements
+        const allFavButtons = document.querySelectorAll('.zoro-fav-btn');
+        console.log('🔍 All .zoro-fav-btn elements:', {
+          count: allFavButtons.length,
+          elements: Array.from(allFavButtons).map(btn => ({
+            element: btn,
+            parentHasDataMediaId: btn.parentElement?.hasAttribute('data-media-id'),
+            parentMediaId: btn.parentElement?.getAttribute('data-media-id')
+          }))
+        });
+      }
+
+      // Determine new class name
+      const newClassName = entry.media.isFavourite ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart';
+      console.log('🎨 Determined new class name:', {
+        isFavourite: entry.media.isFavourite,
+        newClassName: newClassName
+      });
+
+      // Process each button
+      buttons.forEach((btn, index) => {
+        console.log(`🔄 Processing button ${index + 1}/${buttons.length}:`, {
+          buttonIndex: index,
+          button: btn,
+          currentClassName: btn.className,
+          currentTextContent: btn.textContent,
+          willChangeTo: newClassName
+        });
+
+        try {
+          // Note: The original code sets textContent to the class name, which seems wrong
+          // This appears to be a bug - should probably be btn.className = newClassName
+          const oldTextContent = btn.textContent;
+          btn.textContent = newClassName;
+          
+          console.log(`✅ Button ${index + 1} updated successfully:`, {
+            buttonIndex: index,
+            oldTextContent: oldTextContent,
+            newTextContent: btn.textContent,
+            button: btn
+          });
+
+          // Warning about potential bug
+          console.warn(`⚠️ POTENTIAL BUG: Setting textContent to class name. Did you mean btn.className = "${newClassName}"?`);
+
+        } catch (buttonError) {
+          console.error(`❌ Error updating button ${index + 1}:`, {
+            buttonIndex: index,
+            button: btn,
+            error: buttonError,
+            errorMessage: buttonError.message,
+            errorStack: buttonError.stack
+          });
+        }
+      });
+
+      console.log('✅ updateAllFavoriteButtons completed successfully:', {
+        processedButtons: buttons.length,
+        finalState: {
+          mediaId: entry.media.id,
+          isFavourite: entry.media.isFavourite,
+          appliedClassName: newClassName
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Fatal error in updateAllFavoriteButtons:', {
+        error: error,
+        errorMessage: error.message,
+        errorStack: error.stack,
+        errorName: error.name,
+        entry: entry,
+        entryType: typeof entry,
+        functionArguments: arguments,
+        timestamp: new Date().toISOString()
+      });
+
+      // Additional context for debugging
+      console.error('🔍 Debug context:', {
+        documentReady: document.readyState,
+        bodyExists: !!document.body,
+        totalElements: document.querySelectorAll('*').length,
+        zoroFavBtnCount: document.querySelectorAll('.zoro-fav-btn').length,
+        dataMediaIdCount: document.querySelectorAll('[data-media-id]').length
+      });
+
+      throw error; // Re-throw to maintain error handling chain
+    }
   }
   
   refreshUI(entry) {

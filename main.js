@@ -2145,12 +2145,12 @@ renderUserStats(el, user, options = {}) {
   }
 
   if (!user) {
-    this._renderError(el, 'No user data available');
+    this.renderError(el, 'No user data available');
     return;
   }
 
   if (!user.statistics) {
-    this._renderError(el, 'Statistics unavailable for this user');
+    this.renderError(el, 'Statistics unavailable for this user');
     return;
   }
 
@@ -2158,20 +2158,20 @@ renderUserStats(el, user, options = {}) {
 
   // Render header section
   if (showAvatar) {
-    this._renderHeader(frag, user);
+    this.renderHeader(frag, user);
   }
 
   // Render main stats sections
-  this._renderMainStats(frag, user, { showTimeStats, showBreakdowns });
+  this.renderMainStats(frag, user, { showTimeStats, showBreakdowns });
 
   // Render additional insights
   if (showBreakdowns && layout !== 'minimal') {
-    this._renderStatsBreakdowns(frag, user);
+    this.renderStatsBreakdowns(frag, user);
   }
 
   // Render favorites section
   if (showFavorites && user.favourites && layout === 'enhanced') {
-    this._renderFavorites(frag, user.favourites);
+    this.renderFavorites(frag, user.favourites);
   }
 
   el.appendChild(frag);
@@ -2184,7 +2184,7 @@ renderUserStats(el, user, options = {}) {
 
 // Private helper methods for modular rendering
 
-_renderError(el, message) {
+renderError(el, message) {
   const errorEl = el.createDiv({ 
     cls: 'zoro-error-box',
     text: message 
@@ -2195,7 +2195,7 @@ _renderError(el, message) {
   });
 }
 
-_renderHeader(frag, user) {
+renderHeader(frag, user) {
   const header = frag.createDiv({ cls: 'zoro-stats-header' });
   
   if (user.avatar?.medium) {
@@ -2229,7 +2229,7 @@ _renderHeader(frag, user) {
   });
 }
 
-_renderMainStats(frag, user, options) {
+renderMainStats(frag, user, options) {
   const { showTimeStats, showBreakdowns } = options;
   const statsSection = frag.createDiv({ cls: 'zoro-stats-section zoro-main-stats' });
   
@@ -2259,27 +2259,27 @@ _createStatsCard(container, type, stats, options) {
 
   // Primary stats
   const primaryStats = card.createDiv({ cls: 'zoro-primary-stats' });
-  this._renderPrimaryStat(primaryStats, 'Total', stats.count, 'zoro-stat-count');
+  this.renderPrimaryStat(primaryStats, 'Total', stats.count, 'zoro-stat-count');
   
   if (stats.meanScore > 0) {
-    this._renderPrimaryStat(primaryStats, 'Mean Score', 
+    this.renderPrimaryStat(primaryStats, 'Mean Score', 
       `${stats.meanScore.toFixed(1)}/10`, 'zoro-stat-score');
   }
 
   // Secondary stats grid
   const secondaryGrid = card.createDiv({ cls: 'zoro-secondary-stats' });
   
-  const secondaryStats = this._getSecondaryStats(type, stats, showTimeStats);
+  const secondaryStats = this.getSecondaryStats(type, stats, showTimeStats);
   secondaryStats.forEach(({ label, value, className }) => {
     if (value != null && value !== 0) {
-      this._renderSecondaryStat(secondaryGrid, label, value, className);
+      this.renderSecondaryStat(secondaryGrid, label, value, className);
     }
   });
 
   return card;
 }
 
-_getSecondaryStats(type, stats, showTimeStats) {
+getSecondaryStats(type, stats, showTimeStats) {
   const baseStats = [
     { 
       label: 'Std Deviation', 
@@ -2330,19 +2330,19 @@ _getSecondaryStats(type, stats, showTimeStats) {
   return baseStats.filter(stat => stat.value != null);
 }
 
-_renderPrimaryStat(container, label, value, className = '') {
+renderPrimaryStat(container, label, value, className = '') {
   const statEl = container.createDiv({ cls: `zoro-primary-stat ${className}` });
   statEl.createEl('div', { cls: 'zoro-stat-value-primary', text: value });
   statEl.createEl('div', { cls: 'zoro-stat-label-primary', text: label });
 }
 
-_renderSecondaryStat(container, label, value, className = '') {
+renderSecondaryStat(container, label, value, className = '') {
   const statEl = container.createDiv({ cls: `zoro-secondary-stat ${className}` });
   statEl.createEl('span', { cls: 'zoro-stat-label-secondary', text: label });
   statEl.createEl('span', { cls: 'zoro-stat-value-secondary', text: value.toLocaleString?.() ?? value });
 }
 
-_renderStatsBreakdowns(frag, user) {
+renderStatsBreakdowns(frag, user) {
   const hasBreakdowns = this._hasBreakdownData(user);
   if (!hasBreakdowns) return;
 
@@ -2358,7 +2358,7 @@ _renderStatsBreakdowns(frag, user) {
     const stats = user.statistics[type];
     if (!stats) return;
 
-    this._renderTypeBreakdowns(breakdownGrid, type, stats);
+    this.renderTypeBreakdowns(breakdownGrid, type, stats);
   });
 }
 
@@ -2369,7 +2369,7 @@ _hasBreakdownData(user) {
   });
 }
 
-_renderTypeBreakdowns(container, type, stats) {
+renderTypeBreakdowns(container, type, stats) {
   if (!stats || stats.count === 0) return;
 
   const typeSection = container.createDiv({ 
@@ -2379,20 +2379,20 @@ _renderTypeBreakdowns(container, type, stats) {
 
   // Status breakdown
   if (stats.statuses?.length) {
-    this._renderBreakdownChart(typeSection, 'Status Distribution', stats.statuses, 'status');
+    this.renderBreakdownChart(typeSection, 'Status Distribution', stats.statuses, 'status');
   }
 
   // Score distribution
   if (stats.scores?.length) {
     const validScores = stats.scores.filter(s => s.score > 0);
     if (validScores.length) {
-      this._renderBreakdownChart(typeSection, 'Score Distribution', validScores, 'score');
+      this.renderBreakdownChart(typeSection, 'Score Distribution', validScores, 'score');
     }
   }
 
   // Format breakdown
   if (stats.formats?.length) {
-    this._renderBreakdownChart(typeSection, 'Format Distribution', stats.formats, 'format');
+    this.renderBreakdownChart(typeSection, 'Format Distribution', stats.formats, 'format');
   }
 
   // Top genres (limit to top 5)
@@ -2400,11 +2400,11 @@ _renderTypeBreakdowns(container, type, stats) {
     const topGenres = stats.genres
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
-    this._renderBreakdownChart(typeSection, 'Top Genres', topGenres, 'genre');
+    this.renderBreakdownChart(typeSection, 'Top Genres', topGenres, 'genre');
   }
 }
 
-_renderBreakdownChart(container, title, data, keyField) {
+renderBreakdownChart(container, title, data, keyField) {
   const chartContainer = container.createDiv({ cls: 'zoro-breakdown-chart' });
   chartContainer.createEl('h4', { text: title, cls: 'zoro-breakdown-title' });
 
@@ -2445,7 +2445,7 @@ bar.style.setProperty('--bar-width', `${percentage}%`);
   chartEl.setAttribute('data-chart-key', keyField);
 }
 
-_renderFavorites(frag, favourites) {
+renderFavorites(frag, favourites) {
   const hasAnime = favourites.anime?.nodes?.length > 0;
   const hasManga = favourites.manga?.nodes?.length > 0;
   
@@ -2460,15 +2460,15 @@ _renderFavorites(frag, favourites) {
   const favGrid = favSection.createDiv({ cls: 'zoro-favorites-grid' });
 
   if (hasAnime) {
-    this._renderFavoriteType(favGrid, 'anime', favourites.anime.nodes.slice(0, 6));
+    this.renderFavoriteType(favGrid, 'anime', favourites.anime.nodes.slice(0, 6));
   }
   
   if (hasManga) {
-    this._renderFavoriteType(favGrid, 'manga', favourites.manga.nodes.slice(0, 6));
+    this.renderFavoriteType(favGrid, 'manga', favourites.manga.nodes.slice(0, 6));
   }
 }
 
-_renderFavoriteType(container, type, items) {
+renderFavoriteType(container, type, items) {
   const typeContainer = container.createDiv({ 
     cls: 'zoro-favorite-type',
     attr: { 'data-type': type }
@@ -4842,7 +4842,7 @@ favContainer.appendChild(elements.favoriteBtn);
   async initializeFavoriteButton(entry, favBtn) {
     if (entry.media.isFavourite !== undefined) {
       favBtn.className = entry.media.isFavourite ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart';
-      favBtn.classNamesabled = false;
+      favBtn.disabled = false;
       return;
     }
     
@@ -4875,17 +4875,27 @@ favContainer.appendChild(elements.favoriteBtn);
     }
   }
 
-  async toggleFavorite(entry, favBtn) {
-    favBtn.disabled = true;
+async toggleFavorite(entry, favBtn) {
+    console.log('🚀 toggleFavorite started', { entry, favBtn });
     
+    favBtn.disabled = true;
+    console.log('🔒 Button disabled', { buttonElement: favBtn });
     
     try {
       let mediaType = favBtn.dataset.mediaType;
+      console.log('📋 Initial mediaType from button dataset:', mediaType);
+      
       if (!mediaType) {
         mediaType = entry.media.type || (entry.media.episodes ? 'ANIME' : 'MANGA');
+        console.log('🎯 MediaType determined from entry:', {
+          entryType: entry.media.type,
+          hasEpisodes: !!entry.media.episodes,
+          finalMediaType: mediaType
+        });
       }
       
-     const isAnime = (entry.media.type || mediaType) === 'ANIME';
+      const isAnime = mediaType === 'ANIME';
+      console.log('🎬 Media classification:', { mediaType, isAnime });
       
       const mutation = `
         mutation ToggleFav($animeId: Int, $mangaId: Int) {
@@ -4898,9 +4908,14 @@ favContainer.appendChild(elements.favoriteBtn);
       const variables = {};
       if (isAnime) {
         variables.animeId = entry.media.id;
+        console.log('🎌 Setting animeId:', variables.animeId);
       } else {
         variables.mangaId = entry.media.id;
+        console.log('📚 Setting mangaId:', variables.mangaId);
       }
+      
+      console.log('📤 Making API request with:', { variables, mutation });
+      console.log('🔑 Using access token:', this.plugin.settings.accessToken ? 'Present' : 'Missing');
 
       const res = await this.plugin.requestQueue.add(() =>
         requestUrl({
@@ -4914,33 +4929,85 @@ favContainer.appendChild(elements.favoriteBtn);
         })
       );
       
+      console.log('📥 API Response received:', { 
+        status: res.status, 
+        hasErrors: !!res.json.errors,
+        response: res
+      });
+      
       if (res.json.errors) {
+        console.error('❌ API Errors:', res.json.errors);
         new Notice(`API Error: ${res.json.errors[0].message}`, 8000);
         throw new Error(res.json.errors[0].message);
       }
       
       const toggleResult = res.json.data?.ToggleFavourite;
+      console.log('🔄 Toggle result:', toggleResult);
+      
       let isFav = false;
       
       if (isAnime && toggleResult?.anime?.nodes) {
         isFav = toggleResult.anime.nodes.some(node => node.id === entry.media.id);
+        console.log('🎬 Anime favorite check:', {
+          nodes: toggleResult.anime.nodes,
+          searchingForId: entry.media.id,
+          isFavorite: isFav
+        });
       } else if (!isAnime && toggleResult?.manga?.nodes) {
         isFav = toggleResult.manga.nodes.some(node => node.id === entry.media.id);
+        console.log('📚 Manga favorite check:', {
+          nodes: toggleResult.manga.nodes,
+          searchingForId: entry.media.id,
+          isFavorite: isFav
+        });
       }
       
+      console.log('💖 Final favorite status:', { 
+        previousStatus: entry.media.isFavourite,
+        newStatus: isFav 
+      });
+      
       entry.media.isFavourite = isFav;
-      document.querySelectorAll(`[data-media-id="${entry.media.id}"] .zoro-heart`)
-  .forEach(h => h.style.display = entry.media.isFavourite ? '' : 'none');
+      
+      const heartElements = document.querySelectorAll(`[data-media-id="${entry.media.id}"] .zoro-heart`);
+      console.log('❤️ Updating heart elements:', {
+        selector: `[data-media-id="${entry.media.id}"] .zoro-heart`,
+        foundElements: heartElements.length,
+        showHearts: isFav
+      });
+      
+      heartElements.forEach(h => h.style.display = entry.media.isFavourite ? '' : 'none');
+      
+      console.log('🗄️ Invalidating cache for entry:', entry.media.id);
       this.invalidateCache(entry);
+      
+      console.log('🔄 Updating all favorite buttons for media:', entry.media.id);
       this.updateAllFavoriteButtons(entry);
       
-      favBtn.className = isFav ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart';
-      new Notice(`${isFav ? 'Added to' : 'Removed from'} favorites!`, 3000);
+      const newClassName = isFav ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart';
+      console.log('🎨 Updating button class:', {
+        oldClassName: favBtn.className,
+        newClassName: newClassName
+      });
+      favBtn.className = newClassName;
+      
+      const noticeMessage = `${isFav ? 'Added to' : 'Removed from'} favorites!`;
+      console.log('📢 Showing notice:', noticeMessage);
+      new Notice(noticeMessage, 3000);
+      
+      console.log('✅ toggleFavorite completed successfully');
       
     } catch (e) {
+      console.error('❌ Error in toggleFavorite:', {
+        error: e,
+        message: e.message,
+        stack: e.stack
+      });
       new Notice(`❌ Error: ${e.message || 'Unknown error'}`, 8000);
     } finally {
       favBtn.disabled = false;
+      console.log('🔓 Button re-enabled', { buttonElement: favBtn });
+      console.log('🏁 toggleFavorite function ended');
     }
   }
 

@@ -821,7 +821,6 @@ class Api {
     this.requestQueue = plugin.requestQueue;
     this.cache = plugin.cache;
     
-    // Enterprise-grade enhancements
     this.metrics = this.initializeMetrics();
     this.circuitBreaker = this.initializeCircuitBreaker();
     this.rateLimiter = this.initializeRateLimiter();
@@ -830,7 +829,6 @@ class Api {
     this.batchTimer = null;
     this.requestTracker = new Map();
     
-    // Configuration
     this.config = {
       maxRetries: 3,
       baseRetryDelay: 1000,
@@ -842,11 +840,8 @@ class Api {
       maxBatchSize: 10
     };
     
-    // Start background tasks
     this.startHealthMonitoring();
   }
-
-  // =================== CORE ENTERPRISE FEATURES ===================
 
   initializeMetrics() {
     return {
@@ -954,8 +949,6 @@ class Api {
     };
   }
 
-  // =================== MISSING METHODS ===================
-
   buildQuery(config) {
     let query, variables;
     
@@ -999,18 +992,37 @@ class Api {
     return { query, variables };
   }
 
-  // =================== ENHANCED REQUEST METHODS ===================
-
   createCacheKey(config) {
     const sortedConfig = {};
     Object.keys(config).sort().forEach(key => {
-      if (key === 'accessToken' || key === 'clientSecret') return;
       sortedConfig[key] = config[key];
     });
     return JSON.stringify(sortedConfig);
   }
 
   async fetchAniListData(config) {
+    const cacheKey = this.createCacheKey(config);
+    
+    let cacheType;
+    if (config.type === 'stats') {
+      cacheType = 'userData';
+    } else if (config.type === 'single') {
+      cacheType = 'mediaData';
+    } else if (config.type === 'search') {
+      cacheType = 'searchResults';
+    } else {
+      cacheType = 'userData';
+    }
+    const cacheTtl = null;
+    const cached = !config.nocache && this.cache.get(cacheKey, { scope: cacheType, ttl: cacheTtl });
+    if (cached) {
+      console.log(`[Zoro] Cache HIT for ${cacheType}: ${cacheKey.substring(0, 50)}...`);
+      this.recordMetrics('cache_hit', cacheType, 0);
+      return cached;
+    }
+
+    console.log(`[Zoro] Cache MISS for ${cacheType}: ${cacheKey.substring(0, 50)}...`);
+
     const requestId = this.generateRequestId();
     const startTime = performance.now();
     
@@ -1019,22 +1031,6 @@ class Api {
       
       if (!this.circuitBreaker.canExecute()) {
         throw this.createApiError('SERVICE_UNAVAILABLE', 'AniList service is temporarily unavailable');
-      }
-      
-      const cacheKey = this.createCacheKey(config);
-      const cacheType = this.determineCacheType(config);
-      
-      if (!config.nocache) {
-        const cached = this.cache.get(cacheKey, { 
-          scope: cacheType, 
-          ttl: this.getCacheTTL(config) 
-        });
-        
-        if (cached) {
-          this.recordMetrics('cache_hit', cacheType, performance.now() - startTime);
-          this.log('CACHE_HIT', cacheType, requestId, `${(performance.now() - startTime).toFixed(1)}ms`);
-          return cached;
-        }
       }
       
       const rateLimitCheck = this.rateLimiter.canMakeRequest();
@@ -1054,10 +1050,8 @@ class Api {
       });
       
       if (result && !config.nocache) {
-        this.cache.set(cacheKey, result, { 
-          scope: cacheType,
-          ttl: this.getCacheTTL(config)
-        });
+        this.cache.set(cacheKey, result, { scope: cacheType });
+        console.log(`[Zoro] Cached data for ${cacheType}: ${cacheKey.substring(0, 50)}...`);
       }
       
       const duration = performance.now() - startTime;
@@ -1176,7 +1170,39 @@ class Api {
     }
   }
 
-  // =================== ENHANCED UPDATE METHOD ===================
+  async makeObsidianRequest(code, redirectUri) {
+    const body = new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: this.plugin.settings.clientId,
+      client_secret: this.plugin.settings.clientSecret || '',
+      redirect_uri: redirectUri,
+      code: code
+    });
+
+    const headers = {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json',
+    };
+
+    try {
+      const response = await this.requestQueue.add(() => requestUrl({
+        url: 'https://anilist.co/api/v2/oauth/token',
+        method: 'POST',
+        headers,
+        body: body.toString()
+      }));
+
+      if (!response || typeof response.json !== 'object') {
+        throw new Error('Invalid response structure from AniList.');
+      }
+
+      return response.json;
+
+    } catch (err) {
+      console.error('[Zoro] Obsidian requestUrl failed:', err);
+      throw new Error('Failed to authenticate with AniList via Obsidian requestUrl.');
+    }
+  }
 
   async updateMediaListEntry(mediaId, updates) {
     const requestId = this.generateRequestId();
@@ -1221,7 +1247,7 @@ class Api {
         maxRetries: 2
       });
 
-      await this.invalidateRelatedCache(mediaId, updates);
+      this.plugin.cache.invalidateByMedia(mediaId);
       
       const duration = performance.now() - startTime;
       this.recordMetrics('update_success', 'mutation', duration);
@@ -1248,42 +1274,6 @@ class Api {
       });
       
       throw this.createUserFriendlyError(classifiedError);
-    }
-  }
-
-  // =================== ORIGINAL METHODS ===================
-
-  async makeObsidianRequest(code, redirectUri) {
-    const body = new URLSearchParams({
-      grant_type: 'authorization_code',
-      client_id: this.plugin.settings.clientId,
-      client_secret: this.plugin.settings.clientSecret || '',
-      redirect_uri: redirectUri,
-      code: code
-    });
-
-    const headers = {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Accept': 'application/json',
-    };
-
-    try {
-      const response = await this.requestQueue.add(() => requestUrl({
-        url: 'https://anilist.co/api/v2/oauth/token',
-        method: 'POST',
-        headers,
-        body: body.toString()
-      }));
-
-      if (!response || typeof response.json !== 'object') {
-        throw new Error('Invalid response structure from AniList.');
-      }
-
-      return response.json;
-
-    } catch (err) {
-      console.error('[Zoro] Obsidian requestUrl failed:', err);
-      throw new Error('Failed to authenticate with AniList via Obsidian requestUrl.');
     }
   }
 
@@ -1679,8 +1669,6 @@ class Api {
     return `https://anilist.co/${urlType}/${mediaId}`;
   }
 
-  // =================== ERROR HANDLING & CLASSIFICATION ===================
-
   classifyError(error, context = {}) {
     if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
       return { type: 'NETWORK_ERROR', message: error.message, severity: 'high', retryable: true };
@@ -1750,8 +1738,6 @@ class Api {
     error.type = type;
     return error;
   }
-
-  // =================== UTILITY METHODS ===================
 
   validateConfig(config) {
     if (!config || typeof config !== 'object') {
@@ -1831,8 +1817,6 @@ class Api {
   sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
-
-  // =================== MONITORING & METRICS ===================
 
   recordMetrics(operation, type, duration, errorType = null) {
     this.metrics.requests.total++;

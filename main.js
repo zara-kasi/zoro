@@ -820,15 +820,438 @@ class Api {
     this.plugin = plugin;
     this.requestQueue = plugin.requestQueue;
     this.cache = plugin.cache;
+    
+    // Enterprise-grade enhancements
+    this.metrics = this.initializeMetrics();
+    this.circuitBreaker = this.initializeCircuitBreaker();
+    this.rateLimiter = this.initializeRateLimiter();
+    this.healthChecker = this.initializeHealthChecker();
+    this.batchQueue = new Map();
+    this.batchTimer = null;
+    this.requestTracker = new Map();
+    
+    // Configuration
+    this.config = {
+      maxRetries: 3,
+      baseRetryDelay: 1000,
+      maxRetryDelay: 10000,
+      requestTimeout: 30000,
+      circuitBreakerThreshold: 5,
+      circuitBreakerTimeout: 60000,
+      batchDelay: 50,
+      maxBatchSize: 10
+    };
+    
+    // Start background tasks
+    this.startHealthMonitoring();
   }
+
+  // =================== CORE ENTERPRISE FEATURES ===================
+
+  initializeMetrics() {
+    return {
+      requests: { total: 0, success: 0, failed: 0, cached: 0 },
+      latency: { samples: [], min: Infinity, max: 0, avg: 0, p95: 0 },
+      errors: new Map(),
+      endpoints: new Map(),
+      rateLimits: { hits: 0, remaining: Infinity, resetTime: null },
+      circuitBreaker: { state: 'CLOSED', failures: 0, lastFailure: null },
+      startTime: Date.now()
+    };
+  }
+
+  initializeCircuitBreaker() {
+    return {
+      state: 'CLOSED',
+      failures: 0,
+      lastFailureTime: null,
+      
+      recordSuccess: () => {
+        this.circuitBreaker.failures = 0;
+        this.circuitBreaker.state = 'CLOSED';
+        this.metrics.circuitBreaker.state = 'CLOSED';
+        this.metrics.circuitBreaker.failures = 0;
+      },
+      
+      recordFailure: () => {
+        this.circuitBreaker.failures++;
+        this.circuitBreaker.lastFailureTime = Date.now();
+        this.metrics.circuitBreaker.failures = this.circuitBreaker.failures;
+        this.metrics.circuitBreaker.lastFailure = this.circuitBreaker.lastFailureTime;
+        
+        if (this.circuitBreaker.failures >= this.config.circuitBreakerThreshold) {
+          this.circuitBreaker.state = 'OPEN';
+          this.metrics.circuitBreaker.state = 'OPEN';
+          this.log('CIRCUIT_BREAKER_OPEN', 'system', '', `Failures: ${this.circuitBreaker.failures}`);
+        }
+      },
+      
+      canExecute: () => {
+        if (this.circuitBreaker.state === 'CLOSED') return true;
+        if (this.circuitBreaker.state === 'OPEN') {
+          const timeSinceFailure = Date.now() - this.circuitBreaker.lastFailureTime;
+          if (timeSinceFailure > this.config.circuitBreakerTimeout) {
+            this.circuitBreaker.state = 'HALF_OPEN';
+            this.metrics.circuitBreaker.state = 'HALF_OPEN';
+            return true;
+          }
+          return false;
+        }
+        return true;
+      }
+    };
+  }
+
+  initializeRateLimiter() {
+    return {
+      requests: [],
+      windowMs: 60000,
+      maxRequests: 90,
+      
+      canMakeRequest: () => {
+        const now = Date.now();
+        this.rateLimiter.requests = this.rateLimiter.requests.filter(
+          time => now - time < this.rateLimiter.windowMs
+        );
+        
+        if (this.rateLimiter.requests.length >= this.rateLimiter.maxRequests) {
+          const oldestRequest = Math.min(...this.rateLimiter.requests);
+          const waitTime = this.rateLimiter.windowMs - (now - oldestRequest);
+          return { allowed: false, waitTime };
+        }
+        
+        this.rateLimiter.requests.push(now);
+        return { allowed: true, waitTime: 0 };
+      }
+    };
+  }
+
+  initializeHealthChecker() {
+    return {
+      lastCheck: null,
+      status: 'unknown',
+      latency: null,
+      
+      checkHealth: async () => {
+        const startTime = Date.now();
+        try {
+          await this.makeRawRequest({
+            query: '{ Viewer { id } }',
+            variables: {},
+            skipAuth: true
+          });
+          
+          this.healthChecker.status = 'healthy';
+          this.healthChecker.latency = Date.now() - startTime;
+          this.healthChecker.lastCheck = Date.now();
+          return true;
+        } catch (error) {
+          this.healthChecker.status = 'unhealthy';
+          this.healthChecker.lastCheck = Date.now();
+          return false;
+        }
+      }
+    };
+  }
+
+  // =================== MISSING METHODS ===================
+
+  buildQuery(config) {
+    let query, variables;
+    
+    switch (config.type) {
+      case 'stats':
+        query = this.getUserStatsQuery({
+          mediaType: config.mediaType || 'ANIME',
+          layout: config.layout || 'standard'
+        });
+        variables = { username: config.username };
+        break;
+        
+      case 'single':
+        query = this.getSingleMediaQuery(config.layout);
+        variables = {
+          username: config.username,
+          mediaId: parseInt(config.mediaId),
+          type: config.mediaType
+        };
+        break;
+        
+      case 'search':
+        query = this.getSearchMediaQuery(config.layout);
+        variables = {
+          search: config.search,
+          type: config.mediaType,
+          page: config.page || 1,
+          perPage: config.perPage || 5
+        };
+        break;
+        
+      default:
+        query = this.getMediaListQuery(config.layout);
+        variables = {
+          username: config.username,
+          status: config.listType,
+          type: config.mediaType || 'ANIME'
+        };
+    }
+    
+    return { query, variables };
+  }
+
+  // =================== ENHANCED REQUEST METHODS ===================
 
   createCacheKey(config) {
     const sortedConfig = {};
     Object.keys(config).sort().forEach(key => {
+      if (key === 'accessToken' || key === 'clientSecret') return;
       sortedConfig[key] = config[key];
     });
     return JSON.stringify(sortedConfig);
   }
+
+  async fetchAniListData(config) {
+    const requestId = this.generateRequestId();
+    const startTime = performance.now();
+    
+    try {
+      this.validateConfig(config);
+      
+      if (!this.circuitBreaker.canExecute()) {
+        throw this.createApiError('SERVICE_UNAVAILABLE', 'AniList service is temporarily unavailable');
+      }
+      
+      const cacheKey = this.createCacheKey(config);
+      const cacheType = this.determineCacheType(config);
+      
+      if (!config.nocache) {
+        const cached = this.cache.get(cacheKey, { 
+          scope: cacheType, 
+          ttl: this.getCacheTTL(config) 
+        });
+        
+        if (cached) {
+          this.recordMetrics('cache_hit', cacheType, performance.now() - startTime);
+          this.log('CACHE_HIT', cacheType, requestId, `${(performance.now() - startTime).toFixed(1)}ms`);
+          return cached;
+        }
+      }
+      
+      const rateLimitCheck = this.rateLimiter.canMakeRequest();
+      if (!rateLimitCheck.allowed) {
+        this.log('RATE_LIMITED', 'system', requestId, `Wait: ${rateLimitCheck.waitTime}ms`);
+        await this.sleep(rateLimitCheck.waitTime);
+      }
+      
+      const { query, variables } = this.buildQuery(config);
+      
+      const result = await this.executeRequestWithRetry({
+        query,
+        variables,
+        config,
+        requestId,
+        maxRetries: this.config.maxRetries
+      });
+      
+      if (result && !config.nocache) {
+        this.cache.set(cacheKey, result, { 
+          scope: cacheType,
+          ttl: this.getCacheTTL(config)
+        });
+      }
+      
+      const duration = performance.now() - startTime;
+      this.recordMetrics('success', config.type, duration);
+      this.circuitBreaker.recordSuccess();
+      
+      this.log('REQUEST_SUCCESS', config.type, requestId, `${duration.toFixed(1)}ms`);
+      
+      return result;
+      
+    } catch (error) {
+      const duration = performance.now() - startTime;
+      const classifiedError = this.classifyError(error, config);
+      
+      this.recordMetrics('error', config.type, duration, classifiedError.type);
+      this.circuitBreaker.recordFailure();
+      
+      this.log('REQUEST_FAILED', config.type, requestId, {
+        error: classifiedError.type,
+        message: classifiedError.message,
+        duration: `${duration.toFixed(1)}ms`,
+        config: this.sanitizeConfig(config)
+      });
+      
+      throw this.createUserFriendlyError(classifiedError);
+    }
+  }
+
+  async executeRequestWithRetry({ query, variables, config, requestId, maxRetries }) {
+    let lastError;
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const result = await this.makeRawRequest({
+          query,
+          variables,
+          config,
+          requestId,
+          attempt
+        });
+        
+        if (attempt > 1) {
+          this.log('RETRY_SUCCESS', config.type, requestId, `Attempt ${attempt}/${maxRetries}`);
+        }
+        
+        return result;
+        
+      } catch (error) {
+        lastError = error;
+        
+        if (attempt === maxRetries || !this.isRetryableError(error)) {
+          throw error;
+        }
+        
+        const delay = this.calculateRetryDelay(attempt);
+        this.log('RETRY_ATTEMPT', config.type, requestId, 
+          `Attempt ${attempt}/${maxRetries}, retrying in ${delay}ms: ${error.message}`);
+        
+        await this.sleep(delay);
+      }
+    }
+    
+    throw lastError;
+  }
+
+  async makeRawRequest({ query, variables, config, requestId, attempt = 1, skipAuth = false }) {
+    const headers = {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'User-Agent': `Zoro-Plugin/${this.plugin.manifest?.version || '1.0.0'}`,
+      'X-Request-ID': requestId
+    };
+    
+    if (!skipAuth && this.plugin.settings.accessToken) {
+      await this.plugin.auth.ensureValidToken();
+      headers['Authorization'] = `Bearer ${this.plugin.settings.accessToken}`;
+    }
+    
+    const requestBody = JSON.stringify({ query, variables });
+    
+    this.requestTracker.set(requestId, {
+      startTime: Date.now(),
+      config: this.sanitizeConfig(config),
+      attempt,
+      query: query.substring(0, 100) + '...'
+    });
+    
+    try {
+      const response = await Promise.race([
+        this.requestQueue.add(() => requestUrl({
+          url: 'https://graphql.anilist.co',
+          method: 'POST',
+          headers,
+          body: requestBody
+        })),
+        this.createTimeoutPromise(this.config.requestTimeout)
+      ]);
+      
+      this.updateRateLimitInfo(response.headers);
+      
+      const result = response.json;
+      this.validateResponse(result);
+      
+      if (result.errors && result.errors.length > 0) {
+        throw this.createGraphQLError(result.errors[0]);
+      }
+      
+      if (!result.data) {
+        throw this.createApiError('INVALID_RESPONSE', 'AniList returned no data');
+      }
+      
+      return result.data;
+      
+    } finally {
+      this.requestTracker.delete(requestId);
+    }
+  }
+
+  // =================== ENHANCED UPDATE METHOD ===================
+
+  async updateMediaListEntry(mediaId, updates) {
+    const requestId = this.generateRequestId();
+    const startTime = performance.now();
+    
+    try {
+      this.validateMediaId(mediaId);
+      this.validateUpdates(updates);
+      
+      if (!this.plugin.settings.accessToken || !(await this.plugin.auth.ensureValidToken())) {
+        throw this.createApiError('AUTH_REQUIRED', 'Authentication required to update entries');
+      }
+
+      const mutation = `
+        mutation ($mediaId: Int, $status: MediaListStatus, $score: Float, $progress: Int) {
+          SaveMediaListEntry(mediaId: $mediaId, status: $status, score: $score, progress: $progress) {
+            id
+            status
+            score
+            progress
+            updatedAt
+            media {
+              id
+              title { romaji english }
+            }
+          }
+        }
+      `;
+      
+      const variables = {
+        mediaId: parseInt(mediaId),
+        ...(updates.status !== undefined && { status: updates.status }),
+        ...(updates.score !== undefined && updates.score !== null && { score: parseFloat(updates.score) }),
+        ...(updates.progress !== undefined && { progress: parseInt(updates.progress) }),
+      };
+      
+      const result = await this.executeRequestWithRetry({
+        query: mutation,
+        variables,
+        config: { type: 'update', mediaId },
+        requestId,
+        maxRetries: 2
+      });
+
+      await this.invalidateRelatedCache(mediaId, updates);
+      
+      const duration = performance.now() - startTime;
+      this.recordMetrics('update_success', 'mutation', duration);
+      
+      this.log('UPDATE_SUCCESS', 'mutation', requestId, {
+        mediaId,
+        updates: Object.keys(updates),
+        duration: `${duration.toFixed(1)}ms`
+      });
+      
+      return result.SaveMediaListEntry;
+
+    } catch (error) {
+      const duration = performance.now() - startTime;
+      const classifiedError = this.classifyError(error, { type: 'update', mediaId });
+      
+      this.recordMetrics('update_error', 'mutation', duration, classifiedError.type);
+      
+      this.log('UPDATE_FAILED', 'mutation', requestId, {
+        mediaId,
+        updates: Object.keys(updates),
+        error: classifiedError.type,
+        duration: `${duration.toFixed(1)}ms`
+      });
+      
+      throw this.createUserFriendlyError(classifiedError);
+    }
+  }
+
+  // =================== ORIGINAL METHODS ===================
 
   async makeObsidianRequest(code, redirectUri) {
     const body = new URLSearchParams({
@@ -861,157 +1284,6 @@ class Api {
     } catch (err) {
       console.error('[Zoro] Obsidian requestUrl failed:', err);
       throw new Error('Failed to authenticate with AniList via Obsidian requestUrl.');
-    }
-  }
-
-  async fetchAniListData(config) {
-    const cacheKey = this.createCacheKey(config);
-    
-    let cacheType;
-    if (config.type === 'stats') {
-      cacheType = 'userData';
-    } else if (config.type === 'single') {
-      cacheType = 'mediaData';
-    } else if (config.type === 'search') {
-      cacheType = 'searchResults';
-    } else {
-      cacheType = 'userData';
-    }
-    const cacheTtl = null;
-    const cached = !config.nocache && this.plugin.cache.get(cacheKey, { scope: cacheType, ttl: cacheTtl });
-    if (cached) {
-      console.log(`[Zoro] Cache HIT for ${cacheType}: ${cacheKey.substring(0, 50)}...`);
-      return cached;
-    }
-
-    console.log(`[Zoro] Cache MISS for ${cacheType}: ${cacheKey.substring(0, 50)}...`);
-
-    let query, variables;
-    try {
-      const headers = {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      };
-      
-      if (this.plugin.settings.accessToken) {
-        await this.plugin.auth.ensureValidToken();
-        headers['Authorization'] = `Bearer ${this.plugin.settings.accessToken}`;
-      }
-      
-      if (config.type === 'stats') {
-        query = this.getUserStatsQuery({    mediaType: config.mediaType || 'ANIME',    layout: config.layout || 'card'  });
-        variables = { username: config.username };
-      } else if (config.type === 'single') {
-        query = this.getSingleMediaQuery();
-        variables = {
-          username: config.username,
-          mediaId: parseInt(config.mediaId),
-          type: config.mediaType
-        };
-      } else if (config.type === 'search') {
-        query = this.getSearchMediaQuery(config.layout);
-        variables = {
-          search: config.search,
-          type: config.mediaType,
-          page: config.page || 1,
-          perPage: config.perPage || 5,
-        };
-      } else {
-        query = this.getMediaListQuery(config.layout);
-        variables = {
-          username: config.username,
-          status: config.listType,
-          type: config.mediaType || 'ANIME',
-        };
-      }
-      
-      const response = await this.requestQueue.add(() => requestUrl({
-        url: 'https://graphql.anilist.co',
-        method: 'POST',
-        headers,
-        body: JSON.stringify({ query, variables })
-      }));
-      
-      const result = response.json;
-      if (!result) throw new Error('Empty response from AniList.');
-      
-      if (result.errors && result.errors.length > 0) {
-        const firstError = result.errors[0];
-        const isPrivate = firstError.message?.includes('Private') || firstError.message?.includes('permission');
-
-        if (isPrivate) {
-          if (this.plugin.settings.accessToken) {
-            throw new Error('🚫 List is private and this token has no permission.');
-          } else {
-            throw new Error('🔒 List is private. Please authenticate to access it.');
-          }
-        }
-        throw new Error(firstError.message || 'AniList returned an unknown error.');
-      }
-      
-      if (!result.data) {
-        throw new Error('AniList returned no data.');
-      }
-      
-      this.plugin.cache.set(cacheKey, result.data, { scope: cacheType });
-      console.log(`[Zoro] Cached data for ${cacheType}: ${cacheKey.substring(0, 50)}...`);
-      
-      return result.data;
-
-    } catch (error) {
-      console.error('[Zoro] fetchAniListData() failed:', error);
-      throw error;
-    }
-  }
-
-  async updateMediaListEntry(mediaId, updates) {
-    try {
-      if (!this.plugin.settings.accessToken || !(await this.plugin.auth.ensureValidToken())) {
-        throw new Error('❌ Authentication required to update entries.');
-      }
-
-      const mutation = `
-        mutation ($mediaId: Int, $status: MediaListStatus, $score: Float, $progress: Int) {
-          SaveMediaListEntry(mediaId: $mediaId, status: $status, score: $score, progress: $progress) {
-            id
-            status
-            score
-            progress
-          }
-        }
-      `;
-      
-      const variables = {
-        mediaId,
-        ...(updates.status !== undefined && { status: updates.status }),
-        ...(updates.score !== undefined && updates.score !== null && { score: updates.score }),
-        ...(updates.progress !== undefined && { progress: updates.progress }),
-      };
-      
-      const response = await this.requestQueue.add(() => requestUrl({
-        url: 'https://graphql.anilist.co',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.plugin.settings.accessToken}`
-        },
-        body: JSON.stringify({ query: mutation, variables })
-      }));
-
-      const result = response.json;
-
-      if (!result || result.errors?.length > 0) {
-        const message = result.errors?.[0]?.message || 'Unknown mutation error';
-        throw new Error(`AniList update error: ${message}`);
-      }
-      
-      this.plugin.cache.invalidateByMedia(mediaId);
-      
-      return result.data.SaveMediaListEntry;
-
-    } catch (error) {
-      console.error('[Zoro] updateMediaListEntry failed:', error);
-      throw new Error(`❌ Failed to update entry: ${error.message}`);
     }
   }
 
@@ -1201,130 +1473,125 @@ class Api {
     `;
   }
 
+  getUserStatsQuery({ 
+    mediaType = 'ANIME', 
+    layout = 'standard',
+    useViewer = false
+  } = {}) {
+    const typeKey = mediaType.toLowerCase();
 
-// Streamlined and focused stats query
-// FIXED VERSION - Remove the problematic parts that might be causing issues
-
-getUserStatsQuery({ 
-  mediaType = 'ANIME', 
-  layout = 'standard',
-  useViewer = false
-} = {}) {
-  const typeKey = mediaType.toLowerCase();
-
-  // Simplified stat fields - removed potentially problematic sorts and limits
-  const statFields = {
-    minimal: `
-      count
-      meanScore
-      minutesWatched
-      episodesWatched
-      chaptersRead
-    `,
-    standard: `
-      count
-      meanScore
-      standardDeviation
-      episodesWatched
-      minutesWatched
-      chaptersRead
-      volumesRead
-      scores {
-        score
-        count
-      }
-      statuses {
-        status
-        count
-      }
-      formats {
-        format
-        count
-      }
-      releaseYears {
-        releaseYear
-        count
-      }
-    `,
-    detailed: `
-      count
-      meanScore
-      standardDeviation
-      episodesWatched
-      minutesWatched
-      chaptersRead
-      volumesRead
-      scores {
-        score
-        count
-      }
-      statuses {
-        status
-        count
-      }
-      formats {
-        format
-        count
-      }
-      releaseYears {
-        releaseYear
-        count
-      }
-      startYears {
-        startYear
-        count
-      }
-      genres {
-        genre
+    const statFields = {
+      minimal: `
         count
         meanScore
         minutesWatched
-      }
-    `
-  };
-
-  const selectedFields = statFields[layout] || statFields.standard;
-  const viewerPrefix = useViewer ? 'Viewer' : `User(name: $username)`;
-
-  return `
-    query ($username: String) {
-      ${viewerPrefix} {
-        id
-        name
-        avatar {
-          large
-          medium
+        episodesWatched
+        chaptersRead
+      `,
+      standard: `
+        count
+        meanScore
+        standardDeviation
+        episodesWatched
+        minutesWatched
+        chaptersRead
+        volumesRead
+        scores {
+          score
+          count
         }
-        statistics {
-          ${typeKey} {
-            ${selectedFields}
+        statuses {
+          status
+          count
+        }
+        formats {
+          format
+          count
+        }
+        releaseYears {
+          releaseYear
+          count
+        }
+      `,
+      detailed: `
+        count
+        meanScore
+        standardDeviation
+        episodesWatched
+        minutesWatched
+        chaptersRead
+        volumesRead
+        scores {
+          score
+          count
+        }
+        statuses {
+          status
+          count
+        }
+        formats {
+          format
+          count
+        }
+        releaseYears {
+          releaseYear
+          count
+        }
+        startYears {
+          startYear
+          count
+        }
+        genres {
+          genre
+          count
+          meanScore
+          minutesWatched
+        }
+      `
+    };
+
+    const selectedFields = statFields[layout] || statFields.standard;
+    const viewerPrefix = useViewer ? 'Viewer' : `User(name: $username)`;
+
+    return `
+      query ($username: String) {
+        ${viewerPrefix} {
+          id
+          name
+          avatar {
+            large
+            medium
           }
-        }
-        favourites {
-          ${typeKey} {
-            nodes {
-              id
-              title {
-                romaji
-                english
-              }
-              coverImage {
-                medium
-                large
-              }
-              meanScore
-              ${mediaType === 'ANIME' ? 'episodes' : 'chapters'}
-              format
+          statistics {
+            ${typeKey} {
+              ${selectedFields}
             }
           }
-        }
-        mediaListOptions {
-          scoreFormat
+          favourites {
+            ${typeKey} {
+              nodes {
+                id
+                title {
+                  romaji
+                  english
+                }
+                coverImage {
+                  medium
+                  large
+                }
+                meanScore
+                ${mediaType === 'ANIME' ? 'episodes' : 'chapters'}
+                format
+              }
+            }
+          }
+          mediaListOptions {
+            scoreFormat
+          }
         }
       }
-    }
-  `;
-}
+    `;
+  }
 
   getSearchMediaQuery(layout = 'card') {
     const mediaFields = {
@@ -1410,6 +1677,659 @@ getUserStatsQuery({
     const urlType = validTypes.includes(type) ? type.toLowerCase() : 'anime';
 
     return `https://anilist.co/${urlType}/${mediaId}`;
+  }
+
+  // =================== ERROR HANDLING & CLASSIFICATION ===================
+
+  classifyError(error, context = {}) {
+    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+      return { type: 'NETWORK_ERROR', message: error.message, severity: 'high', retryable: true };
+    }
+    
+    if (error.name === 'TimeoutError' || error.message.includes('timeout')) {
+      return { type: 'TIMEOUT', message: error.message, severity: 'medium', retryable: true };
+    }
+    
+    if (error.status === 429 || error.message.includes('rate limit')) {
+      return { type: 'RATE_LIMITED', message: error.message, severity: 'low', retryable: true };
+    }
+    
+    if (error.status === 401 || error.message.includes('Unauthorized')) {
+      return { type: 'AUTH_ERROR', message: error.message, severity: 'high', retryable: false };
+    }
+    
+    if (error.status >= 500) {
+      return { type: 'SERVER_ERROR', message: error.message, severity: 'high', retryable: true };
+    }
+    
+    if (error.message?.includes('Private') || error.message?.includes('permission')) {
+      return { type: 'PRIVATE_LIST', message: error.message, severity: 'low', retryable: false };
+    }
+    
+    if (error.status >= 400 && error.status < 500) {
+      return { type: 'CLIENT_ERROR', message: error.message, severity: 'medium', retryable: false };
+    }
+    
+    return { type: 'UNKNOWN_ERROR', message: error.message, severity: 'medium', retryable: false };
+  }
+
+  createUserFriendlyError(classifiedError) {
+    const errorMessages = {
+      'NETWORK_ERROR': '🌐 Connection issue. Please check your internet connection and try again.',
+      'TIMEOUT': '⏱️ Request timed out. Please try again.',
+      'RATE_LIMITED': '🚦 Too many requests. Please wait a moment and try again.',
+      'AUTH_ERROR': '🔑 Authentication expired. Please re-authenticate with AniList.',
+      'SERVER_ERROR': '🔧 AniList servers are experiencing issues. Please try again later.',
+      'PRIVATE_LIST': '🔒 This user\'s list is private.',
+      'CLIENT_ERROR': '⚠️ Invalid request. Please check your input.',
+      'SERVICE_UNAVAILABLE': '🚫 Service is temporarily unavailable due to repeated failures.',
+      'UNKNOWN_ERROR': '❌ An unexpected error occurred. Please try again.'
+    };
+    
+    const userMessage = errorMessages[classifiedError.type] || errorMessages['UNKNOWN_ERROR'];
+    const error = new Error(userMessage);
+    error.type = classifiedError.type;
+    error.severity = classifiedError.severity;
+    error.retryable = classifiedError.retryable;
+    error.originalMessage = classifiedError.message;
+    
+    return error;
+  }
+
+  createGraphQLError(graphqlError) {
+    const error = new Error(graphqlError.message);
+    error.type = 'GRAPHQL_ERROR';
+    error.extensions = graphqlError.extensions;
+    error.locations = graphqlError.locations;
+    error.path = graphqlError.path;
+    return error;
+  }
+
+  createApiError(type, message) {
+    const error = new Error(message);
+    error.type = type;
+    return error;
+  }
+
+  // =================== UTILITY METHODS ===================
+
+  validateConfig(config) {
+    if (!config || typeof config !== 'object') {
+      throw this.createApiError('INVALID_CONFIG', 'Configuration must be an object');
+    }
+    
+    if (config.type && !['stats', 'single', 'search', 'list'].includes(config.type)) {
+      throw this.createApiError('INVALID_TYPE', `Invalid config type: ${config.type}`);
+    }
+    
+    if (config.mediaType && !['ANIME', 'MANGA'].includes(config.mediaType)) {
+      throw this.createApiError('INVALID_MEDIA_TYPE', `Invalid media type: ${config.mediaType}`);
+    }
+  }
+
+  validateMediaId(mediaId) {
+    const id = parseInt(mediaId);
+    if (!id || id <= 0) {
+      throw this.createApiError('INVALID_MEDIA_ID', `Invalid media ID: ${mediaId}`);
+    }
+  }
+
+  validateUpdates(updates) {
+    if (!updates || typeof updates !== 'object') {
+      throw this.createApiError('INVALID_UPDATES', 'Updates must be an object');
+    }
+    
+    if (Object.keys(updates).length === 0) {
+      throw this.createApiError('EMPTY_UPDATES', 'At least one field must be updated');
+    }
+  }
+
+  validateResponse(response) {
+    if (!response || typeof response !== 'object') {
+      throw this.createApiError('INVALID_RESPONSE', 'Invalid response from AniList');
+    }
+  }
+
+  isRetryableError(error) {
+    return error.retryable !== false && (
+      error.status >= 500 ||
+      error.code === 'ENOTFOUND' ||
+      error.code === 'ECONNREFUSED' ||
+      error.name === 'TimeoutError' ||
+      error.status === 429
+    );
+  }
+
+  calculateRetryDelay(attempt) {
+    const baseDelay = this.config.baseRetryDelay;
+    const maxDelay = this.config.maxRetryDelay;
+    const exponentialDelay = baseDelay * Math.pow(2, attempt - 1);
+    const jitter = Math.random() * 1000;
+    
+    return Math.min(exponentialDelay + jitter, maxDelay);
+  }
+
+  createTimeoutPromise(timeout) {
+    return new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(new Error('Request timeout'));
+      }, timeout);
+    });
+  }
+
+  generateRequestId() {
+    return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  sanitizeConfig(config) {
+    const sanitized = { ...config };
+    delete sanitized.accessToken;
+    delete sanitized.clientSecret;
+    return sanitized;
+  }
+
+  sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  // =================== MONITORING & METRICS ===================
+
+  recordMetrics(operation, type, duration, errorType = null) {
+    this.metrics.requests.total++;
+    
+    if (operation === 'success' || operation === 'cache_hit') {
+      if (operation === 'cache_hit') {
+        this.metrics.requests.cached++;
+      } else {
+        this.metrics.requests.success++;
+      }
+    } else {
+      this.metrics.requests.failed++;
+      
+      if (errorType) {
+        const count = this.metrics.errors.get(errorType) || 0;
+        this.metrics.errors.set(errorType, count + 1);
+      }
+    }
+    
+    if (duration) {
+      this.metrics.latency.samples.push(duration);
+      if (this.metrics.latency.samples.length > 1000) {
+        this.metrics.latency.samples = this.metrics.latency.samples.slice(-500);
+      }
+      
+      this.metrics.latency.min = Math.min(this.metrics.latency.min, duration);
+      this.metrics.latency.max = Math.max(this.metrics.latency.max, duration);
+      this.metrics.latency.avg = this.metrics.latency.samples.reduce((a, b) => a + b, 0) / this.metrics.latency.samples.length;
+      
+      const sorted = [...this.metrics.latency.samples].sort((a, b) => a - b);
+      const p95Index = Math.floor(sorted.length * 0.95);
+      this.metrics.latency.p95 = sorted[p95Index] || 0;
+    }
+    
+    if (!this.metrics.endpoints.has(type)) {
+      this.metrics.endpoints.set(type, { requests: 0, success: 0, errors: 0, avgLatency: 0 });
+    }
+    
+    const endpointStats = this.metrics.endpoints.get(type);
+    endpointStats.requests++;
+    
+    if (operation === 'success' || operation === 'cache_hit') {
+      endpointStats.success++;
+    } else {
+      endpointStats.errors++;
+    }
+    
+    if (duration) {
+      endpointStats.avgLatency = (endpointStats.avgLatency + duration) / 2;
+    }
+  }
+
+  updateRateLimitInfo(headers) {
+    if (headers && headers['x-ratelimit-remaining']) {
+      this.metrics.rateLimits.remaining = parseInt(headers['x-ratelimit-remaining']);
+    }
+    if (headers && headers['x-ratelimit-reset']) {
+      this.metrics.rateLimits.resetTime = new Date(headers['x-ratelimit-reset']);
+    }
+  }
+
+  startHealthMonitoring() {
+    setInterval(() => {
+      this.healthChecker.checkHealth();
+    }, 5 * 60 * 1000);
+    
+    setTimeout(() => this.healthChecker.checkHealth(), 1000);
+  }
+
+  getHealthStatus() {
+    const now = Date.now();
+    const uptime = now - this.metrics.startTime;
+    const totalRequests = this.metrics.requests.total;
+    const successRate = totalRequests > 0 ? (this.metrics.requests.success / totalRequests) : 1;
+    const errorRate = totalRequests > 0 ? (this.metrics.requests.failed / totalRequests) : 0;
+    
+    let status = 'healthy';
+    if (errorRate > 0.10 || this.circuitBreaker.state === 'OPEN') {
+      status = 'unhealthy';
+    } else if (errorRate > 0.05 || this.circuitBreaker.state === 'HALF_OPEN') {
+      status = 'degraded';
+    }
+    
+    return {
+      status,
+      uptime: this.formatDuration(uptime),
+      requests: {
+        total: totalRequests,
+        success: this.metrics.requests.success,
+        failed: this.metrics.requests.failed,
+        cached: this.metrics.requests.cached,
+        successRate: `${(successRate * 100).toFixed(2)}%`,
+        errorRate: `${(errorRate * 100).toFixed(2)}%`
+      },
+      latency: {
+        avg: `${this.metrics.latency.avg.toFixed(0)}ms`,
+        min: `${this.metrics.latency.min}ms`,
+        max: `${this.metrics.latency.max}ms`,
+        p95: `${this.metrics.latency.p95.toFixed(0)}ms`
+      },
+      circuitBreaker: {
+        state: this.circuitBreaker.state,
+        failures: this.circuitBreaker.failures
+      },
+      rateLimits: {
+        remaining: this.metrics.rateLimits.remaining,
+        resetTime: this.metrics.rateLimits.resetTime
+      },
+      errors: Object.fromEntries(this.metrics.errors),
+      lastHealthCheck: this.healthChecker.lastCheck ? 
+        new Date(this.healthChecker.lastCheck).toLocaleString() : 'Never'
+    };
+  }
+
+  formatDuration(ms) {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    
+    if (days > 0) return `${days}d ${hours % 24}h`;
+    if (hours > 0) return `${hours}h ${minutes % 60}m`;
+    if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
+    return `${seconds}s`;
+  }
+
+  // =================== BATCH OPERATIONS ===================
+
+  async fetchMultipleMedia(mediaIds) {
+    return new Promise((resolve, reject) => {
+      const batchPromises = mediaIds.map(id => {
+        return new Promise((resolveItem, rejectItem) => {
+          if (!this.batchQueue.has('media')) {
+            this.batchQueue.set('media', []);
+          }
+          
+          this.batchQueue.get('media').push({
+            mediaId: id,
+            resolve: resolveItem,
+            reject: rejectItem
+          });
+        });
+      });
+      
+      if (!this.batchTimer) {
+        this.batchTimer = setTimeout(() => this.processBatches(), this.config.batchDelay);
+      }
+      
+      Promise.all(batchPromises).then(resolve).catch(reject);
+    });
+  }
+
+  async processBatches() {
+    const mediaBatch = this.batchQueue.get('media');
+    
+    if (mediaBatch && mediaBatch.length > 0) {
+      try {
+        const mediaIds = mediaBatch.map(item => item.mediaId);
+        const results = await this.fetchBatchMedia(mediaIds);
+        
+        mediaBatch.forEach(({ mediaId, resolve }) => {
+          resolve(results[mediaId] || null);
+        });
+        
+      } catch (error) {
+        mediaBatch.forEach(({ reject }) => {
+          reject(error);
+        });
+      }
+      
+      this.batchQueue.set('media', []);
+    }
+    
+    this.batchTimer = null;
+  }
+
+  async fetchBatchMedia(mediaIds) {
+    const query = `
+      query ($ids: [Int]) {
+        Page(page: 1, perPage: ${mediaIds.length}) {
+          media(id_in: $ids) {
+            id
+            title { romaji english native }
+            coverImage { large medium }
+            format
+            averageScore
+            status
+            genres
+            episodes
+            chapters
+            isFavourite
+          }
+        }
+      }
+    `;
+    
+    const result = await this.makeRawRequest({
+      query,
+      variables: { ids: mediaIds },
+      config: { type: 'batch_media' }
+    });
+    
+    const mediaMap = {};
+    result.Page.media.forEach(media => {
+      mediaMap[media.id] = media;
+    });
+    
+    return mediaMap;
+  }
+
+  // =================== INTELLIGENT CACHE MANAGEMENT ===================
+
+  determineCacheType(config) {
+    const typeMap = {
+      'stats': 'userData',
+      'single': 'mediaData',
+      'search': 'searchResults',
+      'list': 'userData'
+    };
+    return typeMap[config.type] || 'userData';
+  }
+
+  getCacheTTL(config) {
+    const ttlMap = {
+      'stats': 30 * 60 * 1000,     // 30 minutes
+      'single': 10 * 60 * 1000,    // 10 minutes
+      'search': 5 * 60 * 1000,     // 5 minutes
+      'list': 15 * 60 * 1000       // 15 minutes
+    };
+    return ttlMap[config.type] || 10 * 60 * 1000;
+  }
+
+  async invalidateRelatedCache(mediaId, updates) {
+    this.cache.invalidateByMedia(mediaId);
+    
+    if (updates.status) {
+      try {
+        const username = await this.plugin.auth.getAuthenticatedUsername();
+        if (username) {
+          this.cache.invalidateByUser(username);
+        }
+      } catch (error) {
+        // Ignore errors getting username for cache invalidation
+      }
+    }
+  }
+
+  // =================== ADVANCED FEATURES ===================
+
+  async getRecommendations(mediaId, limit = 10) {
+    const query = `
+      query ($mediaId: Int, $limit: Int) {
+        Media(id: $mediaId) {
+          recommendations(page: 1, perPage: $limit, sort: RATING_DESC) {
+            nodes {
+              rating
+              mediaRecommendation {
+                id
+                title { romaji english }
+                coverImage { medium }
+                format
+                averageScore
+                genres
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    const result = await this.makeRawRequest({
+      query,
+      variables: { mediaId: parseInt(mediaId), limit },
+      config: { type: 'recommendations', mediaId }
+    });
+
+    return result.Media.recommendations.nodes
+      .filter(rec => rec.mediaRecommendation)
+      .map(rec => ({
+        ...rec.mediaRecommendation,
+        recommendationRating: rec.rating
+      }));
+  }
+
+  async getUserActivity(username, limit = 20) {
+    const query = `
+      query ($username: String, $limit: Int) {
+        Page(page: 1, perPage: $limit) {
+          activities(userId_not: null, sort: ID_DESC) {
+            ... on ListActivity {
+              id
+              type
+              status
+              progress
+              createdAt
+              media {
+                id
+                title { romaji english }
+                coverImage { medium }
+              }
+              user {
+                name
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    const result = await this.makeRawRequest({
+      query,
+      variables: { username, limit },
+      config: { type: 'activity', username }
+    });
+
+    return result.Page.activities.filter(activity => 
+      activity.user?.name === username
+    );
+  }
+
+  async searchAdvanced(filters = {}) {
+    const {
+      search = '',
+      type = 'ANIME',
+      format,
+      status,
+      year,
+      season,
+      genres,
+      tags,
+      sort = 'POPULARITY_DESC',
+      page = 1,
+      perPage = 20
+    } = filters;
+
+    const query = `
+      query (
+        $search: String
+        $type: MediaType
+        $format: MediaFormat
+        $status: MediaStatus
+        $year: Int
+        $season: MediaSeason
+        $genres: [String]
+        $tags: [String]
+        $sort: [MediaSort]
+        $page: Int
+        $perPage: Int
+      ) {
+        Page(page: $page, perPage: $perPage) {
+          pageInfo {
+            total
+            currentPage
+            lastPage
+            hasNextPage
+          }
+          media(
+            search: $search
+            type: $type
+            format: $format
+            status: $status
+            seasonYear: $year
+            season: $season
+            genre_in: $genres
+            tag_in: $tags
+            sort: $sort
+          ) {
+            id
+            title { romaji english native }
+            coverImage { large medium }
+            format
+            status
+            averageScore
+            popularity
+            genres
+            tags { name rank }
+            startDate { year month day }
+            episodes
+            chapters
+            description
+            studios(isMain: true) {
+              nodes { name }
+            }
+          }
+        }
+      }
+    `;
+
+    const variables = {
+      search: search || null,
+      type,
+      format: format || null,
+      status: status || null,
+      year: year || null,
+      season: season || null,
+      genres: genres && genres.length > 0 ? genres : null,
+      tags: tags && tags.length > 0 ? tags : null,
+      sort: [sort],
+      page,
+      perPage
+    };
+
+    const result = await this.makeRawRequest({
+      query,
+      variables,
+      config: { type: 'advanced_search', filters }
+    });
+
+    return result.Page;
+  }
+
+  async getTrendingMedia(type = 'ANIME', limit = 20) {
+    const query = `
+      query ($type: MediaType, $limit: Int) {
+        Page(page: 1, perPage: $limit) {
+          media(type: $type, sort: TRENDING_DESC) {
+            id
+            title { romaji english }
+            coverImage { large medium }
+            format
+            averageScore
+            trending
+            popularity
+            genres
+            startDate { year }
+          }
+        }
+      }
+    `;
+
+    const result = await this.makeRawRequest({
+      query,
+      variables: { type, limit },
+      config: { type: 'trending', mediaType: type }
+    });
+
+    return result.Page.media;
+  }
+
+  // =================== UTILITY & PERFORMANCE ===================
+
+  async preloadUserData(username) {
+    const requests = [
+      this.fetchAniListData({ type: 'stats', username, mediaType: 'ANIME' }),
+      this.fetchAniListData({ type: 'stats', username, mediaType: 'MANGA' }),
+      this.fetchAniListData({ type: 'list', username, mediaType: 'ANIME', listType: 'CURRENT' }),
+      this.fetchAniListData({ type: 'list', username, mediaType: 'MANGA', listType: 'CURRENT' })
+    ];
+
+    try {
+      await Promise.all(requests);
+      this.log('PRELOAD_SUCCESS', 'cache', 'preload', `User data preloaded for ${username}`);
+    } catch (error) {
+      this.log('PRELOAD_FAILED', 'cache', 'preload', `Failed to preload data for ${username}: ${error.message}`);
+    }
+  }
+
+  clearAllCaches() {
+    this.cache.clear();
+    this.log('CACHE_CLEARED', 'system', 'manual', 'All caches cleared');
+  }
+
+  getRequestStats() {
+    return {
+      active: this.requestTracker.size,
+      queued: this.requestQueue.size || 0,
+      metrics: this.getHealthStatus()
+    };
+  }
+
+  // =================== LOGGING ===================
+
+  log(level, category, requestId, data = '') {
+    if (!this.plugin.settings?.debugMode && level !== 'ERROR') return;
+    
+    const timestamp = new Date().toISOString();
+    const logData = typeof data === 'object' ? JSON.stringify(data, null, 2) : data;
+    
+    console.log(`[${timestamp}] [Zoro-API] [${level}] [${category}] [${requestId}] ${logData}`);
+  }
+
+  // =================== CLEANUP ===================
+
+  destroy() {
+    // Clear timers
+    if (this.batchTimer) {
+      clearTimeout(this.batchTimer);
+    }
+
+    // Clear intervals (health monitoring)
+    // Note: In a real implementation, you'd store the interval ID and clear it here
+
+    // Clear pending requests
+    this.requestTracker.clear();
+    this.batchQueue.clear();
+
+    this.log('API_DESTROYED', 'system', 'shutdown', 'API instance destroyed');
   }
 }
 

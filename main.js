@@ -34,6 +34,110 @@ const DEFAULT_SETTINGS = {
   malUserInfo: null,
 };
 
+// ------------------------------------------------------------------
+// 🗾 MyAnimeList minimal API wrapper
+// ------------------------------------------------------------------
+class MalApi {
+  constructor(plugin) {
+    this.plugin = plugin;
+    this.requestQueue = plugin.requestQueue;
+  }
+
+  getMALUrl(mediaId, mediaType = 'ANIME') {
+    if (!mediaId || typeof mediaId !== 'number') {
+      throw new Error(`Invalid MAL mediaId: ${mediaId}`);
+    }
+    const type = String(mediaType).toLowerCase();
+    return `https://myanimelist.net/${type}/${mediaId}`;
+  }
+  
+  async fetchMALEntry(mediaId, mediaType = 'ANIME') {
+    if (!this.plugin.malAuth.isLoggedIn) {
+      throw new Error('Not authenticated with MyAnimeList');
+    }
+
+    const type = mediaType === 'MANGA' ? 'manga' : 'anime';
+    const url = `https://api.myanimelist.net/v2/${type}/${mediaId}?fields=id,title,main_picture,mean,num_episodes,num_chapters,status,genres`;
+
+    const headers = this.plugin.malAuth.getAuthHeaders();
+    const res = await this.requestQueue.add(() =>
+      requestUrl({ url, method: 'GET', headers })
+    );
+
+    if (!res.ok) throw new Error(`MAL API error ${res.status}`);
+    return res.json;
+  }
+  
+  malToCard(mal) {
+    return {
+      media: {
+        id: mal.id,
+        idMal: mal.id,
+        title: {
+          romaji: mal.title,
+          english: mal.title,
+          native: mal.title
+        },
+        coverImage: {
+          large: mal.main_picture?.large || mal.main_picture?.medium,
+          medium: mal.main_picture?.medium
+        },
+        format: mal.media_type?.toUpperCase(),
+        status: mal.status?.replace(/_/g, ' ').toUpperCase(),
+        genres: mal.genres?.map(g => g.name) || [],
+        episodes: mal.num_episodes,
+        chapters: mal.num_chapters
+      },
+      averageScore: mal.mean ? Math.round(mal.mean * 10) : null
+    };
+  }
+  
+    async searchMAL({ query, mediaType = 'ANIME', limit = 5 }) {
+  if (!this.plugin.malAuth.isLoggedIn) {
+    throw new Error('Not authenticated with MyAnimeList');
+  }
+
+  const type = mediaType === 'MANGA' ? 'manga' : 'anime';
+  const url = `https://api.myanimelist.net/v2/${type}?q=${encodeURIComponent(query)}&limit=${limit}&fields=id,title,main_picture,mean,num_episodes,num_chapters,genres`;
+
+  const headers = {
+    ...this.plugin.malAuth.getAuthHeaders(),
+    'User-Agent': 'Mozilla/5.0 (Linux; Android 13; SM-S901U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36'
+  };
+
+  const res = await this.requestQueue.add(() =>
+    requestUrl({ url, method: 'GET', headers })
+  );
+
+  // --- DEBUG: always log what MAL returned ---
+  console.log('[MalApi] Raw response:', {
+    status: res.status,
+    statusText: res.statusText,
+    body: res.text   // IMPORTANT: use .text to see HTML or JSON
+  });
+
+  if (!res.ok) {
+    throw new Error(`MAL HTTP ${res.status}: ${res.text || res.statusText}`);
+  }
+
+  let json;
+  try {
+    json = res.json;
+  } catch (e) {
+    throw new Error(`MAL returned non-JSON: ${res.text}`);
+  }
+
+  if (json.error) {
+    throw new Error(`MAL API error: ${json.error} – ${json.message || ''}`);
+  }
+
+  return (json.data || []).map(item => this.malToCard(item));
+}
+
+
+
+}
+
 class Cache {
   constructor(config = {}) {
     const {
@@ -1525,7 +1629,6 @@ class ZoroPlugin extends Plugin {
 }
 
     this.registerMarkdownCodeBlockProcessor('zoro', this.processor.processZoroCodeBlock.bind(this.processor));
-    this.registerMarkdownCodeBlockProcessor('zoro-search', this.processor.processZoroSearchCodeBlock.bind(this.processor));
     this.registerMarkdownPostProcessor(this.processor.processInlineLinks.bind(this.processor));
     
     this.addSettingTab(new ZoroSettingTab(this.app, this));
@@ -1724,28 +1827,40 @@ class Processor {
       }
 
       const doFetch = async () => {
-        try {
-          const data = await this.plugin.api.fetchAniListData(config);
-          
-          el.empty();
-          
-          if (config.type === 'stats') {
-            this.plugin.render.renderUserStats(el, data.User);
-          } else if (config.type === 'single') {
-            this.plugin.render.renderSingleMedia(el, data.MediaList, config);
-          } else {
-            const entries = data.MediaListCollection.lists.flatMap(list => list.entries);
-            this.plugin.render.renderMediaList(el, entries, config);
-          }
-          
-        } catch (err) {
-          el.empty();
-          this.plugin.renderError(el, err.message,
-            'Failed to load list',
-            doFetch
-          );
-        }
-      };
+  try {
+    let data, entries;
+    const api = config.source === 'mal' ? new MalApi(this.plugin) : this.plugin.api;
+
+    switch (config.type) {
+      case 'stats':
+        data = await api.fetchAniListData?.(config) || await api.fetchMALStats?.(config);
+        this.plugin.render.renderUserStats(el, data.User || data);
+        break;
+
+      case 'search':
+        await this.plugin.render.renderSearchInterface(el, config);
+        break;
+
+      case 'single':
+        data = await api.fetchAniListData?.(config); // AniList-only for now
+        this.plugin.render.renderSingleMedia(el, data.MediaList, config);
+        break;
+
+      case 'list':
+        entries = await api.fetchMALList?.({ listType: config.listType, mediaType: config.mediaType }) ||
+                  (await api.fetchAniListData({ ...config })).MediaListCollection.lists.flatMap(l => l.entries);
+        this.plugin.render.renderMediaList(el, entries, config);
+        break;
+
+      default:
+        throw new Error(`Unknown type: ${config.type}`);
+    }
+  } catch (err) {
+    el.empty();
+    this.plugin.renderError(el, err.message, 'Failed to load', doFetch);
+  }
+};
+
       
       await doFetch();
 
@@ -1763,41 +1878,7 @@ class Processor {
     
   }
 
-  async processZoroSearchCodeBlock(source, el, ctx) {
-    try {
-      const config = this.parseSearchCodeBlockConfig(source);
-
-      if (this.plugin.settings.debugMode) {
-        console.log('[Zoro] Search block config:', config);
-      }
-
-      el.createEl('div', { text: '🔍 Searching Zoro...', cls: 'zoro-loading-placeholder' });
-      
-      const doSearch = async () => {
-        try {
-          await this.plugin.render.renderSearchInterface(el, config);
-        } catch (err) {
-          el.empty();
-          this.plugin.renderError(el, err.message,
-            'Search failed',
-            doSearch
-          );
-        }
-      };
-      
-      await doSearch();
-    } catch (error) {
-      console.error('[Zoro] Search block processing error:', error);
-      el.empty();
-      this.plugin.renderError(
-        el,
-        error.message || 'Failed to process Zoro search block.',
-        'Search block',
-        () => this.processZoroSearchCodeBlock(source, el, ctx)
-      );
-    }
-  }
-
+  
   async processInlineLinks(el, ctx) {
     const inlineLinks = el.querySelectorAll('a[href^="zoro:"]');
 
@@ -1846,21 +1927,27 @@ class Processor {
     }
   }
 
-  parseCodeBlockConfig(source) {
+  
+ parseCodeBlockConfig(source) {
   const config = {};
-  const lines = source.split('\n').filter(l => l.trim());
+  const lines = source.split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
 
-  for (let line of lines) {
-    line = line.trim();
-    if (!line || line.startsWith('#')) continue;          // ignore blank / comment lines
-    const colon = line.indexOf(':');
-    if (colon === -1) continue;                            // no key–value separator
-    const key   = line.slice(0, colon).trim();
-    const value = line.slice(colon + 1).trim();
-    if (key && value) config[key] = value;
+  for (let raw of lines) {
+    const colon = raw.indexOf(':');
+    if (colon === -1) continue;
+
+    let key   = raw.slice(0, colon).trim().toLowerCase();
+    let value = raw.slice(colon + 1).trim();
+
+    if (key === 'username')   config.username   = value;
+    if (key === 'listtype')   config.listType   = value.toUpperCase().replace(/ /g, '_');
+    if (key === 'mediatype')  config.mediaType  = value.toUpperCase();
+    if (key === 'type')       config.type       = value.toLowerCase();
+    if (key === 'layout')     config.layout     = value.toLowerCase();
+    if (key === 'search')     config.search     = value;
+    if (key === 'source')     config.source     = value.toLowerCase();
   }
 
-  // Only apply defaults when nothing was supplied
   if (!config.username) {
     if (this.plugin.settings.defaultUsername) {
       config.username = this.plugin.settings.defaultUsername;
@@ -1871,10 +1958,9 @@ class Processor {
     }
   }
 
-  // Respect explicit values; only fall back if missing
   if (!config.type) config.type = 'list';
-  if (config.type === 'trending') config.type = 'trending';   // do NOT map to 'search'
-
+  if (config.type === 'trending') config.type = 'trending';
+  if (config.type === 'listMAL') config.type = 'listMAL';
   if (!config.listType && config.type === 'list') config.listType = 'CURRENT';
   if (!config.mediaType) config.mediaType = 'ANIME';
   if (!config.layout) config.layout = this.plugin.settings.defaultLayout || 'card';
@@ -1882,24 +1968,6 @@ class Processor {
   return config;
 }
 
-
-  parseSearchCodeBlockConfig(source) {
-    const config = { type: 'search' };
-    const lines = source.split('\n').filter(line => line.trim());
-    
-    for (const line of lines) {
-      const [key, value] = line.split(':').map(s => s.trim());
-      if (key && value) {
-        config[key] = value;
-      }
-    }
-    
-    config.layout = config.layout || this.plugin.settings.defaultLayout || 'card';
-    config.mediaType = config.mediaType || 'ANIME';
-    config.layout = config.layout || this.plugin.settings.defaultLayout;
-    
-    return config;
-  }
 
   parseInlineLink(href) {
     const [base, hash] = href.replace('zoro:', '').split('#');
@@ -5640,6 +5708,33 @@ class ZoroSettingTab extends PluginSettingTab {
         await this.plugin.auth.forceScoreFormat();
       }
     }));
+    
+        new Setting(About)
+      .setName('🔍 Test MAL Search')
+      .setDesc('Type below and hit Enter to search MAL via official API.')
+      .addText(text => {
+        text.setPlaceholder('Search MAL…')
+            .onChange(() => {}); // required by API
+        text.inputEl.addEventListener('keydown', async (e) => {
+          if (e.key !== 'Enter') return;
+          const query = text.getValue().trim();
+          if (query.length < 3) return new Notice('Need ≥3 chars', 2000);
+          try {
+            const malApi = new MalApi(this.plugin);
+            const results = await malApi.searchMAL({ query, limit: 6 });
+            // build tiny grid under the input
+            const container = document.createElement('div');
+            container.className = 'zoro-cards-grid';
+            results.forEach(r => container.appendChild(
+              this.plugin.render.createMediaCard(r, { layout: 'card' })
+            ));
+            text.inputEl.parentElement.appendChild(container);
+          } catch (err) {
+            new Notice(`❌ ${err.message}`, 4000);
+          }
+        });
+      });
+
     
     new Setting(Data)
       .setName('🧾 Export your data')

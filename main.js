@@ -3031,255 +3031,632 @@ handleEditClick(e, entry, statusEl, config = {}) {
 class Processor {
   constructor(plugin) {
     this.plugin = plugin;
+    this.apiRegistry = new Map();
+    this.initializeApis();
   }
 
-  async processZoroCodeBlock(source, el, ctx) {
-    try {
-      const config = this.parseCodeBlockConfig(source) || {};
-      let skeleton;
-      
-      if (config.type === 'stats') {
-        skeleton = this.plugin.render.createStatsSkeleton();
-      } else if (config.type === 'single') {
-        skeleton = this.plugin.render.createListSkeleton(1);
-      }  else if (config.type === 'trending') {
-  const trending = new Trending(this.plugin);
-  await trending.renderTrendingBlock(el, config);
-  return;
+  /**
+   * Initialize and register available APIs
+   * @private
+   */
+  initializeApis() {
+    // Register AniList API
+    if (this.plugin.api) {
+      this.apiRegistry.set('anilist', this.plugin.api);
+    }
+    
+    // Register MAL API
+    if (this.plugin.malApi) {
+      this.apiRegistry.set('mal', this.plugin.malApi);
+    }
+  }
 
+  /**
+   * Get API instance based on source
+   * @param {string} source - API source identifier
+   * @returns {Object} API instance
+   * @throws {Error} If API source is not supported or available
+   */
+  getApiInstance(source) {
+    const normalizedSource = source?.toLowerCase();
+    
+    if (!this.apiRegistry.has(normalizedSource)) {
+      const availableSources = Array.from(this.apiRegistry.keys()).join(', ');
+      throw new Error(`❌ Unsupported API source: ${source}. Available sources: ${availableSources}`);
+    }
+    
+    return this.apiRegistry.get(normalizedSource);
+  }
 
-      } else {
-        skeleton = this.plugin.render.createListSkeleton();
+  /**
+   * Get supported operation types for a given API source
+   * @param {string} source - API source identifier
+   * @returns {string[]} Array of supported operation types
+   */
+  getSupportedOperations(source) {
+    const operationMap = {
+      'anilist': ['stats', 'search', 'single', 'list', 'trending'],
+      'mal': ['stats', 'search', 'list']
+    };
+    
+    return operationMap[source?.toLowerCase()] || [];
+  }
+
+  /**
+   * Validate if operation is supported by the API source
+   * @param {string} source - API source identifier
+   * @param {string} operation - Operation type to validate
+   * @throws {Error} If operation is not supported by the source
+   */
+  validateOperation(source, operation) {
+    const supportedOps = this.getSupportedOperations(source);
+    
+    if (!supportedOps.includes(operation)) {
+      throw new Error(`❌ Operation '${operation}' is not supported by ${source.toUpperCase()}. Supported operations: ${supportedOps.join(', ')}`);
+    }
+  }
+
+  /**
+   * Create appropriate skeleton based on configuration
+   * @param {Object} config - Configuration object
+   * @returns {HTMLElement} Skeleton element
+   */
+  createSkeleton(config) {
+    const skeletonMap = {
+      'stats': () => this.plugin.render.createStatsSkeleton(),
+      'single': () => this.plugin.render.createListSkeleton(1),
+      'trending': () => this.plugin.render.createListSkeleton(),
+      'search': () => this.plugin.render.createListSkeleton(),
+      'list': () => this.plugin.render.createListSkeleton()
+    };
+
+    const createSkeletonFn = skeletonMap[config.type];
+    if (!createSkeletonFn) {
+      return this.plugin.render.createListSkeleton();
+    }
+
+    return createSkeletonFn();
+  }
+
+  /**
+   * Handle authentication and username resolution
+   * @param {Object} config - Configuration object
+   * @returns {Promise<Object>} Updated configuration with username
+   */
+  async resolveAuthentication(config) {
+    const updatedConfig = { ...config };
+
+    if (updatedConfig.useAuthenticatedUser) {
+      const authUsername = await this.plugin.auth.getAuthenticatedUsername();
+      if (!authUsername) {
+        throw new Error('❌ Could not retrieve authenticated username. Please authenticate or provide a username.');
       }
+      updatedConfig.username = authUsername;
+    }
+
+    return updatedConfig;
+  }
+
+  /**
+   * Execute API operation based on type and source
+   * @param {Object} api - API instance
+   * @param {Object} config - Configuration object
+   * @returns {Promise<any>} API response data
+   */
+  async executeApiOperation(api, config) {
+    const { type, source } = config;
+
+    try {
+      switch (type) {
+        case 'stats':
+          return await this.handleStatsOperation(api, config);
+          
+        case 'search':
+          return await this.handleSearchOperation(api, config);
+          
+        case 'single':
+          return await this.handleSingleOperation(api, config);
+          
+        case 'list':
+          return await this.handleListOperation(api, config);
+          
+        case 'trending':
+          return await this.handleTrendingOperation(api, config);
+          
+        default:
+          throw new Error(`❌ Unknown operation type: ${type}`);
+      }
+    } catch (error) {
+      throw new Error(`❌ ${source.toUpperCase()} API operation failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Handle stats operation
+   * @param {Object} api - API instance
+   * @param {Object} config - Configuration object
+   * @returns {Promise<any>} Stats data
+   */
+  async handleStatsOperation(api, config) {
+    if (config.source === 'mal') {
+      return await api.fetchMALStats?.(config);
+    } else {
+      const data = await api.fetchAniListData?.(config);
+      return data?.User || data;
+    }
+  }
+
+  /**
+   * Handle search operation
+   * @param {Object} api - API instance
+   * @param {Object} config - Configuration object
+   * @returns {Promise<any>} Search results data
+   */
+  async handleSearchOperation(api, config) {
+    if (config.source === 'mal') {
+      return await api.fetchMALData?.({
+        ...config,
+        query: config.search,
+        page: config.page || 1,
+        perPage: config.perPage || 5
+      });
+    } else {
+      // For AniList, we'll return config to trigger search interface rendering
+      return { isSearchInterface: true, config };
+    }
+  }
+
+  /**
+   * Handle single media operation
+   * @param {Object} api - API instance
+   * @param {Object} config - Configuration object
+   * @returns {Promise<any>} Single media data
+   */
+  async handleSingleOperation(api, config) {
+    if (config.source === 'mal') {
+      throw new Error('❌ Single media view is currently only supported for AniList');
+    }
+    
+    const data = await api.fetchAniListData?.(config);
+    return data?.MediaList;
+  }
+
+  /**
+   * Handle list operation
+   * @param {Object} api - API instance
+   * @param {Object} config - Configuration object
+   * @returns {Promise<any>} List data
+   */
+  async handleListOperation(api, config) {
+    if (config.source === 'mal') {
+      return await api.fetchMALList?.({ 
+        listType: config.listType, 
+        mediaType: config.mediaType 
+      });
+    } else {
+      const data = await api.fetchAniListData?.({ ...config });
+      return data?.MediaListCollection?.lists?.flatMap(l => l.entries) || [];
+    }
+  }
+
+  /**
+   * Handle trending operation
+   * @param {Object} api - API instance
+   * @param {Object} config - Configuration object
+   * @returns {Promise<any>} Trending data
+   */
+  async handleTrendingOperation(api, config) {
+    if (config.source === 'mal') {
+      throw new Error('❌ Trending is currently only supported for AniList');
+    }
+    
+    // Return indicator for special trending handling
+    return { isTrendingOperation: true, config };
+  }
+
+  /**
+   * Render data based on operation type
+   * @param {HTMLElement} el - Target element
+   * @param {any} data - Data to render
+   * @param {Object} config - Configuration object
+   */
+  async renderData(el, data, config) {
+    const { type } = config;
+
+    try {
+      switch (type) {
+        case 'stats':
+          this.plugin.render.renderUserStats(el, data);
+          break;
+
+        case 'search':
+          if (data.isSearchInterface) {
+            await this.plugin.render.renderSearchInterface(el, data.config);
+          } else {
+            this.plugin.render.renderSearchResults(el, data.Page?.media || [], config);
+          }
+          break;
+
+        case 'single':
+          this.plugin.render.renderSingleMedia(el, data, config);
+          break;
+
+        case 'list':
+          this.plugin.render.renderMediaList(el, data, config);
+          break;
+
+        case 'trending':
+          if (data.isTrendingOperation) {
+            const trending = new Trending(this.plugin);
+            await trending.renderTrendingBlock(el, data.config);
+          }
+          break;
+
+        default:
+          throw new Error(`❌ Unknown rendering type: ${type}`);
+      }
+    } catch (error) {
+      throw new Error(`❌ Rendering failed: ${error.message}`);
+    }
+  }
+
+  /**
+   * Main method to process Zoro code blocks
+   * @param {string} source - Code block source content
+   * @param {HTMLElement} el - Target element
+   * @param {Object} ctx - Context object
+   */
+  async processZoroCodeBlock(source, el, ctx) {
+    let config;
+    
+    try {
+      // Parse and validate configuration
+      config = this.parseCodeBlockConfig(source) || {};
       
+      // Validate API source and operation
+      this.validateOperation(config.source, config.type);
       
+      // Create and display skeleton
+      const skeleton = this.createSkeleton(config);
       el.empty();
       el.appendChild(skeleton);
 
-      if (config.useAuthenticatedUser) {
-        const authUsername = await this.plugin.auth.getAuthenticatedUsername();
-        if (!authUsername) {
-          throw new Error('❌ Could not retrieve authenticated username...');
-        }
-        config.username = authUsername;
-      }
+      // Create retry function for error handling
+      const retryFn = () => this.processZoroCodeBlock(source, el, ctx);
 
-      const doFetch = async () => {
-  try {
-    let data, entries;
-    const api = config.source === 'mal' ? new MalApi(this.plugin) : this.plugin.api;
-
-    switch (config.type) {
-      case 'stats':
-        data = await api.fetchAniListData?.(config) || await api.fetchMALStats?.(config);
-        this.plugin.render.renderUserStats(el, data.User || data);
-        break;
-
-      case 'search':
-  if (config.source === 'mal') {
-    const data = await this.plugin.malApi.fetchMALData({
-      ...config,
-      query: config.search,
-      page:  config.page  || 1,
-      perPage: config.perPage || 5
-    });
-    this.plugin.render.renderSearchResults(el, data.Page.media, config);
-  } else {
-    await this.plugin.render.renderSearchInterface(el, config);
-  }
-  break;
-
-      
-      case 'single':
-        data = await api.fetchAniListData?.(config); // AniList-only for now
-        this.plugin.render.renderSingleMedia(el, data.MediaList, config);
-        break;
-
-      case 'list':
-        entries = await api.fetchMALList?.({ listType: config.listType, mediaType: config.mediaType }) ||
-                  (await api.fetchAniListData({ ...config })).MediaListCollection.lists.flatMap(l => l.entries);
-        this.plugin.render.renderMediaList(el, entries, config);
-        break;
-
-      default:
-        throw new Error(`Unknown type: ${config.type}`);
-    }
-  } catch (err) {
-    el.empty();
-    this.plugin.renderError(el, err.message, 'Failed to load', doFetch);
-  }
-};
-
-      
-      await doFetch();
+      // Execute main processing logic
+      await this.executeProcessing(el, config, retryFn);
 
     } catch (error) {
-      el.empty();
       console.error('[Zoro] Code block processing error:', error);
+      el.empty();
+      
+      const retryFn = () => this.processZoroCodeBlock(source, el, ctx);
       this.plugin.renderError(
         el,
         error.message || 'Unknown error occurred.',
         'Code block',
-        () => this.processZoroCodeBlock(source, el, ctx)
+        retryFn
       );
     }
-    
-    
   }
 
-  
+  /**
+   * Execute the main processing logic
+   * @param {HTMLElement} el - Target element
+   * @param {Object} config - Configuration object
+   * @param {Function} retryFn - Retry function for error handling
+   */
+  async executeProcessing(el, config, retryFn) {
+    try {
+      // Resolve authentication if needed
+      const resolvedConfig = await this.resolveAuthentication(config);
+      
+      // Get API instance
+      const api = this.getApiInstance(resolvedConfig.source);
+      
+      // Execute API operation
+      const data = await this.executeApiOperation(api, resolvedConfig);
+      
+      // Render the data
+      await this.renderData(el, data, resolvedConfig);
+
+    } catch (error) {
+      el.empty();
+      this.plugin.renderError(el, error.message, 'Failed to load', retryFn);
+      throw error; // Re-throw to be caught by main error handler
+    }
+  }
+
+  /**
+   * Process inline Zoro links
+   * @param {HTMLElement} el - Element containing inline links
+   * @param {Object} ctx - Context object
+   */
   async processInlineLinks(el, ctx) {
     const inlineLinks = el.querySelectorAll('a[href^="zoro:"]');
 
-    for (const link of inlineLinks) {
-      const href = link.getAttribute('href');
+    const processingPromises = Array.from(inlineLinks).map(link => 
+      this.processInlineLink(link, ctx)
+    );
+
+    // Process all inline links concurrently
+    await Promise.allSettled(processingPromises);
+  }
+
+  /**
+   * Process a single inline link
+   * @param {HTMLElement} link - Link element to process
+   * @param {Object} ctx - Context object
+   */
+  async processInlineLink(link, ctx) {
+    const href = link.getAttribute('href');
+    
+    const placeholder = document.createElement('span');
+    placeholder.textContent = '🔄 Loading Zoro...';
+    placeholder.className = 'zoro-loading-placeholder';
+    link.replaceWith(placeholder);
+
+    try {
+      const config = this.parseInlineLink(href);
       
-      const placeholder = document.createElement('span');
-      placeholder.textContent = '🔄 Loading Zoro...';
-      link.replaceWith(placeholder);
+      // Validate operation support
+      this.validateOperation(config.source || 'anilist', config.type);
+      
+      const api = this.getApiInstance(config.source || 'anilist');
+      const data = await this.executeApiOperation(api, config);
 
-      try {
-        const config = this.parseInlineLink(href);
-        const data = await this.plugin.api.fetchAniListData(config);
+      const container = document.createElement('span');
+      container.className = 'zoro-inline-container';
+      
+      await this.renderData(container, data, config);
 
-        const container = document.createElement('span');
-        container.className = 'zoro-inline-container';
-        
-        if (config.type === 'stats') {
-          this.plugin.render.renderUserStats(container, data.User);
-        } else if (config.type === 'single') {
-          this.plugin.render.renderSingleMedia(container, data.MediaList, config);
-        } else {
-          const entries = data.MediaListCollection.lists.flatMap(list => list.entries);
-          this.plugin.render.renderMediaList(container, entries, config);
-        }
+      placeholder.replaceWith(container);
 
-        placeholder.replaceWith(container);
-
-        ctx.addChild({
-          unload: () => {
+      // Add cleanup handler
+      ctx.addChild({
+        unload: () => {
+          if (container.parentNode) {
             container.remove();
           }
-        });
+        }
+      });
 
-      } catch (error) {
-        console.warn(`[Zoro] Inline link failed for ${href}:`, error);
+    } catch (error) {
+      console.warn(`[Zoro] Inline link failed for ${href}:`, error);
 
-        const container = document.createElement('span');
-        container.className = 'zoro-inline-container';
+      const container = document.createElement('span');
+      container.className = 'zoro-inline-container zoro-error-container';
 
-        const retry = () => this.processInlineLinks(el, ctx);
-        this.plugin.renderError(container, error.message, 'Inline link', retry);
+      const retryFn = () => {
+        container.replaceWith(placeholder);
+        this.processInlineLink(link, ctx);
+      };
 
-        placeholder.replaceWith(container);
-      }
+      this.plugin.renderError(container, error.message, 'Inline link', retryFn);
+      placeholder.replaceWith(container);
     }
   }
 
-  
- parseCodeBlockConfig(source) {
-  const config = {};
-  const lines = source.split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
+  /**
+   * Parse code block configuration with enhanced validation
+   * @param {string} source - Raw code block content
+   * @returns {Object} Parsed configuration object
+   */
+  parseCodeBlockConfig(source) {
+    const config = {};
+    const lines = source.split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
 
-  for (let raw of lines) {
-    const colon = raw.indexOf(':');
-    if (colon === -1) continue;
-
-    let key   = raw.slice(0, colon).trim().toLowerCase();
-    let value = raw.slice(colon + 1).trim();
-
-    if (key === 'username')   config.username   = value;
-    if (key === 'listtype')   config.listType   = value.toUpperCase().replace(/ /g, '_');
-    if (key === 'mediatype')  config.mediaType  = value.toUpperCase();
-    if (key === 'type')       config.type       = value.toLowerCase();
-    if (key === 'layout')     config.layout     = value.toLowerCase();
-    if (key === 'search')     config.search     = value;
-    if (key === 'source')     config.source     = value.toLowerCase();
-  }
-
-  // Use default API source if not specified
-  if (!config.source) {
-    config.source = this.plugin.settings.defaultApiSource || 'anilist';
-  }
-
-  if (!config.username) {
-    if (this.plugin.settings.defaultUsername) {
-      config.username = this.plugin.settings.defaultUsername;
-    } else if (config.source === 'mal' && this.plugin.settings.malAccessToken) {
-      config.useAuthenticatedUser = true;
-    } else if (config.source === 'anilist' && this.plugin.settings.accessToken) {
-      config.useAuthenticatedUser = true;
-    } else {
-      throw new Error('Username is required. Please set a default username in plugin settings, authenticate, or specify one in the code block.');
-    }
-  }
-
-  if (!config.type) config.type = 'list';
-  if (config.type === 'trending') config.type = 'trending';
-  if (config.type === 'listMAL') config.type = 'listMAL';
-  if (!config.listType && config.type === 'list') config.listType = 'CURRENT';
-  if (!config.mediaType) config.mediaType = 'ANIME';
-  if (!config.layout) config.layout = this.plugin.settings.defaultLayout || 'card';
-
-  return config;
-}
-
-
-  parseInlineLink(href) {
-    const [base, hash] = href.replace('zoro:', '').split('#');
-
-    const parts = base.split('/');
-    let username, pathParts;
-
-    if (parts[0] === '') {
-      if (!this.plugin.settings.defaultUsername) {
-        throw new Error('⚠️ Default username not set. Configure it in plugin settings.');
-      }
-      username = this.plugin.settings.defaultUsername;
-      pathParts = parts.slice(1);
-    } else {
-      if (parts.length < 2) {
-        throw new Error('❌ Invalid Zoro inline link format.');
-      }
-      username = parts[0];
-      pathParts = parts.slice(1);
-    }
-
-    const config = {
-      username: username,
-      layout: 'card',
-      type: 'list'
+    // Configuration key mapping for flexibility
+    const keyMappings = {
+      'username': 'username',
+      'user': 'username',
+      'listtype': 'listType',
+      'list-type': 'listType',
+      'list_type': 'listType',
+      'mediatype': 'mediaType',
+      'media-type': 'mediaType',
+      'media_type': 'mediaType',
+      'type': 'type',
+      'layout': 'layout',
+      'search': 'search',
+      'query': 'search',
+      'source': 'source',
+      'api': 'source',
+      'page': 'page',
+      'perpage': 'perPage',
+      'per-page': 'perPage',
+      'per_page': 'perPage',
+      'limit': 'perPage'
     };
 
-    const main = pathParts[0];
-    const second = pathParts[1];
+    for (let raw of lines) {
+      const colonIndex = raw.indexOf(':');
+      if (colonIndex === -1) continue;
+
+      let key = raw.slice(0, colonIndex).trim().toLowerCase();
+      let value = raw.slice(colonIndex + 1).trim();
+
+      // Map key to standardized format
+      const mappedKey = keyMappings[key];
+      if (!mappedKey) continue;
+
+      // Process value based on key type
+      config[mappedKey] = this.processConfigValue(mappedKey, value);
+    }
+
+    // Apply defaults and validation
+    return this.applyConfigDefaults(config);
+  }
+
+  /**
+   * Process configuration values with type conversion
+   * @param {string} key - Configuration key
+   * @param {string} value - Raw value
+   * @returns {any} Processed value
+   */
+  processConfigValue(key, value) {
+    switch (key) {
+      case 'listType':
+        return value.toUpperCase().replace(/[\s-]/g, '_');
+      case 'mediaType':
+        return value.toUpperCase();
+      case 'type':
+      case 'layout':
+      case 'source':
+        return value.toLowerCase();
+      case 'page':
+      case 'perPage':
+        return parseInt(value) || undefined;
+      default:
+        return value;
+    }
+  }
+
+  /**
+   * Apply configuration defaults and validation
+   * @param {Object} config - Raw configuration object
+   * @returns {Object} Configuration with defaults applied
+   */
+  applyConfigDefaults(config) {
+    // Set default API source
+    if (!config.source) {
+      config.source = this.plugin.settings.defaultApiSource || 'anilist';
+    }
+
+    // Handle username resolution
+    if (!config.username) {
+      if (this.plugin.settings.defaultUsername) {
+        config.username = this.plugin.settings.defaultUsername;
+      } else if (this.hasValidAuthForSource(config.source)) {
+        config.useAuthenticatedUser = true;
+      } else {
+        throw new Error('❌ Username is required. Please set a default username in plugin settings, authenticate, or specify one in the code block.');
+      }
+    }
+
+    // Set default values
+    config.type = config.type || 'list';
+    config.mediaType = config.mediaType || 'ANIME';
+    config.layout = config.layout || this.plugin.settings.defaultLayout || 'card';
+    
+    if (!config.listType && config.type === 'list') {
+      config.listType = 'CURRENT';
+    }
+
+    return config;
+  }
+
+  /**
+   * Check if valid authentication exists for source
+   * @param {string} source - API source
+   * @returns {boolean} Whether valid auth exists
+   */
+  hasValidAuthForSource(source) {
+    switch (source) {
+      case 'mal':
+        return !!this.plugin.settings.malAccessToken;
+      case 'anilist':
+        return !!this.plugin.settings.accessToken;
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Parse inline link with enhanced error handling
+   * @param {string} href - Inline link href
+   * @returns {Object} Parsed configuration object
+   */
+  parseInlineLink(href) {
+    try {
+      const [base, hash] = href.replace('zoro:', '').split('#');
+      const parts = base.split('/').filter(part => part !== '');
+
+      let username, pathParts;
+
+      // Handle username resolution
+      if (parts.length === 0 || parts[0] === '') {
+        if (!this.plugin.settings.defaultUsername) {
+          throw new Error('⚠️ Default username not set. Configure it in plugin settings.');
+        }
+        username = this.plugin.settings.defaultUsername;
+        pathParts = parts.slice(1);
+      } else {
+        username = parts[0];
+        pathParts = parts.slice(1);
+      }
+
+      const config = {
+        username: username,
+        layout: 'card',
+        type: 'list',
+        source: this.plugin.settings.defaultApiSource || 'anilist'
+      };
+
+      // Parse path components
+      if (pathParts.length > 0) {
+        this.parseInlineLinkPath(config, pathParts);
+      }
+
+      // Parse hash modifiers
+      if (hash) {
+        this.parseInlineLinkHash(config, hash);
+      }
+
+      return config;
+
+    } catch (error) {
+      throw new Error(`❌ Invalid Zoro inline link format: ${error.message}`);
+    }
+  }
+
+  /**
+   * Parse inline link path components
+   * @param {Object} config - Configuration object to modify
+   * @param {string[]} pathParts - Path components
+   */
+  parseInlineLinkPath(config, pathParts) {
+    const [main, second] = pathParts;
 
     if (main === 'stats') {
       config.type = 'stats';
     } else if (main === 'anime' || main === 'manga') {
       config.type = 'single';
       config.mediaType = main.toUpperCase();
+      
       if (!second || isNaN(parseInt(second))) {
         throw new Error('⚠️ Invalid media ID for anime/manga inline link.');
       }
       config.mediaId = parseInt(second);
     } else {
-      config.listType = main.toUpperCase();
+      // Treat as list type
+      config.listType = main.toUpperCase().replace(/[\s-]/g, '_');
+      config.type = 'list';
     }
+  }
 
-    if (hash) {
-      const hashParts = hash.split(',');
-      for (const mod of hashParts) {
-        if (mod === 'compact' || mod === 'card' || mod === 'minimal' || mod === 'full') {
-          config.layout = mod;
-        }
-        if (mod === 'nocache') {
-          config.nocache = true;
-        }
+  /**
+   * Parse inline link hash modifiers
+   * @param {Object} config - Configuration object to modify
+   * @param {string} hash - Hash portion of the link
+   */
+  parseInlineLinkHash(config, hash) {
+    const validLayouts = ['compact', 'card', 'minimal', 'full'];
+    const validSources = ['anilist', 'mal'];
+    
+    const hashParts = hash.split(',').map(part => part.trim().toLowerCase());
+    
+    for (const modifier of hashParts) {
+      if (validLayouts.includes(modifier)) {
+        config.layout = modifier;
+      } else if (validSources.includes(modifier)) {
+        config.source = modifier;
+      } else if (modifier === 'nocache') {
+        config.nocache = true;
       }
+      // Silently ignore unknown modifiers for forward compatibility
     }
-
-    return config;
   }
 }
 
@@ -5108,7 +5485,6 @@ class Trending {
     }
   }
 }
-
 
 class Authentication {
   constructor(plugin) {
@@ -7405,6 +7781,31 @@ new Setting(Theme)
       this.plugin.settings.defaultApiSource = value;
       await this.plugin.saveSettings();
     }));
+    
+
+new Setting(Exp)
+  .setName('Dump metrics & health')
+  .setDesc('Open Dev-Tools console first, then click.')
+  .addButton(btn =>
+    btn
+      .setButtonText('Show')
+      .onClick(() => {
+        const api = this.plugin.api;
+        // 1. console table
+        console.table(api.metrics);
+        // 2. full health object
+        console.log('Health:', api.getHealthStatus());
+        // 3. quick notice
+        const h = api.getHealthStatus();
+        new Notice(
+          `Status: ${h.status}\n` +
+          `Requests: ${h.requests.total} (${h.latency.avg} ms avg)\n` +
+          `Errors: ${h.requests.failed}`,
+          8000
+        );
+      })
+  );
+
 
     new Setting(About)
       .setName('Author')

@@ -1201,33 +1201,52 @@ class Api {
     `;
   }
 
-  // Enhanced API method with extended data fetching capabilities
+
+// Streamlined and focused stats query
+// FIXED VERSION - Remove the problematic parts that might be causing issues
+
 getUserStatsQuery({ 
   mediaType = 'ANIME', 
-  layout = 'enhanced', 
-  useViewer = false,
-  includeGenres = true,
-  includeStatus = true,
-  includeHistory = false // Future: for time-series data
+  layout = 'standard',
+  useViewer = false
 } = {}) {
   const typeKey = mediaType.toLowerCase();
 
-  // Enhanced stat fields with better categorization
+  // Simplified stat fields - removed potentially problematic sorts and limits
   const statFields = {
     minimal: `
       count
       meanScore
+      minutesWatched
+      episodesWatched
+      chaptersRead
     `,
     standard: `
       count
       meanScore
       standardDeviation
       episodesWatched
-      chaptersRead
       minutesWatched
+      chaptersRead
       volumesRead
+      scores {
+        score
+        count
+      }
+      statuses {
+        status
+        count
+      }
+      formats {
+        format
+        count
+      }
+      releaseYears {
+        releaseYear
+        count
+      }
     `,
-    enhanced: `
+    detailed: `
       count
       meanScore
       standardDeviation
@@ -1239,8 +1258,12 @@ getUserStatsQuery({
         score
         count
       }
-      lengths {
-        length
+      statuses {
+        status
+        count
+      }
+      formats {
+        format
         count
       }
       releaseYears {
@@ -1249,47 +1272,6 @@ getUserStatsQuery({
       }
       startYears {
         startYear
-        count
-      }
-      formats {
-        format
-        count
-      }
-      statuses {
-        status
-        count
-      }
-    `,
-    complete: `
-      count
-      meanScore
-      standardDeviation
-      episodesWatched
-      minutesWatched
-      chaptersRead
-      volumesRead
-      scores {
-        score
-        count
-      }
-      lengths {
-        length
-        count
-      }
-      releaseYears {
-        releaseYear
-        count
-      }
-      startYears {
-        startYear
-        count
-      }
-      formats {
-        format
-        count
-      }
-      statuses {
-        status
         count
       }
       genres {
@@ -1298,96 +1280,47 @@ getUserStatsQuery({
         meanScore
         minutesWatched
       }
-      tags {
-        tag
-        count
-        meanScore
-        minutesWatched
-      }
-      staff {
-        staff {
-          id
-          name {
-            full
-          }
-        }
-        count
-        meanScore
-      }
-      studios {
-        studio {
-          id
-          name
-        }
-        count
-        meanScore
-      }
     `
   };
 
-  const selectedFields = statFields[layout] || statFields.enhanced;
+  const selectedFields = statFields[layout] || statFields.standard;
   const viewerPrefix = useViewer ? 'Viewer' : `User(name: $username)`;
-
-  // Build the query dynamically based on options
-  let queryParts = [
-    `id`,
-    `name`,
-    `avatar {
-      large
-      medium
-    }`,
-    `statistics {
-      ${typeKey} {
-        ${selectedFields}
-      }
-    }`
-  ];
-
-  // Add user profile data for enhanced context
-  if (layout === 'enhanced' || layout === 'complete') {
-    queryParts.push(`
-      options {
-        displayAdultContent
-      }
-      mediaListOptions {
-        scoreFormat
-        rowOrder
-      }
-      favourites {
-        anime {
-          nodes {
-            id
-            title {
-              romaji
-              english
-            }
-            coverImage {
-              medium
-            }
-            meanScore
-          }
-        }
-        manga {
-          nodes {
-            id
-            title {
-              romaji
-              english
-            }
-            coverImage {
-              medium
-            }
-            meanScore
-          }
-        }
-      }
-    `);
-  }
 
   return `
     query ($username: String) {
       ${viewerPrefix} {
-        ${queryParts.join('\n        ')}
+        id
+        name
+        avatar {
+          large
+          medium
+        }
+        statistics {
+          ${typeKey} {
+            ${selectedFields}
+          }
+        }
+        favourites {
+          ${typeKey} {
+            nodes {
+              id
+              title {
+                romaji
+                english
+              }
+              coverImage {
+                medium
+                large
+              }
+              meanScore
+              ${mediaType === 'ANIME' ? 'episodes' : 'chapters'}
+              format
+            }
+          }
+        }
+        mediaListOptions {
+          scoreFormat
+        }
       }
     }
   `;
@@ -2663,391 +2596,587 @@ class Render {
   }
 }
 
-  // Enhanced render method with modular, theme-aware design
+// Optimized and functional stats rendering methods for the Render class
+
 renderUserStats(el, user, options = {}) {
   const {
-    showAvatar = true,
-    showFavorites = true,
-    showBreakdowns = true,
-    showTimeStats = true,
-    layout = 'enhanced',
-    theme = 'auto' // auto, light, dark
+    layout = 'standard',
+    mediaType = 'ANIME',
+    showComparisons = true,
+    showTrends = true
   } = options;
 
   el.empty();
   el.className = `zoro-container zoro-stats-container zoro-stats-${layout}`;
+
+  if (!user || !user.statistics) {
+    this.renderStatsError(el, 'No statistics available for this user');
+    return;
+  }
+
+  const fragment = document.createDocumentFragment();
+
+  // User header with key info
+  this.renderStatsHeader(fragment, user);
+
+  // Main overview cards
+  this.renderStatsOverview(fragment, user, { showComparisons });
+
+  // Detailed breakdowns based on layout
+  if (layout !== 'minimal') {
+    this.renderStatsBreakdowns(fragment, user, mediaType);
+  }
+
+  // Activity insights
+  if (layout === 'detailed' && showTrends) {
+    this.renderStatsInsights(fragment, user, mediaType);
+  }
+
+  // Favorites showcase
+  this.renderStatsFavorites(fragment, user, mediaType);
+
+  el.appendChild(fragment);
+}
+
+renderStatsError(el, message) {
+  const errorDiv = el.createDiv({ cls: 'zoro-stats-error' });
+  errorDiv.createEl('div', { 
+    cls: 'zoro-error-icon',
+    text: '📊' 
+  });
+  errorDiv.createEl('h3', { 
+    text: 'Stats Unavailable',
+    cls: 'zoro-error-title'
+  });
+  errorDiv.createEl('p', { 
+    text: message,
+    cls: 'zoro-error-message'
+  });
+}
+
+renderStatsHeader(fragment, user) {
+  const header = fragment.createDiv({ cls: 'zoro-stats-header' });
   
-  // Add theme class
-  if (theme !== 'auto') {
-    el.classList.add(`zoro-theme-${theme}`);
-  }
-
-  if (!user) {
-    this.renderError(el, 'No user data available');
-    return;
-  }
-
-  if (!user.statistics) {
-    this.renderError(el, 'Statistics unavailable for this user');
-    return;
-  }
-
-  const frag = document.createDocumentFragment();
-
-  // Render header section
-  if (showAvatar) {
-    this.renderHeader(frag, user);
-  }
-
-  // Render main stats sections
-  this.renderMainStats(frag, user, { showTimeStats, showBreakdowns });
-
-  // Render additional insights
-  if (showBreakdowns && layout !== 'minimal') {
-    this.renderStatsBreakdowns(frag, user);
-  }
-
-  // Render favorites section
-  if (showFavorites && user.favourites && layout === 'enhanced') {
-    this.renderFavorites(frag, user.favourites);
-  }
-
-  el.appendChild(frag);
-
-  // Trigger entrance animation
-  requestAnimationFrame(() => {
-    el.classList.add('zoro-stats-loaded');
-  });
-}
-
-// Private helper methods for modular rendering
-
-renderError(el, message) {
-  const errorEl = el.createDiv({ 
-    cls: 'zoro-error-box',
-    text: message 
-  });
-  errorEl.createEl('small', { 
-    text: 'Check your username and try again',
-    cls: 'zoro-error-hint'
-  });
-}
-
-renderHeader(frag, user) {
-  const header = frag.createDiv({ cls: 'zoro-stats-header' });
+  const userInfo = header.createDiv({ cls: 'zoro-user-info' });
   
   if (user.avatar?.medium) {
-    const avatarContainer = header.createDiv({ cls: 'zoro-avatar-container' });
-    const avatar = avatarContainer.createEl('img', {
-      cls: 'zoro-stats-avatar',
+    userInfo.createEl('img', {
+      cls: 'zoro-user-avatar',
       attr: { 
-        src: user.avatar.medium, 
-        alt: `${user.name}'s avatar`,
-        loading: 'lazy' 
-      },
-    });
-    
-    // Add loading placeholder
-    avatar.addEventListener('load', () => {
-      avatarContainer.classList.add('zoro-avatar-loaded');
+        src: user.avatar.medium,
+        alt: `${user.name}'s avatar`
+      }
     });
   }
 
-  const userInfo = header.createDiv({ cls: 'zoro-user-info' });
-  const nameLink = userInfo.createEl('a', {
-    cls: 'zoro-stats-username external-link',
-    text: user.name,
-    href: `https://anilist.co/user/${user.name}`,
-    target: '_blank',
-  });
-  
-  const profileHint = userInfo.createEl('span', {
-    cls: 'zoro-profile-hint',
-    text: 'View full profile'
-  });
+  const userDetails = userInfo.createDiv({ cls: 'zoro-user-details' });
+
+// Create clickable user name that opens profile
+const userName = userDetails.createEl('h2', { 
+  text: user.name,
+  cls: 'zoro-user-name zoro-user-name-clickable'
+});
+
+// Make the user name clickable
+userName.style.cursor = 'pointer';
+userName.addEventListener('click', () => {
+  window.open(`https://anilist.co/user/${user.name}`, '_blank');
+});
+
+// Optional: Add hover effect for better UX
+userName.addEventListener('mouseenter', () => {
+  userName.style.textDecoration = 'underline';
+});
+
+userName.addEventListener('mouseleave', () => {
+  userName.style.textDecoration = 'none';
+});
 }
 
-renderMainStats(frag, user, options) {
-  const { showTimeStats, showBreakdowns } = options;
-  const statsSection = frag.createDiv({ cls: 'zoro-stats-section zoro-main-stats' });
+renderStatsOverview(fragment, user, options) {
+  const { showComparisons } = options;
+  const overview = fragment.createDiv({ cls: 'zoro-stats-overview' });
   
-  const grid = statsSection.createDiv({ cls: 'zoro-stats-grid' });
+  const statsGrid = overview.createDiv({ cls: 'zoro-stats-grid' });
 
-  ['anime', 'manga'].forEach(type => {
-    const stats = user.statistics[type];
-    if (!stats || stats.count === 0) return;
+  // Anime stats
+  const animeStats = user.statistics.anime;
+  if (animeStats && animeStats.count > 0) {
+    this.renderMediaTypeCard(statsGrid, 'anime', animeStats, user.mediaListOptions);
+  }
 
-    const card = this.createStatsCard(grid, type, stats, { showTimeStats, showBreakdowns });
-  });
+  // Manga stats  
+  const mangaStats = user.statistics.manga;
+  if (mangaStats && mangaStats.count > 0) {
+    this.renderMediaTypeCard(statsGrid, 'manga', mangaStats, user.mediaListOptions);
+  }
+
+  // Combined insights card
+  if (animeStats?.count > 0 && mangaStats?.count > 0 && showComparisons) {
+    this.renderComparisonCard(statsGrid, animeStats, mangaStats);
+  }
 }
 
-createStatsCard(container, type, stats, options) {
-  const { showTimeStats, showBreakdowns } = options;
+renderMediaTypeCard(container, type, stats, listOptions) {
   const card = container.createDiv({ 
-    cls: 'zoro-stats-card zoro-stats-card-main',
+    cls: `zoro-stat-card zoro-${type}-card`,
     attr: { 'data-type': type }
   });
 
-  // Card header
+  // Header
   const header = card.createDiv({ cls: 'zoro-card-header' });
   header.createEl('h3', { 
-    text: type.toUpperCase(), 
-    cls: 'zoro-stats-type-title' 
+    text: type.charAt(0).toUpperCase() + type.slice(1),
+    cls: 'zoro-card-title'
   });
 
-  // Primary stats
-  const primaryStats = card.createDiv({ cls: 'zoro-primary-stats' });
-  this.renderPrimaryStat(primaryStats, 'Total', stats.count, 'zoro-stat-count');
+  // Primary metrics
+  const metrics = card.createDiv({ cls: 'zoro-primary-metrics' });
   
+  // Total count - most important metric
+  const totalMetric = metrics.createDiv({ cls: 'zoro-metric zoro-metric-primary' });
+  totalMetric.createEl('div', { 
+    text: stats.count.toLocaleString(),
+    cls: 'zoro-metric-value'
+  });
+  totalMetric.createEl('div', { 
+    text: 'Total',
+    cls: 'zoro-metric-label'
+  });
+
+  // Mean score if available
   if (stats.meanScore > 0) {
-    this.renderPrimaryStat(primaryStats, 'Mean Score', 
-      `${stats.meanScore.toFixed(1)}/10`, 'zoro-stat-score');
+    const scoreMetric = metrics.createDiv({ cls: 'zoro-metric' });
+    const scoreFormat = listOptions?.scoreFormat || 'POINT_10';
+    const displayScore = this.formatScore(stats.meanScore, scoreFormat);
+    
+    scoreMetric.createEl('div', { 
+      text: displayScore,
+      cls: 'zoro-metric-value zoro-score-value'
+    });
+    scoreMetric.createEl('div', { 
+      text: 'Avg Score',
+      cls: 'zoro-metric-label'
+    });
   }
 
-  // Secondary stats grid
-  const secondaryGrid = card.createDiv({ cls: 'zoro-secondary-stats' });
+  // Secondary metrics
+  const secondaryMetrics = card.createDiv({ cls: 'zoro-secondary-metrics' });
   
-  const secondaryStats = this.getSecondaryStats(type, stats, showTimeStats);
-  secondaryStats.forEach(({ label, value, className }) => {
-    if (value != null && value !== 0) {
-      this.renderSecondaryStat(secondaryGrid, label, value, className);
-    }
-  });
-
-  return card;
-}
-
-getSecondaryStats(type, stats, showTimeStats) {
-  const baseStats = [
-    { 
-      label: 'Std Deviation', 
-      value: stats.standardDeviation ? stats.standardDeviation.toFixed(2) : null,
-      className: 'zoro-stat-deviation'
-    }
-  ];
-
   if (type === 'anime') {
-    baseStats.push(
-      { 
-        label: 'Episodes', 
-        value: stats.episodesWatched,
-        className: 'zoro-stat-episodes'
-      }
-    );
-    
-    if (showTimeStats && stats.minutesWatched) {
-      const hours = Math.floor(stats.minutesWatched / 60);
-      const days = Math.floor(hours / 24);
-      let timeValue = `${hours.toLocaleString()}h`;
-      
-      if (days > 0) {
-        timeValue = `${days.toLocaleString()}d ${(hours % 24)}h`;
-      }
-      
-      baseStats.push({
-        label: 'Time Watched',
-        value: timeValue,
-        className: 'zoro-stat-time'
-      });
+    if (stats.episodesWatched) {
+      this.addSecondaryMetric(secondaryMetrics, 'Episodes', stats.episodesWatched.toLocaleString());
+    }
+    if (stats.minutesWatched) {
+      const timeFormatted = this.formatWatchTime(stats.minutesWatched);
+      this.addSecondaryMetric(secondaryMetrics, 'Time Watched', timeFormatted);
     }
   } else {
-    baseStats.push(
-      { 
-        label: 'Chapters', 
-        value: stats.chaptersRead,
-        className: 'zoro-stat-chapters'
-      },
-      { 
-        label: 'Volumes', 
-        value: stats.volumesRead,
-        className: 'zoro-stat-volumes'
-      }
-    );
+    if (stats.chaptersRead) {
+      this.addSecondaryMetric(secondaryMetrics, 'Chapters', stats.chaptersRead.toLocaleString());
+    }
+    if (stats.volumesRead) {
+      this.addSecondaryMetric(secondaryMetrics, 'Volumes', stats.volumesRead.toLocaleString());
+    }
   }
 
-  return baseStats.filter(stat => stat.value != null);
+  if (stats.standardDeviation) {
+    this.addSecondaryMetric(secondaryMetrics, 'Score Deviation', stats.standardDeviation.toFixed(1));
+  }
 }
 
-renderPrimaryStat(container, label, value, className = '') {
-  const statEl = container.createDiv({ cls: `zoro-primary-stat ${className}` });
-  statEl.createEl('div', { cls: 'zoro-stat-value-primary', text: value });
-  statEl.createEl('div', { cls: 'zoro-stat-label-primary', text: label });
-}
+renderComparisonCard(container, animeStats, mangaStats) {
+  const card = container.createDiv({ cls: 'zoro-stat-card zoro-comparison-card' });
 
-renderSecondaryStat(container, label, value, className = '') {
-  const statEl = container.createDiv({ cls: `zoro-secondary-stat ${className}` });
-  statEl.createEl('span', { cls: 'zoro-stat-label-secondary', text: label });
-  statEl.createEl('span', { cls: 'zoro-stat-value-secondary', text: value.toLocaleString?.() ?? value });
-}
-
-renderStatsBreakdowns(frag, user) {
-  const hasBreakdowns = this.hasBreakdownData(user);
-  if (!hasBreakdowns) return;
-
-  const breakdownSection = frag.createDiv({ cls: 'zoro-stats-section zoro-breakdowns' });
-  breakdownSection.createEl('h3', { 
-    text: 'Detailed Breakdowns', 
-    cls: 'zoro-section-title' 
+  const header = card.createDiv({ cls: 'zoro-card-header' });
+  header.createEl('h3', { 
+    text: 'At a Glance',
+    cls: 'zoro-card-title'
   });
 
-  const breakdownGrid = breakdownSection.createDiv({ cls: 'zoro-breakdown-grid' });
+  const comparisons = card.createDiv({ cls: 'zoro-comparisons' });
 
-  ['anime', 'manga'].forEach(type => {
-    const stats = user.statistics[type];
-    if (!stats) return;
-
-    this.renderTypeBreakdowns(breakdownGrid, type, stats);
+  // Total entries
+  const totalAnime = animeStats.count || 0;
+  const totalManga = mangaStats.count || 0;
+  const totalCombined = totalAnime + totalManga;
+  
+  const totalComp = comparisons.createDiv({ cls: 'zoro-comparison' });
+  totalComp.createEl('div', { 
+    text: totalCombined.toLocaleString(),
+    cls: 'zoro-comparison-value'
   });
+  totalComp.createEl('div', { 
+    text: 'Total Entries',
+    cls: 'zoro-comparison-label'
+  });
+
+  // Preference indicator
+  if (totalAnime > 0 && totalManga > 0) {
+    const preference = totalAnime > totalManga ? 'Anime' : 
+                     totalManga > totalAnime ? 'Manga' : 'Balanced';
+    const ratio = totalAnime > totalManga ? 
+                  (totalAnime / totalManga).toFixed(1) : 
+                  (totalManga / totalAnime).toFixed(1);
+    
+    const prefComp = comparisons.createDiv({ cls: 'zoro-comparison' });
+    prefComp.createEl('div', { 
+      text: preference,
+      cls: 'zoro-comparison-value'
+    });
+    prefComp.createEl('div', { 
+      text: preference === 'Balanced' ? 'Preference' : `${ratio}:1 Ratio`,
+      cls: 'zoro-comparison-label'
+    });
+  }
+
+  // Score comparison
+  const animeScore = animeStats.meanScore || 0;
+  const mangaScore = mangaStats.meanScore || 0;
+  if (animeScore > 0 && mangaScore > 0) {
+    const scoreDiff = Math.abs(animeScore - mangaScore);
+    const higherType = animeScore > mangaScore ? 'Anime' : 'Manga';
+    
+    const scoreComp = comparisons.createDiv({ cls: 'zoro-comparison' });
+    scoreComp.createEl('div', { 
+      text: scoreDiff < 0.5 ? 'Similar' : higherType,
+      cls: 'zoro-comparison-value'
+    });
+    scoreComp.createEl('div', { 
+      text: 'Higher Rated',
+      cls: 'zoro-comparison-label'
+    });
+  }
 }
 
-hasBreakdownData(user) {
-  return ['anime', 'manga'].some(type => {
-    const stats = user.statistics[type];
-    return stats && (stats.statuses || stats.scores || stats.genres || stats.formats);
-  });
-}
-
-renderTypeBreakdowns(container, type, stats) {
+renderStatsBreakdowns(fragment, user, mediaType) {
+  const type = mediaType.toLowerCase();
+  const stats = user.statistics[type];
+  
   if (!stats || stats.count === 0) return;
 
-  const typeSection = container.createDiv({ 
-    cls: 'zoro-breakdown-type',
-    attr: { 'data-type': type }
+  const section = fragment.createDiv({ cls: 'zoro-stats-breakdowns' });
+  section.createEl('h3', { 
+    text: `${mediaType} Breakdown`,
+    cls: 'zoro-section-title'
   });
 
-  // Status breakdown
+  const breakdownGrid = section.createDiv({ cls: 'zoro-breakdown-grid' });
+
+  // Status distribution (most useful)
   if (stats.statuses?.length) {
-    this.renderBreakdownChart(typeSection, 'Status Distribution', stats.statuses, 'status');
+    this.renderBreakdownChart(breakdownGrid, 'Status Distribution', stats.statuses, 'status', {
+      showPercentages: true,
+      maxItems: 6
+    });
   }
 
-  // Score distribution
+  // Score distribution (if user rates)
   if (stats.scores?.length) {
-    const validScores = stats.scores.filter(s => s.score > 0);
-    if (validScores.length) {
-      this.renderBreakdownChart(typeSection, 'Score Distribution', validScores, 'score');
+    const validScores = stats.scores.filter(s => s.score > 0 && s.count > 0);
+    if (validScores.length >= 3) {
+      this.renderScoreDistribution(breakdownGrid, validScores, user.mediaListOptions);
     }
   }
 
   // Format breakdown
   if (stats.formats?.length) {
-    this.renderBreakdownChart(typeSection, 'Format Distribution', stats.formats, 'format');
+    const topFormats = stats.formats.slice(0, 6);
+    this.renderBreakdownChart(breakdownGrid, 'Format Distribution', topFormats, 'format', {
+      showPercentages: true
+    });
   }
 
-  // Top genres (limit to top 5)
-  if (stats.genres?.length) {
-    const topGenres = stats.genres
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
-    this.renderBreakdownChart(typeSection, 'Top Genres', topGenres, 'genre');
+  // Release years (activity timeline)
+  if (stats.releaseYears?.length) {
+    this.renderYearlyActivity(breakdownGrid, stats.releaseYears);
   }
 }
 
-renderBreakdownChart(container, title, data, keyField) {
-  const chartContainer = container.createDiv({ cls: 'zoro-breakdown-chart' });
-  chartContainer.createEl('h4', { text: title, cls: 'zoro-breakdown-title' });
+renderStatsInsights(fragment, user, mediaType) {
+  const type = mediaType.toLowerCase();
+  const stats = user.statistics[type];
+  
+  if (!stats) return;
 
-  const chartEl = chartContainer.createDiv({ cls: 'zoro-chart-container' });
-  
-  // Simple bar chart representation (preparing for future chart library)
-  const maxCount = Math.max(...data.map(item => item.count));
-  
-  data.forEach(item => {
-    const barContainer = chartEl.createDiv({ cls: 'zoro-chart-bar-container' });
-    const barLabel = barContainer.createDiv({ 
-      cls: 'zoro-chart-label',
-      text: item[keyField] || item.status || item.genre || item.format
-    });
-    
-    const barWrapper = barContainer.createDiv({ cls: 'zoro-chart-bar-wrapper' });
-    const bar = barWrapper.createDiv({ 
-      cls: 'zoro-chart-bar',
-      attr: { 'data-type': keyField }
-    });
-    const barValue = barWrapper.createDiv({ 
-      cls: 'zoro-chart-value',
-      text: item.count
-    });
-    
-// Set bar width as CSS variable for animation
-const percentage = (item.count / maxCount) * 100;
-bar.style.setProperty('--bar-width', `${percentage}%`);
-    
-    // Add delay for staggered animation
-    const index = data.indexOf(item);
-    bar.style.animationDelay = `${index * 0.1}s`;
+  const insights = fragment.createDiv({ cls: 'zoro-stats-insights' });
+  insights.createEl('h3', { 
+    text: 'Insights',
+    cls: 'zoro-section-title'
   });
 
-  // Add chart metadata for future chart library integration
-  chartEl.setAttribute('data-chart-type', 'horizontal-bar');
-  chartEl.setAttribute('data-chart-data', JSON.stringify(data));
-  chartEl.setAttribute('data-chart-key', keyField);
+  const insightsList = insights.createDiv({ cls: 'zoro-insights-list' });
+
+  // Generate meaningful insights
+  const insightData = this.generateInsights(stats, type, user);
+  insightData.forEach(insight => {
+    const item = insightsList.createDiv({ cls: 'zoro-insight-item' });
+    item.createEl('div', { 
+      text: insight.icon,
+      cls: 'zoro-insight-icon'
+    });
+    item.createEl('div', { 
+      text: insight.text,
+      cls: 'zoro-insight-text'
+    });
+  });
 }
 
-renderFavorites(frag, favourites) {
-  const hasAnime = favourites.anime?.nodes?.length > 0;
-  const hasManga = favourites.manga?.nodes?.length > 0;
+renderStatsFavorites(fragment, user, mediaType) {
+  const type = mediaType.toLowerCase();
+  const favorites = user.favourites?.[type]?.nodes;
   
-  if (!hasAnime && !hasManga) return;
+  if (!favorites?.length) return;
 
-  const favSection = frag.createDiv({ cls: 'zoro-stats-section zoro-favorites' });
-  favSection.createEl('h3', { 
-    text: 'Favorites', 
-    cls: 'zoro-section-title' 
+  const section = fragment.createDiv({ cls: 'zoro-stats-favorites' });
+  section.createEl('h3', { 
+    text: `Favorite ${mediaType}`,
+    cls: 'zoro-section-title'
   });
 
-  const favGrid = favSection.createDiv({ cls: 'zoro-favorites-grid' });
-
-  if (hasAnime) {
-    this.renderFavoriteType(favGrid, 'anime', favourites.anime.nodes.slice(0, 6));
-  }
+  const favGrid = section.createDiv({ cls: 'zoro-favorites-grid' });
   
-  if (hasManga) {
-    this.renderFavoriteType(favGrid, 'manga', favourites.manga.nodes.slice(0, 6));
-  }
-}
-
-renderFavoriteType(container, type, items) {
-  const typeContainer = container.createDiv({ 
-    cls: 'zoro-favorite-type',
-    attr: { 'data-type': type }
-  });
-  
-  typeContainer.createEl('h4', { 
-    text: `Favorite ${type.charAt(0).toUpperCase() + type.slice(1)}`,
-    cls: 'zoro-favorite-type-title'
-  });
-
-  const itemsGrid = typeContainer.createDiv({ cls: 'zoro-favorite-items' });
-  
-  items.forEach(item => {
-    const itemEl = itemsGrid.createDiv({ cls: 'zoro-favorite-item' });
+  favorites.slice(0, 6).forEach(item => {
+    const favItem = favGrid.createDiv({ cls: 'zoro-favorite-item' });
     
     if (item.coverImage?.medium) {
-      const img = itemEl.createEl('img', {
+      favItem.createEl('img', {
         cls: 'zoro-favorite-cover',
         attr: {
           src: item.coverImage.medium,
-          alt: item.title?.romaji || item.title?.english || 'Cover',
-          loading: 'lazy'
+          alt: item.title?.romaji || item.title?.english
         }
       });
     }
     
-    const info = itemEl.createDiv({ cls: 'zoro-favorite-info' });
-    const title = item.title?.english || item.title?.romaji || 'Unknown Title';
+    const info = favItem.createDiv({ cls: 'zoro-favorite-info' });
     info.createEl('div', { 
-      cls: 'zoro-favorite-title',
-      text: title,
-      attr: { title: title }
+      text: item.title?.english || item.title?.romaji || 'Unknown',
+      cls: 'zoro-favorite-title'
     });
     
     if (item.meanScore) {
       info.createEl('div', { 
-        cls: 'zoro-favorite-score',
-        text: `★ ${item.meanScore/10}`
+        text: `★ ${(item.meanScore / 10).toFixed(1)}`,
+        cls: 'zoro-favorite-score'
       });
     }
   });
+}
+
+// Helper methods
+
+renderBreakdownChart(container, title, data, keyField, options = {}) {
+  const { showPercentages = false, maxItems = 8 } = options;
+  
+  const chartContainer = container.createDiv({ cls: 'zoro-breakdown-chart' });
+  chartContainer.createEl('h4', { 
+    text: title,
+    cls: 'zoro-breakdown-title'
+  });
+
+  const chartData = data.slice(0, maxItems);
+  const total = chartData.reduce((sum, item) => sum + item.count, 0);
+  const maxCount = Math.max(...chartData.map(item => item.count));
+
+  const chart = chartContainer.createDiv({ cls: 'zoro-chart' });
+  
+  chartData.forEach((item, index) => {
+    const barContainer = chart.createDiv({ cls: 'zoro-chart-bar-container' });
+    
+    const label = barContainer.createDiv({ cls: 'zoro-chart-label' });
+    label.textContent = item[keyField] || item.status || item.genre || item.format;
+    
+    const barSection = barContainer.createDiv({ cls: 'zoro-chart-bar-section' });
+    const bar = barSection.createDiv({ cls: 'zoro-chart-bar' });
+    
+    const percentage = (item.count / maxCount) * 100;
+    bar.style.setProperty('--bar-width', `${percentage}%`);
+    bar.style.animationDelay = `${index * 0.1}s`;
+    
+    const value = barSection.createDiv({ cls: 'zoro-chart-value' });
+    if (showPercentages && total > 0) {
+      const percent = ((item.count / total) * 100).toFixed(1);
+      value.textContent = `${item.count} (${percent}%)`;
+    } else {
+      value.textContent = item.count.toLocaleString();
+    }
+  });
+}
+
+renderScoreDistribution(container, scores, listOptions) {
+  const chartContainer = container.createDiv({ cls: 'zoro-breakdown-chart' });
+  chartContainer.createEl('h4', { 
+    text: 'Score Distribution',
+    cls: 'zoro-breakdown-title'
+  });
+
+  const chart = chartContainer.createDiv({ cls: 'zoro-score-chart' });
+  const maxCount = Math.max(...scores.map(s => s.count));
+
+  scores.forEach((scoreData, index) => {
+    const barContainer = chart.createDiv({ cls: 'zoro-score-bar-container' });
+    
+    const label = barContainer.createDiv({ cls: 'zoro-score-label' });
+    label.textContent = this.formatScore(scoreData.score, listOptions?.scoreFormat);
+    
+    const bar = barContainer.createDiv({ cls: 'zoro-score-bar' });
+    const percentage = (scoreData.count / maxCount) * 100;
+    bar.style.setProperty('--bar-width', `${percentage}%`);
+    bar.style.animationDelay = `${index * 0.1}s`;
+    
+    const value = barContainer.createDiv({ cls: 'zoro-score-value' });
+    value.textContent = scoreData.count;
+  });
+}
+
+renderYearlyActivity(container, yearData) {
+  const chartContainer = container.createDiv({ cls: 'zoro-breakdown-chart' });
+  chartContainer.createEl('h4', { 
+    text: 'Activity by Year',
+    cls: 'zoro-breakdown-title'
+  });
+
+  // Show recent years (last 10 years or top 8 by count)
+  const recentYears = yearData
+    .filter(y => y.releaseYear >= new Date().getFullYear() - 15)
+    .slice(0, 8);
+
+  if (recentYears.length === 0) return;
+
+  const timeline = chartContainer.createDiv({ cls: 'zoro-year-timeline' });
+  const maxCount = Math.max(...recentYears.map(y => y.count));
+
+  recentYears.forEach((yearData, index) => {
+    const yearItem = timeline.createDiv({ cls: 'zoro-year-item' });
+    
+    yearItem.createEl('div', { 
+      text: yearData.releaseYear,
+      cls: 'zoro-year-label'
+    });
+    
+    const bar = yearItem.createDiv({ cls: 'zoro-year-bar' });
+    const percentage = (yearData.count / maxCount) * 100;
+    bar.style.setProperty('--bar-width', `${percentage}%`);
+    bar.style.animationDelay = `${index * 0.1}s`;
+    
+    yearItem.createEl('div', { 
+      text: yearData.count,
+      cls: 'zoro-year-count'
+    });
+  });
+}
+
+// Utility methods
+
+addSecondaryMetric(container, label, value) {
+  const metric = container.createDiv({ cls: 'zoro-secondary-metric' });
+  metric.createEl('span', { 
+    text: label,
+    cls: 'zoro-metric-label-small'
+  });
+  metric.createEl('span', { 
+    text: value,
+    cls: 'zoro-metric-value-small'
+  });
+}
+
+formatScore(score, scoreFormat = 'POINT_10') {
+  switch (scoreFormat) {
+    case 'POINT_100':
+      return `${Math.round(score * 10)}/100`;
+    case 'POINT_10_DECIMAL':
+      return `${(score / 10).toFixed(1)}/10`;
+    case 'POINT_5':
+      return `${Math.round(score / 20)}/5`;
+    case 'POINT_3':
+      return score >= 70 ? '😊' : score >= 40 ? '😐' : '😞';
+    default:
+      return `${Math.round(score / 10)}/10`;
+  }
+}
+
+formatWatchTime(minutes) {
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  
+  if (days > 365) {
+    const years = (days / 365).toFixed(1);
+    return `${years} years`;
+  } else if (days > 30) {
+    const months = Math.floor(days / 30);
+    return `${months} months`;
+  } else if (days > 0) {
+    return `${days} days`;
+  } else {
+    return `${hours} hours`;
+  }
+}
+
+generateInsights(stats, type, user) {
+  const insights = [];
+  
+  // Completion rate insight
+  if (stats.statuses) {
+    const completed = stats.statuses.find(s => s.status === 'COMPLETED')?.count || 0;
+    const total = stats.count;
+    const completionRate = (completed / total * 100).toFixed(0);
+    
+    if (completionRate >= 80) {
+      insights.push({
+        icon: '🏆',
+        text: `High completion rate: ${completionRate}% of your ${type} are completed`
+      });
+    } else if (completionRate <= 30) {
+      insights.push({
+        icon: '📚',
+        text: `Lots to explore: Only ${completionRate}% completed, plenty of ${type} to discover!`
+      });
+    }
+  }
+
+  // Score distribution insight
+  if (stats.meanScore > 0) {
+    if (stats.meanScore >= 80) {
+      insights.push({
+        icon: '⭐',
+        text: `You're generous with ratings! Average score: ${(stats.meanScore/10).toFixed(1)}/10`
+      });
+    } else if (stats.meanScore <= 60) {
+      insights.push({
+        icon: '🔍',
+        text: `Selective taste: You rate ${type} conservatively with ${(stats.meanScore/10).toFixed(1)}/10 average`
+      });
+    }
+  }
+
+  // Volume insight for anime
+  if (type === 'anime' && stats.episodesWatched) {
+    if (stats.episodesWatched >= 5000) {
+      insights.push({
+        icon: '🎭',
+        text: `Anime veteran: ${stats.episodesWatched.toLocaleString()} episodes watched!`
+      });
+    }
+    
+    if (stats.minutesWatched >= 100000) { // ~69 days
+      const days = Math.floor(stats.minutesWatched / (60 * 24));
+      insights.push({
+        icon: '⏰',
+        text: `Time investment: ${days} days worth of anime watched`
+      });
+    }
+  }
+
+  // Genre diversity (if available)
+  if (stats.genres && stats.genres.length >= 15) {
+    insights.push({
+      icon: '🌈',
+      text: `Diverse taste: You enjoy ${stats.genres.length} different genres`
+    });
+  }
+
+  return insights.slice(0, 4); // Limit to 4 insights
 }
 
 
@@ -6200,32 +6329,7 @@ class ZoroSettingTab extends PluginSettingTab {
       }
     }));
     
-        new Setting(About)
-      .setName('🔍 Test MAL Search')
-      .setDesc('Type below and hit Enter to search MAL via official API.')
-      .addText(text => {
-        text.setPlaceholder('Search MAL…')
-            .onChange(() => {}); // required by API
-        text.inputEl.addEventListener('keydown', async (e) => {
-          if (e.key !== 'Enter') return;
-          const query = text.getValue().trim();
-          if (query.length < 3) return new Notice('Need ≥3 chars', 2000);
-          try {
-            const malApi = new MalApi(this.plugin);
-            const results = await malApi.searchMAL({ query, limit: 6 });
-            // build tiny grid under the input
-            const container = document.createElement('div');
-            container.className = 'zoro-cards-grid';
-            results.forEach(r => container.appendChild(
-              this.plugin.render.createMediaCard(r, { layout: 'card' })
-            ));
-            text.inputEl.parentElement.appendChild(container);
-          } catch (err) {
-            new Notice(`❌ ${err.message}`, 4000);
-          }
-        });
-      });
-
+        
     
     new Setting(Data)
       .setName('🧾 Export your data')

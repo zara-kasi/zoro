@@ -5,6 +5,7 @@ const getDefaultGridColumns = () => {
 };
 
 const DEFAULT_SETTINGS = {
+  defaultApiSource: 'anilist',
   defaultUsername: '',
   defaultLayout: 'card',
   showCoverImages: true,
@@ -34,109 +35,7 @@ const DEFAULT_SETTINGS = {
   malUserInfo: null,
 };
 
-// ------------------------------------------------------------------
-// 🗾 MyAnimeList minimal API wrapper
-// ------------------------------------------------------------------
-class MalApi {
-  constructor(plugin) {
-    this.plugin = plugin;
-    this.requestQueue = plugin.requestQueue;
-  }
 
-  getMALUrl(mediaId, mediaType = 'ANIME') {
-    if (!mediaId || typeof mediaId !== 'number') {
-      throw new Error(`Invalid MAL mediaId: ${mediaId}`);
-    }
-    const type = String(mediaType).toLowerCase();
-    return `https://myanimelist.net/${type}/${mediaId}`;
-  }
-  
-  async fetchMALEntry(mediaId, mediaType = 'ANIME') {
-    if (!this.plugin.malAuth.isLoggedIn) {
-      throw new Error('Not authenticated with MyAnimeList');
-    }
-
-    const type = mediaType === 'MANGA' ? 'manga' : 'anime';
-    const url = `https://api.myanimelist.net/v2/${type}/${mediaId}?fields=id,title,main_picture,mean,num_episodes,num_chapters,status,genres`;
-
-    const headers = this.plugin.malAuth.getAuthHeaders();
-    const res = await this.requestQueue.add(() =>
-      requestUrl({ url, method: 'GET', headers })
-    );
-
-    if (!res.ok) throw new Error(`MAL API error ${res.status}`);
-    return res.json;
-  }
-  
-  malToCard(mal) {
-    return {
-      media: {
-        id: mal.id,
-        idMal: mal.id,
-        title: {
-          romaji: mal.title,
-          english: mal.title,
-          native: mal.title
-        },
-        coverImage: {
-          large: mal.main_picture?.large || mal.main_picture?.medium,
-          medium: mal.main_picture?.medium
-        },
-        format: mal.media_type?.toUpperCase(),
-        status: mal.status?.replace(/_/g, ' ').toUpperCase(),
-        genres: mal.genres?.map(g => g.name) || [],
-        episodes: mal.num_episodes,
-        chapters: mal.num_chapters
-      },
-      averageScore: mal.mean ? Math.round(mal.mean * 10) : null
-    };
-  }
-  
-    async searchMAL({ query, mediaType = 'ANIME', limit = 5 }) {
-  if (!this.plugin.malAuth.isLoggedIn) {
-    throw new Error('Not authenticated with MyAnimeList');
-  }
-
-  const type = mediaType === 'MANGA' ? 'manga' : 'anime';
-  const url = `https://api.myanimelist.net/v2/${type}?q=${encodeURIComponent(query)}&limit=${limit}&fields=id,title,main_picture,mean,num_episodes,num_chapters,genres`;
-
-  const headers = {
-    ...this.plugin.malAuth.getAuthHeaders(),
-    'User-Agent': 'Mozilla/5.0 (Linux; Android 13; SM-S901U) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Mobile Safari/537.36'
-  };
-
-  const res = await this.requestQueue.add(() =>
-    requestUrl({ url, method: 'GET', headers })
-  );
-
-  // --- DEBUG: always log what MAL returned ---
-  console.log('[MalApi] Raw response:', {
-    status: res.status,
-    statusText: res.statusText,
-    body: res.text   // IMPORTANT: use .text to see HTML or JSON
-  });
-
-  if (!res.ok) {
-    throw new Error(`MAL HTTP ${res.status}: ${res.text || res.statusText}`);
-  }
-
-  let json;
-  try {
-    json = res.json;
-  } catch (e) {
-    throw new Error(`MAL returned non-JSON: ${res.text}`);
-  }
-
-  if (json.error) {
-    throw new Error(`MAL API error: ${json.error} – ${json.message || ''}`);
-  }
-
-  return (json.data || []).map(item => this.malToCard(item));
-}
-
-
-
-}
 
 class Cache {
   constructor(config = {}) {
@@ -1581,6 +1480,478 @@ getUserStatsQuery({
   }
 }
 
+class MalApi {
+  constructor(plugin) {
+    this.plugin = plugin;
+    this.requestQueue = plugin.requestQueue;
+    this.cache = plugin.cache;
+    this.baseUrl = 'https://api.myanimelist.net/v2';
+  }
+
+  createCacheKey(config) {
+    const sortedConfig = {};
+    Object.keys(config).sort().forEach(key => {
+      sortedConfig[key] = config[key];
+    });
+    return JSON.stringify(sortedConfig);
+  }
+
+  async makeObsidianRequest(code, redirectUri) {
+    const body = new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: this.plugin.settings.malClientId,
+      client_secret: this.plugin.settings.malClientSecret || '',
+      redirect_uri: redirectUri,
+      code: code,
+      code_verifier: this.plugin.settings.malCodeVerifier // MAL uses PKCE
+    });
+
+    const headers = {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json',
+    };
+
+    try {
+      const response = await this.requestQueue.add(() => requestUrl({
+        url: 'https://myanimelist.net/v1/oauth2/token',
+        method: 'POST',
+        headers,
+        body: body.toString()
+      }));
+
+      if (!response || typeof response.json !== 'object') {
+        throw new Error('Invalid response structure from MAL.');
+      }
+
+      return response.json;
+
+    } catch (err) {
+      console.error('[Zoro] MAL Obsidian requestUrl failed:', err);
+      throw new Error('Failed to authenticate with MAL via Obsidian requestUrl.');
+    }
+  }
+
+  async fetchMALData(config) {
+    const cacheKey = this.createCacheKey(config);
+    
+    let cacheType;
+    if (config.type === 'stats') {
+      cacheType = 'userData';
+    } else if (config.type === 'single') {
+      cacheType = 'mediaData';
+    } else if (config.type === 'search') {
+      cacheType = 'searchResults';
+    } else {
+      cacheType = 'userData';
+    }
+    
+    const cacheTtl = null;
+    const cached = !config.nocache && this.plugin.cache.get(cacheKey, { scope: cacheType, ttl: cacheTtl });
+    if (cached) {
+      console.log(`[Zoro] Cache HIT for ${cacheType}: ${cacheKey.substring(0, 50)}...`);
+      return cached;
+    }
+
+    console.log(`[Zoro] Cache MISS for ${cacheType}: ${cacheKey.substring(0, 50)}...`);
+
+    try {
+      const headers = {
+        'Accept': 'application/json'
+      };
+      
+      if (this.plugin.settings.malAccessToken) {
+        await this.plugin.malAuth.ensureValidToken();
+        headers['Authorization'] = `Bearer ${this.plugin.settings.malAccessToken}`;
+      }
+      
+      let url, params = {};
+      
+      if (config.type === 'stats') {
+        // MAL doesn't have a direct stats endpoint, so we'll get user info
+        url = `${this.baseUrl}/users/@me`;
+      } else if (config.type === 'single') {
+        // Get specific anime/manga from user's list
+        const mediaType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
+        url = `${this.baseUrl}/users/@me/${mediaType}list`;
+        params = {
+          fields: this.getFieldsForLayout(config.layout),
+          limit: 1000 // We'll filter client-side for the specific media
+        };
+      } else if (config.type === 'search') {
+        const mediaType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
+        url = `${this.baseUrl}/${mediaType}`;
+        params = {
+          q: config.search || config.query, // Support both search and query params
+          limit: config.perPage || 5,
+          offset: ((config.page || 1) - 1) * (config.perPage || 5),
+          fields: this.getFieldsForLayout(config.layout)
+        };
+      } else {
+        // Get user's anime/manga list
+        const mediaType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
+        url = `${this.baseUrl}/users/@me/${mediaType}list`;
+        params = {
+          status: this.mapAniListStatusToMAL(config.listType),
+          fields: this.getFieldsForLayout(config.layout),
+          limit: 1000,
+          sort: 'list_score'
+        };
+      }
+      
+      // Build query string
+      const queryString = new URLSearchParams(params).toString();
+      const fullUrl = queryString ? `${url}?${queryString}` : url;
+      
+      const response = await this.requestQueue.add(() => requestUrl({
+        url: fullUrl,
+        method: 'GET',
+        headers
+      }));
+      
+      const result = response.json;
+      if (!result) throw new Error('Empty response from MAL.');
+      
+      if (result.error) {
+        throw new Error(result.message || 'MAL returned an error.');
+      }
+      
+      // Transform MAL data to match AniList structure
+      const transformedData = this.transformMALResponse(result, config);
+      
+      this.plugin.cache.set(cacheKey, transformedData, { scope: cacheType });
+      console.log(`[Zoro] Cached data for ${cacheType}: ${cacheKey.substring(0, 50)}...`);
+      
+      return transformedData;
+
+    } catch (error) {
+      console.error('[Zoro] fetchMALData() failed:', error);
+      throw error;
+    }
+  }
+
+  async updateMediaListEntry(mediaId, updates) {
+    try {
+      if (!this.plugin.settings.malAccessToken || !(await this.plugin.malAuth.ensureValidToken())) {
+        throw new Error('❌ Authentication required to update entries.');
+      }
+
+      // First, determine if this is anime or manga by checking the media
+      const mediaType = await this.getMediaType(mediaId);
+      const endpoint = mediaType === 'anime' ? 'anime' : 'manga';
+      
+      const body = new URLSearchParams();
+      
+      if (updates.status !== undefined) {
+        body.append('status', this.mapAniListStatusToMAL(updates.status));
+      }
+      if (updates.score !== undefined && updates.score !== null) {
+        body.append('score', Math.round(updates.score)); // MAL uses 1-10 integer scores
+      }
+      if (updates.progress !== undefined) {
+        const progressField = mediaType === 'anime' ? 'num_episodes_watched' : 'num_chapters_read';
+        body.append(progressField, updates.progress);
+      }
+      
+      const response = await this.requestQueue.add(() => requestUrl({
+        url: `${this.baseUrl}/${endpoint}/${mediaId}/my_list_status`,
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Authorization': `Bearer ${this.plugin.settings.malAccessToken}`
+        },
+        body: body.toString()
+      }));
+
+      const result = response.json;
+
+      if (!result || result.error) {
+        throw new Error(`MAL update error: ${result?.message || 'Unknown error'}`);
+      }
+      
+      this.plugin.cache.invalidateByMedia(mediaId);
+      
+      return this.transformMALListEntry(result);
+
+    } catch (error) {
+      console.error('[Zoro] updateMediaListEntry failed:', error);
+      throw new Error(`❌ Failed to update entry: ${error.message}`);
+    }
+  }
+
+  async checkIfMediaInList(mediaId, mediaType) {
+    if (!this.plugin.settings.malAccessToken) return false;
+    
+    try {
+      const config = {
+        type: 'single',
+        mediaType: mediaType,
+        mediaId: parseInt(mediaId)
+      };
+      
+      const response = await this.fetchMALData(config);
+      return response.MediaList !== null;
+    } catch (error) {
+      console.warn('Error checking media list status:', error);
+      return false;
+    }
+  }
+
+  // Helper method to get media type (anime/manga) from MAL
+  async getMediaType(mediaId) {
+    try {
+      // Try anime first
+      const animeResponse = await this.requestQueue.add(() => requestUrl({
+        url: `${this.baseUrl}/anime/${mediaId}?fields=id`,
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${this.plugin.settings.malAccessToken}`
+        }
+      }));
+      
+      if (animeResponse.json && !animeResponse.json.error) {
+        return 'anime';
+      }
+    } catch (e) {
+      // Try manga
+      try {
+        const mangaResponse = await this.requestQueue.add(() => requestUrl({
+          url: `${this.baseUrl}/manga/${mediaId}?fields=id`,
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${this.plugin.settings.malAccessToken}`
+          }
+        }));
+        
+        if (mangaResponse.json && !mangaResponse.json.error) {
+          return 'manga';
+        }
+      } catch (e2) {
+        // Default to anime if both fail
+        return 'anime';
+      }
+    }
+    return 'anime';
+  }
+
+  getFieldsForLayout(layout = 'card') {
+    const fieldSets = {
+      compact: 'id,title,main_picture',
+      card: 'id,title,main_picture,media_type,status,genres,num_episodes,num_chapters,mean,start_date,end_date',
+      full: 'id,title,main_picture,alternative_titles,start_date,end_date,synopsis,mean,rank,popularity,num_list_users,num_scoring_users,nsfw,created_at,updated_at,media_type,status,genres,my_list_status,num_episodes,num_chapters,start_season,broadcast,source,average_episode_duration,rating,pictures,background,related_anime,related_manga,recommendations,studios,statistics'
+    };
+    
+    return fieldSets[layout] || fieldSets.card;
+  }
+
+  mapAniListStatusToMAL(status) {
+    const statusMap = {
+      'CURRENT': 'watching',
+      'COMPLETED': 'completed',
+      'PAUSED': 'on_hold',
+      'DROPPED': 'dropped',
+      'PLANNING': 'plan_to_watch',
+      // MAL equivalents
+      'watching': 'watching',
+      'reading': 'reading',
+      'completed': 'completed',
+      'on_hold': 'on_hold',
+      'dropped': 'dropped',
+      'plan_to_watch': 'plan_to_watch',
+      'plan_to_read': 'plan_to_read'
+    };
+    
+    return statusMap[status] || status;
+  }
+
+  mapMALStatusToAniList(status) {
+    const statusMap = {
+      'watching': 'CURRENT',
+      'reading': 'CURRENT',
+      'completed': 'COMPLETED',
+      'on_hold': 'PAUSED',
+      'dropped': 'DROPPED',
+      'plan_to_watch': 'PLANNING',
+      'plan_to_read': 'PLANNING'
+    };
+    
+    return statusMap[status] || status;
+  }
+
+  transformMALResponse(data, config) {
+    if (config.type === 'search') {
+      return {
+        Page: {
+          media: data.data?.map(item => this.transformMALMedia(item)) || []
+        }
+      };
+    } else if (config.type === 'single') {
+      // Find the specific media in the list
+      const targetMedia = data.data?.find(item => 
+        item.node.id === parseInt(config.mediaId)
+      );
+      
+      return {
+        MediaList: targetMedia ? this.transformMALListEntry(targetMedia) : null
+      };
+    } else if (config.type === 'stats') {
+      return {
+        User: this.transformMALUser(data)
+      };
+    } else {
+      // Regular list
+      return {
+        MediaListCollection: {
+          lists: [{
+            entries: data.data?.map(item => this.transformMALListEntry(item)) || []
+          }]
+        }
+      };
+    }
+  }
+
+  transformMALMedia(malMedia) {
+    const media = malMedia.node || malMedia;
+    
+    return {
+      id: media.id,
+      title: {
+        romaji: media.title,
+        english: media.alternative_titles?.en || media.title,
+        native: media.alternative_titles?.ja || media.title
+      },
+      coverImage: {
+        large: media.main_picture?.large || media.main_picture?.medium,
+        medium: media.main_picture?.medium || media.main_picture?.large
+      },
+      format: media.media_type?.toUpperCase(),
+      averageScore: media.mean ? Math.round(media.mean * 10) : null, // Convert to AniList scale
+      status: media.status?.toUpperCase().replace('_', '_'),
+      genres: media.genres?.map(g => g.name) || [],
+      episodes: media.num_episodes,
+      chapters: media.num_chapters,
+      isFavourite: false, // MAL doesn't provide this in basic queries
+      startDate: this.parseMALDate(media.start_date),
+      endDate: this.parseMALDate(media.end_date)
+    };
+  }
+
+  transformMALListEntry(malEntry) {
+    const media = malEntry.node;
+    const listStatus = malEntry.list_status;
+    
+    return {
+      id: listStatus?.id,
+      status: this.mapMALStatusToAniList(listStatus?.status),
+      score: listStatus?.score || 0,
+      progress: listStatus?.num_episodes_watched || listStatus?.num_chapters_read || 0,
+      media: this.transformMALMedia(malEntry)
+    };
+  }
+
+  transformMALUser(malUser) {
+    return {
+      id: malUser.id,
+      name: malUser.name,
+      avatar: {
+        large: malUser.picture,
+        medium: malUser.picture
+      },
+      // MAL doesn't provide detailed statistics like AniList
+      statistics: {
+        anime: {
+          count: 0,
+          meanScore: 0,
+          standardDeviation: 0,
+          episodesWatched: 0,
+          minutesWatched: 0
+        },
+        manga: {
+          count: 0,
+          meanScore: 0,
+          standardDeviation: 0,
+          chaptersRead: 0,
+          volumesRead: 0
+        }
+      }
+    };
+  }
+
+  parseMALDate(dateString) {
+    if (!dateString) return null;
+    
+    const date = new Date(dateString);
+    return {
+      year: date.getFullYear(),
+      month: date.getMonth() + 1,
+      day: date.getDate()
+    };
+  }
+
+  getMALUrl(mediaId, mediaType = 'ANIME') {
+    if (!mediaId || typeof mediaId !== 'number') {
+      throw new Error(`Invalid mediaId: ${mediaId}`);
+    }
+
+    const type = String(mediaType).toUpperCase();
+    const urlType = type === 'MANGA' ? 'manga' : 'anime';
+
+    return `https://myanimelist.net/${urlType}/${mediaId}`;
+  }
+
+  // Additional helper methods for MAL integration
+  async fetchMALStats(config) {
+    // Wrapper method to match the processor's expected method name
+    return this.fetchMALData({ ...config, type: 'stats' });
+  }
+
+  async fetchMALList(config) {
+    // Wrapper method to match the processor's expected method name
+    return this.fetchMALData(config);
+  }
+
+  async getMALRecommendations(mediaId, mediaType = 'ANIME') {
+    try {
+      const type = mediaType === 'ANIME' ? 'anime' : 'manga';
+      const response = await this.requestQueue.add(() => requestUrl({
+        url: `${this.baseUrl}/${type}/${mediaId}?fields=recommendations`,
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${this.plugin.settings.malAccessToken}`
+        }
+      }));
+
+      return response.json.recommendations?.map(rec => ({
+        node: this.transformMALMedia(rec.node),
+        num_recommendations: rec.num_recommendations
+      })) || [];
+    } catch (error) {
+      console.error('[Zoro] getMALRecommendations failed:', error);
+      return [];
+    }
+  }
+
+  async getMALSeasonalAnime(year, season) {
+    try {
+      const response = await this.requestQueue.add(() => requestUrl({
+        url: `${this.baseUrl}/anime/season/${year}/${season}?fields=${this.getFieldsForLayout('card')}`,
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${this.plugin.settings.malAccessToken}`
+        }
+      }));
+
+      return {
+        Page: {
+          media: response.json.data?.map(item => this.transformMALMedia(item)) || []
+        }
+      };
+    } catch (error) {
+      console.error('[Zoro] getMALSeasonalAnime failed:', error);
+      throw error;
+    }
+  }
+}
+
 class ZoroPlugin extends Plugin {
   constructor(app, manifest) {
     super(app, manifest);
@@ -1590,6 +1961,7 @@ class ZoroPlugin extends Plugin {
     this.api = new Api(this);
     this.auth = new Authentication(this);
     this.malAuth = new MALAuthentication(this);
+    this.malApi = new MalApi(this);
     this.theme = new Theme(this);
     this.processor = new Processor(this);
     this.edit = new Edit(this);
@@ -1602,6 +1974,10 @@ class ZoroPlugin extends Plugin {
   getAniListUrl(mediaId, mediaType = 'ANIME') {
     return this.api.getAniListUrl(mediaId, mediaType);
   }
+  
+  getMALUrl(mediaId, mediaType = 'ANIME') {
+  return this.malApi.getMALUrl(mediaId, mediaType);
+}
 
   async onload() {
     console.log('[Zoro] Plugin loading...');
@@ -1637,6 +2013,7 @@ class ZoroPlugin extends Plugin {
 
   validateSettings(settings) {
     return {
+      defaultApiSource: ['anilist', 'mal'].includes(settings?.defaultApiSource) ? settings.defaultApiSource : 'anilist',
       defaultUsername: typeof settings?.defaultUsername === 'string' ? settings.defaultUsername : '',
       defaultLayout: ['card', 'table'].includes(settings?.defaultLayout) ? settings.defaultLayout : 'card',
       gridColumns: Number.isInteger(settings?.gridColumns) ? settings.gridColumns : getDefaultGridColumns(),
@@ -1697,16 +2074,24 @@ class ZoroPlugin extends Plugin {
     this.globalListeners.length = 0;
   }
 
-  handleEditClick(e, entry, statusEl) {
+  // Replace the existing handleEditClick method in your ZoroPlugin class with this updated version:
+
+handleEditClick(e, entry, statusEl, config = {}) {
   e.preventDefault();
   e.stopPropagation();
 
   this.edit.createEditModal(
     entry,
     async updates => {
-      await this.api.updateMediaListEntry(entry.media.id, updates);
+      // Use appropriate API based on source
+      if (config.source === 'mal') {
+        await this.malApi.updateMediaListEntry(entry.media.id, updates);
+      } else {
+        await this.api.updateMediaListEntry(entry.media.id, updates);
+      }
     },
     () => {
+      // Callback after successful update
     }
   );
 }
@@ -1838,9 +2223,20 @@ class Processor {
         break;
 
       case 'search':
-        await this.plugin.render.renderSearchInterface(el, config);
-        break;
+  if (config.source === 'mal') {
+    const data = await this.plugin.malApi.fetchMALData({
+      ...config,
+      query: config.search,
+      page:  config.page  || 1,
+      perPage: config.perPage || 5
+    });
+    this.plugin.render.renderSearchResults(el, data.Page.media, config);
+  } else {
+    await this.plugin.render.renderSearchInterface(el, config);
+  }
+  break;
 
+      
       case 'single':
         data = await api.fetchAniListData?.(config); // AniList-only for now
         this.plugin.render.renderSingleMedia(el, data.MediaList, config);
@@ -1948,10 +2344,17 @@ class Processor {
     if (key === 'source')     config.source     = value.toLowerCase();
   }
 
+  // Use default API source if not specified
+  if (!config.source) {
+    config.source = this.plugin.settings.defaultApiSource || 'anilist';
+  }
+
   if (!config.username) {
     if (this.plugin.settings.defaultUsername) {
       config.username = this.plugin.settings.defaultUsername;
-    } else if (this.plugin.settings.accessToken) {
+    } else if (config.source === 'mal' && this.plugin.settings.malAccessToken) {
+      config.useAuthenticatedUser = true;
+    } else if (config.source === 'anilist' && this.plugin.settings.accessToken) {
       config.useAuthenticatedUser = true;
     } else {
       throw new Error('Username is required. Please set a default username in plugin settings, authenticate, or specify one in the code block.');
@@ -2033,39 +2436,58 @@ class Render {
   }
 
   renderSearchInterface(el, config) {
-    el.empty();
-    el.className = 'zoro-search-container';
+  el.empty();
+  el.className = 'zoro-search-container';
 
-    const searchDiv = el.createDiv({ cls: 'zoro-search-input-container' });
-    const input = searchDiv.createEl('input', { type: 'text', cls: 'zoro-search-input' });
-    input.placeholder = config.mediaType === 'ANIME' ? 'Search anime…' : 'Search manga…';
+  const searchDiv = el.createDiv({ cls: 'zoro-search-input-container' });
+  const input = searchDiv.createEl('input', { type: 'text', cls: 'zoro-search-input' });
+  input.placeholder = config.mediaType === 'ANIME' ? 'Search anime…' : 'Search manga…';
 
-    const resultsDiv = el.createDiv({ cls: 'zoro-search-results' });
-    let timeout;
+  const resultsDiv = el.createDiv({ cls: 'zoro-search-results' });
+  let timeout;
 
-    const doSearch = async () => {
-      const term = input.value.trim();
-      if (term.length < 3) {
-        resultsDiv.innerHTML = '<div class="zoro-search-message">Type at least 3 characters…</div>';
-        return;
+  const doSearch = async () => {
+    const term = input.value.trim();
+    if (term.length < 3) {
+      resultsDiv.innerHTML = '<div class="zoro-search-message">Type at least 3 characters…</div>';
+      return;
+    }
+    
+    try {
+      resultsDiv.innerHTML = '';
+      resultsDiv.appendChild(this.createListSkeleton(5));
+      
+      let data;
+      if (config.source === 'mal') {
+        data = await this.plugin.malApi.fetchMALData({ 
+          ...config, 
+          type: 'search',
+          search: term, 
+          query: term, // Support both parameters
+          page: 1, 
+          perPage: 5 
+        });
+      } else {
+        data = await this.plugin.api.fetchAniListData({ 
+          ...config, 
+          type: 'search',
+          search: term, 
+          page: 1, 
+          perPage: 5 
+        });
       }
       
-      try {
-        resultsDiv.innerHTML = '';
-        resultsDiv.appendChild(this.createListSkeleton(5));
-        
-        const data = await this.plugin.api.fetchAniListData({ ...config, search: term, page: 1, perPage: 5 });
-        
-        resultsDiv.innerHTML = '';
-        this.renderSearchResults(resultsDiv, data.Page.media, config);
-      } catch (e) {
-        this.plugin.renderError(resultsDiv, e.message);
-      }
-    };
+      resultsDiv.innerHTML = '';
+      this.renderSearchResults(resultsDiv, data.Page.media, config);
+    } catch (e) {
+      this.plugin.renderError(resultsDiv, e.message);
+    }
+  };
 
-    input.addEventListener('input', () => { clearTimeout(timeout); timeout = setTimeout(doSearch, 300); });
-    input.addEventListener('keypress', e => { if (e.key === 'Enter') doSearch(); });
-  }
+  input.addEventListener('input', () => { clearTimeout(timeout); timeout = setTimeout(doSearch, 300); });
+  input.addEventListener('keypress', e => { if (e.key === 'Enter') doSearch(); });
+}
+
 
   renderMediaList(el, entries, config) {
     el.empty();
@@ -2101,97 +2523,145 @@ class Render {
     grid.appendChild(fragment);
   }
 
-  renderTableLayout(el, entries, config) {
-    const table = el.createEl('table', { cls: 'zoro-table' });
-    const headers = ['Title', 'Format', 'Status'];
-    if (this.plugin.settings.showProgress) headers.push('Progress');
-    if (this.plugin.settings.showRatings) headers.push('Score');
-    if (this.plugin.settings.showGenres) headers.push('Genres');
+   renderTableLayout(el, entries, config) {
+  const table = el.createEl('table', { cls: 'zoro-table' });
+  const headers = ['Title', 'Format', 'Status'];
+  if (this.plugin.settings.showProgress) headers.push('Progress');
+  if (this.plugin.settings.showRatings) headers.push('Score');
+  if (this.plugin.settings.showGenres) headers.push('Genres');
 
-    table.createTHead().createEl('tr', null, tr =>
-      headers.forEach(h => tr.createEl('th', { text: h }))
+  table.createTHead().createEl('tr', null, tr =>
+    headers.forEach(h => tr.createEl('th', { text: h }))
+  );
+
+  const tbody = table.createTBody();
+  const fragment = document.createDocumentFragment();
+
+  entries.forEach(entry => {
+    const m = entry.media;
+    const tr = fragment.createEl('tr');
+    tr.createEl('td', null, td =>
+      td.createEl('a', {
+        text: m.title.english || m.title.romaji,
+        href: config.source === 'mal' 
+          ? this.plugin.getMALUrl(m.id, config.mediaType)
+          : this.plugin.getAniListUrl(m.id, config.mediaType),
+        cls: 'zoro-title-link',
+        target: '_blank'
+      })
     );
-
-    const tbody = table.createTBody();
-    const fragment = document.createDocumentFragment();
-
-    entries.forEach(entry => {
-      const m = entry.media;
-      const tr = fragment.createEl('tr');
-      tr.createEl('td', null, td =>
-        td.createEl('a', {
-          text: m.title.english || m.title.romaji,
-          href: this.plugin.getAniListUrl(m.id, config.mediaType),
-          cls: 'zoro-title-link',
-          target: '_blank'
-        })
-      );
-      tr.createEl('td', { text: m.format || '-' });
-      tr.createEl('td', null, td => {
-        const s = td.createEl('span', {
-          text: entry.status,
-          cls: `status-badge status-${entry.status.toLowerCase()} clickable-status`
-        });
-        s.onclick = e => {
-          e.preventDefault();
-          e.stopPropagation();
-          if (!this.plugin.settings.accessToken) {
-            this.plugin.prompt.createAuthenticationPrompt();
-            return;
-          }
-          this.plugin.handleEditClick(e, entry, s);
-        };
+    tr.createEl('td', { text: m.format || '-' });
+    tr.createEl('td', null, td => {
+      const s = td.createEl('span', {
+        text: entry.status,
+        cls: `status-badge status-${entry.status.toLowerCase()} clickable-status`
       });
-      if (this.plugin.settings.showProgress)
-        tr.createEl('td', {
-          text: `${entry.progress ?? 0}/${m.episodes ?? m.chapters ?? '?'}`
-        });
-      if (this.plugin.settings.showRatings)
-        tr.createEl('td', { text: entry.score != null ? `★ ${entry.score}` : '-' });
-      if (this.plugin.settings.showGenres)
-        tr.createEl('td', {
-          text: (m.genres || []).slice(0, 3).join(', ') || '-'
-        });
+      s.onclick = e => {
+        e.preventDefault();
+        e.stopPropagation();
+        
+        // Check authentication based on source
+        const isAuthenticated = config.source === 'mal' 
+          ? this.plugin.settings.malAccessToken 
+          : this.plugin.settings.accessToken;
+          
+        if (!isAuthenticated) {
+          this.plugin.prompt.createAuthenticationPrompt();
+          return;
+        }
+        this.plugin.handleEditClick(e, entry, s, config);
+      };
     });
+    if (this.plugin.settings.showProgress)
+      tr.createEl('td', {
+        text: `${entry.progress ?? 0}/${m.episodes ?? m.chapters ?? '?'}`
+      });
+    if (this.plugin.settings.showRatings)
+      tr.createEl('td', { text: entry.score != null ? `★ ${entry.score}` : '-' });
+    if (this.plugin.settings.showGenres)
+      tr.createEl('td', {
+        text: (m.genres || []).slice(0, 3).join(', ') || '-'
+      });
+  });
 
-    tbody.appendChild(fragment);
-  }
+  tbody.appendChild(fragment);
+}
+
 
   renderSingleMedia(el, mediaList, config) {
-    const m = mediaList.media;
-    el.empty(); el.className = 'zoro-container';
-    const card = el.createDiv({ cls: 'zoro-single-card' });
+  const m = mediaList.media;
+  el.empty(); 
+  el.className = 'zoro-container';
+  const card = el.createDiv({ cls: 'zoro-single-card' });
 
-    if (this.plugin.settings.showCoverImages) {
-      card.createEl('img', { cls: 'media-cover', attr: { src: m.coverImage.large, alt: m.title.english || m.title.romaji } });
-    }
-    const info = card.createDiv({ cls: 'media-info' });
-    info.createEl('h3', null, h => {
-      h.createEl('a', { text: m.title.english || m.title.romaji, href: this.plugin.getAniListUrl(m.id, config.mediaType), cls: 'zoro-title-link', target: '_blank' });
+  if (this.plugin.settings.showCoverImages) {
+    card.createEl('img', { 
+      cls: 'media-cover', 
+      attr: { 
+        src: m.coverImage.large, 
+        alt: m.title.english || m.title.romaji 
+      } 
     });
-
-    const details = info.createDiv({ cls: 'media-details' });
-    if (m.format) details.createEl('span', { text: m.format, cls: 'format-badge' });
-    details.createEl('span', { text: mediaList.status, cls: `status-badge status-${mediaList.status.toLowerCase()}` });
-    const status = details.lastChild;
-    status.classList.add('clickable-status');
-    status.onclick = e => {
-      e.preventDefault(); e.stopPropagation();
-      if (!this.plugin.settings.accessToken) {
-        this.plugin.prompt.createAuthenticationPrompt();
-        return;
-      }
-      this.plugin.handleEditClick(e, mediaList, status);
-    };
-
-    if (this.plugin.settings.showProgress) details.createEl('span', { text: `${mediaList.progress}/${m.episodes || m.chapters || '?'}`, cls: 'progress' });
-    if (this.plugin.settings.showRatings && mediaList.score != null) details.createEl('span', { text: `★ ${mediaList.score}`, cls: 'score' });
-
-    if (this.plugin.settings.showGenres && m.genres?.length) {
-      const g = info.createDiv({ cls: 'genres' });
-      m.genres.slice(0, 3).forEach(genre => g.createEl('span', { text: genre, cls: 'genre-tag' }));
-    }
   }
+  
+  const info = card.createDiv({ cls: 'media-info' });
+  info.createEl('h3', null, h => {
+    h.createEl('a', { 
+      text: m.title.english || m.title.romaji, 
+      href: config.source === 'mal' 
+        ? this.plugin.getMALUrl(m.id, config.mediaType)
+        : this.plugin.getAniListUrl(m.id, config.mediaType), 
+      cls: 'zoro-title-link', 
+      target: '_blank' 
+    });
+  });
+
+  const details = info.createDiv({ cls: 'media-details' });
+  if (m.format) details.createEl('span', { text: m.format, cls: 'format-badge' });
+  details.createEl('span', { 
+    text: mediaList.status, 
+    cls: `status-badge status-${mediaList.status.toLowerCase()}` 
+  });
+  
+  const status = details.lastChild;
+  status.classList.add('clickable-status');
+  status.onclick = e => {
+    e.preventDefault(); 
+    e.stopPropagation();
+    
+    // Check authentication based on source
+    const isAuthenticated = config.source === 'mal' 
+      ? this.plugin.settings.malAccessToken 
+      : this.plugin.settings.accessToken;
+      
+    if (!isAuthenticated) {
+      this.plugin.prompt.createAuthenticationPrompt();
+      return;
+    }
+    this.plugin.handleEditClick(e, mediaList, status, config);
+  };
+
+  if (this.plugin.settings.showProgress) {
+    details.createEl('span', { 
+      text: `${mediaList.progress}/${m.episodes || m.chapters || '?'}`, 
+      cls: 'progress' 
+    });
+  }
+  
+  if (this.plugin.settings.showRatings && mediaList.score != null) {
+    details.createEl('span', { 
+      text: `★ ${mediaList.score}`, 
+      cls: 'score' 
+    });
+  }
+
+  if (this.plugin.settings.showGenres && m.genres?.length) {
+    const g = info.createDiv({ cls: 'genres' });
+    m.genres.slice(0, 3).forEach(genre => 
+      g.createEl('span', { text: genre, cls: 'genre-tag' })
+    );
+  }
+}
 
   // Enhanced render method with modular, theme-aware design
 renderUserStats(el, user, options = {}) {
@@ -2671,246 +3141,260 @@ renderFavoriteType(container, type, items) {
 }
 
   createMediaCard(data, config, options = {}) {
-    const isSearch = options.isSearch || false;
-    const isCompact = config.layout === 'compact';
-    const entry = isSearch ? null : data;
-    const media = isSearch ? data : data.media;
+  const isSearch = options.isSearch || false;
+  const isCompact = config.layout === 'compact';
+  const entry = isSearch ? null : data;
+  const media = isSearch ? data : data.media;
 
-    const card = document.createElement('div');
-card.className = `zoro-card ${isCompact ? 'compact' : ''}`;
-card.dataset.mediaId = media.id;
+  const card = document.createElement('div');
+  card.className = `zoro-card ${isCompact ? 'compact' : ''}`;
+  card.dataset.mediaId = media.id;
 
-    if (this.plugin.settings.showCoverImages && media.coverImage?.large) {
-      const coverContainer = document.createElement('div');
-      coverContainer.className = 'cover-container';
+  if (this.plugin.settings.showCoverImages && media.coverImage?.large) {
+    const coverContainer = document.createElement('div');
+    coverContainer.className = 'cover-container';
+    
+    const img = document.createElement('img');
+    img.src = media.coverImage.large;
+    img.alt = media.title.english || media.title.romaji;
+    img.className = 'media-cover pressable-cover';
+    img.loading = 'lazy';
+    
+    let pressTimer = null;
+    let isPressed = false;
+    const pressHoldDuration = 400;
+    
+    img.onmousedown = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      isPressed = true;
+      img.classList.add('pressed');
       
-      const img = document.createElement('img');
-      img.src = media.coverImage.large;
-      img.alt = media.title.english || media.title.romaji;
-      img.className = 'media-cover pressable-cover';
-      img.loading = 'lazy';
-      
-      let pressTimer = null;
-      let isPressed = false;
-      const pressHoldDuration = 400;
-      
-      img.onmousedown = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        isPressed = true;
-        img.classList.add('pressed');
-        
-        pressTimer = setTimeout(() => {
-          if (isPressed) {
-            this.plugin.moreDetailsPanel.showPanel(media, entry, img);
-            img.classList.remove('pressed');
-            isPressed = false;
-          }
-        }, pressHoldDuration);
-      };
-
-      img.onmouseup = img.onmouseleave = (e) => {
-        if (pressTimer) {
-          clearTimeout(pressTimer);
-          pressTimer = null;
+      pressTimer = setTimeout(() => {
+        if (isPressed) {
+          this.plugin.moreDetailsPanel.showPanel(media, entry, img);
+          img.classList.remove('pressed');
+          isPressed = false;
         }
-        img.classList.remove('pressed');
-        isPressed = false;
-      };
-      
-      img.onclick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        return false;
-      };
-      
-      img.oncontextmenu = (e) => {
-        e.preventDefault();
-        return false;
-      };
-      
-      img.ondragstart = (e) => {
-        e.preventDefault();
-        return false;
-      };
-      
-      img.ontouchstart = (e) => {
-        isPressed = true;
-        img.classList.add('pressed');
-        
-        pressTimer = setTimeout(() => {
-          if (isPressed) {
-            e.preventDefault();
-            this.plugin.moreDetailsPanel.showPanel(media, entry, img);
-            img.classList.remove('pressed');
-            isPressed = false;
-          }
-        }, pressHoldDuration);
-      };
+      }, pressHoldDuration);
+    };
 
-      img.ontouchend = img.ontouchcancel = img.ontouchmove = (e) => {
-        if (pressTimer) {
-          clearTimeout(pressTimer);
-          pressTimer = null;
+    img.onmouseup = img.onmouseleave = (e) => {
+      if (pressTimer) {
+        clearTimeout(pressTimer);
+        pressTimer = null;
+      }
+      img.classList.remove('pressed');
+      isPressed = false;
+    };
+    
+    img.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    };
+    
+    img.oncontextmenu = (e) => {
+      e.preventDefault();
+      return false;
+    };
+    
+    img.ondragstart = (e) => {
+      e.preventDefault();
+      return false;
+    };
+    
+    img.ontouchstart = (e) => {
+      isPressed = true;
+      img.classList.add('pressed');
+      
+      pressTimer = setTimeout(() => {
+        if (isPressed) {
+          e.preventDefault();
+          this.plugin.moreDetailsPanel.showPanel(media, entry, img);
+          img.classList.remove('pressed');
+          isPressed = false;
         }
-        img.classList.remove('pressed');
-        isPressed = false;
-      };
+      }, pressHoldDuration);
+    };
+
+    img.ontouchend = img.ontouchcancel = img.ontouchmove = (e) => {
+      if (pressTimer) {
+        clearTimeout(pressTimer);
+        pressTimer = null;
+      }
+      img.classList.remove('pressed');
+      isPressed = false;
+    };
+    
+    img.title = 'Press and hold for more details';
+    
+    coverContainer.appendChild(img);
+    
+    const needsOverlay = (!isSearch && entry && this.plugin.settings.showProgress) || 
+                        (this.plugin.settings.showRatings && ((isSearch && media.averageScore != null) || (!isSearch && entry?.score != null)));
+                        
+    if (needsOverlay) {
+      const overlay = document.createElement('div');
+      overlay.className = 'cover-overlay';
       
-      img.title = 'Press and hold for more details';
+      if (!isSearch && entry && this.plugin.settings.showProgress) {
+        const progress = document.createElement('span');
+        progress.className = 'progress';
+        const total = media.episodes || media.chapters || '?';
+        progress.textContent = `${entry.progress || 0}/${total}`;
+        overlay.appendChild(progress);
+      } else {
+        overlay.appendChild(document.createElement('span'));
+      }
       
-      coverContainer.appendChild(img);
-      
-      const needsOverlay = (!isSearch && entry && this.plugin.settings.showProgress) || 
-                          (this.plugin.settings.showRatings && ((isSearch && media.averageScore != null) || (!isSearch && entry?.score != null)));
-                          
-      if (needsOverlay) {
-        const overlay = document.createElement('div');
-        overlay.className = 'cover-overlay';
-        
-        if (!isSearch && entry && this.plugin.settings.showProgress) {
-          const progress = document.createElement('span');
-          progress.className = 'progress';
-          const total = media.episodes || media.chapters || '?';
-          progress.textContent = `${entry.progress || 0}/${total}`;
-          overlay.appendChild(progress);
+      if (this.plugin.settings.showRatings) {
+        const score = isSearch ? media.averageScore : entry?.score;
+        if (score != null) {
+          const rating = document.createElement('span');
+          rating.className = 'score';
+          
+          if (isSearch) {
+            rating.textContent = `★ ${(score / 10).toFixed(1)}`;
+          } else {
+            if (score > 10) {
+              rating.textContent = `★ ${(score / 10).toFixed(1)}`;
+            } else {
+              rating.textContent = `★ ${score.toFixed(1)}`;
+            }
+          }
+          
+          overlay.appendChild(rating);
         } else {
           overlay.appendChild(document.createElement('span'));
         }
-        
-        if (this.plugin.settings.showRatings) {
-  const score = isSearch ? media.averageScore : entry?.score;
-  if (score != null) {
-    const rating = document.createElement('span');
-    rating.className = 'score';
-    
-    if (isSearch) {
-      rating.textContent = `★ ${(score / 10).toFixed(1)}`;
-    } else {
-      if (score > 10) {
-        rating.textContent = `★ ${(score / 10).toFixed(1)}`;
-      } else {
-        rating.textContent = `★ ${score.toFixed(1)}`;
-      }
-    }
-    
-    overlay.appendChild(rating);
-  } else {
-    overlay.appendChild(document.createElement('span'));
-  }
-}
-        
-        coverContainer.appendChild(overlay);
       }
       
-      card.appendChild(coverContainer);
+      coverContainer.appendChild(overlay);
     }
-
-    const info = document.createElement('div');
-    info.className = 'media-info';
-
-    const title = document.createElement('h4');
-
-    if (this.plugin.settings.hideUrlsInTitles) {
-      title.textContent = media.title.english || media.title.romaji;
-    } else {
-      const titleLink = document.createElement('a');
-      titleLink.href = this.plugin.getAniListUrl(media.id, config.mediaType);
-      titleLink.target = '_blank';
-      titleLink.textContent = media.title.english || media.title.romaji;
-      titleLink.className = 'media-title-link';
-      title.appendChild(titleLink);
-    }
-
-    info.appendChild(title);
-
-    if (!isCompact) {
-      const details = document.createElement('div');
-      details.className = 'media-details';
-
-      if (media.format) {
-        const formatBadge = document.createElement('span');
-        formatBadge.className = 'format-badge';
-        formatBadge.textContent = media.format.substring(0, 2).toUpperCase();
-        
-        details.appendChild(formatBadge);
-      }
-
-      if (!isSearch && entry) {
-        const statusBadge = document.createElement('span');
-        statusBadge.className = `status-badge status-${entry.status.toLowerCase()} clickable-status`;
-        statusBadge.textContent = entry.status;
-        statusBadge.onclick = (e) => this.handleStatusClick(e, entry, statusBadge);
-        details.appendChild(statusBadge);
-      }
-
-      if (isSearch) {
-        const addBtn = document.createElement('span');
-        addBtn.className = 'status-badge status-add clickable-status';
-        addBtn.textContent = 'ADD';
-        addBtn.onclick = (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-
-          if (!this.plugin.settings.accessToken) {
-            this.plugin.prompt.createAuthenticationPrompt();
-            return;
-          }
-
-          const entryData = {
-            media: media,
-            status: 'PLANNING',
-            progress: 0,
-            score: null,
-            id: null
-          };
-
-          this.plugin.edit.createEditModal(
-            entryData,
-            async (updates) => {
-              await this.plugin.api.updateMediaListEntry(media.id, updates);
-              new Notice('✅ Added!');
-              
-              const containers = document.querySelectorAll('.zoro-container');
-              containers.forEach(container => {
-                const block = container.closest('.markdown-rendered')?.querySelector('code');
-                if (block) {
-                  this.plugin.processor.processZoroCodeBlock(block.textContent, container, {});
-                }
-              });
-            },
-            () => {}
-          );
-        };
-        details.appendChild(addBtn);
-      }
-
-      info.appendChild(details);
-    }
-
-    if (!isCompact && this.plugin.settings.showGenres && media.genres?.length) {
-      const genres = document.createElement('div');
-      genres.className = 'genres';
-      media.genres.slice(0, 3).forEach(g => {
-        const tag = document.createElement('span');
-        tag.className = 'genre-tag';
-        tag.textContent = g;
-        genres.appendChild(tag);
-      });
-      info.appendChild(genres);
-    }
-
-    card.appendChild(info);
     
-
-const heart = document.createElement('span');
-heart.className = 'zoro-heart';
-if (!media.isFavourite) heart.style.display = 'none';
-card.appendChild(heart);
-
-
-    return card;
+    card.appendChild(coverContainer);
   }
+
+  const info = document.createElement('div');
+  info.className = 'media-info';
+
+  const title = document.createElement('h4');
+
+  if (this.plugin.settings.hideUrlsInTitles) {
+    title.textContent = media.title.english || media.title.romaji;
+  } else {
+    const titleLink = document.createElement('a');
+    // Use appropriate URL based on source
+    if (config.source === 'mal') {
+      titleLink.href = this.plugin.getMALUrl(media.id, config.mediaType);
+    } else {
+      titleLink.href = this.plugin.getAniListUrl(media.id, config.mediaType);
+    }
+    titleLink.target = '_blank';
+    titleLink.textContent = media.title.english || media.title.romaji;
+    titleLink.className = 'media-title-link';
+    title.appendChild(titleLink);
+  }
+
+  info.appendChild(title);
+
+  if (!isCompact) {
+    const details = document.createElement('div');
+    details.className = 'media-details';
+
+    if (media.format) {
+      const formatBadge = document.createElement('span');
+      formatBadge.className = 'format-badge';
+      formatBadge.textContent = media.format.substring(0, 2).toUpperCase();
+      
+      details.appendChild(formatBadge);
+    }
+
+    if (!isSearch && entry) {
+      const statusBadge = document.createElement('span');
+      statusBadge.className = `status-badge status-${entry.status.toLowerCase()} clickable-status`;
+      statusBadge.textContent = entry.status;
+      statusBadge.onclick = (e) => this.handleStatusClick(e, entry, statusBadge, config);
+      details.appendChild(statusBadge);
+    }
+
+    if (isSearch) {
+      const addBtn = document.createElement('span');
+      addBtn.className = 'status-badge status-add clickable-status';
+      addBtn.textContent = 'ADD';
+      addBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+
+        // Check authentication based on source
+        const isAuthenticated = config.source === 'mal' 
+          ? this.plugin.settings.malAccessToken 
+          : this.plugin.settings.accessToken;
+
+        if (!isAuthenticated) {
+          this.plugin.prompt.createAuthenticationPrompt();
+          return;
+        }
+
+        const entryData = {
+          media: media,
+          status: 'PLANNING',
+          progress: 0,
+          score: null,
+          id: null
+        };
+
+        this.plugin.edit.createEditModal(
+          entryData,
+          async (updates) => {
+            // Use appropriate API based on source
+            if (config.source === 'mal') {
+              await this.plugin.malApi.updateMediaListEntry(media.id, updates);
+            } else {
+              await this.plugin.api.updateMediaListEntry(media.id, updates);
+            }
+            new Notice('✅ Added!');
+            
+            const containers = document.querySelectorAll('.zoro-container');
+            containers.forEach(container => {
+              const block = container.closest('.markdown-rendered')?.querySelector('code');
+              if (block) {
+                this.plugin.processor.processZoroCodeBlock(block.textContent, container, {});
+              }
+            });
+          },
+          () => {}
+        );
+      };
+      details.appendChild(addBtn);
+    }
+
+    info.appendChild(details);
+  }
+
+  if (!isCompact && this.plugin.settings.showGenres && media.genres?.length) {
+    const genres = document.createElement('div');
+    genres.className = 'genres';
+    media.genres.slice(0, 3).forEach(g => {
+      const tag = document.createElement('span');
+      tag.className = 'genre-tag';
+      tag.textContent = g;
+      genres.appendChild(tag);
+    });
+    info.appendChild(genres);
+  }
+
+  card.appendChild(info);
+  
+  const heart = document.createElement('span');
+  heart.className = 'zoro-heart';
+  if (!media.isFavourite) heart.style.display = 'none';
+  card.appendChild(heart);
+
+  return card;
+}
+
 
   attachEventListeners(card, entry, media, config) {
     const statusBadge = card.querySelector('.clickable-status[data-entry-id]');
@@ -2932,15 +3416,22 @@ card.appendChild(heart);
     }
   }
 
-  handleStatusClick(e, entry, badge) {
-    e.preventDefault();
-    e.stopPropagation();
-    if (!this.plugin.settings.accessToken) {
-      this.plugin.prompt.createAuthenticationPrompt();
-      return;
-    }
-    this.plugin.handleEditClick(e, entry, badge);
+  handleStatusClick(e, entry, badge, config = {}) {
+  e.preventDefault();
+  e.stopPropagation();
+  
+  // Check authentication based on source
+  const isAuthenticated = config.source === 'mal' 
+    ? this.plugin.settings.malAccessToken 
+    : this.plugin.settings.accessToken;
+    
+  if (!isAuthenticated) {
+    this.plugin.prompt.createAuthenticationPrompt();
+    return;
   }
+  
+  this.plugin.handleEditClick(e, entry, badge, config);
+}
 
   handleAddClick(e, media, config) {
     e.preventDefault();
@@ -5878,6 +6369,18 @@ new Setting(Theme)
         await this.handleMALAuthButtonClick();
       });
     });
+    
+    new Setting(Exp)
+  .setName('Default API Source')
+  .setDesc('Choose which API to use by default when no source is specified in code blocks')
+  .addDropdown(dropdown => dropdown
+    .addOption('anilist', 'AniList')
+    .addOption('mal', 'MyAnimeList')
+    .setValue(this.plugin.settings.defaultApiSource)
+    .onChange(async (value) => {
+      this.plugin.settings.defaultApiSource = value;
+      await this.plugin.saveSettings();
+    }));
 
     new Setting(About)
       .setName('Author')

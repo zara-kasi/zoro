@@ -3930,9 +3930,15 @@ class MalApi {
     this.tokenUrl = 'https://myanimelist.net/v1/oauth2/token';
     
     this.fieldSets = {
+      compact: 'list_status,node{id,title,main_picture}',
+      card: 'list_status,node{id,title,main_picture,media_type,status,genres,num_episodes,num_chapters,mean,start_date,end_date}',
+      full: 'list_status,node{id,title,main_picture,alternative_titles,start_date,end_date,synopsis,mean,rank,popularity,num_list_users,num_scoring_users,nsfw,created_at,updated_at,media_type,status,genres,num_episodes,num_chapters,start_season,broadcast,source,average_episode_duration,rating,pictures,background,related_anime,related_manga,recommendations,studios,statistics}'
+    };
+
+    this.searchFieldSets = {
       compact: 'id,title,main_picture',
       card: 'id,title,main_picture,media_type,status,genres,num_episodes,num_chapters,mean,start_date,end_date',
-      full: 'id,title,main_picture,alternative_titles,start_date,end_date,synopsis,mean,rank,popularity,num_list_users,num_scoring_users,nsfw,created_at,updated_at,media_type,status,genres,my_list_status,num_episodes,num_chapters,start_season,broadcast,source,average_episode_duration,rating,pictures,background,related_anime,related_manga,recommendations,studios,statistics'
+      full: 'id,title,main_picture,alternative_titles,start_date,end_date,synopsis,mean,rank,popularity,num_list_users,num_scoring_users,nsfw,created_at,updated_at,media_type,status,genres,num_episodes,num_chapters,start_season,broadcast,source,average_episode_duration,rating,pictures,background,related_anime,related_manga,recommendations,studios,statistics'
     };
 
     this.statusMappings = {
@@ -4034,7 +4040,7 @@ class MalApi {
     
     switch (config.type) {
       case 'single':
-        params.fields = this.getFieldsForLayout(config.layout);
+        params.fields = this.getFieldsForLayout(config.layout, 'search');
         break;
       case 'list':
         params.fields = this.getFieldsForLayout(config.layout);
@@ -4046,7 +4052,7 @@ class MalApi {
         params.q = config.search || config.query;
         params.limit = config.perPage || 5;
         params.offset = ((config.page || 1) - 1) * (config.perPage || 5);
-        params.fields = this.getFieldsForLayout(config.layout);
+        params.fields = this.getFieldsForLayout(config.layout, 'search');
         break;
       case 'stats':
         break;
@@ -4058,12 +4064,50 @@ class MalApi {
   async makeRequest(requestParams) {
     this.metrics.requests++;
     
-    const requestFn = () => requestUrl({
-      url: requestParams.url,
-      method: requestParams.method || 'GET',
-      headers: requestParams.headers || {},
-      body: requestParams.body
-    });
+    const requestFn = async () => {
+      await this.ensureValidToken();
+      
+      const response = await requestUrl({
+        url: requestParams.url,
+        method: requestParams.method || 'GET',
+        headers: {
+          'User-Agent': 'Obsidian-MAL-Plugin/1.0',
+          ...requestParams.headers
+        },
+        body: requestParams.body,
+        throw: false
+      });
+
+      if (response.status === 401) {
+        if (this.plugin.settings.malRefreshToken) {
+          try {
+            await this.refreshAccessToken();
+            const retryResponse = await requestUrl({
+              url: requestParams.url,
+              method: requestParams.method || 'GET',
+              headers: {
+                'User-Agent': 'Obsidian-MAL-Plugin/1.0',
+                ...this.getAuthHeaders()
+              },
+              body: requestParams.body,
+              throw: false
+            });
+            return retryResponse;
+          } catch (refreshError) {
+            throw ZoroError.create('AUTH_EXPIRED', 'Authentication expired and refresh failed', { error: refreshError.message }, 'error');
+          }
+        } else {
+          throw ZoroError.create('AUTH_INVALID', 'Authentication token is invalid', {}, 'error');
+        }
+      }
+
+      if (response.status < 200 || response.status >= 300) {
+        const errorText = response.text || JSON.stringify(response.json) || 'Unknown error';
+        throw ZoroError.create('REQUEST_FAILED', `Request failed (HTTP ${response.status})`, { error: errorText, url: requestParams.url }, 'error');
+      }
+
+      return response;
+    };
 
     try {
       const response = await this.requestQueue.add(requestFn, {
@@ -4086,6 +4130,44 @@ class MalApi {
       if (error.type) throw error;
       throw ZoroError.create('REQUEST_FAILED', 'MAL request failed', { error: error.message, url: requestParams.url }, 'error');
     }
+  }
+
+  async refreshAccessToken() {
+    if (!this.plugin.settings.malRefreshToken) {
+      throw new Error('No refresh token available');
+    }
+    
+    const body = new URLSearchParams({
+      client_id: this.plugin.settings.malClientId,
+      refresh_token: this.plugin.settings.malRefreshToken,
+      grant_type: 'refresh_token'
+    });
+
+    if (this.plugin.settings.malClientSecret && this.plugin.settings.malClientSecret.trim()) {
+      body.append('client_secret', this.plugin.settings.malClientSecret.trim());
+    }
+
+    const response = await requestUrl({
+      url: this.tokenUrl,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json'
+      },
+      body: body.toString(),
+      throw: false
+    });
+
+    if (response.status < 200 || response.status >= 300) {
+      const errorText = response.text || JSON.stringify(response.json) || 'Unknown error';
+      throw new Error(`Token refresh failed (HTTP ${response.status}): ${errorText}`);
+    }
+
+    const data = response.json || (response.text ? JSON.parse(response.text) : null);
+    this.plugin.settings.malAccessToken = data.access_token;
+    this.plugin.settings.malRefreshToken = data.refresh_token || this.plugin.settings.malRefreshToken;
+    this.plugin.settings.malTokenExpiry = Date.now() + (data.expires_in * 1000);
+    await this.plugin.saveSettings();
   }
 
   async updateMediaListEntry(mediaId, updates) {
@@ -4142,11 +4224,14 @@ class MalApi {
     const body = new URLSearchParams({
       grant_type: 'authorization_code',
       client_id: this.plugin.settings.malClientId,
-      client_secret: this.plugin.settings.malClientSecret || '',
       redirect_uri: redirectUri,
       code: code,
       code_verifier: this.plugin.settings.malCodeVerifier
     });
+
+    if (this.plugin.settings.malClientSecret && this.plugin.settings.malClientSecret.trim()) {
+      body.append('client_secret', this.plugin.settings.malClientSecret.trim());
+    }
 
     const requestFn = () => requestUrl({
       url: this.tokenUrl,
@@ -4155,18 +4240,25 @@ class MalApi {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'application/json'
       },
-      body: body.toString()
+      body: body.toString(),
+      throw: false
     });
 
     try {
       const response = await this.requestQueue.add(requestFn, { priority: 'high' });
       
+      if (response.status < 200 || response.status >= 300) {
+        const errorText = response.text || JSON.stringify(response.json) || 'Unknown error';
+        throw ZoroError.create('AUTH_FAILED', `Authentication failed (HTTP ${response.status}): ${errorText}`, {}, 'error');
+      }
+
       if (!response?.json || typeof response.json !== 'object') {
         throw ZoroError.create('INVALID_AUTH_RESPONSE', 'Invalid auth response from MAL', {}, 'error');
       }
 
       return response.json;
     } catch (error) {
+      if (error.type) throw error;
       throw ZoroError.create('AUTH_FAILED', 'MAL authentication failed', { error: error.message }, 'error');
     }
   }
@@ -4177,7 +4269,7 @@ class MalApi {
     try {
       const config = { type: 'single', mediaType, mediaId: parseInt(mediaId) };
       const response = await this.fetchMALData(config);
-      return response.MediaList !== null;
+      return response.MediaList !== null && response.MediaList.status !== null;
     } catch (error) {
       return false;
     }
@@ -4232,7 +4324,7 @@ class MalApi {
         await this.ensureValidToken();
         
         const requestParams = {
-          url: `${this.baseUrl}/anime/season/${year}/${season}?fields=${this.getFieldsForLayout('card')}`,
+          url: `${this.baseUrl}/anime/season/${year}/${season}?fields=${this.getFieldsForLayout('card', 'search')}`,
           headers: this.getAuthHeaders(),
           priority: 'low'
         };
@@ -4262,7 +4354,7 @@ class MalApi {
           const transformedMedia = this.transformMedia(data);
           return { 
             MediaList: {
-              id: null,
+              id: data.my_list_status?.id || null,
               status: data.my_list_status ? this.mapMALStatusToAniList(data.my_list_status.status) : null,
               score: data.my_list_status?.score || 0,
               progress: data.my_list_status?.num_episodes_watched || data.my_list_status?.num_chapters_read || 0,
@@ -4359,7 +4451,16 @@ class MalApi {
     if (!this.plugin.settings.malAccessToken) {
       throw ZoroError.create('AUTH_REQUIRED', 'Authentication required', {}, 'error');
     }
-    return await this.plugin.malAuth?.ensureValidToken?.() || true;
+
+    if (this.plugin.settings.malTokenExpiry && Date.now() >= (this.plugin.settings.malTokenExpiry - 5 * 60 * 1000)) {
+      if (this.plugin.settings.malRefreshToken) {
+        await this.refreshAccessToken();
+      } else {
+        throw ZoroError.create('AUTH_EXPIRED', 'Authentication expired', {}, 'error');
+      }
+    }
+
+    return true;
   }
 
   getAuthHeaders() {
@@ -4394,8 +4495,9 @@ class MalApi {
     return `${baseUrl}?${queryString}`;
   }
 
-  getFieldsForLayout(layout = 'card') {
-    return this.fieldSets[layout] || this.fieldSets.card;
+  getFieldsForLayout(layout = 'card', requestType = 'list') {
+    const fieldSets = requestType === 'search' ? this.searchFieldSets : this.fieldSets;
+    return fieldSets[layout] || fieldSets.card;
   }
 
   mapAniListStatusToMAL(status) {

@@ -4689,6 +4689,7 @@ class ZoroPlugin extends Plugin {
     this.registerMarkdownPostProcessor(this.processor.processInlineLinks.bind(this.processor));
     
     this.addSettingTab(new ZoroSettingTab(this.app, this));
+
     console.log('[Zoro] Plugin loaded successfully.');
   }
 
@@ -4897,7 +4898,7 @@ class Processor {
   getSupportedOperations(source) {
     const operationMap = {
       'anilist': ['stats', 'search', 'single', 'list', 'trending'],
-      'mal': ['stats', 'search', 'single', 'list']
+      'mal': ['stats', 'search', 'single', 'list', 'trending']
     };
     
     return operationMap[source?.toLowerCase()] || [];
@@ -4930,6 +4931,10 @@ class Processor {
 
   async resolveAuthentication(config) {
     const updatedConfig = { ...config };
+
+    if (config.source === 'mal') {
+      return updatedConfig;
+    }
 
     if (updatedConfig.useAuthenticatedUser) {
       const authUsername = await this.plugin.auth.getAuthenticatedUsername();
@@ -4972,7 +4977,7 @@ class Processor {
 
   async handleStatsOperation(api, config) {
     if (config.source === 'mal') {
-      const response = await api.fetchMALStats?.(config);
+      const response = await api.fetchMALData({ ...config, type: 'stats' });
       return response?.User || response;
     } else {
       const data = await api.fetchAniListData?.(config);
@@ -4981,15 +4986,15 @@ class Processor {
   }
 
   async handleSearchOperation(api, config) {
-  return { isSearchInterface: true, config };
-}
+    return { isSearchInterface: true, config };
+  }
 
   async handleSingleOperation(api, config) {
     if (config.source === 'mal') {
       if (!config.mediaId) {
         throw new Error('❌ Media ID is required for single media view');
       }
-      const response = await api.fetchMALData?.(config);
+      const response = await api.fetchMALData({ ...config, type: 'single' });
       return response?.MediaList;
     } else {
       const data = await api.fetchAniListData?.(config);
@@ -4999,10 +5004,9 @@ class Processor {
 
   async handleListOperation(api, config) {
     if (config.source === 'mal') {
-      const response = await api.fetchMALList?.({ 
-        listType: config.listType, 
-        mediaType: config.mediaType,
-        layout: config.layout
+      const response = await api.fetchMALData({
+        ...config,
+        type: 'list'
       });
       return response?.MediaListCollection?.lists?.flatMap(l => l.entries) || [];
     } else {
@@ -5012,10 +5016,6 @@ class Processor {
   }
 
   async handleTrendingOperation(api, config) {
-    if (config.source === 'mal') {
-      throw new Error('❌ Trending is currently only supported for AniList');
-    }
-    
     return { isTrendingOperation: true, config };
   }
 
@@ -5093,11 +5093,14 @@ class Processor {
     try {
       const resolvedConfig = await this.resolveAuthentication(config);
       
-      const api = this.getApiInstance(resolvedConfig.source);
-      
-      const data = await this.executeApiOperation(api, resolvedConfig);
-      
-      await this.renderData(el, data, resolvedConfig);
+      if (config.type === 'trending') {
+        const data = await this.executeApiOperation(null, resolvedConfig);
+        await this.renderData(el, data, resolvedConfig);
+      } else {
+        const api = this.getApiInstance(resolvedConfig.source);
+        const data = await this.executeApiOperation(api, resolvedConfig);
+        await this.renderData(el, data, resolvedConfig);
+      }
 
     } catch (error) {
       el.empty();
@@ -5127,7 +5130,6 @@ class Processor {
     try {
       const config = this.parseInlineLink(href);
       
-      // Validate operation support
       this.validateOperation(config.source || 'anilist', config.type);
       
       const api = this.getApiInstance(config.source || 'anilist');
@@ -5140,7 +5142,6 @@ class Processor {
 
       placeholder.replaceWith(container);
 
-      // Add cleanup handler
       ctx.addChild({
         unload: () => {
           if (container.parentNode) {
@@ -5165,16 +5166,10 @@ class Processor {
     }
   }
 
-  /**
-   * Parse code block configuration with enhanced validation
-   * @param {string} source - Raw code block content
-   * @returns {Object} Parsed configuration object
-   */
   parseCodeBlockConfig(source) {
     const config = {};
     const lines = source.split('\n').filter(l => l.trim() && !l.trim().startsWith('#'));
 
-    // Configuration key mapping for flexibility
     const keyMappings = {
       'username': 'username',
       'user': 'username',
@@ -5204,24 +5199,15 @@ class Processor {
       let key = raw.slice(0, colonIndex).trim().toLowerCase();
       let value = raw.slice(colonIndex + 1).trim();
 
-      // Map key to standardized format
       const mappedKey = keyMappings[key];
       if (!mappedKey) continue;
 
-      // Process value based on key type
       config[mappedKey] = this.processConfigValue(mappedKey, value);
     }
 
-    // Apply defaults and validation
     return this.applyConfigDefaults(config);
   }
 
-  /**
-   * Process configuration values with type conversion
-   * @param {string} key - Configuration key
-   * @param {string} value - Raw value
-   * @returns {any} Processed value
-   */
   processConfigValue(key, value) {
     switch (key) {
       case 'listType':
@@ -5240,29 +5226,33 @@ class Processor {
     }
   }
 
-  /**
-   * Apply configuration defaults and validation
-   * @param {Object} config - Raw configuration object
-   * @returns {Object} Configuration with defaults applied
-   */
   applyConfigDefaults(config) {
-    // Set default API source
     if (!config.source) {
       config.source = this.plugin.settings.defaultApiSource || 'anilist';
     }
 
-    // Handle username resolution
-    if (!config.username) {
-      if (this.plugin.settings.defaultUsername) {
-        config.username = this.plugin.settings.defaultUsername;
-      } else if (this.hasValidAuthForSource(config.source)) {
-        config.useAuthenticatedUser = true;
-      } else {
-        throw new Error('❌ Username is required. Please set a default username in plugin settings, authenticate, or specify one in the code block.');
+    if (config.type === 'trending') {
+      config.mediaType = config.mediaType || 'ANIME';
+      config.layout = config.layout || this.plugin.settings.defaultLayout || 'card';
+      return config;
+    }
+
+    if (config.source === 'mal') {
+      if (!this.hasValidAuthForSource('mal')) {
+        throw new Error('❌ MAL authentication required. Please authenticate in plugin settings.');
+      }
+    } else {
+      if (!config.username) {
+        if (this.plugin.settings.defaultUsername) {
+          config.username = this.plugin.settings.defaultUsername;
+        } else if (this.hasValidAuthForSource(config.source)) {
+          config.useAuthenticatedUser = true;
+        } else {
+          throw new Error('❌ Username is required. Please set a default username in plugin settings, authenticate, or specify one in the code block.');
+        }
       }
     }
 
-    // Set default values
     config.type = config.type || 'list';
     config.mediaType = config.mediaType || 'ANIME';
     config.layout = config.layout || this.plugin.settings.defaultLayout || 'card';
@@ -5274,11 +5264,6 @@ class Processor {
     return config;
   }
 
-  /**
-   * Check if valid authentication exists for source
-   * @param {string} source - API source
-   * @returns {boolean} Whether valid auth exists
-   */
   hasValidAuthForSource(source) {
     switch (source) {
       case 'mal':
@@ -5290,11 +5275,6 @@ class Processor {
     }
   }
 
-  /**
-   * Parse inline link with enhanced error handling
-   * @param {string} href - Inline link href
-   * @returns {Object} Parsed configuration object
-   */
   parseInlineLink(href) {
     try {
       const [base, hash] = href.replace('zoro:', '').split('#');
@@ -5302,7 +5282,6 @@ class Processor {
 
       let username, pathParts;
 
-      // Handle username resolution
       if (parts.length === 0 || parts[0] === '') {
         if (!this.plugin.settings.defaultUsername) {
           throw new Error('⚠️ Default username not set. Configure it in plugin settings.');
@@ -5321,12 +5300,10 @@ class Processor {
         source: this.plugin.settings.defaultApiSource || 'anilist'
       };
 
-      // Parse path components
       if (pathParts.length > 0) {
         this.parseInlineLinkPath(config, pathParts);
       }
 
-      // Parse hash modifiers
       if (hash) {
         this.parseInlineLinkHash(config, hash);
       }
@@ -5338,11 +5315,6 @@ class Processor {
     }
   }
 
-  /**
-   * Parse inline link path components
-   * @param {Object} config - Configuration object to modify
-   * @param {string[]} pathParts - Path components
-   */
   parseInlineLinkPath(config, pathParts) {
     const [main, second] = pathParts;
 
@@ -5357,17 +5329,11 @@ class Processor {
       }
       config.mediaId = parseInt(second);
     } else {
-      // Treat as list type
       config.listType = main.toUpperCase().replace(/[\s-]/g, '_');
       config.type = 'list';
     }
   }
 
-  /**
-   * Parse inline link hash modifiers
-   * @param {Object} config - Configuration object to modify
-   * @param {string} hash - Hash portion of the link
-   */
   parseInlineLinkHash(config, hash) {
     const validLayouts = ['compact', 'card', 'minimal', 'full'];
     const validSources = ['anilist', 'mal'];
@@ -5382,7 +5348,6 @@ class Processor {
       } else if (modifier === 'nocache') {
         config.nocache = true;
       }
-      // Silently ignore unknown modifiers for forward compatibility
     }
   }
 }
@@ -5711,7 +5676,7 @@ userName.addEventListener('click', () => {
   window.open(`https://anilist.co/user/${user.name}`, '_blank');
 });
 
-// Optional: Add hover effect for better UX
+// Optional: hover effect for better UX
 userName.addEventListener('mouseenter', () => {
   userName.style.textDecoration = 'underline';
 });
@@ -6442,7 +6407,6 @@ generateInsights(stats, type, user) {
     title.textContent = media.title.english || media.title.romaji;
   } else {
     const titleLink = document.createElement('a');
-    // Use appropriate URL based on source
     if (config.source === 'mal') {
       titleLink.href = this.plugin.getMALUrl(media.id, config.mediaType);
     } else {
@@ -6464,173 +6428,159 @@ generateInsights(stats, type, user) {
       const formatBadge = document.createElement('span');
       formatBadge.className = 'format-badge';
       formatBadge.textContent = media.format.substring(0, 2).toUpperCase();
-      
       details.appendChild(formatBadge);
     }
 
-    if (!isSearch && entry) {
+    if (!isSearch && entry && entry.status) {
       const statusBadge = document.createElement('span');
-      statusBadge.className = `status-badge status-${entry.status.toLowerCase()} clickable-status`;
-      statusBadge.textContent = entry.status;
+      // FIX: Add null check and fallback for status
+      const statusClass = entry.status ? entry.status.toLowerCase() : 'unknown';
+      const statusText = entry.status || 'Unknown';
+      
+      statusBadge.className = `status-badge status-${statusClass} clickable-status`;
+      statusBadge.textContent = statusText;
       statusBadge.onclick = (e) => this.handleStatusClick(e, entry, statusBadge, config);
       details.appendChild(statusBadge);
     }
 
-
-if (isSearch) {
-  const editBtn = document.createElement('span');
-  editBtn.className = 'status-badge status-edit clickable-status';
-  editBtn.textContent = 'Edit';
-  editBtn.dataset.loading = 'false';
-  
-  editBtn.onclick = async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    // Check authentication based on source
-    const isAuthenticated = config.source === 'mal' 
-      ? this.plugin.settings.malAccessToken 
-      : this.plugin.settings.accessToken;
-
-    if (!isAuthenticated) {
-      console.log(`[Zoro] Not authenticated with ${config.source || 'anilist'}`);
-      this.plugin.prompt.createAuthenticationPrompt(config.source || 'anilist');
-      return;
-    }
-
-    // Show loading state
-    editBtn.dataset.loading = 'true';
-    editBtn.innerHTML = `
-  <div class="sharingan-glow">
-    <div class="tomoe-container">
-      <span class="tomoe"></span>
-      <span class="tomoe"></span>
-      <span class="tomoe"></span>
-    </div>
-  </div>
-`;
-
-    editBtn.style.pointerEvents = 'none';
-
-    try {
-      console.log(`[Zoro] Checking user entry for media ${media.id} via ${config.source || 'anilist'}`);
-      
-      // Get user's actual entry for this media
-      let existingEntry = null;
-      
-      if (config.source === 'mal') {
-        // Use MAL API (you can implement getUserEntryForMedia in MAL later)
-        existingEntry = await this.plugin.malApi.getUserEntryForMedia?.(media.id, config.mediaType) || null;
-      } else {
-        // Use AniList API with the new method
-        existingEntry = await this.plugin.api.getUserEntryForMedia(media.id, config.mediaType);
-      }
-      
-      console.log(`[Zoro] User entry result:`, existingEntry ? 'Found existing entry' : 'Not in user list');
-      
-      // Prepare entry data based on what we found
-      const entryToEdit = existingEntry || {
-        media: media,
-        status: 'PLANNING',
-        progress: 0,
-        score: null,
-        id: null
-      };
-
-      // Update button appearance
-      const isNewEntry = !existingEntry;
-      editBtn.textContent = isNewEntry ? 'Add' : 'Edit';
-      editBtn.className = `status-badge ${isNewEntry ? 'status-add' : 'status-edit'} clickable-status`;
-
-      // Reset loading state
-      editBtn.dataset.loading = 'false';
-      editBtn.style.pointerEvents = 'auto';
-
-      console.log(`[Zoro] Opening edit modal for ${isNewEntry ? 'new' : 'existing'} entry`);
-
-      // Open edit modal with correct data
-      this.plugin.edit.createEditModal(
-        entryToEdit,
-        async (updates) => {
-          try {
-            console.log(`[Zoro] Updating media ${media.id} with:`, updates);
-            
-            const api = config.source === 'mal' ? this.plugin.malApi : this.plugin.api;
-            await api.updateMediaListEntry(media.id, updates);
-            
-            // Success feedback
-            const successMessage = isNewEntry ? '✅ Added to list!' : '✅ Updated!';
-            new Notice(successMessage, 3000);
-            console.log(`[Zoro] ${successMessage}`);
-            
-            // Update button to reflect it's now in the list
-            editBtn.textContent = 'Edit';
-            editBtn.className = 'status-badge status-edit clickable-status';
-            
-            // Refresh any open list views
-            this.refreshActiveViews();
-            
-          } catch (updateError) {
-            console.error('[Zoro] Update failed:', updateError);
-            new Notice(`❌ Update failed: ${updateError.message}`, 5000);
-          }
-        },
-        () => {
-          // Modal cancelled - reset button state
-          console.log('[Zoro] Edit modal cancelled');
-          editBtn.textContent = 'Edit';
-          editBtn.className = 'status-badge status-edit clickable-status';
-          editBtn.dataset.loading = 'false';
-          editBtn.style.pointerEvents = 'auto';
-        },
-        config.source // Pass source to modal for proper API handling
-      );
-
-    } catch (error) {
-      console.error('[Zoro] User entry check failed:', error);
-      
-      // Reset button state
+    if (isSearch) {
+      const editBtn = document.createElement('span');
+      editBtn.className = 'status-badge status-edit clickable-status';
       editBtn.textContent = 'Edit';
       editBtn.dataset.loading = 'false';
-      editBtn.style.pointerEvents = 'auto';
       
-      // Show user-friendly message but still allow editing
-      new Notice('⚠️ Could not check list status, assuming new entry', 3000);
-      
-      // Fallback to default new entry data
-      const defaultEntry = {
-        media: media,
-        status: 'PLANNING',
-        progress: 0,
-        score: null,
-        id: null
-      };
+      editBtn.onclick = async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
 
-      console.log('[Zoro] Falling back to default entry data');
+        const isAuthenticated = config.source === 'mal' 
+          ? this.plugin.settings.malAccessToken 
+          : this.plugin.settings.accessToken;
 
-      this.plugin.edit.createEditModal(
-        defaultEntry,
-        async (updates) => {
-          try {
-            const api = config.source === 'mal' ? this.plugin.malApi : this.plugin.api;
-            await api.updateMediaListEntry(media.id, updates);
-            new Notice('✅ Added to list!', 3000);
-            this.refreshActiveViews();
-          } catch (updateError) {
-            console.error('[Zoro] Update failed:', updateError);
-            new Notice(`❌ Failed to add: ${updateError.message}`, 5000);
+        if (!isAuthenticated) {
+          console.log(`[Zoro] Not authenticated with ${config.source || 'anilist'}`);
+          this.plugin.prompt.createAuthenticationPrompt(config.source || 'anilist');
+          return;
+        }
+
+        editBtn.dataset.loading = 'true';
+        editBtn.innerHTML = `
+      <div class="sharingan-glow">
+        <div class="tomoe-container">
+          <span class="tomoe"></span>
+          <span class="tomoe"></span>
+          <span class="tomoe"></span>
+        </div>
+      </div>
+    `;
+
+        editBtn.style.pointerEvents = 'none';
+
+        try {
+          console.log(`[Zoro] Checking user entry for media ${media.id} via ${config.source || 'anilist'}`);
+          
+          let existingEntry = null;
+          
+          if (config.source === 'mal') {
+            existingEntry = await this.plugin.malApi.getUserEntryForMedia?.(media.id, config.mediaType) || null;
+          } else {
+            existingEntry = await this.plugin.api.getUserEntryForMedia(media.id, config.mediaType);
           }
-        },
-        () => {
-          console.log('[Zoro] Fallback edit modal cancelled');
-        },
-        config.source
-      );
+          
+          console.log(`[Zoro] User entry result:`, existingEntry ? 'Found existing entry' : 'Not in user list');
+          
+          const entryToEdit = existingEntry || {
+            media: media,
+            status: 'PLANNING',
+            progress: 0,
+            score: null,
+            id: null
+          };
+
+          const isNewEntry = !existingEntry;
+          editBtn.textContent = isNewEntry ? 'Add' : 'Edit';
+          editBtn.className = `status-badge ${isNewEntry ? 'status-add' : 'status-edit'} clickable-status`;
+
+          editBtn.dataset.loading = 'false';
+          editBtn.style.pointerEvents = 'auto';
+
+          console.log(`[Zoro] Opening edit modal for ${isNewEntry ? 'new' : 'existing'} entry`);
+
+          this.plugin.edit.createEditModal(
+            entryToEdit,
+            async (updates) => {
+              try {
+                console.log(`[Zoro] Updating media ${media.id} with:`, updates);
+                
+                const api = config.source === 'mal' ? this.plugin.malApi : this.plugin.api;
+                await api.updateMediaListEntry(media.id, updates);
+                
+                const successMessage = isNewEntry ? '✅ Added to list!' : '✅ Updated!';
+                new Notice(successMessage, 3000);
+                console.log(`[Zoro] ${successMessage}`);
+                
+                editBtn.textContent = 'Edit';
+                editBtn.className = 'status-badge status-edit clickable-status';
+                
+                this.refreshActiveViews();
+                
+              } catch (updateError) {
+                console.error('[Zoro] Update failed:', updateError);
+                new Notice(`❌ Update failed: ${updateError.message}`, 5000);
+              }
+            },
+            () => {
+              console.log('[Zoro] Edit modal cancelled');
+              editBtn.textContent = 'Edit';
+              editBtn.className = 'status-badge status-edit clickable-status';
+              editBtn.dataset.loading = 'false';
+              editBtn.style.pointerEvents = 'auto';
+            },
+            config.source
+          );
+
+        } catch (error) {
+          console.error('[Zoro] User entry check failed:', error);
+          
+          editBtn.textContent = 'Edit';
+          editBtn.dataset.loading = 'false';
+          editBtn.style.pointerEvents = 'auto';
+          
+          new Notice('⚠️ Could not check list status, assuming new entry', 3000);
+          
+          const defaultEntry = {
+            media: media,
+            status: 'PLANNING',
+            progress: 0,
+            score: null,
+            id: null
+          };
+
+          console.log('[Zoro] Falling back to default entry data');
+
+          this.plugin.edit.createEditModal(
+            defaultEntry,
+            async (updates) => {
+              try {
+                const api = config.source === 'mal' ? this.plugin.malApi : this.plugin.api;
+                await api.updateMediaListEntry(media.id, updates);
+                new Notice('✅ Added to list!', 3000);
+                this.refreshActiveViews();
+              } catch (updateError) {
+                console.error('[Zoro] Update failed:', updateError);
+                new Notice(`❌ Failed to add: ${updateError.message}`, 5000);
+              }
+            },
+            () => {
+              console.log('[Zoro] Fallback edit modal cancelled');
+            },
+            config.source
+          );
+        }
+      };
+      
+      details.appendChild(editBtn);
     }
-  };
-  
-  details.appendChild(editBtn);
-}
 
     info.appendChild(details);
   }
@@ -6641,7 +6591,8 @@ if (isSearch) {
     media.genres.slice(0, 3).forEach(g => {
       const tag = document.createElement('span');
       tag.className = 'genre-tag';
-      tag.textContent = g;
+      // FIX: Add null check for genre
+      tag.textContent = g || 'Unknown';
       genres.appendChild(tag);
     });
     info.appendChild(genres);
@@ -7905,7 +7856,97 @@ class MoreDetailsPanel {
 }
 
 class Trending {
-  constructor(plugin) { this.plugin = plugin; }
+  constructor(plugin) { 
+    this.plugin = plugin; 
+  }
+
+  async fetchAniListTrending(mediaType = 'ANIME', perPage = 20) {
+    const query = `
+      query ($type: MediaType, $perPage: Int) {
+        Page(page: 1, perPage: $perPage) {
+          media(type: $type, sort: TRENDING_DESC, status: RELEASING) {
+            id
+            title {
+              romaji
+              english
+              native
+            }
+            coverImage {
+              large
+              medium
+            }
+            format
+            averageScore
+            genres
+            episodes
+            chapters
+            status
+          }
+        }
+      }
+    `;
+
+    const variables = {
+      type: mediaType.toUpperCase(),
+      perPage: perPage
+    };
+
+    const response = await fetch('https://graphql.anilist.co', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query, variables })
+    });
+
+    if (!response.ok) {
+      throw new Error(`AniList API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    return data.data.Page.media;
+  }
+
+  async fetchJikanTrending(mediaType = 'anime', limit = 20) {
+    const type = mediaType.toLowerCase();
+    const url = `https://api.jikan.moe/v4/top/${type}?filter=airing&limit=${limit}`;
+    
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Jikan API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    
+    const unique = [];
+    const seen = new Set();
+    
+    (data.data || []).forEach(item => {
+      if (!seen.has(item.mal_id)) {
+        seen.add(item.mal_id);
+        unique.push({
+          id: item.mal_id,
+          title: {
+            romaji: item.title || '',
+            english: item.title_english,
+            native: item.title_japanese
+          },
+          coverImage: {
+            large: item.images?.jpg?.large_image_url,
+            medium: item.images?.jpg?.image_url
+          },
+          format: item.type,
+          averageScore: item.score ? Math.round(item.score * 10) : null,
+          genres: item.genres?.map(g => g.name) || [],
+          episodes: item.episodes,
+          chapters: type === 'manga' ? item.chapters : undefined,
+          status: item.status
+        });
+      }
+    });
+
+    return unique.slice(0, limit);
+  }
 
   async renderTrendingBlock(el, config) {
     el.empty();
@@ -7913,28 +7954,26 @@ class Trending {
 
     try {
       const type = (config.mediaType || 'ANIME').toLowerCase();
-      const url = `https://api.jikan.moe/v4/top/${type}?filter=airing&limit=20`;
-      const resp = await this.plugin.requestQueue.add(() => fetch(url).then(r => r.json()));
-      const unique = [];
-      const seen = new Set();
-      (resp.data || []).forEach(item => {
-        if (!seen.has(item.mal_id)) {
-          seen.add(item.mal_id);
-          unique.push(item);
-        }
-      });
-      const top20 = unique.slice(0, 20).map(item => ({
-        id: item.mal_id,
-        title: { romaji: item.title || '', english: item.title_english, native: item.title_japanese },
-        coverImage: { large: item.images?.jpg?.large_image_url },
-        format: item.type,
-        averageScore: item.score ? Math.round(item.score * 10) : null,
-        genres: item.genres?.map(g => g.name) || [],
-        episodes: item.episodes,
-        chapters: type === 'manga' ? item.chapters : undefined
-      }));
+      let items = [];
+
+      if (config.source === 'mal') {
+        items = await this.plugin.requestQueue.add(() => 
+          this.fetchJikanTrending(type, 20)
+        );
+      } else if (config.source === 'anilist') {
+        items = await this.plugin.requestQueue.add(() => 
+          this.fetchAniListTrending(config.mediaType || 'ANIME', 20)
+        );
+      } else {
+        const [anilistItems, malItems] = await Promise.all([
+          this.plugin.requestQueue.add(() => this.fetchAniListTrending(config.mediaType || 'ANIME', 10)),
+          this.plugin.requestQueue.add(() => this.fetchJikanTrending(type, 10))
+        ]);
+        items = [...anilistItems, ...malItems];
+      }
+
       el.empty();
-      this.plugin.render.renderSearchResults(el, top20, { layout: config.layout || 'card', mediaType: config.mediaType || 'ANIME' });
+      this.plugin.render.renderSearchResults(el, items, { layout: config.layout || 'card', mediaType: config.mediaType || 'ANIME' });
     } catch (err) {
       this.plugin.renderError(el, err.message, 'Trending');
     }

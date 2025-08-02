@@ -33,9 +33,577 @@ const DEFAULT_SETTINGS = {
   malRefreshToken: '',
   malTokenExpiry: null,
   malUserInfo: null,
+  debugMode: false,
 };
 
+class ZoroError {
+  static instance(plugin) {
+    if (!ZoroError._singleton) ZoroError._singleton = new ZoroError(plugin);
+    return ZoroError._singleton;
+  }
 
+  constructor(plugin) {
+    this.plugin = plugin;
+    this.metrics = { 
+      total: 0, 
+      perType: new Map(), 
+      perSeverity: new Map(),
+      perHour: new Map(),
+      patterns: new Map(),
+      recovery: { attempts: 0, success: 0 }
+    };
+    this.buffer = [];
+    this.maxBuffer = 100;
+    this.severities = { fatal: 0, error: 1, warn: 2, info: 3, debug: 4 };
+    this.rateLimiter = new Map();
+    this.correlationMap = new Map();
+    this.alertThresholds = { error: 10, warn: 25, fatal: 1 };
+    this.recoveryStrategies = new Map();
+    this.startTime = Date.now();
+    
+    this.initRecoveryStrategies();
+    this.startBackgroundTasks();
+  }
+
+  static create(type, message, meta = {}, severity = 'error') {
+    return ZoroError.instance().build(type, message, meta, severity);
+  }
+
+  static async guard(fn, recovery = null, ctx = '') {
+    const instance = ZoroError.instance();
+    try { 
+      return await fn(); 
+    } catch (err) {
+      const error = instance.fromException(err, ctx);
+      
+      if (recovery) {
+        try {
+          const result = await instance.executeRecovery(recovery, error, fn);
+          if (result !== null) return result;
+        } catch (recoveryErr) {
+          instance.build('RECOVERY_FAILED', recoveryErr.message, { original: err, ctx }, 'error');
+        }
+      }
+      
+      throw error;
+    }
+  }
+
+  static notify(type, message, severity = 'warn', duration = null) {
+    const instance = ZoroError.instance();
+    const e = instance.build(type, message, {}, severity);
+    
+    if (!instance.isRateLimited(type)) {
+      const finalDuration = duration || instance.getNoticeDuration(severity);
+      new Notice(e.userMessage, finalDuration);
+    }
+    
+    return e;
+  }
+
+  static async withRetry(fn, options = {}) {
+    const { maxRetries = 3, backoff = 1000, condition = () => true } = options;
+    const instance = ZoroError.instance();
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (err) {
+        if (attempt === maxRetries || !condition(err)) {
+          instance.build('RETRY_EXHAUSTED', `Failed after ${attempt} attempts`, 
+            { originalError: err.message, attempts: attempt }, 'error');
+          throw err;
+        }
+        
+        instance.build('RETRY_ATTEMPT', `Attempt ${attempt} failed, retrying`, 
+          { error: err.message, nextAttemptIn: backoff * attempt }, 'warn');
+        
+        await instance.sleep(backoff * attempt);
+      }
+    }
+  }
+
+  build(type, message, meta = {}, severity = 'error') {
+    const now = Date.now();
+    const correlationId = this.generateCorrelationId();
+    
+    const entry = {
+      id: correlationId,
+      type, 
+      message, 
+      meta: this.sanitizeMeta(meta), 
+      severity,
+      timestamp: now,
+      userMessage: this.toUserMessage(message, severity, type),
+      stack: this.captureStack(),
+      session: this.getSessionInfo(),
+      context: this.getContext(),
+      fingerprint: this.generateFingerprint(type, message)
+    };
+
+    this.record(entry);
+    this.correlate(entry);
+    this.persist(entry);
+    this.act(entry);
+    this.checkAlerts(entry);
+    
+    return this.createErrorObject(entry);
+  }
+
+  fromException(error, context = '') {
+    const type = error.type || error.name || 'UnknownError';
+    const msg = error.message || String(error);
+    const meta = { 
+      context, 
+      original: error,
+      stack: error.stack,
+      code: error.code,
+      status: error.status
+    };
+    
+    return this.build(type, msg, meta, this.classifyErrorSeverity(error));
+  }
+
+  record(entry) {
+    this.metrics.total++;
+    this.incrementMap(this.metrics.perType, entry.type);
+    this.incrementMap(this.metrics.perSeverity, entry.severity);
+    
+    const hour = Math.floor(entry.timestamp / (1000 * 60 * 60));
+    this.incrementMap(this.metrics.perHour, hour);
+    
+    this.updatePatterns(entry);
+    this.addToBuffer(entry);
+  }
+
+  async persist(entry) {
+    if (this.isProd() && entry.severity !== 'fatal') return;
+    
+    try {
+      const logData = {
+        ...entry,
+        version: this.plugin.manifest.version,
+        platform: this.getPlatform()
+      };
+      
+      const logFile = `${this.plugin.manifest.dir}/errors.jsonl`;
+      await this.plugin.app.vault.adapter.append(logFile, JSON.stringify(logData) + '\n');
+      
+      if (entry.severity === 'fatal') {
+        await this.createFatalReport(entry);
+      }
+    } catch {}
+  }
+
+  act(entry) {
+    const level = this.severities[entry.severity] || 1;
+    
+    if (level <= 1 || this.plugin.settings?.debugMode) {
+      console.error(`[Zoro-${entry.severity.toUpperCase()}] ${entry.type}: ${entry.message}`, {
+        meta: entry.meta,
+        context: entry.context,
+        id: entry.id
+      });
+    }
+    
+    if (entry.severity === 'fatal') {
+      this.handleFatalError(entry);
+    }
+  }
+
+  async executeRecovery(recovery, error, originalFn) {
+    this.metrics.recovery.attempts++;
+    
+    try {
+      let result;
+      
+      if (typeof recovery === 'function') {
+        result = await recovery(error);
+      } else if (typeof recovery === 'string' && this.recoveryStrategies.has(recovery)) {
+        result = await this.recoveryStrategies.get(recovery)(error, originalFn);
+      } else {
+        result = recovery;
+      }
+      
+      this.metrics.recovery.success++;
+      this.build('RECOVERY_SUCCESS', 'Automatic recovery succeeded', 
+        { strategy: typeof recovery, originalError: error.type }, 'info');
+      
+      return result;
+    } catch (err) {
+      throw err;
+    }
+  }
+
+  correlate(entry) {
+    const key = entry.fingerprint;
+    
+    if (!this.correlationMap.has(key)) {
+      this.correlationMap.set(key, []);
+    }
+    
+    const correlations = this.correlationMap.get(key);
+    correlations.push(entry.id);
+    
+    if (correlations.length > 10) {
+      correlations.shift();
+    }
+    
+    if (correlations.length > 3) {
+      const frequency = correlations.length;
+      const timeSpan = entry.timestamp - (this.buffer.find(e => e.id === correlations[0])?.timestamp || 0);
+      
+      if (timeSpan < 5 * 60 * 1000) {
+        this.build('ERROR_PATTERN', `Recurring error detected: ${entry.type}`, 
+          { frequency, timeSpanMs: timeSpan, pattern: key }, 'warn');
+      }
+    }
+  }
+
+  checkAlerts(entry) {
+    const threshold = this.alertThresholds[entry.severity];
+    if (!threshold) return;
+    
+    const recentCount = this.buffer.filter(e => 
+      e.severity === entry.severity && 
+      (entry.timestamp - e.timestamp) < 5 * 60 * 1000
+    ).length;
+    
+    if (recentCount >= threshold) {
+      this.build('ALERT_THRESHOLD', `${recentCount} ${entry.severity} errors in 5 minutes`, 
+        { severity: entry.severity, count: recentCount, threshold }, 'fatal');
+    }
+  }
+
+  initRecoveryStrategies() {
+    this.recoveryStrategies.set('cache_fallback', async (error, originalFn) => {
+      if (error.type?.includes('NETWORK') || error.type?.includes('TIMEOUT')) {
+        return this.plugin.cache?.get(`fallback_${error.fingerprint}`) || null;
+      }
+      return null;
+    });
+    
+    this.recoveryStrategies.set('retry_once', async (error, originalFn) => {
+      await this.sleep(1000);
+      return await originalFn();
+    });
+    
+    this.recoveryStrategies.set('degrade_gracefully', async (error) => {
+      return { error: true, message: 'Service temporarily unavailable', degraded: true };
+    });
+  }
+
+  startBackgroundTasks() {
+    setInterval(() => this.cleanupOldData(), 10 * 60 * 1000);
+    setInterval(() => this.analyzePatterns(), 30 * 60 * 1000);
+  }
+
+  cleanupOldData() {
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    
+    this.buffer = this.buffer.filter(e => e.timestamp > cutoff);
+    
+    for (const [key, times] of this.metrics.perHour.entries()) {
+      if (key * 60 * 60 * 1000 < cutoff) {
+        this.metrics.perHour.delete(key);
+      }
+    }
+    
+    for (const [key, correlations] of this.correlationMap.entries()) {
+      const validCorrelations = correlations.filter(id => 
+        this.buffer.some(e => e.id === id)
+      );
+      
+      if (validCorrelations.length === 0) {
+        this.correlationMap.delete(key);
+      } else {
+        this.correlationMap.set(key, validCorrelations);
+      }
+    }
+  }
+
+  analyzePatterns() {
+    const patterns = new Map();
+    const now = Date.now();
+    const window = 60 * 60 * 1000;
+    
+    const recentErrors = this.buffer.filter(e => now - e.timestamp < window);
+    
+    for (const error of recentErrors) {
+      const pattern = `${error.type}_${error.context?.component || 'unknown'}`;
+      this.incrementMap(patterns, pattern);
+    }
+    
+    for (const [pattern, count] of patterns.entries()) {
+      if (count >= 5) {
+        this.build('PATTERN_DETECTED', `Error pattern analysis: ${pattern}`, 
+          { pattern, count, window: '1h' }, 'info');
+      }
+    }
+  }
+
+  async createFatalReport(entry) {
+    const report = {
+      timestamp: new Date(entry.timestamp).toISOString(),
+      error: entry,
+      system: {
+        plugin: this.plugin.manifest,
+        platform: this.getPlatform(),
+        settings: this.sanitizeSettings(),
+        uptime: Date.now() - this.startTime
+      },
+      context: {
+        recentErrors: this.buffer.slice(0, 10),
+        metrics: this.getMetrics(),
+        activeRequests: this.plugin.requestQueue?.getMetrics?.() || null
+      }
+    };
+    
+    try {
+      const reportFile = `${this.plugin.manifest.dir}/fatal-${Date.now()}.json`;
+      await this.plugin.app.vault.adapter.write(reportFile, JSON.stringify(report, null, 2));
+    } catch {}
+  }
+
+  handleFatalError(entry) {
+    setTimeout(() => {
+      new Notice('🧨 Fatal error occurred. Check console and restart Obsidian.', 10000);
+    }, 100);
+  }
+
+  generateCorrelationId() {
+    return `${Date.now()}-${Math.random().toString(36).substr(2, 8)}`;
+  }
+
+  generateFingerprint(type, message) {
+    const normalizedMessage = message.replace(/\d+/g, 'N').replace(/['"]/g, '');
+    return btoa(`${type}:${normalizedMessage}`).substr(0, 16);
+  }
+
+  captureStack() {
+    return new Error().stack?.split('\n').slice(3, 8).join('\n') || 'No stack available';
+  }
+
+  getSessionInfo() {
+    return {
+      startTime: this.startTime,
+      uptime: Date.now() - this.startTime,
+      errors: this.metrics.total
+    };
+  }
+
+  getContext() {
+    return {
+      component: this.getCurrentComponent(),
+      activeView: this.plugin.app?.workspace?.activeLeaf?.view?.getViewType?.() || null,
+      plugin: {
+        version: this.plugin.manifest.version,
+        enabled: true
+      }
+    };
+  }
+
+  getCurrentComponent() {
+    const stack = new Error().stack;
+    if (stack?.includes('Api.')) return 'api';
+    if (stack?.includes('Cache.')) return 'cache';
+    if (stack?.includes('Render.')) return 'render';
+    if (stack?.includes('RequestQueue.')) return 'queue';
+    return 'unknown';
+  }
+
+  classifyErrorSeverity(error) {
+    if (error.message?.includes('fatal') || error.name === 'FatalError') return 'fatal';
+    if (error.status >= 500) return 'error';
+    if (error.status >= 400) return 'warn';
+    if (error.name === 'TimeoutError') return 'warn';
+    return 'error';
+  }
+
+  sanitizeMeta(meta) {
+    if (!meta || typeof meta !== 'object') return meta;
+    
+    const sanitized = { ...meta };
+    const sensitiveKeys = ['accessToken', 'clientSecret', 'password', 'key', 'secret'];
+    
+    for (const key of sensitiveKeys) {
+      if (key in sanitized) {
+        sanitized[key] = '[REDACTED]';
+      }
+    }
+    
+    return sanitized;
+  }
+
+  sanitizeSettings() {
+    const settings = { ...this.plugin.settings };
+    const sensitive = ['accessToken', 'clientSecret', 'malAccessToken', 'malClientSecret'];
+    
+    for (const key of sensitive) {
+      if (settings[key]) {
+        settings[key] = settings[key] ? '[SET]' : '[UNSET]';
+      }
+    }
+    
+    return settings;
+  }
+
+  toUserMessage(message, severity, type) {
+    const templates = {
+      NETWORK_ERROR: '🌐 Connection issue. Please check your internet.',
+      TIMEOUT: '⏱️ Request timed out. Please try again.',
+      AUTH_ERROR: '🔑 Authentication failed. Please re-login.',
+      RATE_LIMITED: '🚦 Too many requests. Please wait a moment.',
+      CACHE_ERROR: '💾 Cache issue detected.',
+      UNKNOWN_ERROR: '❓ An unexpected error occurred.'
+    };
+    
+    const template = templates[type];
+    if (template) return template;
+    
+    const prefixes = {
+      fatal: '🧨',
+      error: '❌',
+      warn: '⚠️',
+      info: 'ℹ️',
+      debug: '🔍'
+    };
+    
+    return `${prefixes[severity] || '❌'} ${message}`;
+  }
+
+  createErrorObject(entry) {
+    const error = new Error(entry.message);
+    error.type = entry.type;
+    error.severity = entry.severity;
+    error.id = entry.id;
+    error.timestamp = entry.timestamp;
+    error.userMessage = entry.userMessage;
+    error.fingerprint = entry.fingerprint;
+    error.meta = entry.meta;
+    return error;
+  }
+
+  isRateLimited(type) {
+    const now = Date.now();
+    const key = `notice_${type}`;
+    const lastNotice = this.rateLimiter.get(key) || 0;
+    
+    if (now - lastNotice < 5000) {
+      return true;
+    }
+    
+    this.rateLimiter.set(key, now);
+    return false;
+  }
+
+  getNoticeDuration(severity) {
+    const durations = { fatal: 15000, error: 8000, warn: 5000, info: 3000, debug: 2000 };
+    return durations[severity] || 5000;
+  }
+
+  incrementMap(map, key) {
+    map.set(key, (map.get(key) || 0) + 1);
+  }
+
+  addToBuffer(entry) {
+    this.buffer.unshift(entry);
+    if (this.buffer.length > this.maxBuffer) {
+      this.buffer.pop();
+    }
+  }
+
+  updatePatterns(entry) {
+    const pattern = `${entry.type}_${entry.severity}`;
+    this.incrementMap(this.metrics.patterns, pattern);
+  }
+
+  getPlatform() {
+    return {
+      userAgent: navigator.userAgent,
+      platform: navigator.platform,
+      language: navigator.language,
+      obsidian: this.plugin.app?.appId || 'unknown'
+    };
+  }
+
+  isProd() {
+    return !this.plugin.settings?.debugMode;
+  }
+
+  sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  getMetrics() {
+    const now = Date.now();
+    const uptime = now - this.startTime;
+    const recentErrors = this.buffer.filter(e => now - e.timestamp < 60 * 60 * 1000).length;
+    
+    return {
+      total: this.metrics.total,
+      uptime: this.formatDuration(uptime),
+      recentHour: recentErrors,
+      byType: Object.fromEntries(this.metrics.perType),
+      bySeverity: Object.fromEntries(this.metrics.perSeverity),
+      patterns: Object.fromEntries(this.metrics.patterns),
+      recovery: this.metrics.recovery,
+      errorRate: uptime > 0 ? (this.metrics.total / (uptime / 1000 / 60)).toFixed(2) + '/min' : '0/min'
+    };
+  }
+
+  formatDuration(ms) {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    
+    if (days > 0) return `${days}d ${hours % 24}h`;
+    if (hours > 0) return `${hours}h ${minutes % 60}m`;
+    if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
+    return `${seconds}s`;
+  }
+
+  dump() {
+    return {
+      recent: this.buffer.slice(0, 20),
+      metrics: this.getMetrics(),
+      correlations: Object.fromEntries(this.correlationMap),
+      health: this.getHealthStatus()
+    };
+  }
+
+  getHealthStatus() {
+    const now = Date.now();
+    const recentErrors = this.buffer.filter(e => now - e.timestamp < 5 * 60 * 1000);
+    const fatalCount = recentErrors.filter(e => e.severity === 'fatal').length;
+    const errorCount = recentErrors.filter(e => e.severity === 'error').length;
+    
+    let status = 'healthy';
+    if (fatalCount > 0 || errorCount > 10) status = 'critical';
+    else if (errorCount > 5 || recentErrors.length > 15) status = 'degraded';
+    
+    return {
+      status,
+      recentErrors: recentErrors.length,
+      fatalErrors: fatalCount,
+      recoveryRate: this.metrics.recovery.attempts > 0 ? 
+        (this.metrics.recovery.success / this.metrics.recovery.attempts * 100).toFixed(1) + '%' : 'N/A'
+    };
+  }
+
+  async destroy() {
+    if (this.metrics.total > 0) {
+      await this.persist(this.build('SHUTDOWN', 'Error system shutting down', 
+        { totalErrors: this.metrics.total, uptime: Date.now() - this.startTime }, 'info'));
+    }
+    
+    this.buffer = [];
+    this.metrics = { total: 0, perType: new Map(), perSeverity: new Map() };
+    this.correlationMap.clear();
+    this.rateLimiter.clear();
+  }
+}
 
 class Cache {
   constructor(config = {}) {
@@ -78,7 +646,10 @@ class Cache {
       this.initializeCache();
     }
   }
-
+  enableDebug(enabled = true) {
+  this.flags.debugMode = enabled;
+  console.log(`[Zoro] Cache debug ${enabled ? 'ON' : 'OFF'}`);
+}
   async initializeCache() {
     try {
       await this.loadFromDisk();
@@ -772,55 +1343,1034 @@ class Cache {
 class RequestQueue {
   constructor(plugin) {
     this.plugin = plugin;
-    this.queue = [];
-    this.delay = 700;
-    this.isProcessing = false;
+    
+    // Multiple priority queues
+    this.queues = {
+      high: [],      // Auth, critical user actions
+      normal: [],    // Regular API calls
+      low: [],       // Background refresh, preloading
+      batch: []      // Batch operations
+    };
+    
+    // Enterprise configuration with MAL-aware settings
+    this.config = {
+      baseDelay: 700,
+      maxDelay: 5000,
+      minDelay: 100,
+      adaptiveDelayEnabled: true,
+      maxConcurrent: 3,
+      maxRetries: 3,
+      timeoutMs: 30000,
+      rateLimitBuffer: 0.8, // Use 80% of rate limit
+      batchSize: 5,
+      batchDelay: 100,
+      // MAL-specific configuration
+      malConfig: {
+        baseDelay: 1000,      // MAL is more conservative
+        maxConcurrent: 2,     // Lower concurrency for MAL
+        rateLimitBuffer: 0.7, // More conservative rate limiting
+        authRetryDelay: 2000, // Delay for auth retries
+        maxAuthRetries: 2     // Limited auth retries
+      }
+    };
+    
+    // State management
+    this.state = {
+      isProcessing: false,
+      activeRequests: new Map(),
+      completedRequests: 0,
+      failedRequests: 0,
+      totalProcessingTime: 0,
+      lastRequestTime: 0,
+      currentDelay: this.config.baseDelay,
+      concurrentCount: 0,
+      // MAL-specific state
+      malState: {
+        lastAuthCheck: 0,
+        authCheckInterval: 300000, // 5 minutes
+        consecutiveAuthFailures: 0,
+        lastMalRequest: 0
+      }
+    };
+    
+    // Enhanced rate limiting with service-specific limits
+    this.rateLimiter = {
+      // AniList limits
+      anilist: {
+        requests: [],
+        windowMs: 60000, // 1 minute window
+        maxRequests: 90, // AniList limit
+        resetTime: null,
+        remaining: 90
+      },
+      // MAL limits (more conservative)
+      mal: {
+        requests: [],
+        windowMs: 60000, // 1 minute window  
+        maxRequests: 60, // Conservative MAL limit
+        resetTime: null,
+        remaining: 60
+      }
+    };
+    
+    // Adaptive delay system with service awareness
+    this.adaptiveDelay = {
+      successStreak: 0,
+      errorStreak: 0,
+      lastAdjustment: Date.now(),
+      samples: [],
+      avgResponseTime: 0,
+      // Service-specific adaptive delays
+      serviceDelays: {
+        anilist: this.config.baseDelay,
+        mal: this.config.malConfig.baseDelay
+      }
+    };
+    
+    // Enhanced metrics with service breakdown
+    this.metrics = {
+      requestsQueued: 0,
+      requestsProcessed: 0,
+      requestsFailed: 0,
+      averageWaitTime: 0,
+      averageProcessingTime: 0,
+      queuePeakSize: 0,
+      rateLimitHits: 0,
+      timeouts: 0,
+      retries: 0,
+      batchedRequests: 0,
+      startTime: Date.now(),
+      // Service-specific metrics
+      serviceMetrics: {
+        anilist: { requests: 0, errors: 0, avgTime: 0 },
+        mal: { requests: 0, errors: 0, avgTime: 0, authErrors: 0 }
+      }
+    };
+    
+    // Request tracking
+    this.requestTracker = new Map();
+    this.batchTimer = null;
+    this.healthCheckInterval = null;
+    
+    // UI state
+    this.loaderState = {
+      visible: false,
+      requestCount: 0,
+      lastUpdate: 0
+    };
+    
+    // Start background processes
+    this.startBackgroundTasks();
   }
-  add(requestFn) {
+
+  // =================== ENHANCED CORE OPERATIONS ===================
+  
+  add(requestFn, options = {}) {
+    const {
+      priority = 'normal',
+      timeout = this.config.timeoutMs,
+      retries = this.config.maxRetries,
+      batchable = false,
+      metadata = {},
+      service = 'anilist' // New: service identification
+    } = options;
+    
+    const requestId = this.generateRequestId();
+    const queueTime = Date.now();
+    
+    // MAL-specific adjustments
+    const adjustedOptions = this.adjustOptionsForService(service, {
+      timeout, retries, priority
+    });
+    
     return new Promise((resolve, reject) => {
-      this.queue.push({ requestFn, resolve, reject });
+      const requestItem = {
+        requestFn,
+        resolve,
+        reject,
+        id: requestId,
+        priority,
+        timeout: adjustedOptions.timeout,
+        retries: adjustedOptions.retries,
+        batchable,
+        metadata: { ...metadata, service }, // Ensure service is tracked
+        queueTime,
+        startTime: null,
+        attempt: 0,
+        maxAttempts: adjustedOptions.retries + 1,
+        service // Explicit service tracking
+      };
+      
+      // Add to appropriate queue
+      if (batchable && this.config.batchSize > 1) {
+        this.queues.batch.push(requestItem);
+        this.scheduleBatchProcessing();
+      } else {
+        this.queues[priority].push(requestItem);
+      }
+      
+      this.metrics.requestsQueued++;
+      this.updateQueueMetrics();
+      
+      // Start processing
       this.process();
+      
+      // Track request for monitoring
+      this.requestTracker.set(requestId, {
+        queueTime,
+        priority,
+        service,
+        metadata: this.sanitizeMetadata(metadata)
+      });
     });
   }
-
-  showGlobalLoader() {
-    if (!this.plugin?.settings?.showLoadingIcon) return;
-    document.getElementById('zoro-global-loader')?.classList.add('zoro-show');
+  
+  // New: Service-specific option adjustments
+  adjustOptionsForService(service, options) {
+    if (service === 'mal') {
+      return {
+        timeout: Math.max(options.timeout, 30000), // MAL needs more time
+        retries: Math.min(options.retries, this.config.malConfig.maxAuthRetries),
+        priority: options.priority
+      };
+    }
+    return options;
   }
-
-  hideGlobalLoader() {
-    document.getElementById('zoro-global-loader')?.classList.remove('zoro-show');
-  }
-
+  
   async process() {
-    if (this.isProcessing || !this.queue.length) {
-      if (!this.queue.length) this.hideGlobalLoader();
+    if (this.state.isProcessing || this.getTotalQueueSize() === 0) {
+      if (this.getTotalQueueSize() === 0) {
+        this.hideGlobalLoader();
+      }
       return;
     }
-    this.isProcessing = true;
-    if (this.queue.length === 1) this.showGlobalLoader();
-
-    const { requestFn, resolve, reject } = this.queue.shift();
-    try {
-      const result = await requestFn();
-      resolve(result);
-    } catch (err) {
-      reject(err);
-    } finally {
-      setTimeout(() => {
-        this.isProcessing = false;
-        this.process();
-      }, this.delay);
+    
+    // Service-aware concurrency check
+    const requestItem = this.peekNextRequest();
+    if (requestItem && !this.canProcessRequest(requestItem)) {
+      return;
     }
+    
+    this.state.isProcessing = true;
+    
+    try {
+      // Get next request by priority
+      const actualRequestItem = this.getNextRequest();
+      if (!actualRequestItem) {
+        this.state.isProcessing = false;
+        return;
+      }
+      
+      // Show loader if needed
+      this.updateLoaderState();
+      
+      // Enhanced rate limiting check with service awareness
+      const rateLimitCheck = this.checkServiceRateLimit(actualRequestItem.service);
+      if (!rateLimitCheck.allowed) {
+        // Re-queue the request and wait
+        this.queues[actualRequestItem.priority].unshift(actualRequestItem);
+        this.state.isProcessing = false;
+        
+        this.log('RATE_LIMITED', actualRequestItem.id, 
+          `${actualRequestItem.service} rate limited - waiting ${rateLimitCheck.waitTime}ms`);
+        setTimeout(() => this.process(), rateLimitCheck.waitTime);
+        return;
+      }
+      
+      // MAL-specific pre-request validation
+      if (actualRequestItem.service === 'mal') {
+        const authCheck = await this.validateMalAuth(actualRequestItem);
+        if (!authCheck.valid) {
+          this.handleMalAuthFailure(actualRequestItem, authCheck.error);
+          return;
+        }
+      }
+      
+      // Process the request
+      await this.executeRequest(actualRequestItem);
+      
+    } finally {
+      this.state.isProcessing = false;
+      
+      // Continue processing if there are more requests
+      if (this.getTotalQueueSize() > 0) {
+        const delay = this.calculateServiceAwareDelay(requestItem?.service);
+        setTimeout(() => this.process(), delay);
+      }
+    }
+  }
+  
+  // New: Service-aware concurrency management
+  canProcessRequest(requestItem) {
+    const service = requestItem.service || 'anilist';
+    const currentServiceRequests = Array.from(this.state.activeRequests.values())
+      .filter(req => req.service === service).length;
+    
+    const maxConcurrent = service === 'mal' 
+      ? this.config.malConfig.maxConcurrent 
+      : this.config.maxConcurrent;
+    
+    return this.state.concurrentCount < this.config.maxConcurrent && 
+           currentServiceRequests < maxConcurrent;
+  }
+  
+  // New: Peek at next request without removing it
+  peekNextRequest() {
+    const priorities = ['high', 'normal', 'low'];
+    for (const priority of priorities) {
+      if (this.queues[priority].length > 0) {
+        return this.queues[priority][0];
+      }
+    }
+    return null;
+  }
+  
+  async executeRequest(requestItem) {
+    const { requestFn, resolve, reject, id, timeout, service } = requestItem;
+    
+    this.state.concurrentCount++;
+    this.state.activeRequests.set(id, requestItem);
+    requestItem.startTime = Date.now();
+    requestItem.attempt++;
+    
+    const waitTime = requestItem.startTime - requestItem.queueTime;
+    
+    // Update service-specific state
+    if (service === 'mal') {
+      this.state.malState.lastMalRequest = Date.now();
+    }
+    
+    try {
+      this.log('REQUEST_START', id, {
+        service,
+        attempt: requestItem.attempt,
+        waitTime: `${waitTime}ms`,
+        queueSize: this.getTotalQueueSize()
+      });
+      
+      // Execute with timeout
+      const timeoutPromise = new Promise((_, timeoutReject) => {
+        setTimeout(() => timeoutReject(new Error('Request timeout')), timeout);
+      });
+      
+      const result = await Promise.race([requestFn(), timeoutPromise]);
+      
+      // Success handling with service awareness
+      const processingTime = Date.now() - requestItem.startTime;
+      this.handleRequestSuccess(requestItem, result, processingTime, waitTime);
+      resolve(result);
+      
+    } catch (error) {
+      const processingTime = Date.now() - requestItem.startTime;
+      const shouldRetry = await this.handleRequestError(requestItem, error, processingTime, waitTime);
+      
+      if (shouldRetry) {
+        // Service-specific retry delay
+        const retryDelay = this.calculateServiceRetryDelay(requestItem.attempt, service);
+        await this.sleep(retryDelay);
+        
+        // Re-queue for retry
+        this.queues[requestItem.priority].unshift(requestItem);
+        this.metrics.retries++;
+      } else {
+        reject(error);
+      }
+    } finally {
+      this.state.concurrentCount--;
+      this.state.activeRequests.delete(id);
+      this.requestTracker.delete(id);
+    }
+  }
+
+  // =================== MAL-SPECIFIC ENHANCEMENTS ===================
+  
+  // New: MAL authentication validation
+  async validateMalAuth(requestItem) {
+    const now = Date.now();
+    
+    // Skip frequent auth checks
+    if (now - this.state.malState.lastAuthCheck < this.state.malState.authCheckInterval) {
+      return { valid: true };
+    }
+    
+    try {
+      // Check if we need token refresh
+      if (this.plugin.malAuth && typeof this.plugin.malAuth.ensureValidToken === 'function') {
+        await this.plugin.malAuth.ensureValidToken();
+        this.state.malState.lastAuthCheck = now;
+        this.state.malState.consecutiveAuthFailures = 0;
+        return { valid: true };
+      }
+      
+      // Fallback check
+      if (!this.plugin.settings?.malAccessToken) {
+        return { 
+          valid: false, 
+          error: 'No MAL access token available' 
+        };
+      }
+      
+      return { valid: true };
+      
+    } catch (error) {
+      this.state.malState.consecutiveAuthFailures++;
+      this.metrics.serviceMetrics.mal.authErrors++;
+      
+      return { 
+        valid: false, 
+        error: error.message || 'MAL authentication failed' 
+      };
+    }
+  }
+  
+  // New: Handle MAL authentication failures
+  handleMalAuthFailure(requestItem, errorMessage) {
+    this.log('MAL_AUTH_FAILURE', requestItem.id, errorMessage);
+    
+    // If too many consecutive auth failures, reject immediately
+    if (this.state.malState.consecutiveAuthFailures >= this.config.malConfig.maxAuthRetries) {
+      requestItem.reject(new Error(`MAL authentication persistently failing: ${errorMessage}`));
+      this.state.isProcessing = false;
+      return;
+    }
+    
+    // Re-queue with auth retry delay
+    setTimeout(() => {
+      this.queues[requestItem.priority].unshift(requestItem);
+      this.state.isProcessing = false;
+      this.process();
+    }, this.config.malConfig.authRetryDelay);
+  }
+
+  // =================== ENHANCED RATE LIMITING ===================
+  
+  // New: Service-aware rate limiting
+  checkServiceRateLimit(service = 'anilist') {
+    const limiter = this.rateLimiter[service] || this.rateLimiter.anilist;
+    const now = Date.now();
+    
+    // Clean old requests
+    limiter.requests = limiter.requests.filter(
+      time => now - time < limiter.windowMs
+    );
+    
+    // Get service-specific buffer
+    const buffer = service === 'mal' 
+      ? this.config.malConfig.rateLimitBuffer 
+      : this.config.rateLimitBuffer;
+    
+    // Check if we can make a request
+    const maxAllowed = Math.floor(limiter.maxRequests * buffer);
+    
+    if (limiter.requests.length >= maxAllowed) {
+      const oldestRequest = Math.min(...limiter.requests);
+      const waitTime = limiter.windowMs - (now - oldestRequest);
+      
+      this.metrics.rateLimitHits++;
+      return { 
+        allowed: false, 
+        waitTime: Math.max(waitTime, service === 'mal' ? 2000 : 1000),
+        service 
+      };
+    }
+    
+    // Record the request
+    limiter.requests.push(now);
+    return { allowed: true, waitTime: 0, service };
+  }
+  
+  // Enhanced rate limit info update with service awareness
+  updateRateLimitInfo(headers, service = 'anilist') {
+    const limiter = this.rateLimiter[service];
+    if (!limiter) return;
+    
+    if (headers && headers['x-ratelimit-remaining']) {
+      limiter.remaining = parseInt(headers['x-ratelimit-remaining']);
+    }
+    if (headers && headers['x-ratelimit-reset']) {
+      limiter.resetTime = new Date(headers['x-ratelimit-reset']);
+    }
+  }
+
+  // =================== ENHANCED ADAPTIVE DELAY ===================
+  
+  // New: Service-aware delay calculation
+  calculateServiceAwareDelay(service = 'anilist') {
+    if (!this.config.adaptiveDelayEnabled) {
+      return service === 'mal' 
+        ? this.config.malConfig.baseDelay 
+        : this.config.baseDelay;
+    }
+    
+    const serviceDelay = this.adaptiveDelay.serviceDelays[service] || this.config.baseDelay;
+    let delay = serviceDelay;
+    
+    // Service-specific adjustments
+    if (service === 'mal') {
+      // MAL is more sensitive to rapid requests
+      const timeSinceLastMal = Date.now() - this.state.malState.lastMalRequest;
+      if (timeSinceLastMal < 1000) {
+        delay = Math.max(delay, 1500);
+      }
+      
+      // Account for auth failures
+      if (this.state.malState.consecutiveAuthFailures > 0) {
+        delay *= (1 + this.state.malState.consecutiveAuthFailures * 0.5);
+      }
+    }
+    
+    // Apply standard adaptive logic
+    const limiter = this.rateLimiter[service] || this.rateLimiter.anilist;
+    const rateLimitUtilization = limiter.requests.length / limiter.maxRequests;
+    
+    if (rateLimitUtilization > 0.8) {
+      delay = Math.min(delay * 1.5, this.config.maxDelay);
+    } else if (rateLimitUtilization < 0.3) {
+      delay = Math.max(delay * 0.8, this.config.minDelay);
+    }
+    
+    // Update service delay
+    this.adaptiveDelay.serviceDelays[service] = delay;
+    
+    return Math.floor(delay);
+  }
+  
+  // New: Service-specific retry delay
+  calculateServiceRetryDelay(attempt, service = 'anilist') {
+    const baseDelay = service === 'mal' ? 2000 : 1000;
+    const maxDelay = service === 'mal' ? 15000 : 10000;
+    const exponentialDelay = baseDelay * Math.pow(2, attempt - 1);
+    const jitter = Math.random() * 1000;
+    
+    return Math.min(exponentialDelay + jitter, maxDelay);
+  }
+
+  // =================== ENHANCED ERROR HANDLING ===================
+  
+  handleRequestSuccess(requestItem, result, processingTime, waitTime) {
+    const { service = 'anilist' } = requestItem;
+    
+    this.state.completedRequests++;
+    this.state.totalProcessingTime += processingTime;
+    this.updateAdaptiveDelay(true, processingTime, service);
+    
+    // Update service-specific metrics
+    const serviceMetric = this.metrics.serviceMetrics[service];
+    if (serviceMetric) {
+      serviceMetric.requests++;
+      serviceMetric.avgTime = (serviceMetric.avgTime + processingTime) / 2;
+    }
+    
+    this.metrics.requestsProcessed++;
+    this.updateMetrics(waitTime, processingTime);
+    
+    this.log('REQUEST_SUCCESS', requestItem.id, {
+      service,
+      attempt: requestItem.attempt,
+      processingTime: `${processingTime}ms`,
+      waitTime: `${waitTime}ms`
+    });
+  }
+  
+  async handleRequestError(requestItem, error, processingTime, waitTime) {
+    const { service = 'anilist' } = requestItem;
+    
+    this.state.failedRequests++;
+    this.updateAdaptiveDelay(false, processingTime, service);
+    
+    // Update service-specific error metrics
+    const serviceMetric = this.metrics.serviceMetrics[service];
+    if (serviceMetric) {
+      serviceMetric.errors++;
+    }
+    
+    // Service-specific error handling
+    const shouldRetry = this.shouldRetryRequest(requestItem, error);
+    
+    if (shouldRetry) {
+      this.log('REQUEST_RETRY', requestItem.id, {
+        service,
+        attempt: requestItem.attempt,
+        maxAttempts: requestItem.maxAttempts,
+        error: error.message,
+        nextRetryIn: `${this.calculateServiceRetryDelay(requestItem.attempt, service)}ms`
+      });
+      
+      return true;
+    } else {
+      this.metrics.requestsFailed++;
+      this.log('REQUEST_FAILED', requestItem.id, {
+        service,
+        attempt: requestItem.attempt,
+        error: error.message,
+        processingTime: `${processingTime}ms`,
+        waitTime: `${waitTime}ms`
+      });
+      return false;
+    }
+  }
+  
+  shouldRetryRequest(requestItem, error) {
+    const { service = 'anilist' } = requestItem;
+    
+    if (requestItem.attempt >= requestItem.maxAttempts) {
+      return false;
+    }
+    
+    // MAL-specific retry logic
+    if (service === 'mal') {
+      // Don't retry MAL auth errors beyond limit
+      if (error.message.includes('auth') || error.message.includes('401')) {
+        return requestItem.attempt < this.config.malConfig.maxAuthRetries;
+      }
+      
+      // MAL is stricter about retries
+      if (error.status >= 400 && error.status < 500) {
+        return false;
+      }
+    }
+    
+    // Standard retry logic
+    if (error.message.includes('timeout')) {
+      this.metrics.timeouts++;
+      return true;
+    }
+    
+    if (error.status >= 400 && error.status < 500) {
+      return false;
+    }
+    
+    return true;
+  }
+  
+  // Enhanced adaptive delay update with service awareness
+  updateAdaptiveDelay(success, responseTime, service = 'anilist') {
+    if (success) {
+      this.adaptiveDelay.successStreak++;
+      this.adaptiveDelay.errorStreak = 0;
+    } else {
+      this.adaptiveDelay.errorStreak++;
+      this.adaptiveDelay.successStreak = 0;
+    }
+    
+    // Update response time average
+    this.adaptiveDelay.samples.push({ time: responseTime, service });
+    if (this.adaptiveDelay.samples.length > 100) {
+      this.adaptiveDelay.samples = this.adaptiveDelay.samples.slice(-50);
+    }
+    
+    // Calculate service-specific average response times
+    const serviceSamples = this.adaptiveDelay.samples.filter(s => s.service === service);
+    if (serviceSamples.length > 0) {
+      const serviceAvg = serviceSamples.reduce((a, b) => a + b.time, 0) / serviceSamples.length;
+      
+      // Adjust service delay based on performance
+      if (serviceAvg > 3000 && service === 'mal') {
+        this.adaptiveDelay.serviceDelays[service] = Math.min(
+          this.adaptiveDelay.serviceDelays[service] * 1.2,
+          this.config.maxDelay
+        );
+      }
+    }
+    
+    this.adaptiveDelay.avgResponseTime = 
+      this.adaptiveDelay.samples.reduce((a, b) => a + b.time, 0) / this.adaptiveDelay.samples.length;
+  }
+
+  // =================== ENHANCED METRICS ===================
+  
+  getMetrics() {
+    const now = Date.now();
+    const uptime = now - this.metrics.startTime;
+    const totalRequests = this.metrics.requestsProcessed + this.metrics.requestsFailed;
+    const successRate = totalRequests > 0 ? (this.metrics.requestsProcessed / totalRequests) : 1;
+    
+    return {
+      uptime: this.formatDuration(uptime),
+      queue: {
+        current: this.getQueueSizes(),
+        total: this.getTotalQueueSize(),
+        peak: this.metrics.queuePeakSize,
+        processed: this.metrics.requestsProcessed,
+        failed: this.metrics.requestsFailed,
+        retries: this.metrics.retries
+      },
+      performance: {
+        successRate: `${(successRate * 100).toFixed(2)}%`,
+        averageWaitTime: `${this.metrics.averageWaitTime.toFixed(0)}ms`,
+        averageProcessingTime: `${this.metrics.averageProcessingTime.toFixed(0)}ms`,
+        currentDelay: `${this.state.currentDelay}ms`
+      },
+      rateLimit: {
+        anilist: {
+          requests: this.rateLimiter.anilist.requests.length,
+          maxRequests: this.rateLimiter.anilist.maxRequests,
+          remaining: this.rateLimiter.anilist.remaining,
+          utilization: `${((this.rateLimiter.anilist.requests.length / this.rateLimiter.anilist.maxRequests) * 100).toFixed(1)}%`
+        },
+        mal: {
+          requests: this.rateLimiter.mal.requests.length,
+          maxRequests: this.rateLimiter.mal.maxRequests,
+          remaining: this.rateLimiter.mal.remaining,
+          utilization: `${((this.rateLimiter.mal.requests.length / this.rateLimiter.mal.maxRequests) * 100).toFixed(1)}%`
+        },
+        hits: this.metrics.rateLimitHits
+      },
+      concurrency: {
+        active: this.state.concurrentCount,
+        max: this.config.maxConcurrent
+      },
+      adaptive: {
+        successStreak: this.adaptiveDelay.successStreak,
+        errorStreak: this.adaptiveDelay.errorStreak,
+        avgResponseTime: `${this.adaptiveDelay.avgResponseTime.toFixed(0)}ms`,
+        serviceDelays: {
+          anilist: `${this.adaptiveDelay.serviceDelays.anilist.toFixed(0)}ms`,
+          mal: `${this.adaptiveDelay.serviceDelays.mal.toFixed(0)}ms`
+        }
+      },
+      services: this.metrics.serviceMetrics,
+      mal: {
+        lastAuthCheck: new Date(this.state.malState.lastAuthCheck).toISOString(),
+        authFailures: this.state.malState.consecutiveAuthFailures,
+        lastRequest: this.state.malState.lastMalRequest ? 
+          new Date(this.state.malState.lastMalRequest).toISOString() : 'never'
+      }
+    };
+  }
+
+  // =================== UTILITY METHODS (keeping existing ones) ===================
+  
+  getNextRequest() {
+    const priorities = ['high', 'normal', 'low'];
+    for (const priority of priorities) {
+      if (this.queues[priority].length > 0) {
+        return this.queues[priority].shift();
+      }
+    }
+    return null;
+  }
+  
+  getTotalQueueSize() {
+    return Object.values(this.queues).reduce((total, queue) => total + queue.length, 0);
+  }
+  
+  getQueueSizes() {
+    const sizes = {};
+    Object.keys(this.queues).forEach(priority => {
+      sizes[priority] = this.queues[priority].length;
+    });
+    return sizes;
+  }
+  
+  updateLoaderState() {
+    const totalRequests = this.getTotalQueueSize() + this.state.concurrentCount;
+    const shouldShow = totalRequests > 0;
+    
+    if (shouldShow && !this.loaderState.visible) {
+      this.showGlobalLoader();
+    } else if (!shouldShow && this.loaderState.visible) {
+      this.hideGlobalLoader();
+    }
+    
+    this.loaderState.requestCount = totalRequests;
+    this.loaderState.lastUpdate = Date.now();
+  }
+  
+  showGlobalLoader() {
+    if (!this.plugin?.settings?.showLoadingIcon) return;
+    
+    const loader = document.getElementById('zoro-global-loader');
+    if (loader) {
+      loader.classList.add('zoro-show');
+      this.loaderState.visible = true;
+      
+      const queueSize = this.getTotalQueueSize();
+      if (queueSize > 1) {
+        loader.setAttribute('data-count', queueSize);
+      }
+    }
+  }
+  
+  hideGlobalLoader() {
+    const loader = document.getElementById('zoro-global-loader');
+    if (loader) {
+      loader.classList.remove('zoro-show');
+      loader.removeAttribute('data-count');
+      this.loaderState.visible = false;
+    }
+  }
+  
+  updateMetrics(waitTime, processingTime) {
+    this.metrics.averageWaitTime = (this.metrics.averageWaitTime + waitTime) / 2;
+    this.metrics.averageProcessingTime = (this.metrics.averageProcessingTime + processingTime) / 2;
+    
+    const currentQueueSize = this.getTotalQueueSize();
+    if (currentQueueSize > this.metrics.queuePeakSize) {
+      this.metrics.queuePeakSize = currentQueueSize;
+    }
+  }
+  
+  updateQueueMetrics() {
+    const totalQueued = this.getTotalQueueSize();
+    this.metrics.queuePeakSize = Math.max(this.metrics.queuePeakSize, totalQueued);
+  }
+  
+  getHealthStatus() {
+    const metrics = this.getMetrics();
+    const queueSize = this.getTotalQueueSize();
+    const errorRate = this.metrics.requestsFailed / (this.metrics.requestsProcessed + this.metrics.requestsFailed);
+    
+    let status = 'healthy';
+    if (queueSize > 50 || errorRate > 0.1 || this.state.malState.consecutiveAuthFailures > 1) {
+      status = 'degraded';
+    }
+    if (queueSize > 100 || errorRate > 0.25 || this.state.malState.consecutiveAuthFailures >= this.config.malConfig.maxAuthRetries) {
+      status = 'unhealthy';
+    }
+    
+    return {
+      status,
+      queueSize,
+      errorRate: `${(errorRate * 100).toFixed(2)}%`,
+      activeRequests: this.state.concurrentCount,
+      rateLimitUtilization: {
+        anilist: metrics.rateLimit.anilist.utilization,
+        mal: metrics.rateLimit.mal.utilization
+      },
+      malAuthStatus: this.state.malState.consecutiveAuthFailures === 0 ? 'healthy' : 'degraded'
+    };
+  }
+  
+  startBackgroundTasks() {
+    this.healthCheckInterval = setInterval(() => {
+      this.performHealthCheck();
+    }, 30000);
+    
+    setInterval(() => {
+      this.cleanup();
+    }, 5 * 60 * 1000);
+  }
+  
+  performHealthCheck() {
+    const health = this.getHealthStatus();
+    
+    if (health.status === 'unhealthy') {
+      this.log('HEALTH_WARNING', 'system', 
+        `Queue unhealthy: ${health.queueSize} items, ${health.errorRate} error rate, MAL auth: ${health.malAuthStatus}`);
+      
+      if (this.getTotalQueueSize() > 200) {
+        this.clearLowPriorityQueue();
+      }
+    }
+  }
+  
+  cleanup() {
+    // Clear old adaptive delay samples
+    if (this.adaptiveDelay.samples.length > 100) {
+      this.adaptiveDelay.samples = this.adaptiveDelay.samples.slice(-50);
+    }
+    
+    // Clear old rate limit tracking for both services
+    const now = Date.now();
+    Object.keys(this.rateLimiter).forEach(service => {
+      this.rateLimiter[service].requests = this.rateLimiter[service].requests.filter(
+        time => now - time < this.rateLimiter[service].windowMs * 2
+      );
+    });
+    
+    // Reset MAL auth check interval if too old
+    if (now - this.state.malState.lastAuthCheck > this.state.malState.authCheckInterval * 2) {
+      this.state.malState.consecutiveAuthFailures = 0;
+    }
+  }
+  
+  // =================== BATCH PROCESSING (keeping existing) ===================
+  
+  scheduleBatchProcessing() {
+    if (this.batchTimer) return;
+    
+    this.batchTimer = setTimeout(() => {
+      this.processBatch();
+      this.batchTimer = null;
+    }, this.config.batchDelay);
+  }
+  
+  async processBatch() {
+    const batchItems = this.queues.batch.splice(0, this.config.batchSize);
+    if (batchItems.length === 0) return;
+    
+    this.log('BATCH_START', 'batch', `Processing ${batchItems.length} requests`);
+    
+    try {
+      const batches = this.groupBatchableRequests(batchItems);
+      
+      for (const [batchType, requests] of batches.entries()) {
+        await this.executeBatch(batchType, requests);
+      }
+      
+      this.metrics.batchedRequests += batchItems.length;
+      
+    } catch (error) {
+      batchItems.forEach(item => item.reject(error));
+      this.log('BATCH_ERROR', 'batch', error.message);
+    }
+  }
+  
+  groupBatchableRequests(items) {
+    const batches = new Map();
+    
+    items.forEach(item => {
+      const batchType = item.metadata.batchType || 'default';
+      if (!batches.has(batchType)) {
+        batches.set(batchType, []);
+      }
+      batches.get(batchType).push(item);
+    });
+    
+    return batches;
+  }
+  
+  async executeBatch(batchType, requests) {
+    // Execute individually with service-aware delays
+    for (const request of requests) {
+      await this.executeRequest(request);
+      const delay = request.service === 'mal' ? this.config.malConfig.baseDelay : this.config.minDelay;
+      await this.sleep(delay);
+    }
+  }
+  
+  // =================== UTILITY METHODS ===================
+  
+  generateRequestId() {
+    return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+  
+  sanitizeMetadata(metadata) {
+    const sanitized = { ...metadata };
+    delete sanitized.accessToken;
+    delete sanitized.clientSecret;
+    delete sanitized.malAccessToken;
+    return sanitized;
+  }
+  
+  sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+  
+  formatDuration(ms) {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    
+    if (hours > 0) return `${hours}h ${minutes % 60}m`;
+    if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
+    return `${seconds}s`;
+  }
+  
+  log(level, requestId, data = '') {
+    if (!this.plugin.settings?.debugMode && level !== 'ERROR') return;
+    
+    const timestamp = new Date().toISOString();
+    const logData = typeof data === 'object' ? JSON.stringify(data, null, 2) : data;
+    
+    console.log(`[${timestamp}] [Zoro-Queue] [${level}] [${requestId}] ${logData}`);
+  }
+  
+  // =================== QUEUE MANAGEMENT ===================
+  
+  pause() {
+    this.state.isProcessing = true;
+    this.log('QUEUE_PAUSED', 'system', 'Queue processing paused');
+  }
+  
+  resume() {
+    this.state.isProcessing = false;
+    this.process();
+    this.log('QUEUE_RESUMED', 'system', 'Queue processing resumed');
+  }
+  
+  clear(priority = null) {
+    if (priority) {
+      const cleared = this.queues[priority].length;
+      this.queues[priority] = [];
+      this.log('QUEUE_CLEARED', 'system', `Cleared ${cleared} ${priority} priority requests`);
+      return cleared;
+    } else {
+      let total = 0;
+      Object.keys(this.queues).forEach(p => {
+        total += this.queues[p].length;
+        this.queues[p] = [];
+      });
+      this.log('QUEUE_CLEARED', 'system', `Cleared all ${total} requests`);
+      return total;
+    }
+  }
+  
+  clearLowPriorityQueue() {
+    const cleared = this.clear('low');
+    this.log('AUTO_RECOVERY', 'system', `Cleared ${cleared} low-priority requests for recovery`);
+  }
+  
+  // New: Clear MAL-specific requests (useful for auth issues)
+  clearMalRequests() {
+    let cleared = 0;
+    Object.keys(this.queues).forEach(priority => {
+      const malRequests = this.queues[priority].filter(req => req.service === 'mal');
+      this.queues[priority] = this.queues[priority].filter(req => req.service !== 'mal');
+      cleared += malRequests.length;
+      
+      // Reject cleared MAL requests
+      malRequests.forEach(req => {
+        req.reject(new Error('MAL requests cleared due to authentication issues'));
+      });
+    });
+    
+    this.log('MAL_QUEUE_CLEARED', 'system', `Cleared ${cleared} MAL requests`);
+    return cleared;
+  }
+  
+  // =================== SHUTDOWN ===================
+  
+  async destroy() {
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+    }
+    
+    if (this.batchTimer) {
+      clearTimeout(this.batchTimer);
+    }
+    
+    const activeRequests = Array.from(this.state.activeRequests.values());
+    if (activeRequests.length > 0) {
+      this.log('SHUTDOWN', 'system', `Waiting for ${activeRequests.length} active requests`);
+      
+      await Promise.allSettled(
+        activeRequests.map(req => 
+          new Promise(resolve => {
+            const originalResolve = req.resolve;
+            const originalReject = req.reject;
+            req.resolve = (...args) => { originalResolve(...args); resolve(); };
+            req.reject = (...args) => { originalReject(...args); resolve(); };
+          })
+        )
+      );
+    }
+    
+    this.clear();
+    this.hideGlobalLoader();
+    
+    this.log('DESTROYED', 'system', 'RequestQueue destroyed');
   }
 }
 
-class Api {
+class AnilistApi {
   constructor(plugin) {
     this.plugin = plugin;
     this.requestQueue = plugin.requestQueue;
     this.cache = plugin.cache;
     
+    // Enterprise-grade enhancements
     this.metrics = this.initializeMetrics();
     this.circuitBreaker = this.initializeCircuitBreaker();
     this.rateLimiter = this.initializeRateLimiter();
@@ -829,6 +2379,7 @@ class Api {
     this.batchTimer = null;
     this.requestTracker = new Map();
     
+    // Configuration
     this.config = {
       maxRetries: 3,
       baseRetryDelay: 1000,
@@ -840,8 +2391,11 @@ class Api {
       maxBatchSize: 10
     };
     
+    // Start background tasks
     this.startHealthMonitoring();
   }
+
+  // =================== CORE ENTERPRISE FEATURES ===================
 
   initializeMetrics() {
     return {
@@ -857,7 +2411,7 @@ class Api {
 
   initializeCircuitBreaker() {
     return {
-      state: 'CLOSED',
+      state: 'CLOSED', // CLOSED, OPEN, HALF_OPEN
       failures: 0,
       lastFailureTime: null,
       
@@ -892,7 +2446,7 @@ class Api {
           }
           return false;
         }
-        return true;
+        return true; // HALF_OPEN
       }
     };
   }
@@ -900,8 +2454,8 @@ class Api {
   initializeRateLimiter() {
     return {
       requests: [],
-      windowMs: 60000,
-      maxRequests: 90,
+      windowMs: 60000, // 1 minute
+      maxRequests: 90, // AniList limit is 90/min
       
       canMakeRequest: () => {
         const now = Date.now();
@@ -930,6 +2484,7 @@ class Api {
       checkHealth: async () => {
         const startTime = Date.now();
         try {
+          // Simple health check query
           await this.makeRawRequest({
             query: '{ Viewer { id } }',
             variables: {},
@@ -949,98 +2504,59 @@ class Api {
     };
   }
 
-  buildQuery(config) {
-    let query, variables;
-    
-    switch (config.type) {
-      case 'stats':
-        query = this.getUserStatsQuery({
-          mediaType: config.mediaType || 'ANIME',
-          layout: config.layout || 'standard'
-        });
-        variables = { username: config.username };
-        break;
-        
-      case 'single':
-        query = this.getSingleMediaQuery(config.layout);
-        variables = {
-          username: config.username,
-          mediaId: parseInt(config.mediaId),
-          type: config.mediaType
-        };
-        break;
-        
-      case 'search':
-        query = this.getSearchMediaQuery(config.layout);
-        variables = {
-          search: config.search,
-          type: config.mediaType,
-          page: config.page || 1,
-          perPage: config.perPage || 5
-        };
-        break;
-        
-      default:
-        query = this.getMediaListQuery(config.layout);
-        variables = {
-          username: config.username,
-          status: config.listType,
-          type: config.mediaType || 'ANIME'
-        };
-    }
-    
-    return { query, variables };
-  }
+  // =================== ENHANCED REQUEST METHODS ===================
 
   createCacheKey(config) {
     const sortedConfig = {};
     Object.keys(config).sort().forEach(key => {
+      // Sanitize sensitive data from cache keys
+      if (key === 'accessToken' || key === 'clientSecret') return;
       sortedConfig[key] = config[key];
     });
     return JSON.stringify(sortedConfig);
   }
 
   async fetchAniListData(config) {
-    const cacheKey = this.createCacheKey(config);
-    
-    let cacheType;
-    if (config.type === 'stats') {
-      cacheType = 'userData';
-    } else if (config.type === 'single') {
-      cacheType = 'mediaData';
-    } else if (config.type === 'search') {
-      cacheType = 'searchResults';
-    } else {
-      cacheType = 'userData';
-    }
-    const cacheTtl = null;
-    const cached = !config.nocache && this.cache.get(cacheKey, { scope: cacheType, ttl: cacheTtl });
-    if (cached) {
-      console.log(`[Zoro] Cache HIT for ${cacheType}: ${cacheKey.substring(0, 50)}...`);
-      this.recordMetrics('cache_hit', cacheType, 0);
-      return cached;
-    }
-
-    console.log(`[Zoro] Cache MISS for ${cacheType}: ${cacheKey.substring(0, 50)}...`);
-
     const requestId = this.generateRequestId();
     const startTime = performance.now();
     
     try {
+      // Input validation
       this.validateConfig(config);
       
+      // Check circuit breaker
       if (!this.circuitBreaker.canExecute()) {
-        throw this.createApiError('SERVICE_UNAVAILABLE', 'AniList service is temporarily unavailable');
+        throw new ApiError('SERVICE_UNAVAILABLE', 'AniList service is temporarily unavailable');
       }
       
+      // Check cache first using your excellent cache system
+      const cacheKey = this.createCacheKey(config);
+      const cacheType = this.determineCacheType(config);
+      
+      if (!config.nocache) {
+        const cached = this.cache.get(cacheKey, { 
+          scope: cacheType, 
+          ttl: this.getCacheTTL(config) // null = use cache's built-in TTLs
+        });
+        
+        if (cached) {
+          this.recordMetrics('cache_hit', cacheType, performance.now() - startTime);
+          this.log('CACHE_HIT', cacheType, requestId, `${(performance.now() - startTime).toFixed(1)}ms`);
+          return cached;
+        }
+      }
+      
+      // Rate limiting check
       const rateLimitCheck = this.rateLimiter.canMakeRequest();
       if (!rateLimitCheck.allowed) {
         this.log('RATE_LIMITED', 'system', requestId, `Wait: ${rateLimitCheck.waitTime}ms`);
         await this.sleep(rateLimitCheck.waitTime);
       }
       
+      // Build query and variables
       const { query, variables } = this.buildQuery(config);
       
+      // Execute request with retry logic
       const result = await this.executeRequestWithRetry({
         query,
         variables,
@@ -1049,11 +2565,15 @@ class Api {
         maxRetries: this.config.maxRetries
       });
       
+      // Cache successful results using your cache system
       if (result && !config.nocache) {
-        this.cache.set(cacheKey, result, { scope: cacheType });
-        console.log(`[Zoro] Cached data for ${cacheType}: ${cacheKey.substring(0, 50)}...`);
+        this.cache.set(cacheKey, result, { 
+          scope: cacheType
+          // No TTL specified = uses your cache's perfect built-in TTL mapping
+        });
       }
       
+      // Record success metrics
       const duration = performance.now() - startTime;
       this.recordMetrics('success', config.type, duration);
       this.circuitBreaker.recordSuccess();
@@ -1066,9 +2586,11 @@ class Api {
       const duration = performance.now() - startTime;
       const classifiedError = this.classifyError(error, config);
       
+      // Record failure metrics
       this.recordMetrics('error', config.type, duration, classifiedError.type);
       this.circuitBreaker.recordFailure();
       
+      // Enhanced error logging
       this.log('REQUEST_FAILED', config.type, requestId, {
         error: classifiedError.type,
         message: classifiedError.message,
@@ -1121,7 +2643,7 @@ class Api {
     const headers = {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      'User-Agent': `Zoro-Plugin/${this.plugin.manifest?.version || '1.0.0'}`,
+      'User-Agent': `Zoro-Plugin/${this.plugin.manifest.version}`,
       'X-Request-ID': requestId
     };
     
@@ -1132,6 +2654,7 @@ class Api {
     
     const requestBody = JSON.stringify({ query, variables });
     
+    // Add request to tracker
     this.requestTracker.set(requestId, {
       startTime: Date.now(),
       config: this.sanitizeConfig(config),
@@ -1150,17 +2673,21 @@ class Api {
         this.createTimeoutPromise(this.config.requestTimeout)
       ]);
       
+      // Update rate limit info from headers
       this.updateRateLimitInfo(response.headers);
       
       const result = response.json;
+      
+      // Validate response structure
       this.validateResponse(result);
       
+      // Handle GraphQL errors
       if (result.errors && result.errors.length > 0) {
         throw this.createGraphQLError(result.errors[0]);
       }
       
       if (!result.data) {
-        throw this.createApiError('INVALID_RESPONSE', 'AniList returned no data');
+        throw new ApiError('INVALID_RESPONSE', 'AniList returned no data');
       }
       
       return result.data;
@@ -1170,50 +2697,104 @@ class Api {
     }
   }
 
-  async makeObsidianRequest(code, redirectUri) {
-    const body = new URLSearchParams({
-      grant_type: 'authorization_code',
-      client_id: this.plugin.settings.clientId,
-      client_secret: this.plugin.settings.clientSecret || '',
-      redirect_uri: redirectUri,
-      code: code
-    });
+  // =================== BATCH OPERATIONS ===================
 
-    const headers = {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Accept': 'application/json',
-    };
-
-    try {
-      const response = await this.requestQueue.add(() => requestUrl({
-        url: 'https://anilist.co/api/v2/oauth/token',
-        method: 'POST',
-        headers,
-        body: body.toString()
-      }));
-
-      if (!response || typeof response.json !== 'object') {
-        throw new Error('Invalid response structure from AniList.');
+  async fetchMultipleMedia(mediaIds) {
+    return new Promise((resolve, reject) => {
+      const batchPromises = mediaIds.map(id => {
+        return new Promise((resolveItem, rejectItem) => {
+          if (!this.batchQueue.has('media')) {
+            this.batchQueue.set('media', []);
+          }
+          
+          this.batchQueue.get('media').push({
+            mediaId: id,
+            resolve: resolveItem,
+            reject: rejectItem
+          });
+        });
+      });
+      
+      // Schedule batch processing
+      if (!this.batchTimer) {
+        this.batchTimer = setTimeout(() => this.processBatches(), this.config.batchDelay);
       }
-
-      return response.json;
-
-    } catch (err) {
-      console.error('[Zoro] Obsidian requestUrl failed:', err);
-      throw new Error('Failed to authenticate with AniList via Obsidian requestUrl.');
-    }
+      
+      Promise.all(batchPromises).then(resolve).catch(reject);
+    });
   }
+
+  async processBatches() {
+    const mediaBatch = this.batchQueue.get('media');
+    
+    if (mediaBatch && mediaBatch.length > 0) {
+      try {
+        const mediaIds = mediaBatch.map(item => item.mediaId);
+        const results = await this.fetchBatchMedia(mediaIds);
+        
+        mediaBatch.forEach(({ mediaId, resolve }) => {
+          resolve(results[mediaId] || null);
+        });
+        
+      } catch (error) {
+        mediaBatch.forEach(({ reject }) => {
+          reject(error);
+        });
+      }
+      
+      this.batchQueue.set('media', []);
+    }
+    
+    this.batchTimer = null;
+  }
+
+  async fetchBatchMedia(mediaIds) {
+    const query = `
+      query ($ids: [Int]) {
+        Page(page: 1, perPage: ${mediaIds.length}) {
+          media(id_in: $ids) {
+            id
+            title { romaji english native }
+            coverImage { large medium }
+            format
+            averageScore
+            status
+            genres
+            episodes
+            chapters
+            isFavourite
+          }
+        }
+      }
+    `;
+    
+    const result = await this.makeRawRequest({
+      query,
+      variables: { ids: mediaIds },
+      config: { type: 'batch_media' }
+    });
+    
+    const mediaMap = {};
+    result.Page.media.forEach(media => {
+      mediaMap[media.id] = media;
+    });
+    
+    return mediaMap;
+  }
+
+  // =================== ENHANCED UPDATE METHOD ===================
 
   async updateMediaListEntry(mediaId, updates) {
     const requestId = this.generateRequestId();
     const startTime = performance.now();
     
     try {
+      // Validate inputs
       this.validateMediaId(mediaId);
       this.validateUpdates(updates);
       
       if (!this.plugin.settings.accessToken || !(await this.plugin.auth.ensureValidToken())) {
-        throw this.createApiError('AUTH_REQUIRED', 'Authentication required to update entries');
+        throw new ApiError('AUTH_REQUIRED', 'Authentication required to update entries');
       }
 
       const mutation = `
@@ -1244,10 +2825,11 @@ class Api {
         variables,
         config: { type: 'update', mediaId },
         requestId,
-        maxRetries: 2
+        maxRetries: 2 // Fewer retries for mutations
       });
 
-      this.plugin.cache.invalidateByMedia(mediaId);
+      // Intelligent cache invalidation
+      await this.invalidateRelatedCache(mediaId, updates);
       
       const duration = performance.now() - startTime;
       this.recordMetrics('update_success', 'mutation', duration);
@@ -1277,10 +2859,449 @@ class Api {
     }
   }
 
+  // =================== ERROR HANDLING & CLASSIFICATION ===================
+
+  classifyError(error, context = {}) {
+    // Network errors
+    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
+      return { type: 'NETWORK_ERROR', message: error.message, severity: 'high', retryable: true };
+    }
+    
+    // Timeout errors
+    if (error.name === 'TimeoutError' || error.message.includes('timeout')) {
+      return { type: 'TIMEOUT', message: error.message, severity: 'medium', retryable: true };
+    }
+    
+    // Rate limiting
+    if (error.status === 429 || error.message.includes('rate limit')) {
+      return { type: 'RATE_LIMITED', message: error.message, severity: 'low', retryable: true };
+    }
+    
+    // Authentication errors
+    if (error.status === 401 || error.message.includes('Unauthorized')) {
+      return { type: 'AUTH_ERROR', message: error.message, severity: 'high', retryable: false };
+    }
+    
+    // Server errors
+    if (error.status >= 500) {
+      return { type: 'SERVER_ERROR', message: error.message, severity: 'high', retryable: true };
+    }
+    
+    // GraphQL errors
+    if (error.message?.includes('Private') || error.message?.includes('permission')) {
+      return { type: 'PRIVATE_LIST', message: error.message, severity: 'low', retryable: false };
+    }
+    
+    // Client errors
+    if (error.status >= 400 && error.status < 500) {
+      return { type: 'CLIENT_ERROR', message: error.message, severity: 'medium', retryable: false };
+    }
+    
+    // Unknown errors
+    return { type: 'UNKNOWN_ERROR', message: error.message, severity: 'medium', retryable: false };
+  }
+
+  createUserFriendlyError(classifiedError) {
+    const errorMessages = {
+      'NETWORK_ERROR': '🌐 Connection issue. Please check your internet connection and try again.',
+      'TIMEOUT': '⏱️ Request timed out. Please try again.',
+      'RATE_LIMITED': '🚦 Too many requests. Please wait a moment and try again.',
+      'AUTH_ERROR': '🔑 Authentication expired. Please re-authenticate with AniList.',
+      'SERVER_ERROR': '🔧 AniList servers are experiencing issues. Please try again later.',
+      'PRIVATE_LIST': '🔒 This user\'s list is private.',
+      'CLIENT_ERROR': '⚠️ Invalid request. Please check your input.',
+      'SERVICE_UNAVAILABLE': '🚫 Service is temporarily unavailable due to repeated failures.',
+      'UNKNOWN_ERROR': '❌ An unexpected error occurred. Please try again.'
+    };
+    
+    const userMessage = errorMessages[classifiedError.type] || errorMessages['UNKNOWN_ERROR'];
+    const error = new Error(userMessage);
+    error.type = classifiedError.type;
+    error.severity = classifiedError.severity;
+    error.retryable = classifiedError.retryable;
+    error.originalMessage = classifiedError.message;
+    
+    return error;
+  }
+
+  createGraphQLError(graphqlError) {
+    const error = new Error(graphqlError.message);
+    error.type = 'GRAPHQL_ERROR';
+    error.extensions = graphqlError.extensions;
+    error.locations = graphqlError.locations;
+    error.path = graphqlError.path;
+    return error;
+  }
+
+  // =================== UTILITY METHODS ===================
+
+  validateConfig(config) {
+    if (!config || typeof config !== 'object') {
+      throw new ApiError('INVALID_CONFIG', 'Configuration must be an object');
+    }
+    
+    if (config.type && !['stats', 'single', 'search', 'list'].includes(config.type)) {
+      throw new ApiError('INVALID_TYPE', `Invalid config type: ${config.type}`);
+    }
+    
+    if (config.mediaType && !['ANIME', 'MANGA'].includes(config.mediaType)) {
+      throw new ApiError('INVALID_MEDIA_TYPE', `Invalid media type: ${config.mediaType}`);
+    }
+  }
+
+  validateMediaId(mediaId) {
+    const id = parseInt(mediaId);
+    if (!id || id <= 0) {
+      throw new ApiError('INVALID_MEDIA_ID', `Invalid media ID: ${mediaId}`);
+    }
+  }
+
+  validateUpdates(updates) {
+    if (!updates || typeof updates !== 'object') {
+      throw new ApiError('INVALID_UPDATES', 'Updates must be an object');
+    }
+    
+    if (Object.keys(updates).length === 0) {
+      throw new ApiError('EMPTY_UPDATES', 'At least one field must be updated');
+    }
+  }
+
+  validateResponse(response) {
+    if (!response || typeof response !== 'object') {
+      throw new ApiError('INVALID_RESPONSE', 'Invalid response from AniList');
+    }
+  }
+
+  isRetryableError(error) {
+    return error.retryable !== false && (
+      error.status >= 500 ||
+      error.code === 'ENOTFOUND' ||
+      error.code === 'ECONNREFUSED' ||
+      error.name === 'TimeoutError' ||
+      error.status === 429
+    );
+  }
+
+  calculateRetryDelay(attempt) {
+    const baseDelay = this.config.baseRetryDelay;
+    const maxDelay = this.config.maxRetryDelay;
+    const exponentialDelay = baseDelay * Math.pow(2, attempt - 1);
+    const jitter = Math.random() * 1000; // Add randomness to prevent thundering herd
+    
+    return Math.min(exponentialDelay + jitter, maxDelay);
+  }
+
+  createTimeoutPromise(timeout) {
+    return new Promise((_, reject) => {
+      setTimeout(() => {
+        reject(new Error('Request timeout'));
+      }, timeout);
+    });
+  }
+
+  generateRequestId() {
+    return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  sanitizeConfig(config) {
+    const sanitized = { ...config };
+    delete sanitized.accessToken;
+    delete sanitized.clientSecret;
+    return sanitized;
+  }
+
+  sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  // =================== MONITORING & METRICS ===================
+
+  recordMetrics(operation, type, duration, errorType = null) {
+    this.metrics.requests.total++;
+    
+    if (operation === 'success' || operation === 'cache_hit') {
+      if (operation === 'cache_hit') {
+        this.metrics.requests.cached++;
+      } else {
+        this.metrics.requests.success++;
+      }
+    } else {
+      this.metrics.requests.failed++;
+      
+      if (errorType) {
+        const count = this.metrics.errors.get(errorType) || 0;
+        this.metrics.errors.set(errorType, count + 1);
+      }
+    }
+    
+    // Update latency stats
+    if (duration) {
+      this.metrics.latency.samples.push(duration);
+      if (this.metrics.latency.samples.length > 1000) {
+        this.metrics.latency.samples = this.metrics.latency.samples.slice(-500);
+      }
+      
+      this.metrics.latency.min = Math.min(this.metrics.latency.min, duration);
+      this.metrics.latency.max = Math.max(this.metrics.latency.max, duration);
+      this.metrics.latency.avg = this.metrics.latency.samples.reduce((a, b) => a + b, 0) / this.metrics.latency.samples.length;
+      
+      // Calculate 95th percentile
+      const sorted = [...this.metrics.latency.samples].sort((a, b) => a - b);
+      const p95Index = Math.floor(sorted.length * 0.95);
+      this.metrics.latency.p95 = sorted[p95Index] || 0;
+    }
+    
+    // Update endpoint stats
+    if (!this.metrics.endpoints.has(type)) {
+      this.metrics.endpoints.set(type, { requests: 0, success: 0, errors: 0, avgLatency: 0 });
+    }
+    
+    const endpointStats = this.metrics.endpoints.get(type);
+    endpointStats.requests++;
+    
+    if (operation === 'success' || operation === 'cache_hit') {
+      endpointStats.success++;
+    } else {
+      endpointStats.errors++;
+    }
+    
+    if (duration) {
+      endpointStats.avgLatency = (endpointStats.avgLatency + duration) / 2;
+    }
+  }
+
+  updateRateLimitInfo(headers) {
+    if (headers && headers['x-ratelimit-remaining']) {
+      this.metrics.rateLimits.remaining = parseInt(headers['x-ratelimit-remaining']);
+    }
+    if (headers && headers['x-ratelimit-reset']) {
+      this.metrics.rateLimits.resetTime = new Date(headers['x-ratelimit-reset']);
+    }
+  }
+
+  startHealthMonitoring() {
+    // Check health every 5 minutes
+    setInterval(() => {
+      this.healthChecker.checkHealth();
+    }, 5 * 60 * 1000);
+    
+    // Initial health check
+    setTimeout(() => this.healthChecker.checkHealth(), 1000);
+  }
+
+  getHealthStatus() {
+    const now = Date.now();
+    const uptime = now - this.metrics.startTime;
+    const totalRequests = this.metrics.requests.total;
+    const successRate = totalRequests > 0 ? (this.metrics.requests.success / totalRequests) : 1;
+    const errorRate = totalRequests > 0 ? (this.metrics.requests.failed / totalRequests) : 0;
+    
+    let status = 'healthy';
+    if (errorRate > 0.10 || this.circuitBreaker.state === 'OPEN') {
+      status = 'unhealthy';
+    } else if (errorRate > 0.05 || this.circuitBreaker.state === 'HALF_OPEN') {
+      status = 'degraded';
+    }
+    
+    return {
+      status,
+      uptime: this.formatDuration(uptime),
+      requests: {
+        total: totalRequests,
+        success: this.metrics.requests.success,
+        failed: this.metrics.requests.failed,
+        cached: this.metrics.requests.cached,
+        successRate: `${(successRate * 100).toFixed(2)}%`,
+        errorRate: `${(errorRate * 100).toFixed(2)}%`
+      },
+      latency: {
+        avg: `${this.metrics.latency.avg.toFixed(0)}ms`,
+        min: `${this.metrics.latency.min}ms`,
+        max: `${this.metrics.latency.max}ms`,
+        p95: `${this.metrics.latency.p95.toFixed(0)}ms`
+      },
+      circuitBreaker: {
+        state: this.circuitBreaker.state,
+        failures: this.circuitBreaker.failures
+      },
+      rateLimits: {
+        remaining: this.metrics.rateLimits.remaining,
+        resetTime: this.metrics.rateLimits.resetTime
+      },
+      errors: Object.fromEntries(this.metrics.errors),
+      lastHealthCheck: this.healthChecker.lastCheck ? 
+        new Date(this.healthChecker.lastCheck).toLocaleString() : 'Never'
+    };
+  }
+
+  formatDuration(ms) {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    
+    if (days > 0) return `${days}d ${hours % 24}h`;
+    if (hours > 0) return `${hours}h ${minutes % 60}m`;
+    if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
+    return `${seconds}s`;
+  }
+
+  // =================== INTELLIGENT CACHE MANAGEMENT ===================
+  // Using your existing enterprise-grade cache system
+
+  determineCacheType(config) {
+    const typeMap = {
+      'stats': 'userData',
+      'single': 'mediaData', 
+      'search': 'searchResults',
+      'list': 'userData'
+    };
+    return typeMap[config.type] || 'userData';
+  }
+
+  getCacheTTL(config) {
+    // Return null to use your cache's built-in TTL system
+    // Your cache already has perfect TTL mapping:
+    // userData: 30min, mediaData: 10min, searchResults: 2min, etc.
+    return null;
+  }
+
+  async invalidateRelatedCache(mediaId, updates) {
+    // Use your cache's excellent invalidation system
+    this.cache.invalidateByMedia(mediaId);
+    
+    // If status changed, invalidate user list caches
+    if (updates.status) {
+      try {
+        const username = await this.plugin.auth.getAuthenticatedUsername();
+        if (username) {
+          this.cache.invalidateByUser(username);
+        }
+      } catch (error) {
+        // Ignore errors getting username for cache invalidation
+      }
+    }
+  }
+
+  // =================== LOGGING ===================
+
+  log(level, category, requestId, data = '') {
+    if (!this.plugin.settings.debugMode && level !== 'ERROR') return;
+    
+    const timestamp = new Date().toISOString();
+    const logData = typeof data === 'object' ? JSON.stringify(data, null, 2) : data;
+    
+    console.log(`[${timestamp}] [Zoro-API] [${level}] [${category}] [${requestId}] ${logData}`);
+  }
+
+  // =================== EXISTING METHODS (Enhanced) ===================
+
+  buildQuery(config) {
+    let query, variables;
+    
+    if (config.type === 'stats') {
+      query = this.getUserStatsQuery({
+        mediaType: config.mediaType || 'ANIME',
+        layout: config.layout || 'standard'
+      });
+      variables = { username: config.username };
+    } else if (config.type === 'single') {
+      query = this.getSingleMediaQuery(config.layout);
+      variables = {
+        username: config.username,
+        mediaId: parseInt(config.mediaId),
+        type: config.mediaType
+      };
+    } else if (config.type === 'search') {
+      query = this.getSearchMediaQuery(config.layout);
+      variables = {
+        search: config.search,
+        type: config.mediaType,
+        page: config.page || 1,
+        perPage: Math.min(config.perPage || 10, 50), // Limit to prevent large responses
+      };
+    } else {
+      query = this.getMediaListQuery(config.layout);
+      variables = {
+        username: config.username,
+        status: config.listType,
+        type: config.mediaType || 'ANIME',
+      };
+    }
+    
+    return { query, variables };
+  }
+
+  async makeObsidianRequest(code, redirectUri) {
+    const requestId = this.generateRequestId();
+    const startTime = performance.now();
+    
+    try {
+      // Input validation
+      if (!code || typeof code !== 'string') {
+        throw new ApiError('INVALID_CODE', 'Authorization code is required');
+      }
+      
+      if (!redirectUri || typeof redirectUri !== 'string') {
+        throw new ApiError('INVALID_REDIRECT_URI', 'Redirect URI is required');
+      }
+
+      const body = new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: this.plugin.settings.clientId,
+        client_secret: this.plugin.settings.clientSecret || '',
+        redirect_uri: redirectUri,
+        code: code
+      });
+
+      const headers = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json',
+        'User-Agent': `Zoro-Plugin/${this.plugin.manifest.version}`,
+        'X-Request-ID': requestId
+      };
+
+      const result = await this.executeRequestWithRetry({
+        makeRequest: () => requestUrl({
+          url: 'https://anilist.co/api/v2/oauth/token',
+          method: 'POST',
+          headers,
+          body: body.toString()
+        }),
+        config: { type: 'auth' },
+        requestId,
+        maxRetries: 2
+      });
+
+      if (!result || typeof result.json !== 'object') {
+        throw new ApiError('INVALID_AUTH_RESPONSE', 'Invalid response structure from AniList');
+      }
+
+      const duration = performance.now() - startTime;
+      this.recordMetrics('auth_success', 'oauth', duration);
+      this.log('AUTH_SUCCESS', 'oauth', requestId, `${duration.toFixed(1)}ms`);
+
+      return result.json;
+
+    } catch (error) {
+      const duration = performance.now() - startTime;
+      const classifiedError = this.classifyError(error, { type: 'auth' });
+      
+      this.recordMetrics('auth_error', 'oauth', duration, classifiedError.type);
+      this.log('AUTH_FAILED', 'oauth', requestId, {
+        error: classifiedError.type,
+        duration: `${duration.toFixed(1)}ms`
+      });
+
+      throw this.createUserFriendlyError(classifiedError);
+    }
+  }
+
   async checkIfMediaInList(mediaId, mediaType) {
     if (!this.plugin.settings.accessToken) return false;
     
     try {
+      // Use cache-friendly approach
       const config = {
         type: 'single',
         mediaType: mediaType,
@@ -1289,11 +3310,19 @@ class Api {
       
       const response = await this.fetchAniListData(config);
       return response.MediaList !== null;
+      
     } catch (error) {
-      console.warn('Error checking media list status:', error);
+      // Don't throw errors for this check, just return false
+      this.log('MEDIA_CHECK_FAILED', 'utility', this.generateRequestId(), {
+        mediaId,
+        mediaType,
+        error: error.message
+      });
       return false;
     }
   }
+
+  // =================== QUERY BUILDERS (Enhanced with Error Handling) ===================
 
   getMediaListQuery(layout = 'card') {
     const baseFields = `
@@ -1360,6 +3389,15 @@ class Api {
           day
         }
         isFavourite
+        description(asHtml: false)
+        meanScore
+        popularity
+        favourites
+        studios {
+          nodes {
+            name
+          }
+        }
       `
     };
 
@@ -1446,6 +3484,15 @@ class Api {
           day
         }
         isFavourite
+        description(asHtml: false)
+        meanScore
+        popularity
+        favourites
+        studios {
+          nodes {
+            name
+          }
+        }
       `
     };
 
@@ -1641,6 +3688,10 @@ class Api {
           day
         }
         isFavourite
+        description(asHtml: false)
+        meanScore
+        popularity
+        favourites
       `
     };
 
@@ -1649,6 +3700,13 @@ class Api {
     return `
       query ($search: String, $type: MediaType, $page: Int, $perPage: Int) {
         Page(page: $page, perPage: $perPage) {
+          pageInfo {
+            total
+            currentPage
+            lastPage
+            hasNextPage
+            perPage
+          }
           media(search: $search, type: $type) {
             ${fields}
           }
@@ -1658,419 +3716,32 @@ class Api {
   }
 
   getAniListUrl(mediaId, mediaType = 'ANIME') {
-    if (!mediaId || typeof mediaId !== 'number') {
-      throw new Error(`Invalid mediaId: ${mediaId}`);
-    }
-
-    const type = String(mediaType).toUpperCase();
-    const validTypes = ['ANIME', 'MANGA'];
-    const urlType = validTypes.includes(type) ? type.toLowerCase() : 'anime';
-
-    return `https://anilist.co/${urlType}/${mediaId}`;
-  }
-
-  classifyError(error, context = {}) {
-    if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
-      return { type: 'NETWORK_ERROR', message: error.message, severity: 'high', retryable: true };
-    }
-    
-    if (error.name === 'TimeoutError' || error.message.includes('timeout')) {
-      return { type: 'TIMEOUT', message: error.message, severity: 'medium', retryable: true };
-    }
-    
-    if (error.status === 429 || error.message.includes('rate limit')) {
-      return { type: 'RATE_LIMITED', message: error.message, severity: 'low', retryable: true };
-    }
-    
-    if (error.status === 401 || error.message.includes('Unauthorized')) {
-      return { type: 'AUTH_ERROR', message: error.message, severity: 'high', retryable: false };
-    }
-    
-    if (error.status >= 500) {
-      return { type: 'SERVER_ERROR', message: error.message, severity: 'high', retryable: true };
-    }
-    
-    if (error.message?.includes('Private') || error.message?.includes('permission')) {
-      return { type: 'PRIVATE_LIST', message: error.message, severity: 'low', retryable: false };
-    }
-    
-    if (error.status >= 400 && error.status < 500) {
-      return { type: 'CLIENT_ERROR', message: error.message, severity: 'medium', retryable: false };
-    }
-    
-    return { type: 'UNKNOWN_ERROR', message: error.message, severity: 'medium', retryable: false };
-  }
-
-  createUserFriendlyError(classifiedError) {
-    const errorMessages = {
-      'NETWORK_ERROR': '🌐 Connection issue. Please check your internet connection and try again.',
-      'TIMEOUT': '⏱️ Request timed out. Please try again.',
-      'RATE_LIMITED': '🚦 Too many requests. Please wait a moment and try again.',
-      'AUTH_ERROR': '🔑 Authentication expired. Please re-authenticate with AniList.',
-      'SERVER_ERROR': '🔧 AniList servers are experiencing issues. Please try again later.',
-      'PRIVATE_LIST': '🔒 This user\'s list is private.',
-      'CLIENT_ERROR': '⚠️ Invalid request. Please check your input.',
-      'SERVICE_UNAVAILABLE': '🚫 Service is temporarily unavailable due to repeated failures.',
-      'UNKNOWN_ERROR': '❌ An unexpected error occurred. Please try again.'
-    };
-    
-    const userMessage = errorMessages[classifiedError.type] || errorMessages['UNKNOWN_ERROR'];
-    const error = new Error(userMessage);
-    error.type = classifiedError.type;
-    error.severity = classifiedError.severity;
-    error.retryable = classifiedError.retryable;
-    error.originalMessage = classifiedError.message;
-    
-    return error;
-  }
-
-  createGraphQLError(graphqlError) {
-    const error = new Error(graphqlError.message);
-    error.type = 'GRAPHQL_ERROR';
-    error.extensions = graphqlError.extensions;
-    error.locations = graphqlError.locations;
-    error.path = graphqlError.path;
-    return error;
-  }
-
-  createApiError(type, message) {
-    const error = new Error(message);
-    error.type = type;
-    return error;
-  }
-
-  validateConfig(config) {
-    if (!config || typeof config !== 'object') {
-      throw this.createApiError('INVALID_CONFIG', 'Configuration must be an object');
-    }
-    
-    if (config.type && !['stats', 'single', 'search', 'list'].includes(config.type)) {
-      throw this.createApiError('INVALID_TYPE', `Invalid config type: ${config.type}`);
-    }
-    
-    if (config.mediaType && !['ANIME', 'MANGA'].includes(config.mediaType)) {
-      throw this.createApiError('INVALID_MEDIA_TYPE', `Invalid media type: ${config.mediaType}`);
-    }
-  }
-
-  validateMediaId(mediaId) {
-    const id = parseInt(mediaId);
-    if (!id || id <= 0) {
-      throw this.createApiError('INVALID_MEDIA_ID', `Invalid media ID: ${mediaId}`);
-    }
-  }
-
-  validateUpdates(updates) {
-    if (!updates || typeof updates !== 'object') {
-      throw this.createApiError('INVALID_UPDATES', 'Updates must be an object');
-    }
-    
-    if (Object.keys(updates).length === 0) {
-      throw this.createApiError('EMPTY_UPDATES', 'At least one field must be updated');
-    }
-  }
-
-  validateResponse(response) {
-    if (!response || typeof response !== 'object') {
-      throw this.createApiError('INVALID_RESPONSE', 'Invalid response from AniList');
-    }
-  }
-
-  isRetryableError(error) {
-    return error.retryable !== false && (
-      error.status >= 500 ||
-      error.code === 'ENOTFOUND' ||
-      error.code === 'ECONNREFUSED' ||
-      error.name === 'TimeoutError' ||
-      error.status === 429
-    );
-  }
-
-  calculateRetryDelay(attempt) {
-    const baseDelay = this.config.baseRetryDelay;
-    const maxDelay = this.config.maxRetryDelay;
-    const exponentialDelay = baseDelay * Math.pow(2, attempt - 1);
-    const jitter = Math.random() * 1000;
-    
-    return Math.min(exponentialDelay + jitter, maxDelay);
-  }
-
-  createTimeoutPromise(timeout) {
-    return new Promise((_, reject) => {
-      setTimeout(() => {
-        reject(new Error('Request timeout'));
-      }, timeout);
-    });
-  }
-
-  generateRequestId() {
-    return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-
-  sanitizeConfig(config) {
-    const sanitized = { ...config };
-    delete sanitized.accessToken;
-    delete sanitized.clientSecret;
-    return sanitized;
-  }
-
-  sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
-  }
-
-  recordMetrics(operation, type, duration, errorType = null) {
-    this.metrics.requests.total++;
-    
-    if (operation === 'success' || operation === 'cache_hit') {
-      if (operation === 'cache_hit') {
-        this.metrics.requests.cached++;
-      } else {
-        this.metrics.requests.success++;
-      }
-    } else {
-      this.metrics.requests.failed++;
+    try {
+      this.validateMediaId(mediaId);
       
-      if (errorType) {
-        const count = this.metrics.errors.get(errorType) || 0;
-        this.metrics.errors.set(errorType, count + 1);
-      }
-    }
-    
-    if (duration) {
-      this.metrics.latency.samples.push(duration);
-      if (this.metrics.latency.samples.length > 1000) {
-        this.metrics.latency.samples = this.metrics.latency.samples.slice(-500);
-      }
-      
-      this.metrics.latency.min = Math.min(this.metrics.latency.min, duration);
-      this.metrics.latency.max = Math.max(this.metrics.latency.max, duration);
-      this.metrics.latency.avg = this.metrics.latency.samples.reduce((a, b) => a + b, 0) / this.metrics.latency.samples.length;
-      
-      const sorted = [...this.metrics.latency.samples].sort((a, b) => a - b);
-      const p95Index = Math.floor(sorted.length * 0.95);
-      this.metrics.latency.p95 = sorted[p95Index] || 0;
-    }
-    
-    if (!this.metrics.endpoints.has(type)) {
-      this.metrics.endpoints.set(type, { requests: 0, success: 0, errors: 0, avgLatency: 0 });
-    }
-    
-    const endpointStats = this.metrics.endpoints.get(type);
-    endpointStats.requests++;
-    
-    if (operation === 'success' || operation === 'cache_hit') {
-      endpointStats.success++;
-    } else {
-      endpointStats.errors++;
-    }
-    
-    if (duration) {
-      endpointStats.avgLatency = (endpointStats.avgLatency + duration) / 2;
-    }
-  }
+      const type = String(mediaType).toUpperCase();
+      const validTypes = ['ANIME', 'MANGA'];
+      const urlType = validTypes.includes(type) ? type.toLowerCase() : 'anime';
 
-  updateRateLimitInfo(headers) {
-    if (headers && headers['x-ratelimit-remaining']) {
-      this.metrics.rateLimits.remaining = parseInt(headers['x-ratelimit-remaining']);
-    }
-    if (headers && headers['x-ratelimit-reset']) {
-      this.metrics.rateLimits.resetTime = new Date(headers['x-ratelimit-reset']);
-    }
-  }
-
-  startHealthMonitoring() {
-    setInterval(() => {
-      this.healthChecker.checkHealth();
-    }, 5 * 60 * 1000);
-    
-    setTimeout(() => this.healthChecker.checkHealth(), 1000);
-  }
-
-  getHealthStatus() {
-    const now = Date.now();
-    const uptime = now - this.metrics.startTime;
-    const totalRequests = this.metrics.requests.total;
-    const successRate = totalRequests > 0 ? (this.metrics.requests.success / totalRequests) : 1;
-    const errorRate = totalRequests > 0 ? (this.metrics.requests.failed / totalRequests) : 0;
-    
-    let status = 'healthy';
-    if (errorRate > 0.10 || this.circuitBreaker.state === 'OPEN') {
-      status = 'unhealthy';
-    } else if (errorRate > 0.05 || this.circuitBreaker.state === 'HALF_OPEN') {
-      status = 'degraded';
-    }
-    
-    return {
-      status,
-      uptime: this.formatDuration(uptime),
-      requests: {
-        total: totalRequests,
-        success: this.metrics.requests.success,
-        failed: this.metrics.requests.failed,
-        cached: this.metrics.requests.cached,
-        successRate: `${(successRate * 100).toFixed(2)}%`,
-        errorRate: `${(errorRate * 100).toFixed(2)}%`
-      },
-      latency: {
-        avg: `${this.metrics.latency.avg.toFixed(0)}ms`,
-        min: `${this.metrics.latency.min}ms`,
-        max: `${this.metrics.latency.max}ms`,
-        p95: `${this.metrics.latency.p95.toFixed(0)}ms`
-      },
-      circuitBreaker: {
-        state: this.circuitBreaker.state,
-        failures: this.circuitBreaker.failures
-      },
-      rateLimits: {
-        remaining: this.metrics.rateLimits.remaining,
-        resetTime: this.metrics.rateLimits.resetTime
-      },
-      errors: Object.fromEntries(this.metrics.errors),
-      lastHealthCheck: this.healthChecker.lastCheck ? 
-        new Date(this.healthChecker.lastCheck).toLocaleString() : 'Never'
-    };
-  }
-
-  formatDuration(ms) {
-    const seconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    const days = Math.floor(hours / 24);
-    
-    if (days > 0) return `${days}d ${hours % 24}h`;
-    if (hours > 0) return `${hours}h ${minutes % 60}m`;
-    if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
-    return `${seconds}s`;
-  }
-
-  // =================== BATCH OPERATIONS ===================
-
-  async fetchMultipleMedia(mediaIds) {
-    return new Promise((resolve, reject) => {
-      const batchPromises = mediaIds.map(id => {
-        return new Promise((resolveItem, rejectItem) => {
-          if (!this.batchQueue.has('media')) {
-            this.batchQueue.set('media', []);
-          }
-          
-          this.batchQueue.get('media').push({
-            mediaId: id,
-            resolve: resolveItem,
-            reject: rejectItem
-          });
-        });
+      return `https://anilist.co/${urlType}/${mediaId}`;
+    } catch (error) {
+      this.log('URL_GENERATION_FAILED', 'utility', this.generateRequestId(), {
+        mediaId,
+        mediaType,
+        error: error.message
       });
-      
-      if (!this.batchTimer) {
-        this.batchTimer = setTimeout(() => this.processBatches(), this.config.batchDelay);
-      }
-      
-      Promise.all(batchPromises).then(resolve).catch(reject);
-    });
-  }
-
-  async processBatches() {
-    const mediaBatch = this.batchQueue.get('media');
-    
-    if (mediaBatch && mediaBatch.length > 0) {
-      try {
-        const mediaIds = mediaBatch.map(item => item.mediaId);
-        const results = await this.fetchBatchMedia(mediaIds);
-        
-        mediaBatch.forEach(({ mediaId, resolve }) => {
-          resolve(results[mediaId] || null);
-        });
-        
-      } catch (error) {
-        mediaBatch.forEach(({ reject }) => {
-          reject(error);
-        });
-      }
-      
-      this.batchQueue.set('media', []);
-    }
-    
-    this.batchTimer = null;
-  }
-
-  async fetchBatchMedia(mediaIds) {
-    const query = `
-      query ($ids: [Int]) {
-        Page(page: 1, perPage: ${mediaIds.length}) {
-          media(id_in: $ids) {
-            id
-            title { romaji english native }
-            coverImage { large medium }
-            format
-            averageScore
-            status
-            genres
-            episodes
-            chapters
-            isFavourite
-          }
-        }
-      }
-    `;
-    
-    const result = await this.makeRawRequest({
-      query,
-      variables: { ids: mediaIds },
-      config: { type: 'batch_media' }
-    });
-    
-    const mediaMap = {};
-    result.Page.media.forEach(media => {
-      mediaMap[media.id] = media;
-    });
-    
-    return mediaMap;
-  }
-
-  // =================== INTELLIGENT CACHE MANAGEMENT ===================
-
-  determineCacheType(config) {
-    const typeMap = {
-      'stats': 'userData',
-      'single': 'mediaData',
-      'search': 'searchResults',
-      'list': 'userData'
-    };
-    return typeMap[config.type] || 'userData';
-  }
-
-  getCacheTTL(config) {
-    const ttlMap = {
-      'stats': 30 * 60 * 1000,     // 30 minutes
-      'single': 10 * 60 * 1000,    // 10 minutes
-      'search': 5 * 60 * 1000,     // 5 minutes
-      'list': 15 * 60 * 1000       // 15 minutes
-    };
-    return ttlMap[config.type] || 10 * 60 * 1000;
-  }
-
-  async invalidateRelatedCache(mediaId, updates) {
-    this.cache.invalidateByMedia(mediaId);
-    
-    if (updates.status) {
-      try {
-        const username = await this.plugin.auth.getAuthenticatedUsername();
-        if (username) {
-          this.cache.invalidateByUser(username);
-        }
-      } catch (error) {
-        // Ignore errors getting username for cache invalidation
-      }
+      throw error;
     }
   }
 
   // =================== ADVANCED FEATURES ===================
 
-  async getRecommendations(mediaId, limit = 10) {
+  async getRecommendations(mediaId, limit = 5) {
     const query = `
-      query ($mediaId: Int, $limit: Int) {
+      query ($mediaId: Int, $page: Int, $perPage: Int) {
         Media(id: $mediaId) {
-          recommendations(page: 1, perPage: $limit, sort: RATING_DESC) {
+          id
+          recommendations(page: $page, perPage: $perPage, sort: RATING_DESC) {
             nodes {
               rating
               mediaRecommendation {
@@ -2087,151 +3758,30 @@ class Api {
       }
     `;
 
-    const result = await this.makeRawRequest({
-      query,
-      variables: { mediaId: parseInt(mediaId), limit },
-      config: { type: 'recommendations', mediaId }
-    });
+    try {
+      const result = await this.makeRawRequest({
+        query,
+        variables: { mediaId: parseInt(mediaId), page: 1, perPage: limit },
+        config: { type: 'recommendations' }
+      });
 
-    return result.Media.recommendations.nodes
-      .filter(rec => rec.mediaRecommendation)
-      .map(rec => ({
-        ...rec.mediaRecommendation,
-        recommendationRating: rec.rating
+      return result.Media.recommendations.nodes.map(node => ({
+        rating: node.rating,
+        media: node.mediaRecommendation
       }));
+    } catch (error) {
+      this.log('RECOMMENDATIONS_FAILED', 'feature', this.generateRequestId(), {
+        mediaId,
+        error: error.message
+      });
+      return [];
+    }
   }
 
-  async getUserActivity(username, limit = 20) {
+  async getTrendingMedia(mediaType = 'ANIME', limit = 10) {
     const query = `
-      query ($username: String, $limit: Int) {
-        Page(page: 1, perPage: $limit) {
-          activities(userId_not: null, sort: ID_DESC) {
-            ... on ListActivity {
-              id
-              type
-              status
-              progress
-              createdAt
-              media {
-                id
-                title { romaji english }
-                coverImage { medium }
-              }
-              user {
-                name
-              }
-            }
-          }
-        }
-      }
-    `;
-
-    const result = await this.makeRawRequest({
-      query,
-      variables: { username, limit },
-      config: { type: 'activity', username }
-    });
-
-    return result.Page.activities.filter(activity => 
-      activity.user?.name === username
-    );
-  }
-
-  async searchAdvanced(filters = {}) {
-    const {
-      search = '',
-      type = 'ANIME',
-      format,
-      status,
-      year,
-      season,
-      genres,
-      tags,
-      sort = 'POPULARITY_DESC',
-      page = 1,
-      perPage = 20
-    } = filters;
-
-    const query = `
-      query (
-        $search: String
-        $type: MediaType
-        $format: MediaFormat
-        $status: MediaStatus
-        $year: Int
-        $season: MediaSeason
-        $genres: [String]
-        $tags: [String]
-        $sort: [MediaSort]
-        $page: Int
-        $perPage: Int
-      ) {
+      query ($type: MediaType, $page: Int, $perPage: Int) {
         Page(page: $page, perPage: $perPage) {
-          pageInfo {
-            total
-            currentPage
-            lastPage
-            hasNextPage
-          }
-          media(
-            search: $search
-            type: $type
-            format: $format
-            status: $status
-            seasonYear: $year
-            season: $season
-            genre_in: $genres
-            tag_in: $tags
-            sort: $sort
-          ) {
-            id
-            title { romaji english native }
-            coverImage { large medium }
-            format
-            status
-            averageScore
-            popularity
-            genres
-            tags { name rank }
-            startDate { year month day }
-            episodes
-            chapters
-            description
-            studios(isMain: true) {
-              nodes { name }
-            }
-          }
-        }
-      }
-    `;
-
-    const variables = {
-      search: search || null,
-      type,
-      format: format || null,
-      status: status || null,
-      year: year || null,
-      season: season || null,
-      genres: genres && genres.length > 0 ? genres : null,
-      tags: tags && tags.length > 0 ? tags : null,
-      sort: [sort],
-      page,
-      perPage
-    };
-
-    const result = await this.makeRawRequest({
-      query,
-      variables,
-      config: { type: 'advanced_search', filters }
-    });
-
-    return result.Page;
-  }
-
-  async getTrendingMedia(type = 'ANIME', limit = 20) {
-    const query = `
-      query ($type: MediaType, $limit: Int) {
-        Page(page: 1, perPage: $limit) {
           media(type: $type, sort: TRENDING_DESC) {
             id
             title { romaji english }
@@ -2239,81 +3789,141 @@ class Api {
             format
             averageScore
             trending
-            popularity
             genres
-            startDate { year }
+            episodes
+            chapters
           }
         }
       }
     `;
 
-    const result = await this.makeRawRequest({
-      query,
-      variables: { type, limit },
-      config: { type: 'trending', mediaType: type }
-    });
-
-    return result.Page.media;
-  }
-
-  // =================== UTILITY & PERFORMANCE ===================
-
-  async preloadUserData(username) {
-    const requests = [
-      this.fetchAniListData({ type: 'stats', username, mediaType: 'ANIME' }),
-      this.fetchAniListData({ type: 'stats', username, mediaType: 'MANGA' }),
-      this.fetchAniListData({ type: 'list', username, mediaType: 'ANIME', listType: 'CURRENT' }),
-      this.fetchAniListData({ type: 'list', username, mediaType: 'MANGA', listType: 'CURRENT' })
-    ];
-
     try {
-      await Promise.all(requests);
-      this.log('PRELOAD_SUCCESS', 'cache', 'preload', `User data preloaded for ${username}`);
+      const result = await this.makeRawRequest({
+        query,
+        variables: { type: mediaType, page: 1, perPage: limit },
+        config: { type: 'trending' }
+      });
+
+      return result.Page.media;
     } catch (error) {
-      this.log('PRELOAD_FAILED', 'cache', 'preload', `Failed to preload data for ${username}: ${error.message}`);
+      this.log('TRENDING_FAILED', 'feature', this.generateRequestId(), {
+        mediaType,
+        error: error.message
+      });
+      return [];
     }
   }
 
-  clearAllCaches() {
-    this.cache.clear();
-    this.log('CACHE_CLEARED', 'system', 'manual', 'All caches cleared');
-  }
+  // =================== DEBUG & MAINTENANCE ===================
 
-  getRequestStats() {
+  debugInfo() {
     return {
-      active: this.requestTracker.size,
-      queued: this.requestQueue.size || 0,
-      metrics: this.getHealthStatus()
+      health: this.getHealthStatus(),
+      activeRequests: this.requestTracker.size,
+      batchQueue: Object.fromEntries(
+        Array.from(this.batchQueue.entries()).map(([key, items]) => [key, items.length])
+      ),
+      config: {
+        maxRetries: this.config.maxRetries,
+        requestTimeout: this.config.requestTimeout,
+        circuitBreakerThreshold: this.config.circuitBreakerThreshold
+      }
     };
   }
 
-  // =================== LOGGING ===================
+  async runHealthCheck() {
+    const results = {
+      timestamp: new Date().toISOString(),
+      overall: 'unknown',
+      checks: {}
+    };
 
-  log(level, category, requestId, data = '') {
-    if (!this.plugin.settings?.debugMode && level !== 'ERROR') return;
+    // API connectivity
+    try {
+      await this.healthChecker.checkHealth();
+      results.checks.connectivity = { status: 'pass', latency: this.healthChecker.latency };
+    } catch (error) {
+      results.checks.connectivity = { status: 'fail', error: error.message };
+    }
+
+    // Authentication
+    try {
+      if (this.plugin.settings.accessToken) {
+        await this.plugin.auth.ensureValidToken();
+        results.checks.authentication = { status: 'pass' };
+      } else {
+        results.checks.authentication = { status: 'skip', reason: 'No token configured' };
+      }
+    } catch (error) {
+      results.checks.authentication = { status: 'fail', error: error.message };
+    }
+
+    // Cache
+    try {
+      const cacheStats = this.cache.getStats();
+      results.checks.cache = { 
+        status: 'pass', 
+        size: cacheStats.cacheSize,
+        hitRate: cacheStats.hitRate 
+      };
+    } catch (error) {
+      results.checks.cache = { status: 'fail', error: error.message };
+    }
+
+    // Circuit breaker
+    results.checks.circuitBreaker = {
+      status: this.circuitBreaker.state === 'OPEN' ? 'warn' : 'pass',
+      state: this.circuitBreaker.state,
+      failures: this.circuitBreaker.failures
+    };
+
+    // Overall status
+    const hasFailures = Object.values(results.checks).some(check => check.status === 'fail');
+    const hasWarnings = Object.values(results.checks).some(check => check.status === 'warn');
     
-    const timestamp = new Date().toISOString();
-    const logData = typeof data === 'object' ? JSON.stringify(data, null, 2) : data;
-    
-    console.log(`[${timestamp}] [Zoro-API] [${level}] [${category}] [${requestId}] ${logData}`);
+    if (hasFailures) {
+      results.overall = 'fail';
+    } else if (hasWarnings) {
+      results.overall = 'warn';
+    } else {
+      results.overall = 'pass';
+    }
+
+    return results;
+  }
+
+  resetMetrics() {
+    this.metrics = this.initializeMetrics();
+    this.circuitBreaker.failures = 0;
+    this.circuitBreaker.state = 'CLOSED';
+    this.log('METRICS_RESET', 'system', this.generateRequestId(), 'All metrics reset');
   }
 
   // =================== CLEANUP ===================
 
-  destroy() {
-    // Clear timers
+  async destroy() {
+    // Clear any pending timers
     if (this.batchTimer) {
       clearTimeout(this.batchTimer);
+      this.batchTimer = null;
     }
 
-    // Clear intervals (health monitoring)
-    // Note: In a real implementation, you'd store the interval ID and clear it here
-
-    // Clear pending requests
-    this.requestTracker.clear();
+    // Clear batch queues
     this.batchQueue.clear();
+    
+    // Clear request tracker
+    this.requestTracker.clear();
 
-    this.log('API_DESTROYED', 'system', 'shutdown', 'API instance destroyed');
+    // Final metrics log
+    this.log('API_DESTROY', 'system', this.generateRequestId(), this.getHealthStatus());
+  }
+}
+
+class ApiError extends Error {
+  constructor(type, message) {
+    super(message);
+    this.name = 'ApiError';
+    this.type = type;
   }
 }
 
@@ -2322,7 +3932,427 @@ class MalApi {
     this.plugin = plugin;
     this.requestQueue = plugin.requestQueue;
     this.cache = plugin.cache;
+    this.errorHandler = ZoroError.instance(plugin);
+    
     this.baseUrl = 'https://api.myanimelist.net/v2';
+    this.tokenUrl = 'https://myanimelist.net/v1/oauth2/token';
+    
+    this.fieldSets = {
+      compact: 'id,title,main_picture',
+      card: 'id,title,main_picture,media_type,status,genres,num_episodes,num_chapters,mean,start_date,end_date',
+      full: 'id,title,main_picture,alternative_titles,start_date,end_date,synopsis,mean,rank,popularity,num_list_users,num_scoring_users,nsfw,created_at,updated_at,media_type,status,genres,my_list_status,num_episodes,num_chapters,start_season,broadcast,source,average_episode_duration,rating,pictures,background,related_anime,related_manga,recommendations,studios,statistics'
+    };
+
+    this.statusMappings = {
+      'CURRENT': 'watching', 'COMPLETED': 'completed', 'PAUSED': 'on_hold',
+      'DROPPED': 'dropped', 'PLANNING': 'plan_to_watch',
+      'watching': 'watching', 'reading': 'reading', 'completed': 'completed',
+      'on_hold': 'on_hold', 'dropped': 'dropped', 'plan_to_watch': 'plan_to_watch',
+      'plan_to_read': 'plan_to_read'
+    };
+
+    this.reverseStatusMappings = {
+      'watching': 'CURRENT', 'reading': 'CURRENT', 'completed': 'COMPLETED',
+      'on_hold': 'PAUSED', 'dropped': 'DROPPED', 'plan_to_watch': 'PLANNING',
+      'plan_to_read': 'PLANNING'
+    };
+
+    this.metrics = { requests: 0, cached: 0, errors: 0 };
+  }
+
+  async fetchMALData(config) {
+    return await ZoroError.guard(
+      async () => await this.executeFetch(config),
+      'cache_fallback',
+      'MalApi.fetchMALData'
+    );
+  }
+
+  async executeFetch(config) {
+    const normalizedConfig = this.validateConfig(config);
+    const cacheKey = this.createCacheKey(normalizedConfig);
+    const cacheScope = this.getCacheScope(normalizedConfig.type);
+    
+    if (!normalizedConfig.nocache) {
+      const cached = this.cache.get(cacheKey, { scope: cacheScope });
+      if (cached) {
+        this.metrics.cached++;
+        return cached;
+      }
+    }
+
+    const requestParams = this.buildRequestParams(normalizedConfig);
+    const rawResponse = await this.makeRequest(requestParams);
+    const transformedData = this.transformResponse(rawResponse, normalizedConfig);
+    
+    this.cache.set(cacheKey, transformedData, { scope: cacheScope });
+    return transformedData;
+  }
+
+  validateConfig(config) {
+    if (!config || typeof config !== 'object') {
+      throw ZoroError.create('INVALID_CONFIG', 'Request config must be an object', { config }, 'error');
+    }
+
+    const normalized = { ...config };
+    if (!normalized.type) normalized.type = 'list';
+    if (normalized.mediaType) normalized.mediaType = normalized.mediaType.toUpperCase();
+    
+    if (normalized.page && (normalized.page < 1 || normalized.page > 1000)) {
+      throw ZoroError.create('INVALID_PAGINATION', `Invalid page: ${normalized.page}`, { page: normalized.page }, 'error');
+    }
+    
+    return normalized;
+  }
+
+  buildRequestParams(config) {
+    const url = this.buildEndpointUrl(config);
+    const params = this.buildQueryParams(config);
+    const headers = this.getAuthHeaders();
+    
+    return {
+      url: this.buildFullUrl(url, params),
+      method: 'GET',
+      headers,
+      priority: config.priority || 'normal',
+      metadata: { type: config.type, mediaType: config.mediaType }
+    };
+  }
+
+  buildEndpointUrl(config) {
+    switch (config.type) {
+      case 'stats':
+        return `${this.baseUrl}/users/@me`;
+      case 'single':
+      case 'list':
+        const mediaType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
+        return `${this.baseUrl}/users/@me/${mediaType}list`;
+      case 'search':
+        const searchType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
+        return `${this.baseUrl}/${searchType}`;
+      default:
+        throw ZoroError.create('INVALID_REQUEST_TYPE', `Unknown type: ${config.type}`, { config }, 'error');
+    }
+  }
+
+  buildQueryParams(config) {
+    const params = {};
+    
+    switch (config.type) {
+      case 'single':
+      case 'list':
+        params.fields = this.getFieldsForLayout(config.layout);
+        params.limit = 1000;
+        if (config.listType) params.status = this.mapAniListStatusToMAL(config.listType);
+        params.sort = 'list_score';
+        break;
+      case 'search':
+        params.q = config.search || config.query;
+        params.limit = config.perPage || 5;
+        params.offset = ((config.page || 1) - 1) * (config.perPage || 5);
+        params.fields = this.getFieldsForLayout(config.layout);
+        break;
+    }
+    
+    return params;
+  }
+
+  async makeRequest(requestParams) {
+    this.metrics.requests++;
+    
+    const requestFn = () => requestUrl({
+      url: requestParams.url,
+      method: requestParams.method || 'GET',
+      headers: requestParams.headers || {},
+      body: requestParams.body
+    });
+
+    try {
+      const response = await this.requestQueue.add(requestFn, {
+        priority: requestParams.priority || 'normal',
+        metadata: requestParams.metadata || {},
+        timeout: 30000
+      });
+
+      if (!response?.json) {
+        throw ZoroError.create('EMPTY_RESPONSE', 'Empty response from MAL', { url: requestParams.url }, 'error');
+      }
+
+      if (response.json.error) {
+        throw ZoroError.create('MAL_API_ERROR', response.json.message || 'MAL API error', { error: response.json }, 'error');
+      }
+
+      return response.json;
+    } catch (error) {
+      this.metrics.errors++;
+      if (error.type) throw error;
+      throw ZoroError.create('REQUEST_FAILED', 'MAL request failed', { error: error.message, url: requestParams.url }, 'error');
+    }
+  }
+
+  async updateMediaListEntry(mediaId, updates) {
+    return await ZoroError.guard(
+      async () => await this.executeUpdate(mediaId, updates),
+      'retry_once',
+      'MalApi.updateMediaListEntry'
+    );
+  }
+
+  async executeUpdate(mediaId, updates) {
+    if (!this.isValidMediaId(mediaId)) {
+      throw ZoroError.create('INVALID_MEDIA_ID', `Invalid media ID: ${mediaId}`, { mediaId }, 'error');
+    }
+
+    await this.ensureValidToken();
+    const mediaType = await this.getMediaType(mediaId);
+    const requestParams = this.buildUpdateRequest(mediaId, mediaType, updates);
+    
+    const response = await this.makeRequest(requestParams);
+    this.cache.invalidateByMedia(mediaId);
+    
+    return this.transformListEntry(response);
+  }
+
+  buildUpdateRequest(mediaId, mediaType, updates) {
+    const endpoint = mediaType === 'anime' ? 'anime' : 'manga';
+    const body = new URLSearchParams();
+    
+    if (updates.status !== undefined) {
+      body.append('status', this.mapAniListStatusToMAL(updates.status));
+    }
+    if (updates.score !== undefined && updates.score !== null) {
+      body.append('score', Math.round(updates.score));
+    }
+    if (updates.progress !== undefined) {
+      const progressField = mediaType === 'anime' ? 'num_episodes_watched' : 'num_chapters_read';
+      body.append(progressField, updates.progress);
+    }
+
+    return {
+      url: `${this.baseUrl}/${endpoint}/${mediaId}/my_list_status`,
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        ...this.getAuthHeaders()
+      },
+      body: body.toString(),
+      priority: 'high'
+    };
+  }
+
+  async makeObsidianRequest(code, redirectUri) {
+    const body = new URLSearchParams({
+      grant_type: 'authorization_code',
+      client_id: this.plugin.settings.malClientId,
+      client_secret: this.plugin.settings.malClientSecret || '',
+      redirect_uri: redirectUri,
+      code: code,
+      code_verifier: this.plugin.settings.malCodeVerifier
+    });
+
+    const requestFn = () => requestUrl({
+      url: this.tokenUrl,
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Accept': 'application/json'
+      },
+      body: body.toString()
+    });
+
+    try {
+      const response = await this.requestQueue.add(requestFn, { priority: 'high' });
+      
+      if (!response?.json || typeof response.json !== 'object') {
+        throw ZoroError.create('INVALID_AUTH_RESPONSE', 'Invalid auth response from MAL', {}, 'error');
+      }
+
+      return response.json;
+    } catch (error) {
+      throw ZoroError.create('AUTH_FAILED', 'MAL authentication failed', { error: error.message }, 'error');
+    }
+  }
+
+  async checkIfMediaInList(mediaId, mediaType) {
+    if (!this.plugin.settings.malAccessToken) return false;
+    
+    try {
+      const config = { type: 'single', mediaType, mediaId: parseInt(mediaId) };
+      const response = await this.fetchMALData(config);
+      return response.MediaList !== null;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  async getMediaType(mediaId) {
+    const types = ['anime', 'manga'];
+    
+    for (const type of types) {
+      try {
+        const requestParams = {
+          url: `${this.baseUrl}/${type}/${mediaId}?fields=id`,
+          headers: this.getAuthHeaders(),
+          priority: 'low'
+        };
+        
+        const response = await this.makeRequest(requestParams);
+        if (response && !response.error) return type;
+      } catch (error) {
+        continue;
+      }
+    }
+    return 'anime';
+  }
+
+  async getMALRecommendations(mediaId, mediaType = 'ANIME') {
+    return await ZoroError.guard(
+      async () => {
+        await this.ensureValidToken();
+        const type = mediaType === 'ANIME' ? 'anime' : 'manga';
+        
+        const requestParams = {
+          url: `${this.baseUrl}/${type}/${mediaId}?fields=recommendations`,
+          headers: this.getAuthHeaders(),
+          priority: 'low'
+        };
+
+        const response = await this.makeRequest(requestParams);
+        return response.recommendations?.map(rec => ({
+          node: this.transformMedia(rec.node),
+          num_recommendations: rec.num_recommendations
+        })) || [];
+      },
+      'degrade_gracefully',
+      'MalApi.getMALRecommendations'
+    );
+  }
+
+  async getMALSeasonalAnime(year, season) {
+    return await ZoroError.guard(
+      async () => {
+        await this.ensureValidToken();
+        
+        const requestParams = {
+          url: `${this.baseUrl}/anime/season/${year}/${season}?fields=${this.getFieldsForLayout('card')}`,
+          headers: this.getAuthHeaders(),
+          priority: 'low'
+        };
+
+        const response = await this.makeRequest(requestParams);
+        return {
+          Page: {
+            media: response.data?.map(item => this.transformMedia(item)) || []
+          }
+        };
+      },
+      'cache_fallback',
+      'MalApi.getMALSeasonalAnime'
+    );
+  }
+
+  transformResponse(data, config) {
+    switch (config.type) {
+      case 'search':
+        return { Page: { media: data.data?.map(item => this.transformMedia(item)) || [] } };
+      case 'single':
+        const targetMedia = data.data?.find(item => item.node.id === parseInt(config.mediaId));
+        return { MediaList: targetMedia ? this.transformListEntry(targetMedia) : null };
+      case 'stats':
+        return { User: this.transformUser(data) };
+      default:
+        return {
+          MediaListCollection: {
+            lists: [{ entries: data.data?.map(item => this.transformListEntry(item)) || [] }]
+          }
+        };
+    }
+  }
+
+  transformMedia(malMedia) {
+    const media = malMedia.node || malMedia;
+    
+    return {
+      id: media.id,
+      title: {
+        romaji: media.title || 'Unknown Title',
+        english: media.alternative_titles?.en || media.title || 'Unknown Title',
+        native: media.alternative_titles?.ja || media.title || 'Unknown Title'
+      },
+      coverImage: {
+        large: media.main_picture?.large || media.main_picture?.medium || null,
+        medium: media.main_picture?.medium || media.main_picture?.large || null
+      },
+      format: media.media_type?.toUpperCase() || null,
+      averageScore: media.mean ? Math.round(media.mean * 10) : null,
+      status: media.status?.toUpperCase()?.replace('_', '_') || null,
+      genres: media.genres?.map(g => g.name) || [],
+      episodes: media.num_episodes || null,
+      chapters: media.num_chapters || null,
+      isFavourite: false,
+      startDate: this.parseDate(media.start_date),
+      endDate: this.parseDate(media.end_date)
+    };
+  }
+
+  transformListEntry(malEntry) {
+    const media = malEntry.node;
+    const listStatus = malEntry.list_status;
+    
+    return {
+      id: listStatus?.id || null,
+      status: this.mapMALStatusToAniList(listStatus?.status),
+      score: listStatus?.score || 0,
+      progress: listStatus?.num_episodes_watched || listStatus?.num_chapters_read || 0,
+      media: this.transformMedia(malEntry)
+    };
+  }
+
+  transformUser(malUser) {
+    return {
+      id: malUser.id || null,
+      name: malUser.name || 'Unknown User',
+      avatar: {
+        large: malUser.picture || null,
+        medium: malUser.picture || null
+      },
+      statistics: {
+        anime: { count: 0, meanScore: 0, standardDeviation: 0, episodesWatched: 0, minutesWatched: 0 },
+        manga: { count: 0, meanScore: 0, standardDeviation: 0, chaptersRead: 0, volumesRead: 0 }
+      }
+    };
+  }
+
+  parseDate(dateString) {
+    if (!dateString) return null;
+    
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return null;
+      
+      return {
+        year: date.getFullYear(),
+        month: date.getMonth() + 1,
+        day: date.getDate()
+      };
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async ensureValidToken() {
+    if (!this.plugin.settings.malAccessToken) {
+      throw ZoroError.create('AUTH_REQUIRED', 'Authentication required', {}, 'error');
+    }
+    return await this.plugin.malAuth?.ensureValidToken?.() || true;
+  }
+
+  getAuthHeaders() {
+    const headers = { 'Accept': 'application/json' };
+    if (this.plugin.settings.malAccessToken) {
+      headers['Authorization'] = `Bearer ${this.plugin.settings.malAccessToken}`;
+    }
+    return headers;
   }
 
   createCacheKey(config) {
@@ -2333,459 +4363,66 @@ class MalApi {
     return JSON.stringify(sortedConfig);
   }
 
-  async makeObsidianRequest(code, redirectUri) {
-    const body = new URLSearchParams({
-      grant_type: 'authorization_code',
-      client_id: this.plugin.settings.malClientId,
-      client_secret: this.plugin.settings.malClientSecret || '',
-      redirect_uri: redirectUri,
-      code: code,
-      code_verifier: this.plugin.settings.malCodeVerifier // MAL uses PKCE
-    });
-
-    const headers = {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Accept': 'application/json',
+  getCacheScope(requestType) {
+    const scopeMap = {
+      'stats': 'userData',
+      'single': 'mediaData', 
+      'search': 'searchResults',
+      'list': 'userData'
     };
-
-    try {
-      const response = await this.requestQueue.add(() => requestUrl({
-        url: 'https://myanimelist.net/v1/oauth2/token',
-        method: 'POST',
-        headers,
-        body: body.toString()
-      }));
-
-      if (!response || typeof response.json !== 'object') {
-        throw new Error('Invalid response structure from MAL.');
-      }
-
-      return response.json;
-
-    } catch (err) {
-      console.error('[Zoro] MAL Obsidian requestUrl failed:', err);
-      throw new Error('Failed to authenticate with MAL via Obsidian requestUrl.');
-    }
+    return scopeMap[requestType] || 'userData';
   }
 
-  async fetchMALData(config) {
-    const cacheKey = this.createCacheKey(config);
-    
-    let cacheType;
-    if (config.type === 'stats') {
-      cacheType = 'userData';
-    } else if (config.type === 'single') {
-      cacheType = 'mediaData';
-    } else if (config.type === 'search') {
-      cacheType = 'searchResults';
-    } else {
-      cacheType = 'userData';
-    }
-    
-    const cacheTtl = null;
-    const cached = !config.nocache && this.plugin.cache.get(cacheKey, { scope: cacheType, ttl: cacheTtl });
-    if (cached) {
-      console.log(`[Zoro] Cache HIT for ${cacheType}: ${cacheKey.substring(0, 50)}...`);
-      return cached;
-    }
-
-    console.log(`[Zoro] Cache MISS for ${cacheType}: ${cacheKey.substring(0, 50)}...`);
-
-    try {
-      const headers = {
-        'Accept': 'application/json'
-      };
-      
-      if (this.plugin.settings.malAccessToken) {
-        await this.plugin.malAuth.ensureValidToken();
-        headers['Authorization'] = `Bearer ${this.plugin.settings.malAccessToken}`;
-      }
-      
-      let url, params = {};
-      
-      if (config.type === 'stats') {
-        // MAL doesn't have a direct stats endpoint, so we'll get user info
-        url = `${this.baseUrl}/users/@me`;
-      } else if (config.type === 'single') {
-        // Get specific anime/manga from user's list
-        const mediaType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
-        url = `${this.baseUrl}/users/@me/${mediaType}list`;
-        params = {
-          fields: this.getFieldsForLayout(config.layout),
-          limit: 1000 // We'll filter client-side for the specific media
-        };
-      } else if (config.type === 'search') {
-        const mediaType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
-        url = `${this.baseUrl}/${mediaType}`;
-        params = {
-          q: config.search || config.query, // Support both search and query params
-          limit: config.perPage || 5,
-          offset: ((config.page || 1) - 1) * (config.perPage || 5),
-          fields: this.getFieldsForLayout(config.layout)
-        };
-      } else {
-        // Get user's anime/manga list
-        const mediaType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
-        url = `${this.baseUrl}/users/@me/${mediaType}list`;
-        params = {
-          status: this.mapAniListStatusToMAL(config.listType),
-          fields: this.getFieldsForLayout(config.layout),
-          limit: 1000,
-          sort: 'list_score'
-        };
-      }
-      
-      // Build query string
-      const queryString = new URLSearchParams(params).toString();
-      const fullUrl = queryString ? `${url}?${queryString}` : url;
-      
-      const response = await this.requestQueue.add(() => requestUrl({
-        url: fullUrl,
-        method: 'GET',
-        headers
-      }));
-      
-      const result = response.json;
-      if (!result) throw new Error('Empty response from MAL.');
-      
-      if (result.error) {
-        throw new Error(result.message || 'MAL returned an error.');
-      }
-      
-      // Transform MAL data to match AniList structure
-      const transformedData = this.transformMALResponse(result, config);
-      
-      this.plugin.cache.set(cacheKey, transformedData, { scope: cacheType });
-      console.log(`[Zoro] Cached data for ${cacheType}: ${cacheKey.substring(0, 50)}...`);
-      
-      return transformedData;
-
-    } catch (error) {
-      console.error('[Zoro] fetchMALData() failed:', error);
-      throw error;
-    }
-  }
-
-  async updateMediaListEntry(mediaId, updates) {
-    try {
-      if (!this.plugin.settings.malAccessToken || !(await this.plugin.malAuth.ensureValidToken())) {
-        throw new Error('❌ Authentication required to update entries.');
-      }
-
-      // First, determine if this is anime or manga by checking the media
-      const mediaType = await this.getMediaType(mediaId);
-      const endpoint = mediaType === 'anime' ? 'anime' : 'manga';
-      
-      const body = new URLSearchParams();
-      
-      if (updates.status !== undefined) {
-        body.append('status', this.mapAniListStatusToMAL(updates.status));
-      }
-      if (updates.score !== undefined && updates.score !== null) {
-        body.append('score', Math.round(updates.score)); // MAL uses 1-10 integer scores
-      }
-      if (updates.progress !== undefined) {
-        const progressField = mediaType === 'anime' ? 'num_episodes_watched' : 'num_chapters_read';
-        body.append(progressField, updates.progress);
-      }
-      
-      const response = await this.requestQueue.add(() => requestUrl({
-        url: `${this.baseUrl}/${endpoint}/${mediaId}/my_list_status`,
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Authorization': `Bearer ${this.plugin.settings.malAccessToken}`
-        },
-        body: body.toString()
-      }));
-
-      const result = response.json;
-
-      if (!result || result.error) {
-        throw new Error(`MAL update error: ${result?.message || 'Unknown error'}`);
-      }
-      
-      this.plugin.cache.invalidateByMedia(mediaId);
-      
-      return this.transformMALListEntry(result);
-
-    } catch (error) {
-      console.error('[Zoro] updateMediaListEntry failed:', error);
-      throw new Error(`❌ Failed to update entry: ${error.message}`);
-    }
-  }
-
-  async checkIfMediaInList(mediaId, mediaType) {
-    if (!this.plugin.settings.malAccessToken) return false;
-    
-    try {
-      const config = {
-        type: 'single',
-        mediaType: mediaType,
-        mediaId: parseInt(mediaId)
-      };
-      
-      const response = await this.fetchMALData(config);
-      return response.MediaList !== null;
-    } catch (error) {
-      console.warn('Error checking media list status:', error);
-      return false;
-    }
-  }
-
-  // Helper method to get media type (anime/manga) from MAL
-  async getMediaType(mediaId) {
-    try {
-      // Try anime first
-      const animeResponse = await this.requestQueue.add(() => requestUrl({
-        url: `${this.baseUrl}/anime/${mediaId}?fields=id`,
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${this.plugin.settings.malAccessToken}`
-        }
-      }));
-      
-      if (animeResponse.json && !animeResponse.json.error) {
-        return 'anime';
-      }
-    } catch (e) {
-      // Try manga
-      try {
-        const mangaResponse = await this.requestQueue.add(() => requestUrl({
-          url: `${this.baseUrl}/manga/${mediaId}?fields=id`,
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${this.plugin.settings.malAccessToken}`
-          }
-        }));
-        
-        if (mangaResponse.json && !mangaResponse.json.error) {
-          return 'manga';
-        }
-      } catch (e2) {
-        // Default to anime if both fail
-        return 'anime';
-      }
-    }
-    return 'anime';
+  buildFullUrl(baseUrl, params) {
+    if (!params || Object.keys(params).length === 0) return baseUrl;
+    const queryString = new URLSearchParams(params).toString();
+    return `${baseUrl}?${queryString}`;
   }
 
   getFieldsForLayout(layout = 'card') {
-    const fieldSets = {
-      compact: 'id,title,main_picture',
-      card: 'id,title,main_picture,media_type,status,genres,num_episodes,num_chapters,mean,start_date,end_date',
-      full: 'id,title,main_picture,alternative_titles,start_date,end_date,synopsis,mean,rank,popularity,num_list_users,num_scoring_users,nsfw,created_at,updated_at,media_type,status,genres,my_list_status,num_episodes,num_chapters,start_season,broadcast,source,average_episode_duration,rating,pictures,background,related_anime,related_manga,recommendations,studios,statistics'
-    };
-    
-    return fieldSets[layout] || fieldSets.card;
+    return this.fieldSets[layout] || this.fieldSets.card;
   }
 
   mapAniListStatusToMAL(status) {
-    const statusMap = {
-      'CURRENT': 'watching',
-      'COMPLETED': 'completed',
-      'PAUSED': 'on_hold',
-      'DROPPED': 'dropped',
-      'PLANNING': 'plan_to_watch',
-      // MAL equivalents
-      'watching': 'watching',
-      'reading': 'reading',
-      'completed': 'completed',
-      'on_hold': 'on_hold',
-      'dropped': 'dropped',
-      'plan_to_watch': 'plan_to_watch',
-      'plan_to_read': 'plan_to_read'
-    };
-    
-    return statusMap[status] || status;
+    return this.statusMappings[status] || status;
   }
 
   mapMALStatusToAniList(status) {
-    const statusMap = {
-      'watching': 'CURRENT',
-      'reading': 'CURRENT',
-      'completed': 'COMPLETED',
-      'on_hold': 'PAUSED',
-      'dropped': 'DROPPED',
-      'plan_to_watch': 'PLANNING',
-      'plan_to_read': 'PLANNING'
-    };
-    
-    return statusMap[status] || status;
+    return this.reverseStatusMappings[status] || status;
   }
 
-  transformMALResponse(data, config) {
-    if (config.type === 'search') {
-      return {
-        Page: {
-          media: data.data?.map(item => this.transformMALMedia(item)) || []
-        }
-      };
-    } else if (config.type === 'single') {
-      // Find the specific media in the list
-      const targetMedia = data.data?.find(item => 
-        item.node.id === parseInt(config.mediaId)
-      );
-      
-      return {
-        MediaList: targetMedia ? this.transformMALListEntry(targetMedia) : null
-      };
-    } else if (config.type === 'stats') {
-      return {
-        User: this.transformMALUser(data)
-      };
-    } else {
-      // Regular list
-      return {
-        MediaListCollection: {
-          lists: [{
-            entries: data.data?.map(item => this.transformMALListEntry(item)) || []
-          }]
-        }
-      };
-    }
-  }
-
-  transformMALMedia(malMedia) {
-    const media = malMedia.node || malMedia;
-    
-    return {
-      id: media.id,
-      title: {
-        romaji: media.title,
-        english: media.alternative_titles?.en || media.title,
-        native: media.alternative_titles?.ja || media.title
-      },
-      coverImage: {
-        large: media.main_picture?.large || media.main_picture?.medium,
-        medium: media.main_picture?.medium || media.main_picture?.large
-      },
-      format: media.media_type?.toUpperCase(),
-      averageScore: media.mean ? Math.round(media.mean * 10) : null, // Convert to AniList scale
-      status: media.status?.toUpperCase().replace('_', '_'),
-      genres: media.genres?.map(g => g.name) || [],
-      episodes: media.num_episodes,
-      chapters: media.num_chapters,
-      isFavourite: false, // MAL doesn't provide this in basic queries
-      startDate: this.parseMALDate(media.start_date),
-      endDate: this.parseMALDate(media.end_date)
-    };
-  }
-
-  transformMALListEntry(malEntry) {
-    const media = malEntry.node;
-    const listStatus = malEntry.list_status;
-    
-    return {
-      id: listStatus?.id,
-      status: this.mapMALStatusToAniList(listStatus?.status),
-      score: listStatus?.score || 0,
-      progress: listStatus?.num_episodes_watched || listStatus?.num_chapters_read || 0,
-      media: this.transformMALMedia(malEntry)
-    };
-  }
-
-  transformMALUser(malUser) {
-    return {
-      id: malUser.id,
-      name: malUser.name,
-      avatar: {
-        large: malUser.picture,
-        medium: malUser.picture
-      },
-      // MAL doesn't provide detailed statistics like AniList
-      statistics: {
-        anime: {
-          count: 0,
-          meanScore: 0,
-          standardDeviation: 0,
-          episodesWatched: 0,
-          minutesWatched: 0
-        },
-        manga: {
-          count: 0,
-          meanScore: 0,
-          standardDeviation: 0,
-          chaptersRead: 0,
-          volumesRead: 0
-        }
-      }
-    };
-  }
-
-  parseMALDate(dateString) {
-    if (!dateString) return null;
-    
-    const date = new Date(dateString);
-    return {
-      year: date.getFullYear(),
-      month: date.getMonth() + 1,
-      day: date.getDate()
-    };
+  isValidMediaId(mediaId) {
+    const id = parseInt(mediaId);
+    return !isNaN(id) && id > 0 && id < Number.MAX_SAFE_INTEGER;
   }
 
   getMALUrl(mediaId, mediaType = 'ANIME') {
-    if (!mediaId || typeof mediaId !== 'number') {
-      throw new Error(`Invalid mediaId: ${mediaId}`);
+    if (!this.isValidMediaId(mediaId)) {
+      throw ZoroError.create('INVALID_MEDIA_ID', `Invalid mediaId: ${mediaId}`, { mediaId, mediaType }, 'error');
     }
-
     const type = String(mediaType).toUpperCase();
     const urlType = type === 'MANGA' ? 'manga' : 'anime';
-
     return `https://myanimelist.net/${urlType}/${mediaId}`;
   }
 
-  // Additional helper methods for MAL integration
+  enableDebug(enabled = true) {
+    this.errorHandler.build('DEBUG_MODE_CHANGED', 
+      `Debug mode ${enabled ? 'enabled' : 'disabled'}`, 
+      { enabled }, 
+      'info'
+    );
+  }
+
   async fetchMALStats(config) {
-    // Wrapper method to match the processor's expected method name
     return this.fetchMALData({ ...config, type: 'stats' });
   }
 
   async fetchMALList(config) {
-    // Wrapper method to match the processor's expected method name
     return this.fetchMALData(config);
   }
 
-  async getMALRecommendations(mediaId, mediaType = 'ANIME') {
-    try {
-      const type = mediaType === 'ANIME' ? 'anime' : 'manga';
-      const response = await this.requestQueue.add(() => requestUrl({
-        url: `${this.baseUrl}/${type}/${mediaId}?fields=recommendations`,
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${this.plugin.settings.malAccessToken}`
-        }
-      }));
-
-      return response.json.recommendations?.map(rec => ({
-        node: this.transformMALMedia(rec.node),
-        num_recommendations: rec.num_recommendations
-      })) || [];
-    } catch (error) {
-      console.error('[Zoro] getMALRecommendations failed:', error);
-      return [];
-    }
-  }
-
-  async getMALSeasonalAnime(year, season) {
-    try {
-      const response = await this.requestQueue.add(() => requestUrl({
-        url: `${this.baseUrl}/anime/season/${year}/${season}?fields=${this.getFieldsForLayout('card')}`,
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${this.plugin.settings.malAccessToken}`
-        }
-      }));
-
-      return {
-        Page: {
-          media: response.json.data?.map(item => this.transformMALMedia(item)) || []
-        }
-      };
-    } catch (error) {
-      console.error('[Zoro] getMALSeasonalAnime failed:', error);
-      throw error;
-    }
+  getMetrics() {
+    return { ...this.metrics };
   }
 }
 
@@ -2795,7 +4432,7 @@ class ZoroPlugin extends Plugin {
     this.globalListeners = [];
     this.cache = new Cache({ obsidianPlugin: this });
     this.requestQueue = new RequestQueue(this);
-    this.api = new Api(this);
+    this.api = new AnilistApi(this);
     this.auth = new Authentication(this);
     this.malAuth = new MALAuthentication(this);
     this.malApi = new MalApi(this);
@@ -3648,7 +5285,11 @@ class Render {
   constructor(plugin) {
     this.plugin = plugin;
   }
-
+  logDebug(...args) {
+  if (this.plugin.settings.debugMode) {
+    console.log('[Zoro-Render]', ...args);
+  }
+}
   renderSearchInterface(el, config) {
   el.empty();
   el.className = 'zoro-search-container';
@@ -4863,6 +6504,618 @@ generateInsights(stats, type, user) {
   }
 
   clear(el) { el.empty?.(); }
+}
+
+class Edit {
+  constructor(plugin) {
+    this.plugin = plugin;
+    this.saving = false;
+    this.config = {
+      statuses: [
+        { value: 'CURRENT', label: 'Watching/Reading', emoji: '📺' },
+        { value: 'PLANNING', label: 'Plan to Watch/Read', emoji: '📋' },
+        { value: 'COMPLETED', label: 'Completed', emoji: '✅' },
+        { value: 'DROPPED', label: 'Dropped', emoji: '❌' },
+        { value: 'PAUSED', label: 'Paused', emoji: '⏸️' },
+        { value: 'REPEATING', label: 'Rewatching/Rereading', emoji: '🔄' }
+      ],
+      fields: {
+        status: { label: 'Status', emoji: '🧿', id: 'zoro-status' },
+        score: { label: 'Score', emoji: '⭐', id: 'zoro-score', min: 0, max: 10, step: 0.1 },
+        progress: { label: 'Progress', emoji: '📊', id: 'zoro-progress' }
+      },
+      buttons: {
+        save: { label: 'Save', class: 'zoro-save-btn' },
+        remove: { label: '️Remove', class: 'zoro-remove-btn' },
+        favorite: { class: 'zoro-fav-btn', hearts: { empty: '', filled: '' } },
+        close: { class: 'zoro-modal-close' }
+      }
+    };
+  }
+
+  createEditModal(entry, onSave, onCancel) {
+    // Create modal structure
+    const modal = this.createModalStructure();
+    const { overlay, content, form } = modal;
+    
+    // Create all elements
+    const title = this.createTitle(entry);
+
+    const closeBtn = Edit.createCloseButton(() => this.closeModal(modal.container, onCancel));
+    const favoriteBtn = this.createFavoriteButton(entry);
+    const formFields = this.createFormFields(entry);
+    const quickButtons = this.createQuickProgressButtons(entry, formFields.progress.input, formFields.status.input);
+    const actionButtons = this.createActionButtons(entry, onSave, modal);
+    
+    // Setup interactions
+    this.setupModalInteractions(modal, overlay, onCancel);
+    this.setupFormSubmission(form, entry, onSave, actionButtons.save, formFields, modal);
+    this.setupEscapeListener(onCancel, modal, () => {
+      this.handleSave(entry, onSave, actionButtons.save, formFields, modal);
+    });
+    
+    // Assemble modal
+    this.assembleModal(content, form, {
+      title,
+      closeBtn,
+      favoriteBtn,
+      formFields,
+      quickButtons,
+      actionButtons
+    });
+    
+    // Show modal
+    document.body.appendChild(modal.container);
+    
+    // Initialize favorite status
+    this.initializeFavoriteButton(entry, favoriteBtn);
+    
+    return modal;
+  }
+  
+  createModalStructure() {
+    const container = document.createElement('div');
+    container.className = 'zoro-edit-modal';
+    
+    const overlay = document.createElement('div');
+    overlay.className = 'zoro-modal-overlay';
+    
+    const content = document.createElement('div');
+    content.className = 'zoro-modal-content';
+    
+    const form = document.createElement('form');
+    form.className = 'zoro-edit-form';
+    
+    content.appendChild(form);
+    container.append(overlay, content);
+    
+    return { container, overlay, content, form };
+  }
+  
+  createTitle(entry) {
+    const title = document.createElement('h3');
+    title.className = 'zoro-modal-title';
+    title.textContent = entry.media.title.english || entry.media.title.romaji;
+    return title;
+  }
+  
+  
+static createCloseButton(onClick) {
+    const btn = document.createElement('button');
+    btn.className = 'panel-close-btn';  // same style as More Details panel
+    btn.innerHTML = '×';
+    btn.title = 'Close';
+    btn.onclick = onClick;
+    return btn;
+}
+
+  
+  createFavoriteButton(entry) {
+  const favBtn = document.createElement('button');
+  favBtn.className = this.config.buttons.favorite.class;
+  favBtn.type = 'button';
+  favBtn.title = 'Toggle Favorite';
+  
+  // Correctly set className, not textContent
+  favBtn.className = entry.media.isFavourite ? 
+    'zoro-fav-btn zoro-heart' : 
+    'zoro-fav-btn zoro-no-heart';
+  // Leave textContent empty for CSS hearts
+  
+  favBtn.onclick = () => this.toggleFavorite(entry, favBtn);
+  return favBtn;
+}
+  
+  createFormFields(entry) {
+    const statusField = this.createStatusField(entry);
+    const scoreField = this.createScoreField(entry);
+    const progressField = this.createProgressField(entry);
+    
+    return {
+      status: statusField,
+      score: scoreField,
+      progress: progressField
+    };
+  }
+  
+  createFormField({ type, label, emoji, id, value, options = {}, className = '' }) {
+    const group = document.createElement('div');
+    group.className = `zoro-form-group zoro-${type}-group ${className}`.trim();
+
+    const labelEl = document.createElement('label');
+    labelEl.className = `zoro-form-label zoro-${type}-label`;
+    labelEl.textContent = `${emoji} ${label}`;
+    labelEl.setAttribute('for', id);
+
+    let input;
+    
+    if (type === 'select') {
+      input = this.createSelectInput(id, value, options);
+    } else if (type === 'number') {
+      input = this.createNumberInput(id, value, options);
+    } else {
+      input = this.createTextInput(id, value, options);
+    }
+
+    group.appendChild(labelEl);
+    group.appendChild(input);
+    return { group, input, label: labelEl };
+  }
+
+  createSelectInput(id, selectedValue, { items = [] }) {
+    const select = document.createElement('select');
+    select.className = `zoro-form-input zoro-${id.replace('zoro-', '')}-select`;
+    select.id = id;
+
+    items.forEach(item => {
+      const option = document.createElement('option');
+      option.value = item.value;
+      option.textContent = item.label;
+      if (item.value === selectedValue) option.selected = true;
+      select.appendChild(option);
+    });
+
+    return select;
+  }
+
+  createNumberInput(id, value, { min, max, step, placeholder }) {
+    const input = document.createElement('input');
+    input.className = `zoro-form-input zoro-${id.replace('zoro-', '')}-input`;
+    input.type = 'number';
+    input.id = id;
+    if (min !== undefined) input.min = min;
+    if (max !== undefined) input.max = max;
+    if (step !== undefined) input.step = step;
+    input.value = value ?? '';
+    if (placeholder) input.placeholder = placeholder;
+    return input;
+  }
+  
+  createTextInput(id, value, { placeholder }) {
+    const input = document.createElement('input');
+    input.className = `zoro-form-input zoro-${id.replace('zoro-', '')}-input`;
+    input.type = 'text';
+    input.id = id;
+    input.value = value ?? '';
+    if (placeholder) input.placeholder = placeholder;
+    return input;
+  }
+  
+  createStatusField(entry) {
+    const config = this.config.fields.status;
+    return this.createFormField({
+      type: 'select',
+      label: config.label,
+      emoji: config.emoji,
+      id: config.id,
+      value: entry.status,
+      options: { items: this.config.statuses }
+    });
+  }
+
+  createScoreField(entry) {
+    const config = this.config.fields.score;
+    return this.createFormField({
+      type: 'number',
+      label: `${config.label} (${config.min}–${config.max})`,
+      emoji: config.emoji,
+      id: config.id,
+      value: entry.score,
+      options: {
+        min: config.min,
+        max: config.max,
+        step: config.step,
+        placeholder: `e.g. ${config.max/2 + config.max/4}` // e.g. 7.5
+      }
+    });
+  }
+
+  createProgressField(entry) {
+    const config = this.config.fields.progress;
+    const maxProgress = entry.media.episodes || entry.media.chapters || 999;
+    
+    return this.createFormField({
+      type: 'number',
+      label: config.label,
+      emoji: config.emoji,
+      id: config.id,
+      value: entry.progress || 0,
+      options: {
+        min: 0,
+        max: maxProgress,
+        placeholder: 'Progress'
+      }
+    });
+  }
+
+  createQuickProgressButtons(entry, progressInput, statusSelect) {
+    const container = document.createElement('div');
+    container.className = 'zoro-quick-progress-buttons';
+
+    const plusBtn = this.createQuickButton('+1', 'zoro-plus-btn', () => {
+      const current = parseInt(progressInput.value) || 0;
+      const max = progressInput.max;
+      if (current < max) progressInput.value = current + 1;
+    });
+
+    const minusBtn = this.createQuickButton('-1', 'zoro-minus-btn', () => {
+      const current = parseInt(progressInput.value) || 0;
+      if (current > 0) progressInput.value = current - 1;
+    });
+
+    const completeBtn = this.createQuickButton('Complete', 'zoro-complete-btn', () => {
+      progressInput.value = entry.media.episodes || entry.media.chapters || 1;
+      statusSelect.value = 'COMPLETED';
+    });
+
+    container.append(plusBtn, minusBtn, completeBtn);
+    return { container, plus: plusBtn, minus: minusBtn, complete: completeBtn };
+  }
+  
+  createQuickButton(label, className, onClick) {
+    const button = document.createElement('button');
+    button.className = `zoro-quick-btn ${className}`;
+    button.type = 'button';
+    button.textContent = label;
+    button.onclick = onClick;
+    return button;
+  }
+
+  createActionButtons(entry, onSave, modal) {
+    const container = document.createElement('div');
+    container.className = 'zoro-modal-buttons';
+    
+    const removeBtn = this.createActionButton({
+      label: this.config.buttons.remove.label,
+      className: this.config.buttons.remove.class,
+      onClick: () => this.handleRemove(entry, modal.container)
+    });
+    
+    const saveBtn = this.createActionButton({
+      label: this.config.buttons.save.label,
+      className: this.config.buttons.save.class,
+      type: 'submit'
+    });
+    
+    container.append(removeBtn, saveBtn);
+    return { container, remove: removeBtn, save: saveBtn };
+  }
+  
+  createActionButton({ label, className, type = 'button', onClick, disabled = false }) {
+    const button = document.createElement('button');
+    button.className = `zoro-modal-btn ${className}`;
+    button.type = type;
+    button.textContent = label;
+    button.disabled = disabled;
+    if (onClick) button.onclick = onClick;
+    return button;
+  }
+
+  assembleModal(content, form, elements) {
+    content.appendChild(elements.closeBtn);
+   const favContainer = document.createElement('div');
+   favContainer.className = 'zoro-fav-container';
+favContainer.appendChild(elements.favoriteBtn);
+
+    form.append(
+      elements.title,
+      elements.favoriteBtn,
+      elements.formFields.status.group,
+      elements.formFields.score.group,
+      elements.formFields.progress.group,
+      elements.quickButtons.container,
+      elements.actionButtons.container
+    );
+    
+    
+  }
+  
+  setupModalInteractions(modal, overlay, onCancel) {
+    overlay.onclick = () => this.closeModal(modal.container, onCancel);
+  }
+  
+  setupFormSubmission(form, entry, onSave, saveBtn, formFields, modal) {
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      await this.handleSave(entry, onSave, saveBtn, formFields, modal);
+    };
+  }
+  
+  setupEscapeListener(onCancel, modal, saveFunction) {
+    const escListener = (e) => {
+      if (e.key === 'Escape') {
+        this.closeModal(modal.container, onCancel);
+      }
+      if (e.key === 'Enter' && e.ctrlKey) {
+        saveFunction();
+      }
+    };
+    
+    this.plugin.addGlobalListener(document, 'keydown', escListener);
+    
+    // Store reference for cleanup
+    modal._escListener = escListener;
+  }
+  
+  closeModal(modalElement, onCancel) {
+    if (modalElement && modalElement.parentNode) {
+      modalElement.parentNode.removeChild(modalElement);
+    }
+    if (modalElement._escListener) {
+      document.removeEventListener('keydown', modalElement._escListener);
+    }
+    this.plugin.removeAllGlobalListeners();
+    onCancel();
+  }
+
+  async initializeFavoriteButton(entry, favBtn) {
+    if (entry.media.isFavourite !== undefined) {
+      favBtn.className = entry.media.isFavourite ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart';
+      favBtn.disabled = false;
+      return;
+    }
+    
+    try {
+      const query = `
+        query ($mediaId: Int) {
+          Media(id: $mediaId) { 
+            isFavourite 
+            type
+          }
+        }`;
+      const res = await this.plugin.requestQueue.add(() =>
+        requestUrl({
+          url: 'https://graphql.anilist.co',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.plugin.settings.accessToken}`
+          },
+          body: JSON.stringify({ query, variables: { mediaId: entry.media.id } })
+        })
+      );
+      const mediaData = res.json.data?.Media;
+      const fav = mediaData?.isFavourite;
+      entry.media.isFavourite = fav;
+      favBtn.className = fav ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart';
+      favBtn.dataset.mediaType = mediaData?.type;
+    } catch (e) {
+      console.warn('Could not fetch favorite', e);
+    }
+  }
+
+async toggleFavorite(entry, favBtn) {
+  favBtn.disabled = true;
+  
+  // Store the CURRENT state before the API call
+  const wasAlreadyFavorited = entry.media.isFavourite;
+  
+  try {
+    let mediaType = favBtn.dataset.mediaType;
+    if (!mediaType) {
+      mediaType = entry.media.type || (entry.media.episodes ? 'ANIME' : 'MANGA');
+    }
+    
+    const isAnime = mediaType === 'ANIME';
+    
+    const mutation = `
+      mutation ToggleFav($animeId: Int, $mangaId: Int) {
+        ToggleFavourite(animeId: $animeId, mangaId: $mangaId) {
+          anime { nodes { id } }
+          manga { nodes { id } }
+        }
+      }`;
+      
+    const variables = {};
+    if (isAnime) {
+      variables.animeId = entry.media.id;
+    } else {
+      variables.mangaId = entry.media.id;
+    }
+
+    const res = await this.plugin.requestQueue.add(() =>
+      requestUrl({
+        url: 'https://graphql.anilist.co',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.plugin.settings.accessToken}`
+        },
+        body: JSON.stringify({ query: mutation, variables })
+      })
+    );
+    
+    if (res.json.errors) {
+      new Notice(`API Error: ${res.json.errors[0].message}`, 8000);
+      throw new Error(res.json.errors[0].message);
+    }
+    
+    // FIX: Simply toggle the previous state instead of parsing complex response
+    const isFav = !wasAlreadyFavorited;
+    
+    entry.media.isFavourite = isFav;
+    document.querySelectorAll(`[data-media-id="${entry.media.id}"] .zoro-heart`)
+      .forEach(h => h.style.display = entry.media.isFavourite ? '' : 'none');
+    
+    this.invalidateCache(entry);
+    this.updateAllFavoriteButtons(entry);
+    
+    favBtn.className = isFav ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart';
+    new Notice(`${isFav ? 'Added to' : 'Removed from'} favorites!`, 3000);
+    
+  } catch (e) {
+    new Notice(`❌ Error: ${e.message || 'Unknown error'}`, 8000);
+  } finally {
+    favBtn.disabled = false;
+  }
+}
+
+  async handleRemove(entry, modalElement) {
+    if (!confirm('Remove this entry?')) return;
+    
+    const removeBtn = modalElement.querySelector('.zoro-remove-btn');
+    removeBtn.disabled = true;
+    removeBtn.textContent = '⏳';
+    
+    try {
+      const mutation = `
+        mutation ($id: Int) {
+          DeleteMediaListEntry(id: $id) { deleted }
+        }`;
+      await this.plugin.requestQueue.add(() =>
+        requestUrl({
+          url: 'https://graphql.anilist.co',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.plugin.settings.accessToken}`
+          },
+          body: JSON.stringify({ query: mutation, variables: { id: entry.id } })
+        })
+      );
+      
+      this.invalidateCache(entry);
+      this.refreshUI(entry);
+      this.closeModal(modalElement, () => {});
+      
+      new Notice('✅ Removed');
+    } catch (e) {
+      this.showModalError(modalElement.querySelector('.zoro-edit-form'), `Remove failed: ${e.message}`);
+      removeBtn.disabled = false;
+      removeBtn.textContent = '🗑️';
+
+    }
+  }
+
+  async handleSave(entry, onSave, saveBtn, formFields, modal) {
+    if (this.saving) return;
+    this.saving = true;
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+    
+    const form = modal.form;
+    const scoreVal = parseFloat(formFields.score.input.value);
+    
+    // Validation
+    if (formFields.score.input.value && (isNaN(scoreVal) || scoreVal < 0 || scoreVal > 10)) {
+      this.showModalError(form, "Score must be between 0 and 10");
+      this.resetSaveButton(saveBtn);
+      return;
+    }
+    
+    try {
+      const updates = {
+        status: formFields.status.input.value,
+        score: formFields.score.input.value === '' ? null : scoreVal,
+        progress: parseInt(formFields.progress.input.value) || 0
+      };
+      
+      await onSave(updates);
+      
+      // Update entry data
+      Object.assign(entry, updates);
+      
+      this.invalidateCache(entry);
+      this.refreshUI(entry);
+      this.closeModal(modal.container, () => {});
+      
+      new Notice('✅ Saved');
+    } catch (err) {
+      this.showModalError(form, `Save failed: ${err.message}`);
+      this.resetSaveButton(saveBtn);
+      return;
+    }
+    
+    this.resetSaveButton(saveBtn);
+  }
+  
+  resetSaveButton(saveBtn) {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save';
+    this.saving = false;
+  }
+  
+  showModalError(form, msg) {
+    form.querySelector('.zoro-modal-error')?.remove();
+    const banner = document.createElement('div');
+    banner.className = 'zoro-modal-error';
+    banner.textContent = msg;
+    form.appendChild(banner);
+  }
+  
+  invalidateCache(entry) {
+    this.plugin.cache.invalidateByMedia(String(entry.media.id));
+    const listKey = this.plugin.api.createCacheKey({ 
+      type: 'list', 
+      username: entry.media.user?.name, 
+      listType: entry.status 
+    });
+    const entryKey = this.plugin.api.createCacheKey({ 
+      type: 'single', 
+      mediaId: entry.media.id 
+    });
+    this.plugin.cache.delete(listKey, { scope: 'userData' });
+    this.plugin.cache.delete(entryKey, { scope: 'mediaData' });
+  }
+  
+  updateAllFavoriteButtons(entry) {
+  document.querySelectorAll(`[data-media-id="${entry.media.id}"] .zoro-fav-btn`)
+    .forEach(btn => {
+      btn.className = entry.media.isFavourite ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart';
+    });
+}
+  
+  refreshUI(entry) {
+    const card = document.querySelector(`.zoro-container [data-media-id="${entry.media.id}"]`);
+    if (card) {
+      // Update individual elements
+      const statusBadge = card.querySelector('.clickable-status');
+      if (statusBadge) {
+        statusBadge.textContent = entry.status;
+        statusBadge.className = `status-badge status-${entry.status.toLowerCase()} clickable-status`;
+      }
+      const scoreEl = card.querySelector('.score');
+      if (scoreEl) scoreEl.textContent = entry.score != null ? `★ ${entry.score}` : '';
+      
+      const progressEl = card.querySelector('.progress');
+      if (progressEl) {
+        const total = entry.media.episodes || entry.media.chapters || '?';
+        progressEl.textContent = `${entry.progress}/${total}`;
+      }
+    } else {
+      // Refresh entire container
+      const container = Array.from(document.querySelectorAll('.zoro-container'))
+                              .find(c => c.querySelector(`[data-media-id="${entry.media.id}"]`));
+      if (container) {
+        const block = container.closest('.markdown-rendered')?.querySelector('code');
+        if (block) {
+          container.innerHTML = '';
+          container.appendChild(this.plugin.render.createListSkeleton(1));
+          this.plugin.processZoroCodeBlock(block.textContent, container, {});
+        }
+      }
+    }
+  }
 }
 
 class MoreDetailsPanel {
@@ -6447,618 +8700,6 @@ static THEME_REPO_URL = 'https://api.github.com/repos/zara-kasi/zoro/contents/Th
   }
 }
 
-class Edit {
-  constructor(plugin) {
-    this.plugin = plugin;
-    this.saving = false;
-    this.config = {
-      statuses: [
-        { value: 'CURRENT', label: 'Watching/Reading', emoji: '📺' },
-        { value: 'PLANNING', label: 'Plan to Watch/Read', emoji: '📋' },
-        { value: 'COMPLETED', label: 'Completed', emoji: '✅' },
-        { value: 'DROPPED', label: 'Dropped', emoji: '❌' },
-        { value: 'PAUSED', label: 'Paused', emoji: '⏸️' },
-        { value: 'REPEATING', label: 'Rewatching/Rereading', emoji: '🔄' }
-      ],
-      fields: {
-        status: { label: 'Status', emoji: '🧿', id: 'zoro-status' },
-        score: { label: 'Score', emoji: '⭐', id: 'zoro-score', min: 0, max: 10, step: 0.1 },
-        progress: { label: 'Progress', emoji: '📊', id: 'zoro-progress' }
-      },
-      buttons: {
-        save: { label: 'Save', class: 'zoro-save-btn' },
-        remove: { label: '️Remove', class: 'zoro-remove-btn' },
-        favorite: { class: 'zoro-fav-btn', hearts: { empty: '', filled: '' } },
-        close: { class: 'zoro-modal-close' }
-      }
-    };
-  }
-
-  createEditModal(entry, onSave, onCancel) {
-    // Create modal structure
-    const modal = this.createModalStructure();
-    const { overlay, content, form } = modal;
-    
-    // Create all elements
-    const title = this.createTitle(entry);
-
-    const closeBtn = Edit.createCloseButton(() => this.closeModal(modal.container, onCancel));
-    const favoriteBtn = this.createFavoriteButton(entry);
-    const formFields = this.createFormFields(entry);
-    const quickButtons = this.createQuickProgressButtons(entry, formFields.progress.input, formFields.status.input);
-    const actionButtons = this.createActionButtons(entry, onSave, modal);
-    
-    // Setup interactions
-    this.setupModalInteractions(modal, overlay, onCancel);
-    this.setupFormSubmission(form, entry, onSave, actionButtons.save, formFields, modal);
-    this.setupEscapeListener(onCancel, modal, () => {
-      this.handleSave(entry, onSave, actionButtons.save, formFields, modal);
-    });
-    
-    // Assemble modal
-    this.assembleModal(content, form, {
-      title,
-      closeBtn,
-      favoriteBtn,
-      formFields,
-      quickButtons,
-      actionButtons
-    });
-    
-    // Show modal
-    document.body.appendChild(modal.container);
-    
-    // Initialize favorite status
-    this.initializeFavoriteButton(entry, favoriteBtn);
-    
-    return modal;
-  }
-  
-  createModalStructure() {
-    const container = document.createElement('div');
-    container.className = 'zoro-edit-modal';
-    
-    const overlay = document.createElement('div');
-    overlay.className = 'zoro-modal-overlay';
-    
-    const content = document.createElement('div');
-    content.className = 'zoro-modal-content';
-    
-    const form = document.createElement('form');
-    form.className = 'zoro-edit-form';
-    
-    content.appendChild(form);
-    container.append(overlay, content);
-    
-    return { container, overlay, content, form };
-  }
-  
-  createTitle(entry) {
-    const title = document.createElement('h3');
-    title.className = 'zoro-modal-title';
-    title.textContent = entry.media.title.english || entry.media.title.romaji;
-    return title;
-  }
-  
-  
-static createCloseButton(onClick) {
-    const btn = document.createElement('button');
-    btn.className = 'panel-close-btn';  // same style as More Details panel
-    btn.innerHTML = '×';
-    btn.title = 'Close';
-    btn.onclick = onClick;
-    return btn;
-}
-
-  
-  createFavoriteButton(entry) {
-  const favBtn = document.createElement('button');
-  favBtn.className = this.config.buttons.favorite.class;
-  favBtn.type = 'button';
-  favBtn.title = 'Toggle Favorite';
-  
-  // Correctly set className, not textContent
-  favBtn.className = entry.media.isFavourite ? 
-    'zoro-fav-btn zoro-heart' : 
-    'zoro-fav-btn zoro-no-heart';
-  // Leave textContent empty for CSS hearts
-  
-  favBtn.onclick = () => this.toggleFavorite(entry, favBtn);
-  return favBtn;
-}
-  
-  createFormFields(entry) {
-    const statusField = this.createStatusField(entry);
-    const scoreField = this.createScoreField(entry);
-    const progressField = this.createProgressField(entry);
-    
-    return {
-      status: statusField,
-      score: scoreField,
-      progress: progressField
-    };
-  }
-  
-  createFormField({ type, label, emoji, id, value, options = {}, className = '' }) {
-    const group = document.createElement('div');
-    group.className = `zoro-form-group zoro-${type}-group ${className}`.trim();
-
-    const labelEl = document.createElement('label');
-    labelEl.className = `zoro-form-label zoro-${type}-label`;
-    labelEl.textContent = `${emoji} ${label}`;
-    labelEl.setAttribute('for', id);
-
-    let input;
-    
-    if (type === 'select') {
-      input = this.createSelectInput(id, value, options);
-    } else if (type === 'number') {
-      input = this.createNumberInput(id, value, options);
-    } else {
-      input = this.createTextInput(id, value, options);
-    }
-
-    group.appendChild(labelEl);
-    group.appendChild(input);
-    return { group, input, label: labelEl };
-  }
-
-  createSelectInput(id, selectedValue, { items = [] }) {
-    const select = document.createElement('select');
-    select.className = `zoro-form-input zoro-${id.replace('zoro-', '')}-select`;
-    select.id = id;
-
-    items.forEach(item => {
-      const option = document.createElement('option');
-      option.value = item.value;
-      option.textContent = item.label;
-      if (item.value === selectedValue) option.selected = true;
-      select.appendChild(option);
-    });
-
-    return select;
-  }
-
-  createNumberInput(id, value, { min, max, step, placeholder }) {
-    const input = document.createElement('input');
-    input.className = `zoro-form-input zoro-${id.replace('zoro-', '')}-input`;
-    input.type = 'number';
-    input.id = id;
-    if (min !== undefined) input.min = min;
-    if (max !== undefined) input.max = max;
-    if (step !== undefined) input.step = step;
-    input.value = value ?? '';
-    if (placeholder) input.placeholder = placeholder;
-    return input;
-  }
-  
-  createTextInput(id, value, { placeholder }) {
-    const input = document.createElement('input');
-    input.className = `zoro-form-input zoro-${id.replace('zoro-', '')}-input`;
-    input.type = 'text';
-    input.id = id;
-    input.value = value ?? '';
-    if (placeholder) input.placeholder = placeholder;
-    return input;
-  }
-  
-  createStatusField(entry) {
-    const config = this.config.fields.status;
-    return this.createFormField({
-      type: 'select',
-      label: config.label,
-      emoji: config.emoji,
-      id: config.id,
-      value: entry.status,
-      options: { items: this.config.statuses }
-    });
-  }
-
-  createScoreField(entry) {
-    const config = this.config.fields.score;
-    return this.createFormField({
-      type: 'number',
-      label: `${config.label} (${config.min}–${config.max})`,
-      emoji: config.emoji,
-      id: config.id,
-      value: entry.score,
-      options: {
-        min: config.min,
-        max: config.max,
-        step: config.step,
-        placeholder: `e.g. ${config.max/2 + config.max/4}` // e.g. 7.5
-      }
-    });
-  }
-
-  createProgressField(entry) {
-    const config = this.config.fields.progress;
-    const maxProgress = entry.media.episodes || entry.media.chapters || 999;
-    
-    return this.createFormField({
-      type: 'number',
-      label: config.label,
-      emoji: config.emoji,
-      id: config.id,
-      value: entry.progress || 0,
-      options: {
-        min: 0,
-        max: maxProgress,
-        placeholder: 'Progress'
-      }
-    });
-  }
-
-  createQuickProgressButtons(entry, progressInput, statusSelect) {
-    const container = document.createElement('div');
-    container.className = 'zoro-quick-progress-buttons';
-
-    const plusBtn = this.createQuickButton('+1', 'zoro-plus-btn', () => {
-      const current = parseInt(progressInput.value) || 0;
-      const max = progressInput.max;
-      if (current < max) progressInput.value = current + 1;
-    });
-
-    const minusBtn = this.createQuickButton('-1', 'zoro-minus-btn', () => {
-      const current = parseInt(progressInput.value) || 0;
-      if (current > 0) progressInput.value = current - 1;
-    });
-
-    const completeBtn = this.createQuickButton('Complete', 'zoro-complete-btn', () => {
-      progressInput.value = entry.media.episodes || entry.media.chapters || 1;
-      statusSelect.value = 'COMPLETED';
-    });
-
-    container.append(plusBtn, minusBtn, completeBtn);
-    return { container, plus: plusBtn, minus: minusBtn, complete: completeBtn };
-  }
-  
-  createQuickButton(label, className, onClick) {
-    const button = document.createElement('button');
-    button.className = `zoro-quick-btn ${className}`;
-    button.type = 'button';
-    button.textContent = label;
-    button.onclick = onClick;
-    return button;
-  }
-
-  createActionButtons(entry, onSave, modal) {
-    const container = document.createElement('div');
-    container.className = 'zoro-modal-buttons';
-    
-    const removeBtn = this.createActionButton({
-      label: this.config.buttons.remove.label,
-      className: this.config.buttons.remove.class,
-      onClick: () => this.handleRemove(entry, modal.container)
-    });
-    
-    const saveBtn = this.createActionButton({
-      label: this.config.buttons.save.label,
-      className: this.config.buttons.save.class,
-      type: 'submit'
-    });
-    
-    container.append(removeBtn, saveBtn);
-    return { container, remove: removeBtn, save: saveBtn };
-  }
-  
-  createActionButton({ label, className, type = 'button', onClick, disabled = false }) {
-    const button = document.createElement('button');
-    button.className = `zoro-modal-btn ${className}`;
-    button.type = type;
-    button.textContent = label;
-    button.disabled = disabled;
-    if (onClick) button.onclick = onClick;
-    return button;
-  }
-
-  assembleModal(content, form, elements) {
-    content.appendChild(elements.closeBtn);
-   const favContainer = document.createElement('div');
-   favContainer.className = 'zoro-fav-container';
-favContainer.appendChild(elements.favoriteBtn);
-
-    form.append(
-      elements.title,
-      elements.favoriteBtn,
-      elements.formFields.status.group,
-      elements.formFields.score.group,
-      elements.formFields.progress.group,
-      elements.quickButtons.container,
-      elements.actionButtons.container
-    );
-    
-    
-  }
-  
-  setupModalInteractions(modal, overlay, onCancel) {
-    overlay.onclick = () => this.closeModal(modal.container, onCancel);
-  }
-  
-  setupFormSubmission(form, entry, onSave, saveBtn, formFields, modal) {
-    form.onsubmit = async (e) => {
-      e.preventDefault();
-      await this.handleSave(entry, onSave, saveBtn, formFields, modal);
-    };
-  }
-  
-  setupEscapeListener(onCancel, modal, saveFunction) {
-    const escListener = (e) => {
-      if (e.key === 'Escape') {
-        this.closeModal(modal.container, onCancel);
-      }
-      if (e.key === 'Enter' && e.ctrlKey) {
-        saveFunction();
-      }
-    };
-    
-    this.plugin.addGlobalListener(document, 'keydown', escListener);
-    
-    // Store reference for cleanup
-    modal._escListener = escListener;
-  }
-  
-  closeModal(modalElement, onCancel) {
-    if (modalElement && modalElement.parentNode) {
-      modalElement.parentNode.removeChild(modalElement);
-    }
-    if (modalElement._escListener) {
-      document.removeEventListener('keydown', modalElement._escListener);
-    }
-    this.plugin.removeAllGlobalListeners();
-    onCancel();
-  }
-
-  async initializeFavoriteButton(entry, favBtn) {
-    if (entry.media.isFavourite !== undefined) {
-      favBtn.className = entry.media.isFavourite ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart';
-      favBtn.disabled = false;
-      return;
-    }
-    
-    try {
-      const query = `
-        query ($mediaId: Int) {
-          Media(id: $mediaId) { 
-            isFavourite 
-            type
-          }
-        }`;
-      const res = await this.plugin.requestQueue.add(() =>
-        requestUrl({
-          url: 'https://graphql.anilist.co',
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.plugin.settings.accessToken}`
-          },
-          body: JSON.stringify({ query, variables: { mediaId: entry.media.id } })
-        })
-      );
-      const mediaData = res.json.data?.Media;
-      const fav = mediaData?.isFavourite;
-      entry.media.isFavourite = fav;
-      favBtn.className = fav ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart';
-      favBtn.dataset.mediaType = mediaData?.type;
-    } catch (e) {
-      console.warn('Could not fetch favorite', e);
-    }
-  }
-
-async toggleFavorite(entry, favBtn) {
-  favBtn.disabled = true;
-  
-  // Store the CURRENT state before the API call
-  const wasAlreadyFavorited = entry.media.isFavourite;
-  
-  try {
-    let mediaType = favBtn.dataset.mediaType;
-    if (!mediaType) {
-      mediaType = entry.media.type || (entry.media.episodes ? 'ANIME' : 'MANGA');
-    }
-    
-    const isAnime = mediaType === 'ANIME';
-    
-    const mutation = `
-      mutation ToggleFav($animeId: Int, $mangaId: Int) {
-        ToggleFavourite(animeId: $animeId, mangaId: $mangaId) {
-          anime { nodes { id } }
-          manga { nodes { id } }
-        }
-      }`;
-      
-    const variables = {};
-    if (isAnime) {
-      variables.animeId = entry.media.id;
-    } else {
-      variables.mangaId = entry.media.id;
-    }
-
-    const res = await this.plugin.requestQueue.add(() =>
-      requestUrl({
-        url: 'https://graphql.anilist.co',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.plugin.settings.accessToken}`
-        },
-        body: JSON.stringify({ query: mutation, variables })
-      })
-    );
-    
-    if (res.json.errors) {
-      new Notice(`API Error: ${res.json.errors[0].message}`, 8000);
-      throw new Error(res.json.errors[0].message);
-    }
-    
-    // FIX: Simply toggle the previous state instead of parsing complex response
-    const isFav = !wasAlreadyFavorited;
-    
-    entry.media.isFavourite = isFav;
-    document.querySelectorAll(`[data-media-id="${entry.media.id}"] .zoro-heart`)
-      .forEach(h => h.style.display = entry.media.isFavourite ? '' : 'none');
-    
-    this.invalidateCache(entry);
-    this.updateAllFavoriteButtons(entry);
-    
-    favBtn.className = isFav ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart';
-    new Notice(`${isFav ? 'Added to' : 'Removed from'} favorites!`, 3000);
-    
-  } catch (e) {
-    new Notice(`❌ Error: ${e.message || 'Unknown error'}`, 8000);
-  } finally {
-    favBtn.disabled = false;
-  }
-}
-
-  async handleRemove(entry, modalElement) {
-    if (!confirm('Remove this entry?')) return;
-    
-    const removeBtn = modalElement.querySelector('.zoro-remove-btn');
-    removeBtn.disabled = true;
-    removeBtn.textContent = '⏳';
-    
-    try {
-      const mutation = `
-        mutation ($id: Int) {
-          DeleteMediaListEntry(id: $id) { deleted }
-        }`;
-      await this.plugin.requestQueue.add(() =>
-        requestUrl({
-          url: 'https://graphql.anilist.co',
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.plugin.settings.accessToken}`
-          },
-          body: JSON.stringify({ query: mutation, variables: { id: entry.id } })
-        })
-      );
-      
-      this.invalidateCache(entry);
-      this.refreshUI(entry);
-      this.closeModal(modalElement, () => {});
-      
-      new Notice('✅ Removed');
-    } catch (e) {
-      this.showModalError(modalElement.querySelector('.zoro-edit-form'), `Remove failed: ${e.message}`);
-      removeBtn.disabled = false;
-      removeBtn.textContent = '🗑️';
-
-    }
-  }
-
-  async handleSave(entry, onSave, saveBtn, formFields, modal) {
-    if (this.saving) return;
-    this.saving = true;
-    saveBtn.disabled = true;
-    saveBtn.textContent = 'Saving...';
-    
-    const form = modal.form;
-    const scoreVal = parseFloat(formFields.score.input.value);
-    
-    // Validation
-    if (formFields.score.input.value && (isNaN(scoreVal) || scoreVal < 0 || scoreVal > 10)) {
-      this.showModalError(form, "Score must be between 0 and 10");
-      this.resetSaveButton(saveBtn);
-      return;
-    }
-    
-    try {
-      const updates = {
-        status: formFields.status.input.value,
-        score: formFields.score.input.value === '' ? null : scoreVal,
-        progress: parseInt(formFields.progress.input.value) || 0
-      };
-      
-      await onSave(updates);
-      
-      // Update entry data
-      Object.assign(entry, updates);
-      
-      this.invalidateCache(entry);
-      this.refreshUI(entry);
-      this.closeModal(modal.container, () => {});
-      
-      new Notice('✅ Saved');
-    } catch (err) {
-      this.showModalError(form, `Save failed: ${err.message}`);
-      this.resetSaveButton(saveBtn);
-      return;
-    }
-    
-    this.resetSaveButton(saveBtn);
-  }
-  
-  resetSaveButton(saveBtn) {
-    saveBtn.disabled = false;
-    saveBtn.textContent = 'Save';
-    this.saving = false;
-  }
-  
-  showModalError(form, msg) {
-    form.querySelector('.zoro-modal-error')?.remove();
-    const banner = document.createElement('div');
-    banner.className = 'zoro-modal-error';
-    banner.textContent = msg;
-    form.appendChild(banner);
-  }
-  
-  invalidateCache(entry) {
-    this.plugin.cache.invalidateByMedia(String(entry.media.id));
-    const listKey = this.plugin.api.createCacheKey({ 
-      type: 'list', 
-      username: entry.media.user?.name, 
-      listType: entry.status 
-    });
-    const entryKey = this.plugin.api.createCacheKey({ 
-      type: 'single', 
-      mediaId: entry.media.id 
-    });
-    this.plugin.cache.delete(listKey, { scope: 'userData' });
-    this.plugin.cache.delete(entryKey, { scope: 'mediaData' });
-  }
-  
-  updateAllFavoriteButtons(entry) {
-  document.querySelectorAll(`[data-media-id="${entry.media.id}"] .zoro-fav-btn`)
-    .forEach(btn => {
-      btn.className = entry.media.isFavourite ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart';
-    });
-}
-  
-  refreshUI(entry) {
-    const card = document.querySelector(`.zoro-container [data-media-id="${entry.media.id}"]`);
-    if (card) {
-      // Update individual elements
-      const statusBadge = card.querySelector('.clickable-status');
-      if (statusBadge) {
-        statusBadge.textContent = entry.status;
-        statusBadge.className = `status-badge status-${entry.status.toLowerCase()} clickable-status`;
-      }
-      const scoreEl = card.querySelector('.score');
-      if (scoreEl) scoreEl.textContent = entry.score != null ? `★ ${entry.score}` : '';
-      
-      const progressEl = card.querySelector('.progress');
-      if (progressEl) {
-        const total = entry.media.episodes || entry.media.chapters || '?';
-        progressEl.textContent = `${entry.progress}/${total}`;
-      }
-    } else {
-      // Refresh entire container
-      const container = Array.from(document.querySelectorAll('.zoro-container'))
-                              .find(c => c.querySelector(`[data-media-id="${entry.media.id}"]`));
-      if (container) {
-        const block = container.closest('.markdown-rendered')?.querySelector('code');
-        if (block) {
-          container.innerHTML = '';
-          container.appendChild(this.plugin.render.createListSkeleton(1));
-          this.plugin.processZoroCodeBlock(block.textContent, container, {});
-        }
-      }
-    }
-  }
-}
-
 class Prompt {
   constructor(plugin) {
     this.plugin = plugin;
@@ -7366,7 +9007,7 @@ class Export {
   }
 }
 
- class Sample {
+class Sample {
     constructor(plugin) {
         this.plugin = plugin;
     }
@@ -7434,7 +9075,6 @@ class Export {
     }
 }
 
-
 class ZoroSettingTab extends PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
@@ -7466,7 +9106,7 @@ class ZoroSettingTab extends PluginSettingTab {
     const More = section('✨  More');
     const Data = section('📤 Data');
     const Cache = section('🔁 Cache');
-    const Exp = section('🚧 Upcoming');
+    const Exp = section('🚧 Beta');
     const About = section('ℹ️ About');
 
     new Setting(Account)
@@ -7789,6 +9429,24 @@ new Setting(Exp)
         );
       })
   );
+  
+  
+new Setting(Exp)
+  .setName('Debug Mode')
+  .setDesc('Enable detailed console logs and performance metrics')
+  .addToggle(toggle => toggle
+    .setValue(this.plugin.settings.debugMode || false)
+    .onChange(async (value) => {
+      this.plugin.settings.debugMode = value;
+      await this.plugin.saveSettings();
+      
+      // Enable/disable debug across components
+      this.plugin.api?.enableDebug?.(value);
+      this.plugin.cache?.enableDebug?.(value);
+      new Notice(`Debug mode ${value ? 'enabled' : 'disabled'}`, 2000);
+    })
+  );
+
 
 
     new Setting(About)

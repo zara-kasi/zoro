@@ -33,6 +33,10 @@ const DEFAULT_SETTINGS = {
   malRefreshToken: '',
   malTokenExpiry: null,
   malUserInfo: null,
+simklClientId: '',
+simklClientSecret: '',
+simklAccessToken: '',
+simklUserInfo: null,
   debugMode: false,
 };
 
@@ -4643,6 +4647,7 @@ class ZoroPlugin extends Plugin {
     this.auth = new Authentication(this);
     this.malAuth = new MALAuthentication(this);
     this.malApi = new MalApi(this);
+this.simklAuth = new SimklAuthentication(this);
     this.theme = new Theme(this);
     this.processor = new Processor(this);
     this.edit = new Edit(this);
@@ -8570,6 +8575,330 @@ return;
   }
 }
 
+class SimklAuthentication {
+  constructor(plugin) {
+    this.plugin = plugin;
+    this.pollInterval = null;
+  }
+
+  static SIMKL_PIN_URL = 'https://api.simkl.com/oauth/pin';
+  static SIMKL_PIN_CHECK_URL = 'https://api.simkl.com/oauth/pin/';
+  static SIMKL_USER_URL = 'https://api.simkl.com/users/settings';
+
+  get isLoggedIn() {
+    return Boolean(this.plugin.settings.simklAccessToken);
+  }
+
+  async loginWithFlow() {
+    if (!this.plugin.settings.simklClientId) {
+      new Notice('❌ Please enter your SIMKL Client ID first.', 5000);
+      return;
+    }
+
+    if (this.isLoggedIn) {
+      new Notice('Already authenticated with SIMKL', 3000);
+      return;
+    }
+
+    try {
+      // Step 1: Request device code
+      const pinUrl = `${SimklAuthentication.SIMKL_PIN_URL}?client_id=${encodeURIComponent(this.plugin.settings.simklClientId)}&redirect_uri=${encodeURIComponent('urn:ietf:wg:oauth:2.0:oob')}`;
+      
+      const deviceResponse = await requestUrl({
+        url: pinUrl,
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json'
+        },
+        throw: false
+      });
+
+      if (deviceResponse.status < 200 || deviceResponse.status >= 300) {
+        throw new Error(`PIN request failed: HTTP ${deviceResponse.status}`);
+      }
+
+      const deviceData = deviceResponse.json;
+      
+      if (!deviceData.user_code) {
+        throw new Error('Invalid response: missing user_code');
+      }
+
+      // Step 2: Open browser to PIN page
+      new Notice('🔐 Opening SIMKL PIN page…', 3000);
+      const pinPageUrl = deviceData.verification_url || 'https://simkl.com/pin';
+      
+      if (window.require) {
+        const { shell } = window.require('electron');
+        await shell.openExternal(pinPageUrl);
+      } else {
+        window.open(pinPageUrl, '_blank');
+      }
+
+      // Step 3: Show PIN in modal and start polling
+      const modal = new SimklPinModal(this.plugin.app, deviceData, async () => {
+        // User clicked cancel
+        this.stopPolling();
+      });
+      modal.open();
+
+      // Start polling for authentication
+      this.startPolling(deviceData);
+
+    } catch (error) {
+      console.error('SIMKL authentication failed:', error);
+      new Notice(`❌ Authentication failed: ${error.message}`, 8000);
+    }
+  }
+
+  async startPolling(deviceData) {
+    const { user_code, interval = 5, expires_in = 900 } = deviceData;
+    const maxAttempts = Math.floor(expires_in / interval);
+    let attempts = 0;
+
+    const poll = async () => {
+      attempts++;
+      
+      if (attempts > maxAttempts) {
+        this.stopPolling();
+        new Notice('❌ Authentication timeout. Please try again.', 8000);
+        return;
+      }
+
+      try {
+        const pollUrl = `${SimklAuthentication.SIMKL_PIN_CHECK_URL}${encodeURIComponent(user_code)}?client_id=${encodeURIComponent(this.plugin.settings.simklClientId)}`;
+
+        const response = await requestUrl({
+          url: pollUrl,
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json'
+          },
+          throw: false
+        });
+
+        const data = response.json || {};
+
+        if (data.access_token) {
+          // Success!
+          this.plugin.settings.simklAccessToken = data.access_token;
+          await this.plugin.saveSettings();
+          
+          // Close modal
+          document.querySelectorAll('.modal-container').forEach(modal => {
+            if (modal.querySelector('.simkl-pin-modal')) {
+              modal.remove();
+            }
+          });
+          
+          this.stopPolling();
+          
+          // Fetch user info
+          try {
+            await this.fetchUserInfo();
+            new Notice(`✅ Successfully authenticated with SIMKL! Welcome ${this.plugin.settings.simklUserInfo?.user?.name || 'user'} 🎉`, 4000);
+          } catch (userError) {
+            console.log('[SIMKL-AUTH] Failed to fetch user info but auth succeeded', userError);
+            new Notice('✅ Authentication successful! 🎉', 4000);
+          }
+          
+          return;
+        }
+
+        // Continue polling if no token yet
+        if (response.status === 404 || !data || Object.keys(data).length === 0) {
+          // User hasn't entered code yet, continue polling
+        }
+
+      } catch (error) {
+        console.error('Polling error:', error);
+      }
+    };
+
+    // Start polling
+    this.pollInterval = setInterval(poll, interval * 1000);
+    
+    // Do first poll after interval
+    setTimeout(poll, interval * 1000);
+  }
+
+  stopPolling() {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
+    }
+  }
+
+  async fetchUserInfo() {
+    const res = await requestUrl({
+      url: SimklAuthentication.SIMKL_USER_URL,
+      method: 'GET',
+      headers: { 
+        'Authorization': `Bearer ${this.plugin.settings.simklAccessToken}`,
+        'simkl-api-key': this.plugin.settings.simklClientId
+      },
+      throw: false
+    });
+    
+    if (res.status < 200 || res.status >= 300) {
+      throw new Error(`Could not fetch user info (HTTP ${res.status})`);
+    }
+    
+    this.plugin.settings.simklUserInfo = res.json;
+    await this.plugin.saveSettings();
+  }
+
+  async logout() {
+    this.plugin.settings.simklAccessToken = '';
+    this.plugin.settings.simklUserInfo = null;
+    this.plugin.settings.simklClientId = '';
+    this.plugin.settings.simklClientSecret = '';
+    await this.plugin.saveSettings();
+    
+    // Clear any SIMKL-specific cache if you have one
+    if (this.plugin.cache) {
+      this.plugin.cache.clear('simklData');
+    }
+    
+    new Notice('✅ Logged out from SIMKL & cleared credentials.', 3000);
+  }
+
+  async ensureValidToken() {
+    if (!this.isLoggedIn) throw new Error('Not authenticated with SIMKL');
+    return true;
+  }
+  
+  async getAuthenticatedUsername() {
+    await this.ensureValidToken();
+
+    if (!this.plugin.settings.simklUserInfo) {
+      await this.fetchUserInfo();
+    }
+
+    const name = this.plugin.settings.simklUserInfo?.user?.name;
+    if (!name) throw new Error('Could not fetch SIMKL username');
+    return name;
+  }
+
+  getAuthHeaders() { 
+    return this.isLoggedIn ? { 
+      'Authorization': `Bearer ${this.plugin.settings.simklAccessToken}`,
+      'simkl-api-key': this.plugin.settings.simklClientId
+    } : null; 
+  }
+  
+  isAuthenticated() { 
+    return this.isLoggedIn; 
+  }
+  
+  getUserInfo() { 
+    return this.plugin.settings.simklUserInfo; 
+  }
+}
+
+// SIMKL PIN Modal
+class SimklPinModal extends Modal {
+  constructor(app, deviceData, onCancel) {
+    super(app);
+    this.deviceData = deviceData;
+    this.onCancel = onCancel;
+    this.countdownInterval = null;
+  }
+
+  onOpen() {
+    const { contentEl } = this;
+    contentEl.empty();
+    contentEl.addClass('simkl-pin-modal');
+
+    contentEl.createEl('h2', { 
+      text: '🔐 SIMKL Authentication',
+      attr: { style: 'text-align: center; margin-bottom: 20px;' }
+    });
+
+    const instructionsEl = contentEl.createEl('div', {
+      attr: { style: 'text-align: center; padding: 20px;' }
+    });
+
+    instructionsEl.createEl('h3', { 
+      text: 'Your PIN Code:',
+      attr: { style: 'margin-bottom: 15px;' }
+    });
+
+    // Large PIN code display
+    const codeEl = instructionsEl.createEl('div', {
+      text: this.deviceData.user_code,
+      cls: 'simkl-pin-code',
+      attr: { 
+        style: 'font-size: 3em; font-weight: bold; color: var(--interactive-accent); margin: 30px 0; padding: 20px; border: 3px solid var(--interactive-accent); border-radius: 12px; font-family: monospace; letter-spacing: 5px;'
+      }
+    });
+
+    // Instructions
+    const steps = instructionsEl.createEl('ol', {
+      attr: { style: 'text-align: left; max-width: 400px; margin: 0 auto 20px auto;' }
+    });
+    steps.createEl('li', { text: 'The SIMKL PIN page should have opened in your browser' });
+    steps.createEl('li', { text: 'Enter the code shown above' });
+    steps.createEl('li', { text: 'This dialog will close automatically when complete' });
+
+    // Buttons
+    const buttonContainer = instructionsEl.createEl('div', {
+      attr: { style: 'margin-top: 20px;' }
+    });
+
+    const copyButton = buttonContainer.createEl('button', {
+      text: '📋 Copy Code',
+      cls: 'mod-cta',
+      attr: { style: 'margin: 5px;' }
+    });
+
+    const cancelButton = buttonContainer.createEl('button', {
+      text: 'Cancel',
+      attr: { style: 'margin: 5px;' }
+    });
+
+    // Countdown
+    const countdownEl = instructionsEl.createEl('div', {
+      attr: { style: 'margin-top: 15px; font-size: 0.9em; color: var(--text-muted);' }
+    });
+
+    // Event handlers
+    copyButton.onclick = () => {
+      navigator.clipboard.writeText(this.deviceData.user_code);
+      new Notice('📋 Code copied to clipboard!');
+    };
+
+    cancelButton.onclick = () => {
+      this.close();
+      if (this.onCancel) this.onCancel();
+      new Notice('Authentication cancelled.');
+    };
+
+    // Start countdown
+    let timeLeft = this.deviceData.expires_in || 900;
+    const updateCountdown = () => {
+      const minutes = Math.floor(timeLeft / 60);
+      const seconds = timeLeft % 60;
+      countdownEl.textContent = `⏰ Code expires in: ${minutes}:${seconds.toString().padStart(2, '0')}`;
+      
+      if (timeLeft > 0) {
+        timeLeft--;
+      } else {
+        this.close();
+        if (this.onCancel) this.onCancel();
+      }
+    };
+    
+    updateCountdown();
+    this.countdownInterval = setInterval(updateCountdown, 1000);
+  }
+
+  onClose() {
+    if (this.countdownInterval) {
+      clearInterval(this.countdownInterval);
+    }
+  }
+}
+
 class AuthModal extends Modal {
   constructor(app, config) {
     super(app);
@@ -9649,6 +9978,17 @@ new Setting(Theme)
         await this.handleMALAuthButtonClick();
       });
     });
+const simklAuthSetting = new Setting(Exp)
+  .setName('🎬 SIMKL')
+  .setDesc('Track and sync your anime/movie/TV show progress with SIMKL.');
+
+simklAuthSetting.addButton(btn => {
+  this.simklAuthButton = btn;
+  this.updateSimklAuthButton();
+  btn.onClick(async () => {
+    await this.handleSimklAuthButtonClick();
+  });
+});
     
     new Setting(Exp)
   .setName('Default API Source')
@@ -9825,6 +10165,43 @@ new Setting(Exp)
       }
     }
   }
+  updateSimklAuthButton() {
+  if (!this.simklAuthButton) return;
+  const { settings } = this.plugin;
+  if (!settings.simklClientId) {
+    this.simklAuthButton.setButtonText('Enter Client ID');
+    this.simklAuthButton.removeCta();
+  } else if (!settings.simklAccessToken) {
+    this.simklAuthButton.setButtonText('Authenticate Now');
+    this.simklAuthButton.setCta();
+  } else {
+    this.simklAuthButton.setButtonText('Sign Out');
+    this.simklAuthButton.setWarning().removeCta();
+  }
+}
+
+async handleSimklAuthButtonClick() {
+  const { settings } = this.plugin;
+  if (!settings.simklClientId) {
+    const modal = AuthModal.clientId(this.app, async (clientId) => {
+      if (clientId?.trim()) {
+        settings.simklClientId = clientId.trim();
+        await this.plugin.saveSettings();
+        this.updateSimklAuthButton();
+      }
+    });
+    modal.open();
+  } else if (!settings.simklAccessToken) {
+    await this.plugin.simklAuth.loginWithFlow();
+    this.updateSimklAuthButton();
+  } else {
+    if (confirm('⚠️ Are you sure you want to sign out?')) {
+      await this.plugin.simklAuth.logout();
+      this.updateSimklAuthButton();
+    }
+  }
+}
+  
 }
 
 module.exports = {

@@ -273,7 +273,7 @@
 .status-dropped   { background: var(--color-red);    color: white; }
 .status-planning  { background: var(--color-purple); color: white; }
 .status-repeating { background: var(--color-cyan);   color: white; }
-.status-edit       { background: var(--color-pink);   color: white; }
+.status-edit { background: #10b981; color: white; }
 
 
 /* Progress & Score */

@@ -615,11 +615,26 @@ class Cache {
       batchSize = 100
     } = config;
 
-    this.ttlMap = { userData: 30 * 60 * 1000, mediaData: 10 * 60 * 1000, searchResults: 2 * 60 * 1000, mediaDetails: 60 * 60 * 1000, malData: 60 * 60 * 1000, ...ttlMap };
-    this.stores = { userData: new Map(), mediaData: new Map(), searchResults: new Map() };
-    this.indexes = { byUser: new Map(), byMedia: new Map(), byTag: new Map() };
+    this.ttlMap = { 
+      'anilist:userData': 30 * 60 * 1000,
+      'anilist:mediaData': 10 * 60 * 1000, 
+      'anilist:searchResults': 2 * 60 * 1000,
+      'mal:userData': 60 * 60 * 1000,
+      'mal:mediaData': 30 * 60 * 1000,
+      'mal:searchResults': 5 * 60 * 1000,
+      userData: 30 * 60 * 1000, 
+      mediaData: 10 * 60 * 1000, 
+      searchResults: 2 * 60 * 1000, 
+      mediaDetails: 60 * 60 * 1000, 
+      malData: 60 * 60 * 1000, 
+      ...ttlMap 
+    };
     
-    this.version = '3.1.0';
+    this.stores = {};
+    this.indexes = { byUser: new Map(), byMedia: new Map(), byTag: new Map() };
+    this.apiSources = ['anilist', 'mal'];
+    
+    this.version = '3.2.0';
     this.maxSize = maxSize;
     this.compressionThreshold = compressionThreshold;
     this.batchSize = batchSize;
@@ -635,26 +650,40 @@ class Cache {
     this.loadQueue = new Set();
     this.saveQueue = new Set();
     
-    // Enhanced persistence tracking
     this.persistenceQueue = new Set();
     this.lastPersistTime = 0;
     this.saveDebounceTimer = null;
     this.criticalSaveMode = false;
     
-    // Auto-load on initialization if plugin is available
+    this.initializeStores();
+    
     if (this.obsidianPlugin) {
       this.initializeCache();
     }
   }
+
+  initializeStores() {
+    this.apiSources.forEach(api => {
+      this.stores[`${api}:userData`] = new Map();
+      this.stores[`${api}:mediaData`] = new Map();
+      this.stores[`${api}:searchResults`] = new Map();
+    });
+    
+    this.stores.userData = new Map();
+    this.stores.mediaData = new Map();
+    this.stores.searchResults = new Map();
+  }
+
   enableDebug(enabled = true) {
-  this.flags.debugMode = enabled;
-  console.log(`[Zoro] Cache debug ${enabled ? 'ON' : 'OFF'}`);
-}
+    this.flags.debugMode = enabled;
+    console.log(`[Zoro] Cache debug ${enabled ? 'ON' : 'OFF'}`);
+  }
+
   async initializeCache() {
     try {
       await this.loadFromDisk();
-      this.startIncrementalSave(30000); // Save every 30 seconds
-      this.startAutoPrune(300000); // Prune every 5 minutes
+      this.startIncrementalSave(30000);
+      this.startAutoPrune(300000);
     } catch (error) {
       this.log('INIT_ERROR', 'system', '', error.message);
     }
@@ -676,8 +705,33 @@ class Cache {
     return this.key({ __scope: scope, __type: type, __id: String(id), ...meta });
   }
 
-  isExpired(entry, scope, customTtl = null) {
-    const ttl = customTtl ?? entry.customTtl ?? this.ttlMap[scope] ?? 5 * 60 * 1000;
+  compositeScope(scope, source) {
+    if (!source) return scope;
+    return `${source}:${scope}`;
+  }
+
+  parseCompositeScope(compositeScope) {
+    const parts = compositeScope.split(':');
+    if (parts.length >= 2 && this.apiSources.includes(parts[0])) {
+      return { source: parts[0], scope: parts.slice(1).join(':') };
+    }
+    return { source: null, scope: compositeScope };
+  }
+
+  getStore(scope, source = null) {
+    const compositeScope = this.compositeScope(scope, source);
+    return this.stores[compositeScope] || this.stores[scope];
+  }
+
+  getTTL(scope, source = null, customTtl = null) {
+    if (customTtl !== null) return customTtl;
+    
+    const compositeScope = this.compositeScope(scope, source);
+    return this.ttlMap[compositeScope] || this.ttlMap[scope] || 5 * 60 * 1000;
+  }
+
+  isExpired(entry, scope, source = null, customTtl = null) {
+    const ttl = customTtl ?? entry.customTtl ?? this.getTTL(scope, source);
     return (Date.now() - entry.timestamp) > ttl;
   }
 
@@ -765,9 +819,9 @@ class Cache {
     }
   }
 
-  enforceSize(scope) {
-    const store = this.stores[scope];
-    if (store.size <= this.maxSize) return 0;
+  enforceSize(scope, source = null) {
+    const store = this.getStore(scope, source);
+    if (!store || store.size <= this.maxSize) return 0;
 
     const entries = Array.from(store.entries())
       .map(([key, entry]) => ({ key, entry, lastAccess: this.accessLog.get(key) || 0 }))
@@ -781,15 +835,18 @@ class Cache {
       this.stats.evictions++;
     });
 
-    // Schedule save after eviction
     this.schedulePersistence();
     return toEvict.length;
   }
 
   get(key, options = {}) {
-    const { scope = 'userData', ttl = null, refreshCallback = null } = options;
-    const store = this.stores[scope];
-    if (!store) { this.stats.misses++; return null; }
+    const { scope = 'userData', source = null, ttl = null, refreshCallback = null } = options;
+    const store = this.getStore(scope, source);
+    
+    if (!store) { 
+      this.stats.misses++; 
+      return null; 
+    }
 
     const cacheKey = typeof key === 'object' ? this.key(key) : key;
     const entry = store.get(cacheKey);
@@ -798,35 +855,38 @@ class Cache {
     
     if (!entry) {
       this.stats.misses++;
-      this.log('MISS', scope, cacheKey);
-      this.maybeRefresh(cacheKey, scope, refreshCallback);
+      this.log('MISS', this.compositeScope(scope, source), cacheKey);
+      this.maybeRefresh(cacheKey, scope, source, refreshCallback);
       return null;
     }
 
-    if (this.isExpired(entry, scope, ttl)) {
+    if (this.isExpired(entry, scope, source, ttl)) {
       store.delete(cacheKey);
       this.updateIndexes(cacheKey, entry, 'delete');
       this.stats.misses++;
-      this.log('EXPIRED', scope, cacheKey);
-      this.maybeRefresh(cacheKey, scope, refreshCallback);
-      this.schedulePersistence(); // Save after expiry cleanup
+      this.log('EXPIRED', this.compositeScope(scope, source), cacheKey);
+      this.maybeRefresh(cacheKey, scope, source, refreshCallback);
+      this.schedulePersistence();
       return null;
     }
 
     this.stats.hits++;
-    this.log('HIT', scope, cacheKey, Math.round((Date.now() - entry.timestamp) / 1000));
+    const age = Math.round((Date.now() - entry.timestamp) / 1000);
+    this.log('HIT', this.compositeScope(scope, source), cacheKey, `${age}s old`);
     
-    if (this.shouldRefresh(entry, scope, ttl)) {
-      const callback = this.refreshCallbacks.get(`${scope}:${cacheKey}`);
-      if (callback) this.scheduleRefresh(cacheKey, scope, callback);
+    if (this.shouldRefresh(entry, scope, source, ttl)) {
+      const callbackKey = `${this.compositeScope(scope, source)}:${cacheKey}`;
+      const callback = this.refreshCallbacks.get(callbackKey);
+      if (callback) this.scheduleRefresh(cacheKey, scope, source, callback);
     }
 
     return this.decompress(entry);
   }
 
   set(key, value, options = {}) {
-    const { scope = 'userData', ttl = null, tags = [], refreshCallback = null } = options;
-    const store = this.stores[scope];
+    const { scope = 'userData', source = null, ttl = null, tags = [], refreshCallback = null } = options;
+    const store = this.getStore(scope, source);
+    
     if (!store) return false;
 
     const cacheKey = typeof key === 'object' ? this.key(key) : key;
@@ -837,28 +897,30 @@ class Cache {
       timestamp: Date.now(),
       customTtl: ttl,
       tags,
-      accessCount: 1
+      accessCount: 1,
+      source: source
     };
 
     store.set(cacheKey, entry);
     this.updateIndexes(cacheKey, entry);
-    this.enforceSize(scope);
+    this.enforceSize(scope, source);
     
     this.stats.sets++;
-    this.log('SET', scope, cacheKey, store.size);
+    this.log('SET', this.compositeScope(scope, source), cacheKey, store.size);
 
     if (refreshCallback) {
-      this.refreshCallbacks.set(`${scope}:${cacheKey}`, refreshCallback);
+      const callbackKey = `${this.compositeScope(scope, source)}:${cacheKey}`;
+      this.refreshCallbacks.set(callbackKey, refreshCallback);
     }
 
-    // Schedule immediate persistence for new data
     this.schedulePersistence(true);
     return true;
   }
 
   delete(key, options = {}) {
-    const { scope = 'userData' } = options;
-    const store = this.stores[scope];
+    const { scope = 'userData', source = null } = options;
+    const store = this.getStore(scope, source);
+    
     if (!store) return false;
 
     const cacheKey = typeof key === 'object' ? this.key(key) : key;
@@ -869,62 +931,122 @@ class Cache {
       this.updateIndexes(cacheKey, entry, 'delete');
       this.accessLog.delete(cacheKey);
       this.stats.deletes++;
-      this.log('DELETE', scope, cacheKey);
+      this.log('DELETE', this.compositeScope(scope, source), cacheKey);
       this.schedulePersistence();
     }
     
     return deleted;
   }
 
-  invalidateByUser(userKey) {
+  invalidateByUser(userKey, options = {}) {
+    const { source = null } = options;
     const keys = this.indexes.byUser.get(userKey);
     if (!keys) return 0;
 
     let deleted = 0;
+    const storesToSearch = source ? 
+      Object.entries(this.stores).filter(([scopeName]) => scopeName.startsWith(`${source}:`)) :
+      Object.entries(this.stores);
+
     keys.forEach(key => {
-      for (const store of Object.values(this.stores)) {
+      storesToSearch.forEach(([, store]) => {
         if (store.delete(key)) deleted++;
-      }
+      });
       this.accessLog.delete(key);
     });
 
-    this.indexes.byUser.delete(userKey);
+    if (!source) {
+      this.indexes.byUser.delete(userKey);
+    }
+    
+    this.log('INVALIDATE_USER', source || 'all', userKey, `${deleted} entries`);
     this.schedulePersistence();
     return deleted;
   }
 
-  invalidateByMedia(mediaId) {
+  invalidateByMedia(mediaId, options = {}) {
+    const { source = null } = options;
     const keys = this.indexes.byMedia.get(String(mediaId));
     if (!keys) return 0;
 
     let deleted = 0;
+    const storesToSearch = source ? 
+      Object.entries(this.stores).filter(([scopeName]) => scopeName.startsWith(`${source}:`)) :
+      Object.entries(this.stores);
+
     keys.forEach(key => {
-      for (const store of Object.values(this.stores)) {
+      storesToSearch.forEach(([, store]) => {
         if (store.delete(key)) deleted++;
-      }
+      });
       this.accessLog.delete(key);
     });
 
-    this.indexes.byMedia.delete(String(mediaId));
+    if (!source) {
+      this.indexes.byMedia.delete(String(mediaId));
+    }
+    
+    this.log('INVALIDATE_MEDIA', source || 'all', String(mediaId), `${deleted} entries`);
     this.schedulePersistence();
     return deleted;
   }
 
-  invalidateByTag(tag) {
+  invalidateByTag(tag, options = {}) {
+    const { source = null } = options;
     const keys = this.indexes.byTag.get(tag);
     if (!keys) return 0;
 
     let deleted = 0;
+    const storesToSearch = source ? 
+      Object.entries(this.stores).filter(([scopeName]) => scopeName.startsWith(`${source}:`)) :
+      Object.entries(this.stores);
+
     keys.forEach(key => {
-      for (const store of Object.values(this.stores)) {
+      storesToSearch.forEach(([, store]) => {
         if (store.delete(key)) deleted++;
-      }
+      });
       this.accessLog.delete(key);
     });
 
-    this.indexes.byTag.delete(tag);
+    if (!source) {
+      this.indexes.byTag.delete(tag);
+    }
+    
+    this.log('INVALIDATE_TAG', source || 'all', tag, `${deleted} entries`);
     this.schedulePersistence();
     return deleted;
+  }
+
+  clearBySource(source) {
+    let total = 0;
+    Object.entries(this.stores).forEach(([scopeName, store]) => {
+      if (scopeName.startsWith(`${source}:`)) {
+        total += store.size;
+        store.clear();
+      }
+    });
+    
+    Object.values(this.indexes).forEach(index => {
+      for (const [key, keySet] of index.entries()) {
+        const filteredKeys = Array.from(keySet).filter(cacheKey => {
+          try {
+            const parsed = JSON.parse(cacheKey);
+            return parsed.__source !== source;
+          } catch {
+            return true;
+          }
+        });
+        
+        if (filteredKeys.length === 0) {
+          index.delete(key);
+        } else if (filteredKeys.length !== keySet.size) {
+          index.set(key, new Set(filteredKeys));
+        }
+      }
+    });
+    
+    this.log('CLEAR_SOURCE', source, '', `${total} entries`);
+    this.schedulePersistence();
+    return total;
   }
 
   clear(scope = null) {
@@ -952,30 +1074,32 @@ class Cache {
     return total;
   }
 
-  pruneExpired(scope = null) {
-    const scopes = scope ? [scope] : Object.keys(this.stores);
+  pruneExpired(scope = null, source = null) {
+    const scopesToPrune = scope ? [scope] : ['userData', 'mediaData', 'searchResults'];
+    const sourcesToPrune = source ? [source] : [null, ...this.apiSources];
+    
     let total = 0;
+    const now = Date.now();
 
-    scopes.forEach(currentScope => {
-      const store = this.stores[currentScope];
-      if (!store) return;
+    scopesToPrune.forEach(currentScope => {
+      sourcesToPrune.forEach(currentSource => {
+        const store = this.getStore(currentScope, currentSource);
+        if (!store) return;
 
-      const toDelete = [];
-      const now = Date.now();
-
-      for (const [key, entry] of store.entries()) {
-        const ttl = entry.customTtl ?? this.ttlMap[currentScope];
-        if ((now - entry.timestamp) > ttl) {
-          toDelete.push(key);
+        const toDelete = [];
+        for (const [key, entry] of store.entries()) {
+          if (this.isExpired(entry, currentScope, currentSource)) {
+            toDelete.push(key);
+          }
         }
-      }
 
-      toDelete.forEach(key => {
-        const entry = store.get(key);
-        store.delete(key);
-        this.updateIndexes(key, entry, 'delete');
-        this.accessLog.delete(key);
-        total++;
+        toDelete.forEach(key => {
+          const entry = store.get(key);
+          store.delete(key);
+          this.updateIndexes(key, entry, 'delete');
+          this.accessLog.delete(key);
+          total++;
+        });
       });
     });
 
@@ -985,38 +1109,38 @@ class Cache {
     return total;
   }
 
-  shouldRefresh(entry, scope, customTtl) {
+  shouldRefresh(entry, scope, source = null, customTtl = null) {
     if (!this.flags.backgroundRefresh) return false;
-    const ttl = customTtl ?? entry.customTtl ?? this.ttlMap[scope];
+    const ttl = this.getTTL(scope, source, customTtl);
     return (Date.now() - entry.timestamp) > (ttl * 0.8);
   }
 
-  maybeRefresh(key, scope, callback) {
+  maybeRefresh(key, scope, source, callback) {
     if (callback && typeof callback === 'function') {
-      this.scheduleRefresh(key, scope, callback);
+      this.scheduleRefresh(key, scope, source, callback);
     }
   }
 
-  scheduleRefresh(key, scope, callback) {
-    if (this.loadQueue.has(`${scope}:${key}`)) return;
+  scheduleRefresh(key, scope, source, callback) {
+    const refreshKey = `${this.compositeScope(scope, source)}:${key}`;
+    if (this.loadQueue.has(refreshKey)) return;
     
-    this.loadQueue.add(`${scope}:${key}`);
+    this.loadQueue.add(refreshKey);
     
     setTimeout(async () => {
       try {
-        const newValue = await callback(key, scope);
+        const newValue = await callback(key, scope, source);
         if (newValue !== undefined) {
-          this.set(key, newValue, { scope, refreshCallback: callback });
+          this.set(key, newValue, { scope, source, refreshCallback: callback });
         }
       } catch (error) {
-        this.log('REFRESH_ERROR', scope, key, error.message);
+        this.log('REFRESH_ERROR', this.compositeScope(scope, source), key, error.message);
       } finally {
-        this.loadQueue.delete(`${scope}:${key}`);
+        this.loadQueue.delete(refreshKey);
       }
     }, 0);
   }
 
-  // Enhanced persistence scheduling
   schedulePersistence(immediate = false) {
     if (immediate) {
       this.criticalSaveMode = true;
@@ -1026,7 +1150,7 @@ class Cache {
       clearTimeout(this.saveDebounceTimer);
     }
 
-    const delay = immediate ? 100 : 2000; // 100ms for immediate, 2s for normal
+    const delay = immediate ? 100 : 2000;
     this.saveDebounceTimer = setTimeout(() => {
       this.saveToDisk();
     }, delay);
@@ -1105,7 +1229,6 @@ class Cache {
 
       let saved = false;
 
-      // Primary save method: Direct file in plugin directory
       if (this.obsidianPlugin?.app?.vault?.adapter) {
         try {
           const adapter = this.obsidianPlugin.app.vault.adapter;
@@ -1120,7 +1243,6 @@ class Cache {
         }
       }
 
-      // Backup save method: Temporary file with atomic write
       if (!saved && this.obsidianPlugin?.app?.vault?.adapter) {
         try {
           const adapter = this.obsidianPlugin.app.vault.adapter;
@@ -1130,7 +1252,6 @@ class Cache {
           
           await adapter.write(tempPath, JSON.stringify(payload));
           
-          // Atomic move (if supported)
           try {
             await adapter.remove(cachePath);
           } catch {}
@@ -1171,7 +1292,6 @@ class Cache {
     try {
       let data = null;
       
-      // Primary load method: Direct file from plugin directory
       if (this.obsidianPlugin?.app?.vault?.adapter) {
         const adapter = this.obsidianPlugin.app.vault.adapter;
         const pluginDir = `${this.obsidianPlugin.manifest.dir}`;
@@ -1194,7 +1314,6 @@ class Cache {
         return 0;
       }
 
-      // Version compatibility check
       if (data.version && this.compareVersions(data.version, '3.0.0') < 0) {
         this.log('LOAD_WARNING', 'system', '', `Old cache version ${data.version}, clearing`);
         return 0;
@@ -1203,15 +1322,20 @@ class Cache {
       let loaded = 0;
       const now = Date.now();
 
-      // Load cache data
       for (const [scope, entries] of Object.entries(data.data || {})) {
+        if (!this.stores[scope]) {
+          this.stores[scope] = new Map();
+        }
+        
         const store = this.stores[scope];
-        if (!store || !Array.isArray(entries)) continue;
+        if (!Array.isArray(entries)) continue;
 
         for (const [key, entry] of entries) {
           if (!entry?.timestamp) continue;
           
-          const ttl = entry.customTtl ?? this.ttlMap[scope];
+          const { source: entrySource, scope: baseScope } = this.parseCompositeScope(scope);
+          const ttl = this.getTTL(baseScope || scope, entrySource, entry.customTtl);
+          
           if ((now - entry.timestamp) < ttl) {
             store.set(key, entry);
             this.updateIndexes(key, entry);
@@ -1220,7 +1344,6 @@ class Cache {
         }
       }
 
-      // Load indexes
       if (data.indexes) {
         Object.entries(data.indexes).forEach(([indexType, entries]) => {
           if (this.indexes[indexType] && Array.isArray(entries)) {
@@ -1231,14 +1354,12 @@ class Cache {
         });
       }
 
-      // Load access log
       if (data.accessLog && Array.isArray(data.accessLog)) {
         data.accessLog.forEach(([key, timestamp]) => {
           this.accessLog.set(key, timestamp);
         });
       }
 
-      // Restore stats (partial)
       if (data.stats) {
         this.stats.compressions = data.stats.compressions || 0;
       }
@@ -1273,12 +1394,20 @@ class Cache {
     const total = this.stats.hits + this.stats.misses;
     const hitRate = total > 0 ? (this.stats.hits / total * 100).toFixed(1) : '0.0';
     
+    const storeStats = {};
+    Object.entries(this.stores).forEach(([scope, store]) => {
+      if (store.size > 0) {
+        storeStats[scope] = store.size;
+      }
+    });
+    
     return {
       ...this.stats,
       hitRate: `${hitRate}%`,
       totalRequests: total,
       cacheSize: Object.values(this.stores).reduce((sum, store) => sum + store.size, 0),
       indexSize: Object.values(this.indexes).reduce((sum, index) => sum + index.size, 0),
+      storeBreakdown: storeStats,
       lastSaved: this.state.lastSaved ? new Date(this.state.lastSaved).toLocaleString() : 'Never',
       lastLoaded: this.state.lastLoaded ? new Date(this.state.lastLoaded).toLocaleString() : 'Never'
     };
@@ -1311,24 +1440,19 @@ class Cache {
     return this;
   }
 
-  // Enhanced destroy method with guaranteed save
   async destroy() {
-    // Stop all intervals first
     Object.values(this.intervals).forEach(interval => {
       if (interval) clearInterval(interval);
     });
     
-    // Clear timers
     if (this.saveDebounceTimer) {
       clearTimeout(this.saveDebounceTimer);
       this.saveDebounceTimer = null;
     }
     
-    // Force final save
     this.criticalSaveMode = true;
     await this.saveToDisk();
     
-    // Clear all data
     this.loadQueue.clear();
     this.saveQueue.clear();
     this.persistenceQueue.clear();
@@ -2569,7 +2693,7 @@ class AnilistApi {
       if (result && !config.nocache) {
         this.cache.set(cacheKey, result, { 
           scope: cacheType
-          // No TTL specified = uses your cache's perfect built-in TTL mapping
+          
         });
       }
       
@@ -3714,6 +3838,69 @@ class AnilistApi {
       }
     `;
   }
+  
+async checkIfMediaInList(mediaId, mediaType) {
+  try {
+    const userEntry = await this.getUserEntryForMedia(mediaId, mediaType);
+    return userEntry !== null;
+  } catch (error) {
+    console.warn('[AniList] Error in checkIfMediaInList:', error);
+    return false;
+  }
+}
+
+async getUserEntryForMedia(mediaId, mediaType) {
+  try {
+    if (!this.plugin.settings.accessToken) {
+      return null;
+    }
+    
+    const username = await this.plugin.auth.getAuthenticatedUsername();
+    if (!username) {
+      return null;
+    }
+    
+    // Minimal query - only get what the edit modal actually needs
+    const query = `
+      query ($username: String, $mediaId: Int, $type: MediaType) {
+        MediaList(userName: $username, mediaId: $mediaId, type: $type) {
+          id
+          status
+          score
+          progress
+          media {
+            id
+            title {
+              english
+              romaji
+            }
+            episodes
+            chapters
+            isFavourite
+          }
+        }
+      }
+    `;
+    
+    const variables = {
+      username: username,
+      mediaId: parseInt(mediaId),
+      type: mediaType
+    };
+    
+    const result = await this.makeRawRequest({
+      query,
+      variables,
+      config: { type: 'user_entry_check', nocache: true }
+    });
+    
+    return result.MediaList; // null if not in list, entry if in list
+    
+  } catch (error) {
+    console.warn('[AniList] getUserEntryForMedia failed:', error.message);
+    return null;
+  }
+}
 
   getAniListUrl(mediaId, mediaType = 'ANIME') {
     try {
@@ -3930,16 +4117,10 @@ class MalApi {
     this.tokenUrl = 'https://myanimelist.net/v1/oauth2/token';
     
     this.fieldSets = {
-      compact: 'list_status,node{id,title,main_picture}',
-      card: 'list_status,node{id,title,main_picture,media_type,status,genres,num_episodes,num_chapters,mean,start_date,end_date}',
-      full: 'list_status,node{id,title,main_picture,alternative_titles,start_date,end_date,synopsis,mean,rank,popularity,num_list_users,num_scoring_users,nsfw,created_at,updated_at,media_type,status,genres,num_episodes,num_chapters,start_season,broadcast,source,average_episode_duration,rating,pictures,background,related_anime,related_manga,recommendations,studios,statistics}'
+      compact: 'id,title,main_picture',
+      card: 'id,title,main_picture,media_type,status,genres,num_episodes,num_chapters,mean,start_date,end_date',
+      full: 'id,title,main_picture,alternative_titles,start_date,end_date,synopsis,mean,rank,popularity,num_list_users,num_scoring_users,nsfw,created_at,updated_at,media_type,status,genres,my_list_status,num_episodes,num_chapters,start_season,broadcast,source,average_episode_duration,rating,pictures,background,related_anime,related_manga,recommendations,studios,statistics'
     };
-
-    this.searchFieldSets = {
-    compact: 'id,title,main_picture',
-    card: 'id,title,main_picture,media_type,status,genres,num_episodes,num_chapters,mean,start_date,end_date',
-    full: 'id,title,main_picture,media_type,status,genres,num_episodes,num_chapters,mean,start_date,end_date,synopsis,source,studios'
-  };
 
     this.statusMappings = {
       'CURRENT': 'watching', 'COMPLETED': 'completed', 'PAUSED': 'on_hold',
@@ -3954,8 +4135,6 @@ class MalApi {
       'on_hold': 'PAUSED', 'dropped': 'DROPPED', 'plan_to_watch': 'PLANNING',
       'plan_to_read': 'PLANNING'
     };
-    
-    
 
     this.metrics = { requests: 0, cached: 0, errors: 0 };
   }
@@ -3981,12 +4160,23 @@ class MalApi {
       }
     }
 
+    // Only require authentication for user-specific requests
+    if (this.requiresAuth(normalizedConfig.type)) {
+      await this.ensureValidToken();
+    }
+    
     const requestParams = this.buildRequestParams(normalizedConfig);
     const rawResponse = await this.makeRequest(requestParams);
     const transformedData = this.transformResponse(rawResponse, normalizedConfig);
     
     this.cache.set(cacheKey, transformedData, { scope: cacheScope });
     return transformedData;
+  }
+
+  requiresAuth(requestType) {
+    // Search requests don't require authentication
+    // Only user-specific data requires auth
+    return requestType !== 'search';
   }
 
   validateConfig(config) {
@@ -4006,249 +4196,89 @@ class MalApi {
   }
 
   buildRequestParams(config) {
-  const url = this.buildEndpointUrl(config);
-  const params = this.buildQueryParams(config);
-  const headers = this.getAuthHeaders();
-  
-  return {
-    url: this.buildFullUrl(url, params),
-    method: 'GET',
-    headers,
-    priority: config.priority || (config.type === 'search' ? 'normal' : 'normal'),
-    metadata: { 
-      type: config.type, 
-      mediaType: config.mediaType,
-      // Include search query for debugging
-      query: config.search || config.query
-    }
-  };
-}
+    const url = this.buildEndpointUrl(config);
+    const params = this.buildQueryParams(config);
+    const headers = this.getAuthHeaders();
+    
+    return {
+      url: this.buildFullUrl(url, params),
+      method: 'GET',
+      headers,
+      priority: config.priority || 'normal',
+      metadata: { type: config.type, mediaType: config.mediaType }
+    };
+  }
 
   buildEndpointUrl(config) {
-  switch (config.type) {
-    case 'stats':
-      return `${this.baseUrl}/users/@me`;
-    case 'single':
-      const mediaType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
-      return `${this.baseUrl}/${mediaType}/${config.mediaId}`;
-    case 'list':
-      const listMediaType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
-      return `${this.baseUrl}/users/@me/${listMediaType}list`;
-    case 'search':
-      // CRITICAL FIX: Check auth before building URL
-      if (!this.plugin.settings.malAccessToken) {
-        throw ZoroError.create('AUTH_REQUIRED', 'MAL search requires authentication', {}, 'error');
-      }
-      const searchType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
-      return `${this.baseUrl}/${searchType}`;
-    default:
-      throw ZoroError.create('INVALID_REQUEST_TYPE', `Unknown type: ${config.type}`, { config }, 'error');
+    switch (config.type) {
+      case 'stats':
+        return `${this.baseUrl}/users/@me`;
+      case 'single':
+      case 'list':
+        const mediaType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
+        return `${this.baseUrl}/users/@me/${mediaType}list`;
+      case 'search':
+        const searchType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
+        return `${this.baseUrl}/${searchType}`;
+      default:
+        throw ZoroError.create('INVALID_REQUEST_TYPE', `Unknown type: ${config.type}`, { config }, 'error');
+    }
   }
-}
 
   buildQueryParams(config) {
-  const params = {};
-  
-  switch (config.type) {
-    case 'single':
-      params.fields = this.getFieldsForLayout(config.layout, 'search');
-      break;
-    case 'list':
-      params.fields = this.getFieldsForLayout(config.layout);
-      params.limit = 1000;
-      if (config.listType) params.status = this.mapAniListStatusToMAL(config.listType);
-      params.sort = 'list_score';
-      break;
-    case 'search':
-      if (!config.search && !config.query) {
-        throw ZoroError.create('SEARCH_QUERY_REQUIRED', 'Search query is required', { config }, 'error');
-      }
-      
-      params.q = config.search || config.query;
-      params.limit = Math.min(config.perPage || 10, 100);
-      params.offset = ((config.page || 1) - 1) * (config.perPage || 10);
-      params.fields = this.getFieldsForLayout(config.layout, 'search');
-      
-      // REMOVED: nsfw parameter (causes issues)
-      break;
-    case 'stats':
-      break;
-  }
-  
-  return params;
-}
-
- async makeRequest(requestParams) {
-  this.metrics.requests++;
-  
-  const requestFn = async () => {
-    await this.ensureValidToken();
+    const params = {};
     
-    // Enhanced debug logging
-    if (requestParams.metadata?.type === 'search') {
-      console.log('[MAL Search Debug] Full URL:', requestParams.url);
-      console.log('[MAL Search Debug] Query:', requestParams.metadata.query);
+    switch (config.type) {
+      case 'single':
+      case 'list':
+        params.fields = this.getFieldsForLayout(config.layout);
+        params.limit = 1000;
+        if (config.listType) params.status = this.mapAniListStatusToMAL(config.listType);
+        params.sort = 'list_score';
+        break;
+      case 'search':
+        const searchTerm = config.search || config.query || '';
+        params.q = searchTerm.trim();
+        params.limit = config.perPage || 5;
+        params.offset = ((config.page || 1) - 1) * (config.perPage || 5);
+        params.fields = this.getFieldsForLayout(config.layout);
+        break;
     }
     
-    const response = await requestUrl({
+    return params;
+  }
+
+  async makeRequest(requestParams) {
+    this.metrics.requests++;
+    
+    const requestFn = () => requestUrl({
       url: requestParams.url,
       method: requestParams.method || 'GET',
-      headers: {
-        'User-Agent': 'Obsidian-MAL-Plugin/1.0',
-        ...requestParams.headers
-      },
-      body: requestParams.body,
-      throw: false
+      headers: requestParams.headers || {},
+      body: requestParams.body
     });
 
-    // DETAILED error handling for search
-    if (response.status === 400 && requestParams.metadata?.type === 'search') {
-      console.error('[MAL Search Error] Response:', response.json || response.text);
-      throw ZoroError.create('SEARCH_INVALID_QUERY', 
-        `Search failed: ${response.json?.message || 'Invalid query format'}`, 
-        { 
-          query: requestParams.metadata.query,
-          url: requestParams.url,
-          status: response.status,
-          response: response.json || response.text
-        }, 'error');
-    }
+    try {
+      const response = await this.requestQueue.add(requestFn, {
+        priority: requestParams.priority || 'normal',
+        metadata: requestParams.metadata || {},
+        timeout: 30000
+      });
 
-    if (response.status === 401) {
-      if (this.plugin.settings.malRefreshToken) {
-        try {
-          await this.refreshAccessToken();
-          const retryResponse = await requestUrl({
-            url: requestParams.url,
-            method: requestParams.method || 'GET',
-            headers: {
-              'User-Agent': 'Obsidian-MAL-Plugin/1.0',
-              ...this.getAuthHeaders()
-            },
-            body: requestParams.body,
-            throw: false
-          });
-          return retryResponse;
-        } catch (refreshError) {
-          throw ZoroError.create('AUTH_EXPIRED', 'Authentication expired and refresh failed', 
-            { error: refreshError.message }, 'error');
-        }
-      } else {
-        throw ZoroError.create('AUTH_INVALID', 'Authentication token is invalid', {}, 'error');
+      if (!response?.json) {
+        throw ZoroError.create('EMPTY_RESPONSE', 'Empty response from MAL', { url: requestParams.url }, 'error');
       }
-    }
 
-    if (response.status < 200 || response.status >= 300) {
-      const errorText = response.text || JSON.stringify(response.json) || 'Unknown error';
-      
-      // Enhanced search error handling
-      if (requestParams.metadata?.type === 'search') {
-        console.error('[MAL Search Error] Status:', response.status);
-        console.error('[MAL Search Error] Response:', response.json || response.text);
-        
-        if (response.status === 404) {
-          return { data: [] }; // Empty results
-        }
-        if (response.status === 403) {
-          throw ZoroError.create('SEARCH_FORBIDDEN', 'Search access denied', 
-            { status: response.status }, 'error');
-        }
+      if (response.json.error) {
+        throw ZoroError.create('MAL_API_ERROR', response.json.message || 'MAL API error', { error: response.json }, 'error');
       }
-      
-      throw ZoroError.create('REQUEST_FAILED', `Request failed (HTTP ${response.status})`, 
-        { error: errorText, url: requestParams.url, type: requestParams.metadata?.type }, 'error');
-    }
 
-    return response;
-  };
-
-  try {
-    const response = await this.requestQueue.add(requestFn, {
-      priority: requestParams.priority || 'normal',
-      metadata: { 
-        ...requestParams.metadata,
-        query: requestParams.url.includes('q=') ? 
-          decodeURIComponent(requestParams.url.split('q=')[1]?.split('&')[0] || '') : null
-      },
-      timeout: 30000
-    });
-
-    if (!response) {
-      throw ZoroError.create('EMPTY_RESPONSE', 'Empty response from MAL', 
-        { url: requestParams.url }, 'error');
-    }
-
-    // CRITICAL: Handle search responses properly
-    if (requestParams.metadata?.type === 'search') {
-      if (!response.json) {
-        console.error('[MAL Search] No JSON in response:', response);
-        return { data: [] };
-      }
-      
-      if (!response.json.data) {
-        console.log('[MAL Search] No data field in response:', response.json);
-        return { data: [] };
-      }
-      
-      console.log('[MAL Search Success] Found results:', response.json.data.length);
       return response.json;
+    } catch (error) {
+      this.metrics.errors++;
+      if (error.type) throw error;
+      throw ZoroError.create('REQUEST_FAILED', 'MAL request failed', { error: error.message, url: requestParams.url }, 'error');
     }
-
-    if (!response.json) {
-      throw ZoroError.create('INVALID_RESPONSE', 'Invalid JSON response from MAL', 
-        { url: requestParams.url }, 'error');
-    }
-
-    if (response.json.error) {
-      throw ZoroError.create('MAL_API_ERROR', response.json.message || 'MAL API error', 
-        { error: response.json }, 'error');
-    }
-
-    return response.json;
-  } catch (error) {
-    this.metrics.errors++;
-    if (error.type) throw error;
-    throw ZoroError.create('REQUEST_FAILED', 'MAL request failed', 
-      { error: error.message, url: requestParams.url }, 'error');
-  }
-}
-  
-  async refreshAccessToken() {
-    if (!this.plugin.settings.malRefreshToken) {
-      throw new Error('No refresh token available');
-    }
-    
-    const body = new URLSearchParams({
-      client_id: this.plugin.settings.malClientId,
-      refresh_token: this.plugin.settings.malRefreshToken,
-      grant_type: 'refresh_token'
-    });
-
-    if (this.plugin.settings.malClientSecret && this.plugin.settings.malClientSecret.trim()) {
-      body.append('client_secret', this.plugin.settings.malClientSecret.trim());
-    }
-
-    const response = await requestUrl({
-      url: this.tokenUrl,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json'
-      },
-      body: body.toString(),
-      throw: false
-    });
-
-    if (response.status < 200 || response.status >= 300) {
-      const errorText = response.text || JSON.stringify(response.json) || 'Unknown error';
-      throw new Error(`Token refresh failed (HTTP ${response.status}): ${errorText}`);
-    }
-
-    const data = response.json || (response.text ? JSON.parse(response.text) : null);
-    this.plugin.settings.malAccessToken = data.access_token;
-    this.plugin.settings.malRefreshToken = data.refresh_token || this.plugin.settings.malRefreshToken;
-    this.plugin.settings.malTokenExpiry = Date.now() + (data.expires_in * 1000);
-    await this.plugin.saveSettings();
   }
 
   async updateMediaListEntry(mediaId, updates) {
@@ -4266,15 +4296,7 @@ class MalApi {
 
     await this.ensureValidToken();
     const mediaType = await this.getMediaType(mediaId);
-    const requestParams = this.buildUpdateRequest(mediaId, mediaType, updates);
     
-    const response = await this.makeRequest(requestParams);
-    this.cache.invalidateByMedia(mediaId);
-    
-    return this.transformListEntry(response);
-  }
-
-  buildUpdateRequest(mediaId, mediaType, updates) {
     const endpoint = mediaType === 'anime' ? 'anime' : 'manga';
     const body = new URLSearchParams();
     
@@ -4289,30 +4311,50 @@ class MalApi {
       body.append(progressField, updates.progress);
     }
 
+    const requestFn = async () => {
+      return await requestUrl({
+        url: `${this.baseUrl}/${endpoint}/${mediaId}/my_list_status`,
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${this.plugin.settings.malAccessToken}`
+        },
+        body: body.toString()
+      });
+    };
+
+    const response = await this.requestQueue.add(requestFn, { priority: 'high' });
+    
+    if (!response?.json) {
+      throw ZoroError.create('EMPTY_UPDATE_RESPONSE', 'Empty response from MAL update', { mediaId }, 'error');
+    }
+
+    if (response.json.error) {
+      throw ZoroError.create('MAL_UPDATE_ERROR', response.json.message || 'MAL update failed', { error: response.json }, 'error');
+    }
+
+    this.cache.invalidateByMedia(mediaId);
+    
     return {
-      url: `${this.baseUrl}/${endpoint}/${mediaId}/my_list_status`,
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        ...this.getAuthHeaders()
-      },
-      body: body.toString(),
-      priority: 'high'
+      id: response.json.id || null,
+      status: this.mapMALStatusToAniList(response.json.status),
+      score: response.json.score || 0,
+      progress: response.json.num_episodes_watched || response.json.num_chapters_read || 0
     };
   }
+
+
 
   async makeObsidianRequest(code, redirectUri) {
     const body = new URLSearchParams({
       grant_type: 'authorization_code',
       client_id: this.plugin.settings.malClientId,
+      client_secret: this.plugin.settings.malClientSecret || '',
       redirect_uri: redirectUri,
       code: code,
       code_verifier: this.plugin.settings.malCodeVerifier
     });
-
-    if (this.plugin.settings.malClientSecret && this.plugin.settings.malClientSecret.trim()) {
-      body.append('client_secret', this.plugin.settings.malClientSecret.trim());
-    }
 
     const requestFn = () => requestUrl({
       url: this.tokenUrl,
@@ -4321,25 +4363,18 @@ class MalApi {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'application/json'
       },
-      body: body.toString(),
-      throw: false
+      body: body.toString()
     });
 
     try {
       const response = await this.requestQueue.add(requestFn, { priority: 'high' });
       
-      if (response.status < 200 || response.status >= 300) {
-        const errorText = response.text || JSON.stringify(response.json) || 'Unknown error';
-        throw ZoroError.create('AUTH_FAILED', `Authentication failed (HTTP ${response.status}): ${errorText}`, {}, 'error');
-      }
-
       if (!response?.json || typeof response.json !== 'object') {
         throw ZoroError.create('INVALID_AUTH_RESPONSE', 'Invalid auth response from MAL', {}, 'error');
       }
 
       return response.json;
     } catch (error) {
-      if (error.type) throw error;
       throw ZoroError.create('AUTH_FAILED', 'MAL authentication failed', { error: error.message }, 'error');
     }
   }
@@ -4350,7 +4385,7 @@ class MalApi {
     try {
       const config = { type: 'single', mediaType, mediaId: parseInt(mediaId) };
       const response = await this.fetchMALData(config);
-      return response.MediaList !== null && response.MediaList.status !== null;
+      return response.MediaList !== null;
     } catch (error) {
       return false;
     }
@@ -4405,7 +4440,7 @@ class MalApi {
         await this.ensureValidToken();
         
         const requestParams = {
-          url: `${this.baseUrl}/anime/season/${year}/${season}?fields=${this.getFieldsForLayout('card', 'search')}`,
+          url: `${this.baseUrl}/anime/season/${year}/${season}?fields=${this.getFieldsForLayout('card')}`,
           headers: this.getAuthHeaders(),
           priority: 'low'
         };
@@ -4423,64 +4458,25 @@ class MalApi {
   }
 
   transformResponse(data, config) {
-  try {
     switch (config.type) {
       case 'search':
-        // Fix: Handle MAL search response structure properly
-        const searchResults = data.data || [];
-        return { 
-          Page: { 
-            media: searchResults.map(item => this.transformMedia(item)),
-            pageInfo: {
-              total: searchResults.length,
-              currentPage: config.page || 1,
-              hasNextPage: searchResults.length === (config.perPage || 10)
-            }
-          } 
-        };
-        
+        return { Page: { media: data.data?.map(item => this.transformMedia(item)) || [] } };
       case 'single':
-        if (data && data.id) {
-          const transformedMedia = this.transformMedia(data);
-          return { 
-            MediaList: {
-              id: data.my_list_status?.id || null,
-              status: data.my_list_status ? this.mapMALStatusToAniList(data.my_list_status.status) : null,
-              score: data.my_list_status?.score || 0,
-              progress: data.my_list_status?.num_episodes_watched || data.my_list_status?.num_chapters_read || 0,
-              media: transformedMedia
-            }
-          };
-        }
-        return { MediaList: null };
-        
+        const targetMedia = data.data?.find(item => item.node.id === parseInt(config.mediaId));
+        return { MediaList: targetMedia ? this.transformListEntry(targetMedia) : null };
       case 'stats':
         return { User: this.transformUser(data) };
-        
-      default: // list
+      default:
         return {
           MediaListCollection: {
-            lists: [{ 
-              entries: (data.data || []).map(item => this.transformListEntry(item))
-            }]
+            lists: [{ entries: data.data?.map(item => this.transformListEntry(item)) || [] }]
           }
         };
     }
-  } catch (error) {
-    throw ZoroError.create('TRANSFORM_ERROR', 'Failed to transform MAL response', 
-      { error: error.message, config: config.type }, 'error');
   }
-}
 
   transformMedia(malMedia) {
-  try {
-    // CRITICAL: MAL search returns direct objects, not node-wrapped
     const media = malMedia.node || malMedia;
-    
-    if (!media || !media.id) {
-      console.warn('[MAL Transform] Invalid media structure:', malMedia);
-      throw new Error('Invalid media data structure');
-    }
     
     return {
       id: media.id,
@@ -4493,36 +4489,17 @@ class MalApi {
         large: media.main_picture?.large || media.main_picture?.medium || null,
         medium: media.main_picture?.medium || media.main_picture?.large || null
       },
-      format: this.normalizeFormat(media.media_type),
+      format: media.media_type?.toUpperCase() || null,
       averageScore: media.mean ? Math.round(media.mean * 10) : null,
-      status: this.normalizeStatus(media.status),
-      genres: (media.genres || []).map(g => typeof g === 'string' ? g : g.name).filter(Boolean),
+      status: media.status?.toUpperCase()?.replace('_', '_') || null,
+      genres: media.genres?.map(g => g.name) || [],
       episodes: media.num_episodes || null,
       chapters: media.num_chapters || null,
       isFavourite: false,
       startDate: this.parseDate(media.start_date),
       endDate: this.parseDate(media.end_date)
     };
-  } catch (error) {
-    console.warn('[MAL] Transform failed for:', malMedia, error);
-    // Return minimal valid object
-    return {
-      id: malMedia?.id || Math.random(),
-      title: { romaji: 'Unknown', english: 'Unknown', native: 'Unknown' },
-      coverImage: { large: null, medium: null },
-      format: null,
-      averageScore: null,
-      status: null,
-      genres: [],
-      episodes: null,
-      chapters: null,
-      isFavourite: false,
-      startDate: null,
-      endDate: null
-    };
   }
-}
-
 
   transformListEntry(malEntry) {
     const media = malEntry.node;
@@ -4551,7 +4528,6 @@ class MalApi {
       }
     };
   }
-  
 
   parseDate(dateString) {
     if (!dateString) return null;
@@ -4574,20 +4550,12 @@ class MalApi {
     if (!this.plugin.settings.malAccessToken) {
       throw ZoroError.create('AUTH_REQUIRED', 'Authentication required', {}, 'error');
     }
-
-    if (this.plugin.settings.malTokenExpiry && Date.now() >= (this.plugin.settings.malTokenExpiry - 5 * 60 * 1000)) {
-      if (this.plugin.settings.malRefreshToken) {
-        await this.refreshAccessToken();
-      } else {
-        throw ZoroError.create('AUTH_EXPIRED', 'Authentication expired', {}, 'error');
-      }
-    }
-
-    return true;
+    return await this.plugin.malAuth?.ensureValidToken?.() || true;
   }
 
   getAuthHeaders() {
     const headers = { 'Accept': 'application/json' };
+    // Only add auth header if we have a token (for user-specific requests)
     if (this.plugin.settings.malAccessToken) {
       headers['Authorization'] = `Bearer ${this.plugin.settings.malAccessToken}`;
     }
@@ -4618,9 +4586,8 @@ class MalApi {
     return `${baseUrl}?${queryString}`;
   }
 
-  getFieldsForLayout(layout = 'card', requestType = 'list') {
-    const fieldSets = requestType === 'search' ? this.searchFieldSets : this.fieldSets;
-    return fieldSets[layout] || fieldSets.card;
+  getFieldsForLayout(layout = 'card') {
+    return this.fieldSets[layout] || this.fieldSets.card;
   }
 
   mapAniListStatusToMAL(status) {
@@ -4628,19 +4595,7 @@ class MalApi {
   }
 
   mapMALStatusToAniList(status) {
-    if (!status) return null;
-    
-    const statusMap = {
-      'watching': 'CURRENT',
-      'reading': 'CURRENT',
-      'completed': 'COMPLETED',
-      'on_hold': 'PAUSED',
-      'dropped': 'DROPPED',
-      'plan_to_watch': 'PLANNING',
-      'plan_to_read': 'PLANNING'
-    };
-    
-    return statusMap[status] || status.toUpperCase();
+    return this.reverseStatusMappings[status] || status;
   }
 
   isValidMediaId(mediaId) {
@@ -4656,41 +4611,6 @@ class MalApi {
     const urlType = type === 'MANGA' ? 'manga' : 'anime';
     return `https://myanimelist.net/${urlType}/${mediaId}`;
   }
-  
-  normalizeFormat(malFormat) {
-  if (!malFormat) return null;
-  
-  const formatMap = {
-    'tv': 'TV',
-    'movie': 'MOVIE', 
-    'ova': 'OVA',
-    'ona': 'ONA',
-    'special': 'SPECIAL',
-    'manga': 'MANGA',
-    'novel': 'NOVEL',
-    'one_shot': 'ONE_SHOT',
-    'doujinshi': 'DOUJINSHI',
-    'manhwa': 'MANHWA',
-    'manhua': 'MANHUA'
-  };
-  
-  return formatMap[malFormat.toLowerCase()] || malFormat.toUpperCase();
-}
-
-  normalizeStatus(malStatus) {
-  if (!malStatus) return null;
-  
-  const statusMap = {
-    'finished_airing': 'FINISHED',
-    'currently_airing': 'RELEASING',
-    'not_yet_aired': 'NOT_YET_RELEASED',
-    'finished': 'FINISHED',
-    'publishing': 'RELEASING',
-    'not_yet_published': 'NOT_YET_RELEASED'
-  };
-  
-  return statusMap[malStatus.toLowerCase()] || malStatus.toUpperCase();
-}
 
   enableDebug(enabled = true) {
     this.errorHandler.build('DEBUG_MODE_CHANGED', 
@@ -4835,7 +4755,6 @@ class ZoroPlugin extends Plugin {
     this.globalListeners.length = 0;
   }
 
-  // Replace the existing handleEditClick method in your ZoroPlugin class with this updated version:
 
 handleEditClick(e, entry, statusEl, config = {}) {
   e.preventDefault();
@@ -4853,7 +4772,8 @@ handleEditClick(e, entry, statusEl, config = {}) {
     },
     () => {
       // Callback after successful update
-    }
+    },
+    config.source || 'anilist'  // ← ADD THIS LINE - pass the source to the Edit modal
   );
 }
 
@@ -4884,7 +4804,17 @@ handleEditClick(e, entry, statusEl, config = {}) {
 
     this.globalLoader = document.createElement('div');
     this.globalLoader.id = 'zoro-global-loader';
-    this.globalLoader.textContent = '⏳';
+  this.globalLoader.innerHTML = `
+  <div class="sharingan-glow">
+    <div class="tomoe-container">
+      <span class="tomoe"></span>
+      <span class="tomoe"></span>
+      <span class="tomoe"></span>
+    </div>
+  </div>
+`;
+
+    
     this.globalLoader.className = 'zoro-global-loader';
 
     document.body.appendChild(this.globalLoader);
@@ -6546,56 +6476,161 @@ generateInsights(stats, type, user) {
       details.appendChild(statusBadge);
     }
 
-    if (isSearch) {
-      const addBtn = document.createElement('span');
-      addBtn.className = 'status-badge status-add clickable-status';
-      addBtn.textContent = 'ADD';
-      addBtn.onclick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
 
-        // Check authentication based on source
-        const isAuthenticated = config.source === 'mal' 
-          ? this.plugin.settings.malAccessToken 
-          : this.plugin.settings.accessToken;
+if (isSearch) {
+  const editBtn = document.createElement('span');
+  editBtn.className = 'status-badge status-edit clickable-status';
+  editBtn.textContent = 'Edit';
+  editBtn.dataset.loading = 'false';
+  
+  editBtn.onclick = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
 
-        if (!isAuthenticated) {
-          this.plugin.prompt.createAuthenticationPrompt();
-          return;
-        }
+    // Check authentication based on source
+    const isAuthenticated = config.source === 'mal' 
+      ? this.plugin.settings.malAccessToken 
+      : this.plugin.settings.accessToken;
 
-        const entryData = {
-          media: media,
-          status: 'PLANNING',
-          progress: 0,
-          score: null,
-          id: null
-        };
-
-        this.plugin.edit.createEditModal(
-          entryData,
-          async (updates) => {
-            // Use appropriate API based on source
-            if (config.source === 'mal') {
-              await this.plugin.malApi.updateMediaListEntry(media.id, updates);
-            } else {
-              await this.plugin.api.updateMediaListEntry(media.id, updates);
-            }
-            new Notice('✅ Added!');
-            
-            const containers = document.querySelectorAll('.zoro-container');
-            containers.forEach(container => {
-              const block = container.closest('.markdown-rendered')?.querySelector('code');
-              if (block) {
-                this.plugin.processor.processZoroCodeBlock(block.textContent, container, {});
-              }
-            });
-          },
-          () => {}
-        );
-      };
-      details.appendChild(addBtn);
+    if (!isAuthenticated) {
+      console.log(`[Zoro] Not authenticated with ${config.source || 'anilist'}`);
+      this.plugin.prompt.createAuthenticationPrompt(config.source || 'anilist');
+      return;
     }
+
+    // Show loading state
+    editBtn.dataset.loading = 'true';
+    editBtn.innerHTML = `
+  <div class="sharingan-glow">
+    <div class="tomoe-container">
+      <span class="tomoe"></span>
+      <span class="tomoe"></span>
+      <span class="tomoe"></span>
+    </div>
+  </div>
+`;
+
+    editBtn.style.pointerEvents = 'none';
+
+    try {
+      console.log(`[Zoro] Checking user entry for media ${media.id} via ${config.source || 'anilist'}`);
+      
+      // Get user's actual entry for this media
+      let existingEntry = null;
+      
+      if (config.source === 'mal') {
+        // Use MAL API (you can implement getUserEntryForMedia in MAL later)
+        existingEntry = await this.plugin.malApi.getUserEntryForMedia?.(media.id, config.mediaType) || null;
+      } else {
+        // Use AniList API with the new method
+        existingEntry = await this.plugin.api.getUserEntryForMedia(media.id, config.mediaType);
+      }
+      
+      console.log(`[Zoro] User entry result:`, existingEntry ? 'Found existing entry' : 'Not in user list');
+      
+      // Prepare entry data based on what we found
+      const entryToEdit = existingEntry || {
+        media: media,
+        status: 'PLANNING',
+        progress: 0,
+        score: null,
+        id: null
+      };
+
+      // Update button appearance
+      const isNewEntry = !existingEntry;
+      editBtn.textContent = isNewEntry ? 'Add' : 'Edit';
+      editBtn.className = `status-badge ${isNewEntry ? 'status-add' : 'status-edit'} clickable-status`;
+
+      // Reset loading state
+      editBtn.dataset.loading = 'false';
+      editBtn.style.pointerEvents = 'auto';
+
+      console.log(`[Zoro] Opening edit modal for ${isNewEntry ? 'new' : 'existing'} entry`);
+
+      // Open edit modal with correct data
+      this.plugin.edit.createEditModal(
+        entryToEdit,
+        async (updates) => {
+          try {
+            console.log(`[Zoro] Updating media ${media.id} with:`, updates);
+            
+            const api = config.source === 'mal' ? this.plugin.malApi : this.plugin.api;
+            await api.updateMediaListEntry(media.id, updates);
+            
+            // Success feedback
+            const successMessage = isNewEntry ? '✅ Added to list!' : '✅ Updated!';
+            new Notice(successMessage, 3000);
+            console.log(`[Zoro] ${successMessage}`);
+            
+            // Update button to reflect it's now in the list
+            editBtn.textContent = 'Edit';
+            editBtn.className = 'status-badge status-edit clickable-status';
+            
+            // Refresh any open list views
+            this.refreshActiveViews();
+            
+          } catch (updateError) {
+            console.error('[Zoro] Update failed:', updateError);
+            new Notice(`❌ Update failed: ${updateError.message}`, 5000);
+          }
+        },
+        () => {
+          // Modal cancelled - reset button state
+          console.log('[Zoro] Edit modal cancelled');
+          editBtn.textContent = 'Edit';
+          editBtn.className = 'status-badge status-edit clickable-status';
+          editBtn.dataset.loading = 'false';
+          editBtn.style.pointerEvents = 'auto';
+        },
+        config.source // Pass source to modal for proper API handling
+      );
+
+    } catch (error) {
+      console.error('[Zoro] User entry check failed:', error);
+      
+      // Reset button state
+      editBtn.textContent = 'Edit';
+      editBtn.dataset.loading = 'false';
+      editBtn.style.pointerEvents = 'auto';
+      
+      // Show user-friendly message but still allow editing
+      new Notice('⚠️ Could not check list status, assuming new entry', 3000);
+      
+      // Fallback to default new entry data
+      const defaultEntry = {
+        media: media,
+        status: 'PLANNING',
+        progress: 0,
+        score: null,
+        id: null
+      };
+
+      console.log('[Zoro] Falling back to default entry data');
+
+      this.plugin.edit.createEditModal(
+        defaultEntry,
+        async (updates) => {
+          try {
+            const api = config.source === 'mal' ? this.plugin.malApi : this.plugin.api;
+            await api.updateMediaListEntry(media.id, updates);
+            new Notice('✅ Added to list!', 3000);
+            this.refreshActiveViews();
+          } catch (updateError) {
+            console.error('[Zoro] Update failed:', updateError);
+            new Notice(`❌ Failed to add: ${updateError.message}`, 5000);
+          }
+        },
+        () => {
+          console.log('[Zoro] Fallback edit modal cancelled');
+        },
+        config.source
+      );
+    }
+  };
+  
+  details.appendChild(editBtn);
+}
 
     info.appendChild(details);
   }
@@ -6664,7 +6699,16 @@ generateInsights(stats, type, user) {
     e.preventDefault();
     e.stopPropagation();
     const btn = e.target;
-    btn.textContent = '⏳';
+    btn.innerHTML = `
+  <div class="sharingan-glow">
+    <div class="tomoe-container">
+      <span class="tomoe"></span>
+      <span class="tomoe"></span>
+      <span class="tomoe"></span>
+    </div>
+  </div>
+`;
+
     btn.disabled = true;
     
     this.plugin.api.addMediaToList(media.id, { status: 'PLANNING' }, config.mediaType)
@@ -6709,28 +6753,23 @@ class Edit {
     };
   }
 
-  createEditModal(entry, onSave, onCancel) {
-    // Create modal structure
+  createEditModal(entry, onSave, onCancel, source = 'anilist') {
     const modal = this.createModalStructure();
     const { overlay, content, form } = modal;
     
-    // Create all elements
     const title = this.createTitle(entry);
-
     const closeBtn = Edit.createCloseButton(() => this.closeModal(modal.container, onCancel));
-    const favoriteBtn = this.createFavoriteButton(entry);
+    const favoriteBtn = this.createFavoriteButton(entry, source);
     const formFields = this.createFormFields(entry);
     const quickButtons = this.createQuickProgressButtons(entry, formFields.progress.input, formFields.status.input);
-    const actionButtons = this.createActionButtons(entry, onSave, modal);
+    const actionButtons = this.createActionButtons(entry, onSave, modal, source);
     
-    // Setup interactions
     this.setupModalInteractions(modal, overlay, onCancel);
-    this.setupFormSubmission(form, entry, onSave, actionButtons.save, formFields, modal);
+    this.setupFormSubmission(form, entry, onSave, actionButtons.save, formFields, modal, source);
     this.setupEscapeListener(onCancel, modal, () => {
-      this.handleSave(entry, onSave, actionButtons.save, formFields, modal);
+      this.handleSave(entry, onSave, actionButtons.save, formFields, modal, source);
     });
     
-    // Assemble modal
     this.assembleModal(content, form, {
       title,
       closeBtn,
@@ -6740,11 +6779,13 @@ class Edit {
       actionButtons
     });
     
-    // Show modal
     document.body.appendChild(modal.container);
     
-    // Initialize favorite status
-    this.initializeFavoriteButton(entry, favoriteBtn);
+    if (source === 'anilist') {
+      this.initializeFavoriteButton(entry, favoriteBtn);
+    } else {
+      favoriteBtn.style.display = 'none';
+    }
     
     return modal;
   }
@@ -6775,32 +6816,33 @@ class Edit {
     return title;
   }
   
-  
-static createCloseButton(onClick) {
+  static createCloseButton(onClick) {
     const btn = document.createElement('button');
-    btn.className = 'panel-close-btn';  // same style as More Details panel
+    btn.className = 'panel-close-btn';
     btn.innerHTML = '×';
     btn.title = 'Close';
     btn.onclick = onClick;
     return btn;
-}
+  }
 
-  
-  createFavoriteButton(entry) {
-  const favBtn = document.createElement('button');
-  favBtn.className = this.config.buttons.favorite.class;
-  favBtn.type = 'button';
-  favBtn.title = 'Toggle Favorite';
-  
-  // Correctly set className, not textContent
-  favBtn.className = entry.media.isFavourite ? 
-    'zoro-fav-btn zoro-heart' : 
-    'zoro-fav-btn zoro-no-heart';
-  // Leave textContent empty for CSS hearts
-  
-  favBtn.onclick = () => this.toggleFavorite(entry, favBtn);
-  return favBtn;
-}
+  createFavoriteButton(entry, source) {
+    const favBtn = document.createElement('button');
+    favBtn.className = this.config.buttons.favorite.class;
+    favBtn.type = 'button';
+    favBtn.title = 'Toggle Favorite';
+    
+    if (source === 'mal') {
+      favBtn.style.display = 'none';
+      return favBtn;
+    }
+    
+    favBtn.className = entry.media.isFavourite ? 
+      'zoro-fav-btn zoro-heart' : 
+      'zoro-fav-btn zoro-no-heart';
+    
+    favBtn.onclick = () => this.toggleFavorite(entry, favBtn, source);
+    return favBtn;
+  }
   
   createFormFields(entry) {
     const statusField = this.createStatusField(entry);
@@ -6957,14 +6999,14 @@ static createCloseButton(onClick) {
     return button;
   }
 
-  createActionButtons(entry, onSave, modal) {
+  createActionButtons(entry, onSave, modal, source) {
     const container = document.createElement('div');
     container.className = 'zoro-modal-buttons';
     
     const removeBtn = this.createActionButton({
       label: this.config.buttons.remove.label,
       className: this.config.buttons.remove.class,
-      onClick: () => this.handleRemove(entry, modal.container)
+      onClick: () => this.handleRemove(entry, modal.container, source)
     });
     
     const saveBtn = this.createActionButton({
@@ -6989,9 +7031,9 @@ static createCloseButton(onClick) {
 
   assembleModal(content, form, elements) {
     content.appendChild(elements.closeBtn);
-   const favContainer = document.createElement('div');
-   favContainer.className = 'zoro-fav-container';
-favContainer.appendChild(elements.favoriteBtn);
+    const favContainer = document.createElement('div');
+    favContainer.className = 'zoro-fav-container';
+    favContainer.appendChild(elements.favoriteBtn);
 
     form.append(
       elements.title,
@@ -7002,18 +7044,16 @@ favContainer.appendChild(elements.favoriteBtn);
       elements.quickButtons.container,
       elements.actionButtons.container
     );
-    
-    
   }
   
   setupModalInteractions(modal, overlay, onCancel) {
     overlay.onclick = () => this.closeModal(modal.container, onCancel);
   }
   
-  setupFormSubmission(form, entry, onSave, saveBtn, formFields, modal) {
+  setupFormSubmission(form, entry, onSave, saveBtn, formFields, modal, source) {
     form.onsubmit = async (e) => {
       e.preventDefault();
-      await this.handleSave(entry, onSave, saveBtn, formFields, modal);
+      await this.handleSave(entry, onSave, saveBtn, formFields, modal, source);
     };
   }
   
@@ -7028,8 +7068,6 @@ favContainer.appendChild(elements.favoriteBtn);
     };
     
     this.plugin.addGlobalListener(document, 'keydown', escListener);
-    
-    // Store reference for cleanup
     modal._escListener = escListener;
   }
   
@@ -7080,85 +7118,36 @@ favContainer.appendChild(elements.favoriteBtn);
     }
   }
 
-async toggleFavorite(entry, favBtn) {
-  favBtn.disabled = true;
-  
-  // Store the CURRENT state before the API call
-  const wasAlreadyFavorited = entry.media.isFavourite;
-  
-  try {
-    let mediaType = favBtn.dataset.mediaType;
-    if (!mediaType) {
-      mediaType = entry.media.type || (entry.media.episodes ? 'ANIME' : 'MANGA');
-    }
+  async toggleFavorite(entry, favBtn, source = 'anilist') {
+    if (source !== 'anilist') return;
     
-    const isAnime = mediaType === 'ANIME';
-    
-    const mutation = `
-      mutation ToggleFav($animeId: Int, $mangaId: Int) {
-        ToggleFavourite(animeId: $animeId, mangaId: $mangaId) {
-          anime { nodes { id } }
-          manga { nodes { id } }
-        }
-      }`;
-      
-    const variables = {};
-    if (isAnime) {
-      variables.animeId = entry.media.id;
-    } else {
-      variables.mangaId = entry.media.id;
-    }
-
-    const res = await this.plugin.requestQueue.add(() =>
-      requestUrl({
-        url: 'https://graphql.anilist.co',
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${this.plugin.settings.accessToken}`
-        },
-        body: JSON.stringify({ query: mutation, variables })
-      })
-    );
-    
-    if (res.json.errors) {
-      new Notice(`API Error: ${res.json.errors[0].message}`, 8000);
-      throw new Error(res.json.errors[0].message);
-    }
-    
-    // FIX: Simply toggle the previous state instead of parsing complex response
-    const isFav = !wasAlreadyFavorited;
-    
-    entry.media.isFavourite = isFav;
-    document.querySelectorAll(`[data-media-id="${entry.media.id}"] .zoro-heart`)
-      .forEach(h => h.style.display = entry.media.isFavourite ? '' : 'none');
-    
-    this.invalidateCache(entry);
-    this.updateAllFavoriteButtons(entry);
-    
-    favBtn.className = isFav ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart';
-    new Notice(`${isFav ? 'Added to' : 'Removed from'} favorites!`, 3000);
-    
-  } catch (e) {
-    new Notice(`❌ Error: ${e.message || 'Unknown error'}`, 8000);
-  } finally {
-    favBtn.disabled = false;
-  }
-}
-
-  async handleRemove(entry, modalElement) {
-    if (!confirm('Remove this entry?')) return;
-    
-    const removeBtn = modalElement.querySelector('.zoro-remove-btn');
-    removeBtn.disabled = true;
-    removeBtn.textContent = '⏳';
+    favBtn.disabled = true;
+    const wasAlreadyFavorited = entry.media.isFavourite;
     
     try {
+      let mediaType = favBtn.dataset.mediaType;
+      if (!mediaType) {
+        mediaType = entry.media.type || (entry.media.episodes ? 'ANIME' : 'MANGA');
+      }
+      
+      const isAnime = mediaType === 'ANIME';
+      
       const mutation = `
-        mutation ($id: Int) {
-          DeleteMediaListEntry(id: $id) { deleted }
+        mutation ToggleFav($animeId: Int, $mangaId: Int) {
+          ToggleFavourite(animeId: $animeId, mangaId: $mangaId) {
+            anime { nodes { id } }
+            manga { nodes { id } }
+          }
         }`;
-      await this.plugin.requestQueue.add(() =>
+        
+      const variables = {};
+      if (isAnime) {
+        variables.animeId = entry.media.id;
+      } else {
+        variables.mangaId = entry.media.id;
+      }
+
+      const res = await this.plugin.requestQueue.add(() =>
         requestUrl({
           url: 'https://graphql.anilist.co',
           method: 'POST',
@@ -7166,9 +7155,74 @@ async toggleFavorite(entry, favBtn) {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${this.plugin.settings.accessToken}`
           },
-          body: JSON.stringify({ query: mutation, variables: { id: entry.id } })
+          body: JSON.stringify({ query: mutation, variables })
         })
       );
+      
+      if (res.json.errors) {
+        new Notice(`API Error: ${res.json.errors[0].message}`, 8000);
+        throw new Error(res.json.errors[0].message);
+      }
+      
+      const isFav = !wasAlreadyFavorited;
+      
+      entry.media.isFavourite = isFav;
+      document.querySelectorAll(`[data-media-id="${entry.media.id}"] .zoro-heart`)
+        .forEach(h => h.style.display = entry.media.isFavourite ? '' : 'none');
+      
+      this.invalidateCache(entry);
+      this.updateAllFavoriteButtons(entry);
+      
+      favBtn.className = isFav ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart';
+      new Notice(`${isFav ? 'Added to' : 'Removed from'} favorites!`, 3000);
+      
+    } catch (e) {
+      new Notice(`❌ Error: ${e.message || 'Unknown error'}`, 8000);
+    } finally {
+      favBtn.disabled = false;
+    }
+  }
+
+  async handleRemove(entry, modalElement, source = 'anilist') {
+    if (!confirm('Remove this entry?')) return;
+    
+    const removeBtn = modalElement.querySelector('.zoro-remove-btn');
+    removeBtn.disabled = true;
+    removeBtn.innerHTML = `
+  <div class="sharingan-glow">
+    <div class="tomoe-container">
+      <span class="tomoe"></span>
+      <span class="tomoe"></span>
+      <span class="tomoe"></span>
+    </div>
+  </div>
+`;
+
+    
+    try {
+      if (source === 'mal') {
+        // MAL doesn't support removing entries via API in most cases
+        // It would require setting status to a "not in list" state
+        new Notice('❌ MAL does not support removing entries via API', 5000);
+        throw new Error('MAL remove not supported');
+      } else {
+        // AniList remove
+        const mutation = `
+          mutation ($id: Int) {
+            DeleteMediaListEntry(id: $id) { deleted }
+          }`;
+        await this.plugin.requestQueue.add(() =>
+          requestUrl({
+            url: 'https://graphql.anilist.co',
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${this.plugin.settings.accessToken}`
+            },
+            body: JSON.stringify({ query: mutation, variables: { id: entry.id } })
+          })
+        );
+      }
       
       this.invalidateCache(entry);
       this.refreshUI(entry);
@@ -7179,11 +7233,10 @@ async toggleFavorite(entry, favBtn) {
       this.showModalError(modalElement.querySelector('.zoro-edit-form'), `Remove failed: ${e.message}`);
       removeBtn.disabled = false;
       removeBtn.textContent = '🗑️';
-
     }
   }
 
-  async handleSave(entry, onSave, saveBtn, formFields, modal) {
+  async handleSave(entry, onSave, saveBtn, formFields, modal, source = 'anilist') {
     if (this.saving) return;
     this.saving = true;
     saveBtn.disabled = true;
@@ -7192,7 +7245,6 @@ async toggleFavorite(entry, favBtn) {
     const form = modal.form;
     const scoreVal = parseFloat(formFields.score.input.value);
     
-    // Validation
     if (formFields.score.input.value && (isNaN(scoreVal) || scoreVal < 0 || scoreVal > 10)) {
       this.showModalError(form, "Score must be between 0 and 10");
       this.resetSaveButton(saveBtn);
@@ -7206,12 +7258,15 @@ async toggleFavorite(entry, favBtn) {
         progress: parseInt(formFields.progress.input.value) || 0
       };
       
-      await onSave(updates);
+      if (source === 'mal') {
+        await this.plugin.malApi.updateMediaListEntry(entry.media.id, updates);
+      } else {
+        await onSave(updates);
+      }
       
-      // Update entry data
       Object.assign(entry, updates);
       
-      this.invalidateCache(entry);
+      this.invalidateCache(entry, source);
       this.refreshUI(entry);
       this.closeModal(modal.container, () => {});
       
@@ -7241,30 +7296,18 @@ async toggleFavorite(entry, favBtn) {
   
   invalidateCache(entry) {
     this.plugin.cache.invalidateByMedia(String(entry.media.id));
-    const listKey = this.plugin.api.createCacheKey({ 
-      type: 'list', 
-      username: entry.media.user?.name, 
-      listType: entry.status 
-    });
-    const entryKey = this.plugin.api.createCacheKey({ 
-      type: 'single', 
-      mediaId: entry.media.id 
-    });
-    this.plugin.cache.delete(listKey, { scope: 'userData' });
-    this.plugin.cache.delete(entryKey, { scope: 'mediaData' });
   }
   
   updateAllFavoriteButtons(entry) {
-  document.querySelectorAll(`[data-media-id="${entry.media.id}"] .zoro-fav-btn`)
-    .forEach(btn => {
-      btn.className = entry.media.isFavourite ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart';
-    });
-}
+    document.querySelectorAll(`[data-media-id="${entry.media.id}"] .zoro-fav-btn`)
+      .forEach(btn => {
+        btn.className = entry.media.isFavourite ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart';
+      });
+  }
   
   refreshUI(entry) {
     const card = document.querySelector(`.zoro-container [data-media-id="${entry.media.id}"]`);
     if (card) {
-      // Update individual elements
       const statusBadge = card.querySelector('.clickable-status');
       if (statusBadge) {
         statusBadge.textContent = entry.status;
@@ -7279,7 +7322,6 @@ async toggleFavorite(entry, favBtn) {
         progressEl.textContent = `${entry.progress}/${total}`;
       }
     } else {
-      // Refresh entire container
       const container = Array.from(document.querySelectorAll('.zoro-container'))
                               .find(c => c.querySelector(`[data-media-id="${entry.media.id}"]`));
       if (container) {
@@ -9392,7 +9434,7 @@ class ZoroSettingTab extends PluginSettingTab {
         }));
 
     new Setting(More)
-      .setName('⏳ Loading Icon')
+      .setName('Loading Icon')
       .setDesc('Show loading animation during API requests')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.showLoadingIcon)

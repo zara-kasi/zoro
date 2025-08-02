@@ -4024,9 +4024,11 @@ class MalApi {
       case 'stats':
         return `${this.baseUrl}/users/@me`;
       case 'single':
-      case 'list':
         const mediaType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
-        return `${this.baseUrl}/users/@me/${mediaType}list`;
+        return `${this.baseUrl}/${mediaType}/${config.mediaId}`;
+      case 'list':
+        const listMediaType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
+        return `${this.baseUrl}/users/@me/${listMediaType}list`;
       case 'search':
         const searchType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
         return `${this.baseUrl}/${searchType}`;
@@ -4040,6 +4042,8 @@ class MalApi {
     
     switch (config.type) {
       case 'single':
+        params.fields = this.getFieldsForLayout(config.layout);
+        break;
       case 'list':
         params.fields = this.getFieldsForLayout(config.layout);
         params.limit = 1000;
@@ -4051,6 +4055,8 @@ class MalApi {
         params.limit = config.perPage || 5;
         params.offset = ((config.page || 1) - 1) * (config.perPage || 5);
         params.fields = this.getFieldsForLayout(config.layout);
+        break;
+      case 'stats':
         break;
     }
     
@@ -4254,16 +4260,33 @@ class MalApi {
   transformResponse(data, config) {
     switch (config.type) {
       case 'search':
-        return { Page: { media: data.data?.map(item => this.transformMedia(item)) || [] } };
+        return { 
+          Page: { 
+            media: data.data?.map(item => this.transformMedia(item)) || [] 
+          } 
+        };
       case 'single':
-        const targetMedia = data.data?.find(item => item.node.id === parseInt(config.mediaId));
-        return { MediaList: targetMedia ? this.transformListEntry(targetMedia) : null };
+        if (data && data.id) {
+          const transformedMedia = this.transformMedia(data);
+          return { 
+            MediaList: {
+              id: null,
+              status: data.my_list_status ? this.mapMALStatusToAniList(data.my_list_status.status) : null,
+              score: data.my_list_status?.score || 0,
+              progress: data.my_list_status?.num_episodes_watched || data.my_list_status?.num_chapters_read || 0,
+              media: transformedMedia
+            }
+          };
+        }
+        return { MediaList: null };
       case 'stats':
         return { User: this.transformUser(data) };
       default:
         return {
           MediaListCollection: {
-            lists: [{ entries: data.data?.map(item => this.transformListEntry(item)) || [] }]
+            lists: [{ 
+              entries: data.data?.map(item => this.transformListEntry(item)) || [] 
+            }]
           }
         };
     }
@@ -4388,7 +4411,19 @@ class MalApi {
   }
 
   mapMALStatusToAniList(status) {
-    return this.reverseStatusMappings[status] || status;
+    if (!status) return null;
+    
+    const statusMap = {
+      'watching': 'CURRENT',
+      'reading': 'CURRENT',
+      'completed': 'COMPLETED',
+      'on_hold': 'PAUSED',
+      'dropped': 'DROPPED',
+      'plan_to_watch': 'PLANNING',
+      'plan_to_read': 'PLANNING'
+    };
+    
+    return statusMap[status] || status.toUpperCase();
   }
 
   isValidMediaId(mediaId) {
@@ -4656,28 +4691,16 @@ class Processor {
     this.initializeApis();
   }
 
-  /**
-   * Initialize and register available APIs
-   * @private
-   */
   initializeApis() {
-    // Register AniList API
     if (this.plugin.api) {
       this.apiRegistry.set('anilist', this.plugin.api);
     }
     
-    // Register MAL API
     if (this.plugin.malApi) {
       this.apiRegistry.set('mal', this.plugin.malApi);
     }
   }
 
-  /**
-   * Get API instance based on source
-   * @param {string} source - API source identifier
-   * @returns {Object} API instance
-   * @throws {Error} If API source is not supported or available
-   */
   getApiInstance(source) {
     const normalizedSource = source?.toLowerCase();
     
@@ -4689,26 +4712,15 @@ class Processor {
     return this.apiRegistry.get(normalizedSource);
   }
 
-  /**
-   * Get supported operation types for a given API source
-   * @param {string} source - API source identifier
-   * @returns {string[]} Array of supported operation types
-   */
   getSupportedOperations(source) {
     const operationMap = {
       'anilist': ['stats', 'search', 'single', 'list', 'trending'],
-      'mal': ['stats', 'search', 'list']
+      'mal': ['stats', 'search', 'single', 'list']
     };
     
     return operationMap[source?.toLowerCase()] || [];
   }
 
-  /**
-   * Validate if operation is supported by the API source
-   * @param {string} source - API source identifier
-   * @param {string} operation - Operation type to validate
-   * @throws {Error} If operation is not supported by the source
-   */
   validateOperation(source, operation) {
     const supportedOps = this.getSupportedOperations(source);
     
@@ -4717,11 +4729,6 @@ class Processor {
     }
   }
 
-  /**
-   * Create appropriate skeleton based on configuration
-   * @param {Object} config - Configuration object
-   * @returns {HTMLElement} Skeleton element
-   */
   createSkeleton(config) {
     const skeletonMap = {
       'stats': () => this.plugin.render.createStatsSkeleton(),
@@ -4739,11 +4746,6 @@ class Processor {
     return createSkeletonFn();
   }
 
-  /**
-   * Handle authentication and username resolution
-   * @param {Object} config - Configuration object
-   * @returns {Promise<Object>} Updated configuration with username
-   */
   async resolveAuthentication(config) {
     const updatedConfig = { ...config };
 
@@ -4758,12 +4760,6 @@ class Processor {
     return updatedConfig;
   }
 
-  /**
-   * Execute API operation based on type and source
-   * @param {Object} api - API instance
-   * @param {Object} config - Configuration object
-   * @returns {Promise<any>} API response data
-   */
   async executeApiOperation(api, config) {
     const { type, source } = config;
 
@@ -4792,27 +4788,16 @@ class Processor {
     }
   }
 
-  /**
-   * Handle stats operation
-   * @param {Object} api - API instance
-   * @param {Object} config - Configuration object
-   * @returns {Promise<any>} Stats data
-   */
   async handleStatsOperation(api, config) {
     if (config.source === 'mal') {
-      return await api.fetchMALStats?.(config);
+      const response = await api.fetchMALStats?.(config);
+      return response?.User || response;
     } else {
       const data = await api.fetchAniListData?.(config);
       return data?.User || data;
     }
   }
 
-  /**
-   * Handle search operation
-   * @param {Object} api - API instance
-   * @param {Object} config - Configuration object
-   * @returns {Promise<any>} Search results data
-   */
   async handleSearchOperation(api, config) {
     if (config.source === 'mal') {
       return await api.fetchMALData?.({
@@ -4822,65 +4807,45 @@ class Processor {
         perPage: config.perPage || 5
       });
     } else {
-      // For AniList, we'll return config to trigger search interface rendering
       return { isSearchInterface: true, config };
     }
   }
 
-  /**
-   * Handle single media operation
-   * @param {Object} api - API instance
-   * @param {Object} config - Configuration object
-   * @returns {Promise<any>} Single media data
-   */
   async handleSingleOperation(api, config) {
     if (config.source === 'mal') {
-      throw new Error('❌ Single media view is currently only supported for AniList');
+      if (!config.mediaId) {
+        throw new Error('❌ Media ID is required for single media view');
+      }
+      const response = await api.fetchMALData?.(config);
+      return response?.MediaList;
+    } else {
+      const data = await api.fetchAniListData?.(config);
+      return data?.MediaList;
     }
-    
-    const data = await api.fetchAniListData?.(config);
-    return data?.MediaList;
   }
 
-  /**
-   * Handle list operation
-   * @param {Object} api - API instance
-   * @param {Object} config - Configuration object
-   * @returns {Promise<any>} List data
-   */
   async handleListOperation(api, config) {
     if (config.source === 'mal') {
-      return await api.fetchMALList?.({ 
+      const response = await api.fetchMALList?.({ 
         listType: config.listType, 
-        mediaType: config.mediaType 
+        mediaType: config.mediaType,
+        layout: config.layout
       });
+      return response?.MediaListCollection?.lists?.flatMap(l => l.entries) || [];
     } else {
       const data = await api.fetchAniListData?.({ ...config });
       return data?.MediaListCollection?.lists?.flatMap(l => l.entries) || [];
     }
   }
 
-  /**
-   * Handle trending operation
-   * @param {Object} api - API instance
-   * @param {Object} config - Configuration object
-   * @returns {Promise<any>} Trending data
-   */
   async handleTrendingOperation(api, config) {
     if (config.source === 'mal') {
       throw new Error('❌ Trending is currently only supported for AniList');
     }
     
-    // Return indicator for special trending handling
     return { isTrendingOperation: true, config };
   }
 
-  /**
-   * Render data based on operation type
-   * @param {HTMLElement} el - Target element
-   * @param {any} data - Data to render
-   * @param {Object} config - Configuration object
-   */
   async renderData(el, data, config) {
     const { type } = config;
 
@@ -4921,31 +4886,20 @@ class Processor {
     }
   }
 
-  /**
-   * Main method to process Zoro code blocks
-   * @param {string} source - Code block source content
-   * @param {HTMLElement} el - Target element
-   * @param {Object} ctx - Context object
-   */
   async processZoroCodeBlock(source, el, ctx) {
     let config;
     
     try {
-      // Parse and validate configuration
       config = this.parseCodeBlockConfig(source) || {};
       
-      // Validate API source and operation
       this.validateOperation(config.source, config.type);
       
-      // Create and display skeleton
       const skeleton = this.createSkeleton(config);
       el.empty();
       el.appendChild(skeleton);
 
-      // Create retry function for error handling
       const retryFn = () => this.processZoroCodeBlock(source, el, ctx);
 
-      // Execute main processing logic
       await this.executeProcessing(el, config, retryFn);
 
     } catch (error) {
@@ -4962,38 +4916,23 @@ class Processor {
     }
   }
 
-  /**
-   * Execute the main processing logic
-   * @param {HTMLElement} el - Target element
-   * @param {Object} config - Configuration object
-   * @param {Function} retryFn - Retry function for error handling
-   */
   async executeProcessing(el, config, retryFn) {
     try {
-      // Resolve authentication if needed
       const resolvedConfig = await this.resolveAuthentication(config);
       
-      // Get API instance
       const api = this.getApiInstance(resolvedConfig.source);
       
-      // Execute API operation
       const data = await this.executeApiOperation(api, resolvedConfig);
       
-      // Render the data
       await this.renderData(el, data, resolvedConfig);
 
     } catch (error) {
       el.empty();
       this.plugin.renderError(el, error.message, 'Failed to load', retryFn);
-      throw error; // Re-throw to be caught by main error handler
+      throw error;
     }
   }
 
-  /**
-   * Process inline Zoro links
-   * @param {HTMLElement} el - Element containing inline links
-   * @param {Object} ctx - Context object
-   */
   async processInlineLinks(el, ctx) {
     const inlineLinks = el.querySelectorAll('a[href^="zoro:"]');
 
@@ -5001,15 +4940,9 @@ class Processor {
       this.processInlineLink(link, ctx)
     );
 
-    // Process all inline links concurrently
     await Promise.allSettled(processingPromises);
   }
 
-  /**
-   * Process a single inline link
-   * @param {HTMLElement} link - Link element to process
-   * @param {Object} ctx - Context object
-   */
   async processInlineLink(link, ctx) {
     const href = link.getAttribute('href');
     

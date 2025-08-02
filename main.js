@@ -3919,14 +3919,6 @@ class AnilistApi {
   }
 }
 
-class ApiError extends Error {
-  constructor(type, message) {
-    super(message);
-    this.name = 'ApiError';
-    this.type = type;
-  }
-}
-
 class MalApi {
   constructor(plugin) {
     this.plugin = plugin;

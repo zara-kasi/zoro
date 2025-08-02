@@ -3936,10 +3936,10 @@ class MalApi {
     };
 
     this.searchFieldSets = {
-      compact: 'id,title,main_picture',
-      card: 'id,title,main_picture,media_type,status,genres,num_episodes,num_chapters,mean,start_date,end_date',
-      full: 'id,title,main_picture,alternative_titles,start_date,end_date,synopsis,mean,rank,popularity,num_list_users,num_scoring_users,nsfw,created_at,updated_at,media_type,status,genres,num_episodes,num_chapters,start_season,broadcast,source,average_episode_duration,rating,pictures,background,related_anime,related_manga,recommendations,studios,statistics'
-    };
+    compact: 'id,title,main_picture',
+    card: 'id,title,main_picture,media_type,status,genres,num_episodes,num_chapters,mean,start_date,end_date',
+    full: 'id,title,main_picture,media_type,status,genres,num_episodes,num_chapters,mean,start_date,end_date,synopsis,source,studios'
+  };
 
     this.statusMappings = {
       'CURRENT': 'watching', 'COMPLETED': 'completed', 'PAUSED': 'on_hold',
@@ -3954,6 +3954,8 @@ class MalApi {
       'on_hold': 'PAUSED', 'dropped': 'DROPPED', 'plan_to_watch': 'PLANNING',
       'plan_to_read': 'PLANNING'
     };
+    
+    
 
     this.metrics = { requests: 0, cached: 0, errors: 0 };
   }
@@ -4004,134 +4006,213 @@ class MalApi {
   }
 
   buildRequestParams(config) {
-    const url = this.buildEndpointUrl(config);
-    const params = this.buildQueryParams(config);
-    const headers = this.getAuthHeaders();
-    
-    return {
-      url: this.buildFullUrl(url, params),
-      method: 'GET',
-      headers,
-      priority: config.priority || 'normal',
-      metadata: { type: config.type, mediaType: config.mediaType }
-    };
-  }
+  const url = this.buildEndpointUrl(config);
+  const params = this.buildQueryParams(config);
+  const headers = this.getAuthHeaders();
+  
+  return {
+    url: this.buildFullUrl(url, params),
+    method: 'GET',
+    headers,
+    priority: config.priority || (config.type === 'search' ? 'normal' : 'normal'),
+    metadata: { 
+      type: config.type, 
+      mediaType: config.mediaType,
+      // Include search query for debugging
+      query: config.search || config.query
+    }
+  };
+}
 
   buildEndpointUrl(config) {
-    switch (config.type) {
-      case 'stats':
-        return `${this.baseUrl}/users/@me`;
-      case 'single':
-        const mediaType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
-        return `${this.baseUrl}/${mediaType}/${config.mediaId}`;
-      case 'list':
-        const listMediaType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
-        return `${this.baseUrl}/users/@me/${listMediaType}list`;
-      case 'search':
-        const searchType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
-        return `${this.baseUrl}/${searchType}`;
-      default:
-        throw ZoroError.create('INVALID_REQUEST_TYPE', `Unknown type: ${config.type}`, { config }, 'error');
-    }
+  switch (config.type) {
+    case 'stats':
+      return `${this.baseUrl}/users/@me`;
+    case 'single':
+      const mediaType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
+      return `${this.baseUrl}/${mediaType}/${config.mediaId}`;
+    case 'list':
+      const listMediaType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
+      return `${this.baseUrl}/users/@me/${listMediaType}list`;
+    case 'search':
+      // CRITICAL FIX: Check auth before building URL
+      if (!this.plugin.settings.malAccessToken) {
+        throw ZoroError.create('AUTH_REQUIRED', 'MAL search requires authentication', {}, 'error');
+      }
+      const searchType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
+      return `${this.baseUrl}/${searchType}`;
+    default:
+      throw ZoroError.create('INVALID_REQUEST_TYPE', `Unknown type: ${config.type}`, { config }, 'error');
   }
+}
 
   buildQueryParams(config) {
-    const params = {};
+  const params = {};
+  
+  switch (config.type) {
+    case 'single':
+      params.fields = this.getFieldsForLayout(config.layout, 'search');
+      break;
+    case 'list':
+      params.fields = this.getFieldsForLayout(config.layout);
+      params.limit = 1000;
+      if (config.listType) params.status = this.mapAniListStatusToMAL(config.listType);
+      params.sort = 'list_score';
+      break;
+    case 'search':
+      if (!config.search && !config.query) {
+        throw ZoroError.create('SEARCH_QUERY_REQUIRED', 'Search query is required', { config }, 'error');
+      }
+      
+      params.q = config.search || config.query;
+      params.limit = Math.min(config.perPage || 10, 100);
+      params.offset = ((config.page || 1) - 1) * (config.perPage || 10);
+      params.fields = this.getFieldsForLayout(config.layout, 'search');
+      
+      // REMOVED: nsfw parameter (causes issues)
+      break;
+    case 'stats':
+      break;
+  }
+  
+  return params;
+}
+
+ async makeRequest(requestParams) {
+  this.metrics.requests++;
+  
+  const requestFn = async () => {
+    await this.ensureValidToken();
     
-    switch (config.type) {
-      case 'single':
-        params.fields = this.getFieldsForLayout(config.layout, 'search');
-        break;
-      case 'list':
-        params.fields = this.getFieldsForLayout(config.layout);
-        params.limit = 1000;
-        if (config.listType) params.status = this.mapAniListStatusToMAL(config.listType);
-        params.sort = 'list_score';
-        break;
-      case 'search':
-        params.q = config.search || config.query;
-        params.limit = config.perPage || 5;
-        params.offset = ((config.page || 1) - 1) * (config.perPage || 5);
-        params.fields = this.getFieldsForLayout(config.layout, 'search');
-        break;
-      case 'stats':
-        break;
+    // Enhanced debug logging
+    if (requestParams.metadata?.type === 'search') {
+      console.log('[MAL Search Debug] Full URL:', requestParams.url);
+      console.log('[MAL Search Debug] Query:', requestParams.metadata.query);
     }
     
-    return params;
-  }
+    const response = await requestUrl({
+      url: requestParams.url,
+      method: requestParams.method || 'GET',
+      headers: {
+        'User-Agent': 'Obsidian-MAL-Plugin/1.0',
+        ...requestParams.headers
+      },
+      body: requestParams.body,
+      throw: false
+    });
 
-  async makeRequest(requestParams) {
-    this.metrics.requests++;
-    
-    const requestFn = async () => {
-      await this.ensureValidToken();
+    // DETAILED error handling for search
+    if (response.status === 400 && requestParams.metadata?.type === 'search') {
+      console.error('[MAL Search Error] Response:', response.json || response.text);
+      throw ZoroError.create('SEARCH_INVALID_QUERY', 
+        `Search failed: ${response.json?.message || 'Invalid query format'}`, 
+        { 
+          query: requestParams.metadata.query,
+          url: requestParams.url,
+          status: response.status,
+          response: response.json || response.text
+        }, 'error');
+    }
+
+    if (response.status === 401) {
+      if (this.plugin.settings.malRefreshToken) {
+        try {
+          await this.refreshAccessToken();
+          const retryResponse = await requestUrl({
+            url: requestParams.url,
+            method: requestParams.method || 'GET',
+            headers: {
+              'User-Agent': 'Obsidian-MAL-Plugin/1.0',
+              ...this.getAuthHeaders()
+            },
+            body: requestParams.body,
+            throw: false
+          });
+          return retryResponse;
+        } catch (refreshError) {
+          throw ZoroError.create('AUTH_EXPIRED', 'Authentication expired and refresh failed', 
+            { error: refreshError.message }, 'error');
+        }
+      } else {
+        throw ZoroError.create('AUTH_INVALID', 'Authentication token is invalid', {}, 'error');
+      }
+    }
+
+    if (response.status < 200 || response.status >= 300) {
+      const errorText = response.text || JSON.stringify(response.json) || 'Unknown error';
       
-      const response = await requestUrl({
-        url: requestParams.url,
-        method: requestParams.method || 'GET',
-        headers: {
-          'User-Agent': 'Obsidian-MAL-Plugin/1.0',
-          ...requestParams.headers
-        },
-        body: requestParams.body,
-        throw: false
-      });
-
-      if (response.status === 401) {
-        if (this.plugin.settings.malRefreshToken) {
-          try {
-            await this.refreshAccessToken();
-            const retryResponse = await requestUrl({
-              url: requestParams.url,
-              method: requestParams.method || 'GET',
-              headers: {
-                'User-Agent': 'Obsidian-MAL-Plugin/1.0',
-                ...this.getAuthHeaders()
-              },
-              body: requestParams.body,
-              throw: false
-            });
-            return retryResponse;
-          } catch (refreshError) {
-            throw ZoroError.create('AUTH_EXPIRED', 'Authentication expired and refresh failed', { error: refreshError.message }, 'error');
-          }
-        } else {
-          throw ZoroError.create('AUTH_INVALID', 'Authentication token is invalid', {}, 'error');
+      // Enhanced search error handling
+      if (requestParams.metadata?.type === 'search') {
+        console.error('[MAL Search Error] Status:', response.status);
+        console.error('[MAL Search Error] Response:', response.json || response.text);
+        
+        if (response.status === 404) {
+          return { data: [] }; // Empty results
+        }
+        if (response.status === 403) {
+          throw ZoroError.create('SEARCH_FORBIDDEN', 'Search access denied', 
+            { status: response.status }, 'error');
         }
       }
-
-      if (response.status < 200 || response.status >= 300) {
-        const errorText = response.text || JSON.stringify(response.json) || 'Unknown error';
-        throw ZoroError.create('REQUEST_FAILED', `Request failed (HTTP ${response.status})`, { error: errorText, url: requestParams.url }, 'error');
-      }
-
-      return response;
-    };
-
-    try {
-      const response = await this.requestQueue.add(requestFn, {
-        priority: requestParams.priority || 'normal',
-        metadata: requestParams.metadata || {},
-        timeout: 30000
-      });
-
-      if (!response?.json) {
-        throw ZoroError.create('EMPTY_RESPONSE', 'Empty response from MAL', { url: requestParams.url }, 'error');
-      }
-
-      if (response.json.error) {
-        throw ZoroError.create('MAL_API_ERROR', response.json.message || 'MAL API error', { error: response.json }, 'error');
-      }
-
-      return response.json;
-    } catch (error) {
-      this.metrics.errors++;
-      if (error.type) throw error;
-      throw ZoroError.create('REQUEST_FAILED', 'MAL request failed', { error: error.message, url: requestParams.url }, 'error');
+      
+      throw ZoroError.create('REQUEST_FAILED', `Request failed (HTTP ${response.status})`, 
+        { error: errorText, url: requestParams.url, type: requestParams.metadata?.type }, 'error');
     }
-  }
 
+    return response;
+  };
+
+  try {
+    const response = await this.requestQueue.add(requestFn, {
+      priority: requestParams.priority || 'normal',
+      metadata: { 
+        ...requestParams.metadata,
+        query: requestParams.url.includes('q=') ? 
+          decodeURIComponent(requestParams.url.split('q=')[1]?.split('&')[0] || '') : null
+      },
+      timeout: 30000
+    });
+
+    if (!response) {
+      throw ZoroError.create('EMPTY_RESPONSE', 'Empty response from MAL', 
+        { url: requestParams.url }, 'error');
+    }
+
+    // CRITICAL: Handle search responses properly
+    if (requestParams.metadata?.type === 'search') {
+      if (!response.json) {
+        console.error('[MAL Search] No JSON in response:', response);
+        return { data: [] };
+      }
+      
+      if (!response.json.data) {
+        console.log('[MAL Search] No data field in response:', response.json);
+        return { data: [] };
+      }
+      
+      console.log('[MAL Search Success] Found results:', response.json.data.length);
+      return response.json;
+    }
+
+    if (!response.json) {
+      throw ZoroError.create('INVALID_RESPONSE', 'Invalid JSON response from MAL', 
+        { url: requestParams.url }, 'error');
+    }
+
+    if (response.json.error) {
+      throw ZoroError.create('MAL_API_ERROR', response.json.message || 'MAL API error', 
+        { error: response.json }, 'error');
+    }
+
+    return response.json;
+  } catch (error) {
+    this.metrics.errors++;
+    if (error.type) throw error;
+    throw ZoroError.create('REQUEST_FAILED', 'MAL request failed', 
+      { error: error.message, url: requestParams.url }, 'error');
+  }
+}
+  
   async refreshAccessToken() {
     if (!this.plugin.settings.malRefreshToken) {
       throw new Error('No refresh token available');
@@ -4342,13 +4423,22 @@ class MalApi {
   }
 
   transformResponse(data, config) {
+  try {
     switch (config.type) {
       case 'search':
+        // Fix: Handle MAL search response structure properly
+        const searchResults = data.data || [];
         return { 
           Page: { 
-            media: data.data?.map(item => this.transformMedia(item)) || [] 
+            media: searchResults.map(item => this.transformMedia(item)),
+            pageInfo: {
+              total: searchResults.length,
+              currentPage: config.page || 1,
+              hasNextPage: searchResults.length === (config.perPage || 10)
+            }
           } 
         };
+        
       case 'single':
         if (data && data.id) {
           const transformedMedia = this.transformMedia(data);
@@ -4363,21 +4453,34 @@ class MalApi {
           };
         }
         return { MediaList: null };
+        
       case 'stats':
         return { User: this.transformUser(data) };
-      default:
+        
+      default: // list
         return {
           MediaListCollection: {
             lists: [{ 
-              entries: data.data?.map(item => this.transformListEntry(item)) || [] 
+              entries: (data.data || []).map(item => this.transformListEntry(item))
             }]
           }
         };
     }
+  } catch (error) {
+    throw ZoroError.create('TRANSFORM_ERROR', 'Failed to transform MAL response', 
+      { error: error.message, config: config.type }, 'error');
   }
+}
 
   transformMedia(malMedia) {
+  try {
+    // CRITICAL: MAL search returns direct objects, not node-wrapped
     const media = malMedia.node || malMedia;
+    
+    if (!media || !media.id) {
+      console.warn('[MAL Transform] Invalid media structure:', malMedia);
+      throw new Error('Invalid media data structure');
+    }
     
     return {
       id: media.id,
@@ -4390,17 +4493,36 @@ class MalApi {
         large: media.main_picture?.large || media.main_picture?.medium || null,
         medium: media.main_picture?.medium || media.main_picture?.large || null
       },
-      format: media.media_type?.toUpperCase() || null,
+      format: this.normalizeFormat(media.media_type),
       averageScore: media.mean ? Math.round(media.mean * 10) : null,
-      status: media.status?.toUpperCase()?.replace('_', '_') || null,
-      genres: media.genres?.map(g => g.name) || [],
+      status: this.normalizeStatus(media.status),
+      genres: (media.genres || []).map(g => typeof g === 'string' ? g : g.name).filter(Boolean),
       episodes: media.num_episodes || null,
       chapters: media.num_chapters || null,
       isFavourite: false,
       startDate: this.parseDate(media.start_date),
       endDate: this.parseDate(media.end_date)
     };
+  } catch (error) {
+    console.warn('[MAL] Transform failed for:', malMedia, error);
+    // Return minimal valid object
+    return {
+      id: malMedia?.id || Math.random(),
+      title: { romaji: 'Unknown', english: 'Unknown', native: 'Unknown' },
+      coverImage: { large: null, medium: null },
+      format: null,
+      averageScore: null,
+      status: null,
+      genres: [],
+      episodes: null,
+      chapters: null,
+      isFavourite: false,
+      startDate: null,
+      endDate: null
+    };
   }
+}
+
 
   transformListEntry(malEntry) {
     const media = malEntry.node;
@@ -4429,6 +4551,7 @@ class MalApi {
       }
     };
   }
+  
 
   parseDate(dateString) {
     if (!dateString) return null;
@@ -4533,6 +4656,41 @@ class MalApi {
     const urlType = type === 'MANGA' ? 'manga' : 'anime';
     return `https://myanimelist.net/${urlType}/${mediaId}`;
   }
+  
+  normalizeFormat(malFormat) {
+  if (!malFormat) return null;
+  
+  const formatMap = {
+    'tv': 'TV',
+    'movie': 'MOVIE', 
+    'ova': 'OVA',
+    'ona': 'ONA',
+    'special': 'SPECIAL',
+    'manga': 'MANGA',
+    'novel': 'NOVEL',
+    'one_shot': 'ONE_SHOT',
+    'doujinshi': 'DOUJINSHI',
+    'manhwa': 'MANHWA',
+    'manhua': 'MANHUA'
+  };
+  
+  return formatMap[malFormat.toLowerCase()] || malFormat.toUpperCase();
+}
+
+  normalizeStatus(malStatus) {
+  if (!malStatus) return null;
+  
+  const statusMap = {
+    'finished_airing': 'FINISHED',
+    'currently_airing': 'RELEASING',
+    'not_yet_aired': 'NOT_YET_RELEASED',
+    'finished': 'FINISHED',
+    'publishing': 'RELEASING',
+    'not_yet_published': 'NOT_YET_RELEASED'
+  };
+  
+  return statusMap[malStatus.toLowerCase()] || malStatus.toUpperCase();
+}
 
   enableDebug(enabled = true) {
     this.errorHandler.build('DEBUG_MODE_CHANGED', 
@@ -4893,17 +5051,8 @@ class Processor {
   }
 
   async handleSearchOperation(api, config) {
-    if (config.source === 'mal') {
-      return await api.fetchMALData?.({
-        ...config,
-        query: config.search,
-        page: config.page || 1,
-        perPage: config.perPage || 5
-      });
-    } else {
-      return { isSearchInterface: true, config };
-    }
-  }
+  return { isSearchInterface: true, config };
+}
 
   async handleSingleOperation(api, config) {
     if (config.source === 'mal') {
@@ -6034,7 +6183,7 @@ formatScore(score, scoreFormat = 'POINT_10') {
   switch (scoreFormat) {
     case 'POINT_100':
       return `${Math.round(score * 10)}/100`;
-    case 'POINT_10_DECIMAL':
+    case 'POINT_10':
       return `${(score / 10).toFixed(1)}/10`;
     case 'POINT_5':
       return `${Math.round(score / 20)}/5`;
@@ -6548,7 +6697,7 @@ class Edit {
       ],
       fields: {
         status: { label: 'Status', emoji: '🧿', id: 'zoro-status' },
-        score: { label: 'Score', emoji: '⭐', id: 'zoro-score', min: 0, max: 10, step: 0.1 },
+        score: { label: 'Score', emoji: '⭐', id: 'zoro-score', min: 0, max: 10, step: 1 },
         progress: { label: 'Progress', emoji: '📊', id: 'zoro-progress' }
       },
       buttons: {
@@ -6752,7 +6901,7 @@ static createCloseButton(onClick) {
         min: config.min,
         max: config.max,
         step: config.step,
-        placeholder: `e.g. ${config.max/2 + config.max/4}` // e.g. 7.5
+        placeholder: `e.g. ${config.max/2 + config.max/5}` 
       }
     });
   }
@@ -7891,15 +8040,14 @@ modal.open();
     const currentFormat = currentResponse.json?.data?.Viewer?.mediaListOptions?.scoreFormat;
     console.log('Current score format:', currentFormat);
 
-    if (currentFormat === 'POINT_10_DECIMAL') {
-      console.log('Score format already set to POINT_10_DECIMAL');
+    if (currentFormat === 'POINT_10') {
+      console.log('Score format already set to POINT_10');
       return;
     }
-
-    // Update score format
+    
     const mutation = `
       mutation {
-        UpdateUser(scoreFormat: POINT_10_DECIMAL) {
+        UpdateUser(scoreFormat: POINT_10) {
           id
           name
           mediaListOptions {
@@ -7930,9 +8078,9 @@ modal.open();
     const updatedFormat = response.json?.data?.UpdateUser?.mediaListOptions?.scoreFormat;
     console.log('Updated score format to:', updatedFormat);
     
-    if (updatedFormat === 'POINT_10_DECIMAL') {
+    if (updatedFormat === 'POINT_10') {
       new Notice('✅ Score format updated to 0.0-10.0 scale', 3000);
-      console.log('🎉 Score format successfully changed to POINT_10_DECIMAL');
+      console.log('🎉 Score format successfully changed to POINT_10');
     } else {
       throw new Error(`Score format not updated properly. Got: ${updatedFormat}`);
     }
@@ -8850,7 +8998,7 @@ class Export {
           lists {
             name
             entries {
-              status progress score(format: POINT_10_DECIMAL) repeat
+              status progress score(format: POINT_10) repeat
               startedAt { year month day } completedAt { year month day }
               media {
                 id idMal type format

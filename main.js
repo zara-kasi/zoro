@@ -4699,31 +4699,42 @@ this.simklAuth = new SimklAuthentication(this);
   }
 
   validateSettings(settings) {
-    return {
-      defaultApiSource: ['anilist', 'mal'].includes(settings?.defaultApiSource) ? settings.defaultApiSource : 'anilist',
-      defaultUsername: typeof settings?.defaultUsername === 'string' ? settings.defaultUsername : '',
-      defaultLayout: ['card', 'table'].includes(settings?.defaultLayout) ? settings.defaultLayout : 'card',
-      gridColumns: Number.isInteger(settings?.gridColumns) ? settings.gridColumns : getDefaultGridColumns(),
-      theme: typeof settings?.theme === 'string' ? settings.theme : '',
-      showCoverImages: !!settings?.showCoverImages,
-      showRatings: !!settings?.showRatings,
-      showProgress: !!settings?.showProgress,
-      showGenres: !!settings?.showGenres,
-      showLoadingIcon: typeof settings?.showLoadingIcon === 'boolean' ? settings.showLoadingIcon : true,
-      hideUrlsInTitles: typeof settings?.hideUrlsInTitles === 'boolean' ? settings.hideUrlsInTitles : true,
-      forceScoreFormat: true,
-      clientId: typeof settings?.clientId === 'string' ? settings.clientId : '',
-      clientSecret: typeof settings?.clientSecret === 'string' ? settings.clientSecret : '',
-      redirectUri: typeof settings?.redirectUri === 'string' ? settings.redirectUri : DEFAULT_SETTINGS.redirectUri,
-      accessToken: typeof settings?.accessToken === 'string' ? settings.accessToken : '',
-      malClientId: typeof settings?.malClientId === 'string' ? settings.malClientId : '',
-      malClientSecret: typeof settings?.malClientSecret === 'string' ? settings.malClientSecret : '',
-      malAccessToken: typeof settings?.malAccessToken === 'string' ? settings.malAccessToken : '',
-      malRefreshToken: typeof settings?.malRefreshToken === 'string' ? settings.malRefreshToken : '',
-      malTokenExpiry: typeof settings?.malTokenExpiry === 'number' ? settings.malTokenExpiry : null,
-      malUserInfo: typeof settings?.malUserInfo === 'object' ? settings.malUserInfo : null,
-    };
-  }
+  return {
+    defaultApiSource: ['anilist', 'mal', 'simkl'].includes(settings?.defaultApiSource) ? settings.defaultApiSource : 'anilist',
+    defaultUsername: typeof settings?.defaultUsername === 'string' ? settings.defaultUsername : '',
+    defaultLayout: ['card', 'table'].includes(settings?.defaultLayout) ? settings.defaultLayout : 'card',
+    showCoverImages: typeof settings?.showCoverImages === 'boolean' ? settings.showCoverImages : true,
+    showRatings: typeof settings?.showRatings === 'boolean' ? settings.showRatings : true,
+    showProgress: typeof settings?.showProgress === 'boolean' ? settings.showProgress : true,
+    showGenres: typeof settings?.showGenres === 'boolean' ? settings.showGenres : false,
+    showLoadingIcon: typeof settings?.showLoadingIcon === 'boolean' ? settings.showLoadingIcon : true,
+    gridColumns: Number.isInteger(settings?.gridColumns) ? settings.gridColumns : getDefaultGridColumns(),
+    theme: typeof settings?.theme === 'string' ? settings.theme : '',
+    hideUrlsInTitles: typeof settings?.hideUrlsInTitles === 'boolean' ? settings.hideUrlsInTitles : true,
+    forceScoreFormat: typeof settings?.forceScoreFormat === 'boolean' ? settings.forceScoreFormat : true,
+    showAvatar: typeof settings?.showAvatar === 'boolean' ? settings.showAvatar : true,
+    showFavorites: typeof settings?.showFavorites === 'boolean' ? settings.showFavorites : true,
+    showBreakdowns: typeof settings?.showBreakdowns === 'boolean' ? settings.showBreakdowns : true,
+    showTimeStats: typeof settings?.showTimeStats === 'boolean' ? settings.showTimeStats : true,
+    statsLayout: ['enhanced', 'compact', 'minimal'].includes(settings?.statsLayout) ? settings.statsLayout : 'enhanced',
+    statsTheme: ['auto', 'light', 'dark'].includes(settings?.statsTheme) ? settings.statsTheme : 'auto',
+    clientId: typeof settings?.clientId === 'string' ? settings.clientId : '',
+    clientSecret: typeof settings?.clientSecret === 'string' ? settings.clientSecret : '',
+    redirectUri: typeof settings?.redirectUri === 'string' ? settings.redirectUri : 'https://anilist.co/api/v2/oauth/pin',
+    accessToken: typeof settings?.accessToken === 'string' ? settings.accessToken : '',
+    malClientId: typeof settings?.malClientId === 'string' ? settings.malClientId : '',
+    malClientSecret: typeof settings?.malClientSecret === 'string' ? settings.malClientSecret : '',
+    malAccessToken: typeof settings?.malAccessToken === 'string' ? settings.malAccessToken : '',
+    malRefreshToken: typeof settings?.malRefreshToken === 'string' ? settings.malRefreshToken : '',
+    malTokenExpiry: settings?.malTokenExpiry === null || typeof settings?.malTokenExpiry === 'number' ? settings.malTokenExpiry : null,
+    malUserInfo: settings?.malUserInfo === null || typeof settings?.malUserInfo === 'object' ? settings.malUserInfo : null,
+    simklClientId: typeof settings?.simklClientId === 'string' ? settings.simklClientId : '',
+    simklClientSecret: typeof settings?.simklClientSecret === 'string' ? settings.simklClientSecret : '',
+    simklAccessToken: typeof settings?.simklAccessToken === 'string' ? settings.simklAccessToken : '',
+    simklUserInfo: settings?.simklUserInfo === null || typeof settings?.simklUserInfo === 'object' ? settings.simklUserInfo : null,
+    debugMode: typeof settings?.debugMode === 'boolean' ? settings.debugMode : false,
+  };
+}
 
   async saveSettings() {
     try {
@@ -8165,7 +8176,7 @@ modal.open();
     console.log('Updated score format to:', updatedFormat);
     
     if (updatedFormat === 'POINT_10') {
-      new Notice('✅ Score format updated to 0.0-10.0 scale', 3000);
+      new Notice('✅ Score format updated to 0-10 scale', 3000);
       console.log('🎉 Score format successfully changed to POINT_10');
     } else {
       throw new Error(`Score format not updated properly. Got: ${updatedFormat}`);
@@ -8589,9 +8600,18 @@ class SimklAuthentication {
     return Boolean(this.plugin.settings.simklAccessToken);
   }
 
+  get hasRequiredCredentials() {
+    return Boolean(this.plugin.settings.simklClientId && this.plugin.settings.simklClientSecret);
+  }
+
   async loginWithFlow() {
     if (!this.plugin.settings.simklClientId) {
       new Notice('❌ Please enter your SIMKL Client ID first.', 5000);
+      return;
+    }
+
+    if (!this.plugin.settings.simklClientSecret) {
+      new Notice('❌ Please enter your SIMKL Client Secret first.', 5000);
       return;
     }
 
@@ -8608,7 +8628,8 @@ class SimklAuthentication {
         url: pinUrl,
         method: 'GET',
         headers: {
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          'simkl-api-key': this.plugin.settings.simklClientId
         },
         throw: false
       });
@@ -8671,7 +8692,8 @@ class SimklAuthentication {
           url: pollUrl,
           method: 'GET',
           headers: {
-            'Accept': 'application/json'
+            'Accept': 'application/json',
+            'simkl-api-key': this.plugin.settings.simklClientId
           },
           throw: false
         });
@@ -8729,13 +8751,15 @@ class SimklAuthentication {
   }
 
   async fetchUserInfo() {
+    const headers = this.getAuthHeaders();
+    if (!headers) {
+      throw new Error('Not authenticated');
+    }
+
     const res = await requestUrl({
       url: SimklAuthentication.SIMKL_USER_URL,
       method: 'GET',
-      headers: { 
-        'Authorization': `Bearer ${this.plugin.settings.simklAccessToken}`,
-        'simkl-api-key': this.plugin.settings.simklClientId
-      },
+      headers,
       throw: false
     });
     
@@ -8764,6 +8788,7 @@ class SimklAuthentication {
 
   async ensureValidToken() {
     if (!this.isLoggedIn) throw new Error('Not authenticated with SIMKL');
+    if (!this.hasRequiredCredentials) throw new Error('Missing SIMKL client credentials');
     return true;
   }
   
@@ -8780,14 +8805,18 @@ class SimklAuthentication {
   }
 
   getAuthHeaders() { 
-    return this.isLoggedIn ? { 
+    if (!this.isLoggedIn || !this.hasRequiredCredentials) return null;
+    
+    return { 
       'Authorization': `Bearer ${this.plugin.settings.simklAccessToken}`,
-      'simkl-api-key': this.plugin.settings.simklClientId
-    } : null; 
+      'simkl-api-key': this.plugin.settings.simklClientId,
+      'Content-Type': 'application/json',
+      'Accept': 'application/json'
+    }; 
   }
   
   isAuthenticated() { 
-    return this.isLoggedIn; 
+    return this.isLoggedIn && this.hasRequiredCredentials; 
   }
   
   getUserInfo() { 
@@ -9562,6 +9591,212 @@ class Export {
   await this.plugin.app.workspace.openLinkText(fileName, '', false);
 }
 
+  async exportSimklListsToCSV() {
+  if (!this.plugin.simklAuth.isLoggedIn) {
+    new Notice('❌ Please authenticate with SIMKL first.', 4000);
+    return;
+  }
+
+  const username = this.plugin.settings.simklUserInfo?.user?.name;
+  if (!username) {
+    new Notice('❌ Could not fetch SIMKL username.', 4000);
+    return;
+  }
+
+  console.log('[SIMKL Export] Starting export for user:', username);
+  new Notice('📥 Exporting SIMKL data…', 3000);
+  const progress = this.createProgressNotice('📊 Fetching SIMKL data...');
+
+  try {
+    // Fetch all items using the working endpoint
+    this.updateProgressNotice(progress, '📊 Fetching all items...');
+    
+    const allItemsUrl = 'https://api.simkl.com/sync/all-items/';
+    console.log('[SIMKL Export] Fetching from:', allItemsUrl);
+
+    const allItemsRes = await this.plugin.requestQueue.add(() =>
+      requestUrl({
+        url: allItemsUrl,
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${this.plugin.settings.simklAccessToken}`,
+          'simkl-api-key': this.plugin.settings.simklClientId,
+          'Content-Type': 'application/json'
+        },
+        throw: false
+      })
+    );
+
+    console.log('[SIMKL Export] Response status:', allItemsRes.status);
+    console.log('[SIMKL Export] Response data:', allItemsRes.json);
+
+    if (allItemsRes.status !== 200) {
+      throw new Error(`Failed to fetch data: HTTP ${allItemsRes.status}`);
+    }
+
+    const data = allItemsRes.json || {};
+    console.log('[SIMKL Export] Data keys:', Object.keys(data));
+    console.log('[SIMKL Export] Data structure:', data);
+
+    // Process the object-based response
+    const allItems = [];
+    let totalItemsFound = 0;
+
+    // Iterate through all keys in the response (movies, shows, anime, etc.)
+    Object.keys(data).forEach(category => {
+      console.log(`[SIMKL Export] Processing category: ${category}`);
+      
+      if (data[category] && Array.isArray(data[category])) {
+        console.log(`[SIMKL Export] Found ${data[category].length} items in ${category}`);
+        totalItemsFound += data[category].length;
+        
+        data[category].forEach(item => {
+          allItems.push({
+            ...item,
+            _category: category,
+            _type: this.determineItemType(item, category)
+          });
+        });
+      } else if (data[category] && typeof data[category] === 'object') {
+        // Check if this category has status-based subcategories
+        console.log(`[SIMKL Export] ${category} has subcategories:`, Object.keys(data[category]));
+        
+        Object.keys(data[category]).forEach(status => {
+          if (Array.isArray(data[category][status])) {
+            console.log(`[SIMKL Export] Found ${data[category][status].length} items in ${category}.${status}`);
+            totalItemsFound += data[category][status].length;
+            
+            data[category][status].forEach(item => {
+              allItems.push({
+                ...item,
+                _category: category,
+                _status: status,
+                _type: this.determineItemType(item, category)
+              });
+            });
+          }
+        });
+      }
+    });
+
+    console.log('[SIMKL Export] Total items processed:', allItems.length);
+    console.log('[SIMKL Export] Total items found:', totalItemsFound);
+
+    if (allItems.length === 0) {
+      console.log('[SIMKL Export] No items found after processing');
+      this.finishProgressNotice(progress, '❌ No data found');
+      new Notice('No SIMKL data found after processing.', 4000);
+      return;
+    }
+
+    // Show sample items
+    console.log('[SIMKL Export] Sample items:');
+    allItems.slice(0, 5).forEach((item, index) => {
+      console.log(`[SIMKL Export] Item ${index}:`, {
+        title: item.title,
+        type: item._type,
+        category: item._category,
+        status: item._status,
+        ids: item.ids
+      });
+    });
+
+    this.updateProgressNotice(progress, '📊 Generating CSV...');
+
+    const headers = [
+      'Category', 'Type', 'Title', 'Year', 'Status', 'Rating',
+      'SIMKL_ID', 'IMDB_ID', 'TMDB_ID', 'MAL_ID', 'Anilist_ID'
+    ];
+
+    const rows = [headers.join(',')];
+    
+    allItems.forEach(item => {
+      const row = [
+        item._category || '',
+        item._type || '',
+        this.csvEscape(item.title || ''),
+        item.year || '',
+        item._status || item.status || '',
+        item.user_rating || item.rating || '',
+        item.ids?.simkl || '',
+        item.ids?.imdb || '',
+        item.ids?.tmdb || '',
+        item.ids?.mal || '',
+        item.ids?.anilist || ''
+      ];
+      rows.push(row.join(','));
+    });
+
+    const csv = rows.join('\n');
+    const fileName = `SIMKL_Export_${username}_${new Date().toISOString().slice(0, 10)}.csv`;
+
+    console.log(`[SIMKL Export] Generated CSV with ${rows.length - 1} rows`);
+
+    await this.plugin.app.vault.create(fileName, csv);
+    console.log('[SIMKL Export] CSV file created successfully');
+    
+    this.finishProgressNotice(progress, `✅ Exported ${allItems.length} items`);
+    new Notice(`✅ SIMKL export complete! ${allItems.length} items saved to ${fileName}`, 5000);
+    await this.plugin.app.workspace.openLinkText(fileName, '', false);
+
+  } catch (error) {
+    console.error('[SIMKL Export] Export failed:', error);
+    this.finishProgressNotice(progress, `❌ Export failed: ${error.message}`);
+    new Notice(`❌ SIMKL export failed: ${error.message}`, 6000);
+  }
+}
+
+// Helper method to determine item type
+determineItemType(item, category) {
+  // Use the item's type field first
+  if (item.type) {
+    return item.type.toUpperCase();
+  }
+  
+  // Fall back to category
+  if (category) {
+    return category.toUpperCase();
+  }
+  
+  return 'UNKNOWN';
+}
+
+mapSimklStatus(simklStatus) {
+  const statusMap = {
+    'watching': 'CURRENT',
+    'completed': 'COMPLETED', 
+    'plantowatch': 'PLANNING',
+    'hold': 'PAUSED',
+    'dropped': 'DROPPED'
+  };
+  return statusMap[simklStatus] || simklStatus.toUpperCase();
+}
+
+getSimklProgress(item) {
+  if (item.watched_episodes) return item.watched_episodes;
+  
+  if (item.seasons_watched && item.total_episodes) {
+    const episodesPerSeason = item.total_episodes / (item.seasons || 1);
+    return Math.floor(item.seasons_watched * episodesPerSeason);
+  }
+  
+  if (item._type === 'MOVIE') {
+    return item._status === 'completed' ? 1 : 0;
+  }
+  
+  return item.seasons_watched || 0;
+}
+
+getSimklUrl(apiType, simklId, title) {
+  if (!simklId) return '';
+  
+  const baseUrl = 'https://simkl.com';
+  const urlType = apiType === 'anime' ? 'anime' : 
+                 apiType === 'movies' ? 'movies' : 'tv';
+  
+  return `${baseUrl}/${urlType}/${simklId}`;
+}
+
 
 
   dateToString(dateObj) {
@@ -9823,7 +10058,7 @@ class ZoroSettingTab extends PluginSettingTab {
         
         new Setting(More)
   .setName('🧮 Score Scale')
-  .setDesc('Ensures all ratings use the 0.0–10.0 point scale.')
+  .setDesc('Ensures all ratings use the 0–10 point scale.')
   .addToggle(toggle => toggle
     .setValue(this.plugin.settings.forceScoreFormat)
     .onChange(async (value) => {
@@ -9863,6 +10098,31 @@ class ZoroSettingTab extends PluginSettingTab {
       }
     })
   );
+  
+  new Setting(Exp)
+  .addButton(btn => btn
+    .setButtonText('SIMKL')
+    .setClass('mod-cta')
+    .onClick(async () => {
+      if (!this.plugin.simklAuth.isLoggedIn) {
+        new Notice('❌ Please authenticate with SIMKL first.', 4000);
+        return;
+      }
+      
+      btn.setDisabled(true);
+      btn.setButtonText('Exporting...');
+      
+      try {
+        await this.plugin.export.exportSimklListsToCSV();
+      } catch (err) {
+        new Notice(`❌ SIMKL export failed: ${err.message}`, 6000);
+      } finally {
+        btn.setDisabled(false);
+        btn.setButtonText('SIMKL');
+      }
+    })
+  );
+
   
   new Setting(Data)
       .setName('️📚 Data Migration')
@@ -10165,11 +10425,15 @@ new Setting(Exp)
       }
     }
   }
-  updateSimklAuthButton() {
+  
+updateSimklAuthButton() {
   if (!this.simklAuthButton) return;
   const { settings } = this.plugin;
   if (!settings.simklClientId) {
     this.simklAuthButton.setButtonText('Enter Client ID');
+    this.simklAuthButton.removeCta();
+  } else if (!settings.simklClientSecret) {
+    this.simklAuthButton.setButtonText('Enter Client Secret');
     this.simklAuthButton.removeCta();
   } else if (!settings.simklAccessToken) {
     this.simklAuthButton.setButtonText('Authenticate Now');
@@ -10186,6 +10450,15 @@ async handleSimklAuthButtonClick() {
     const modal = AuthModal.clientId(this.app, async (clientId) => {
       if (clientId?.trim()) {
         settings.simklClientId = clientId.trim();
+        await this.plugin.saveSettings();
+        this.updateSimklAuthButton();
+      }
+    });
+    modal.open();
+  } else if (!settings.simklClientSecret) {
+    const modal = AuthModal.clientSecret(this.app, async (clientSecret) => {
+      if (clientSecret?.trim()) {
+        settings.simklClientSecret = clientSecret.trim();
         await this.plugin.saveSettings();
         this.updateSimklAuthButton();
       }

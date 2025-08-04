@@ -10648,6 +10648,7 @@ class Sample {
     }
 }
 
+
 class ZoroSettingTab extends PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
@@ -10809,20 +10810,18 @@ class ZoroSettingTab extends PluginSettingTab {
           await this.plugin.saveSettings();
         }));
         
-        new Setting(More)
-  .setName('🧮 Score Scale')
-  .setDesc('Ensures all ratings use the 0–10 point scale.')
-  .addToggle(toggle => toggle
-    .setValue(this.plugin.settings.forceScoreFormat)
-    .onChange(async (value) => {
-      this.plugin.settings.forceScoreFormat = value;
-      await this.plugin.saveSettings();
-      if (value && this.plugin.auth.isLoggedIn) {
-        await this.plugin.auth.forceScoreFormat();
-      }
-    }));
-    
-        
+    new Setting(More)
+      .setName('🧮 Score Scale')
+      .setDesc('Ensures all ratings use the 0–10 point scale.')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.forceScoreFormat)
+        .onChange(async (value) => {
+          this.plugin.settings.forceScoreFormat = value;
+          await this.plugin.saveSettings();
+          if (value && this.plugin.auth.isLoggedIn) {
+            await this.plugin.auth.forceScoreFormat();
+          }
+        }));
     
     new Setting(Data)
       .setName('🧾 Export your data')
@@ -10839,45 +10838,45 @@ class ZoroSettingTab extends PluginSettingTab {
         })
       );
       
-      new Setting(Data)
-  .addButton(btn => btn
-    .setButtonText('MAL')
-    .setClass('mod-cta')
-    .onClick(async () => {
-      try {
-        await this.plugin.export.exportMALListsToCSV();
-      } catch (err) {
-        new Notice(`❌ MAL export failed: ${err.message}`, 6000);
-      }
-    })
-  );
+    new Setting(Data)
+      .addButton(btn => btn
+        .setButtonText('MAL')
+        .setClass('mod-cta')
+        .onClick(async () => {
+          try {
+            await this.plugin.export.exportMALListsToCSV();
+          } catch (err) {
+            new Notice(`❌ MAL export failed: ${err.message}`, 6000);
+          }
+        })
+      );
   
-  new Setting(Exp)
-  .addButton(btn => btn
-    .setButtonText('SIMKL')
-    .setClass('mod-cta')
-    .onClick(async () => {
-      if (!this.plugin.simklAuth.isLoggedIn) {
-        new Notice('❌ Please authenticate with SIMKL first.', 4000);
-        return;
-      }
-      
-      btn.setDisabled(true);
-      btn.setButtonText('Exporting...');
-      
-      try {
-        await this.plugin.export.exportSimklListsToCSV();
-      } catch (err) {
-        new Notice(`❌ SIMKL export failed: ${err.message}`, 6000);
-      } finally {
-        btn.setDisabled(false);
-        btn.setButtonText('SIMKL');
-      }
-    })
-  );
+    new Setting(Data)
+      .addButton(btn => btn
+        .setButtonText('SIMKL')
+        .setClass('mod-cta')
+        .onClick(async () => {
+          if (!this.plugin.simklAuth.isLoggedIn) {
+            new Notice('❌ Please authenticate with SIMKL first.', 4000);
+            return;
+          }
+          
+          btn.setDisabled(true);
+          btn.setButtonText('Exporting...');
+          
+          try {
+            await this.plugin.export.exportSimklListsToCSV();
+          } catch (err) {
+            new Notice(`❌ SIMKL export failed: ${err.message}`, 6000);
+          } finally {
+            btn.setDisabled(false);
+            btn.setButtonText('SIMKL');
+          }
+        })
+      );
 
   
-  new Setting(Data)
+    new Setting(Data)
       .setName('️📚 Data Migration')
       .setDesc('Instructions to export from MAL and import into AniList (and vice versa).')
       .addButton(button =>
@@ -10889,96 +10888,94 @@ class ZoroSettingTab extends PluginSettingTab {
           })
       );
   
-      
     new Setting(Theme)
-  .setName('🎨 Apply')
-  .setDesc('Choose from available themes')
-  .addDropdown(async dropdown => {
-    dropdown.addOption('', 'Default');
-    const localThemes = await this.plugin.theme.getAvailableThemes();
-    localThemes.forEach(t => dropdown.addOption(t, t));
-    dropdown.setValue(this.plugin.settings.theme || '');
-    dropdown.onChange(async name => {
-      this.plugin.settings.theme = name;
-      await this.plugin.saveSettings();
-      await this.plugin.theme.applyTheme(name);
-    });
-  });
-
-new Setting(Theme)
-  .setName('📥 Download')
-  .setDesc('Download themes from GitHub repository')
-  .addDropdown(dropdown => {
-    dropdown.addOption('', 'Select');
-    
-    this.plugin.theme.fetchRemoteThemes().then(remoteThemes => {
-      remoteThemes.forEach(t => dropdown.addOption(t, t));
-    });
-    
-    dropdown.onChange(async name => {
-      if (!name) return;
-      
-      const success = await this.plugin.theme.downloadTheme(name);
-      if (success) {
-        this.plugin.theme.showApplyButton(containerEl, name);
-      }
-      dropdown.setValue('');
-    });
-  });
-
-   new Setting(Theme)
-  .setName('🗑 Delete')
-  .setDesc('Remove downloaded themes from local storage')
-  .addDropdown(async dropdown => {
-    dropdown.addOption('', 'Select');
-    const localThemes = await this.plugin.theme.getAvailableThemes();
-    localThemes.forEach(t => dropdown.addOption(t, t));
-    
-    dropdown.onChange(async name => {
-      if (!name) return;
-      
-      const success = await this.plugin.theme.deleteTheme(name);
-      if (success) {
-        // If deleted theme was currently active, remove it
-        if (this.plugin.settings.theme === name) {
-          this.plugin.settings.theme = '';
+      .setName('🎨 Apply')
+      .setDesc('Choose from available themes')
+      .addDropdown(async dropdown => {
+        dropdown.addOption('', 'Default');
+        const localThemes = await this.plugin.theme.getAvailableThemes();
+        localThemes.forEach(t => dropdown.addOption(t, t));
+        dropdown.setValue(this.plugin.settings.theme || '');
+        dropdown.onChange(async name => {
+          this.plugin.settings.theme = name;
           await this.plugin.saveSettings();
-          await this.plugin.theme.applyTheme('');
-        }
-      }
-      dropdown.setValue('');
-    });
-  });
+          await this.plugin.theme.applyTheme(name);
+        });
+      });
+
+    new Setting(Theme)
+      .setName('📥 Download')
+      .setDesc('Download themes from GitHub repository')
+      .addDropdown(dropdown => {
+        dropdown.addOption('', 'Select');
+        
+        this.plugin.theme.fetchRemoteThemes().then(remoteThemes => {
+          remoteThemes.forEach(t => dropdown.addOption(t, t));
+        });
+        
+        dropdown.onChange(async name => {
+          if (!name) return;
+          
+          const success = await this.plugin.theme.downloadTheme(name);
+          if (success) {
+            this.plugin.theme.showApplyButton(containerEl, name);
+          }
+          dropdown.setValue('');
+        });
+      });
+
+    new Setting(Theme)
+      .setName('🗑 Delete')
+      .setDesc('Remove downloaded themes from local storage')
+      .addDropdown(async dropdown => {
+        dropdown.addOption('', 'Select');
+        const localThemes = await this.plugin.theme.getAvailableThemes();
+        localThemes.forEach(t => dropdown.addOption(t, t));
+        
+        dropdown.onChange(async name => {
+          if (!name) return;
+          
+          const success = await this.plugin.theme.deleteTheme(name);
+          if (success) {
+            // If deleted theme was currently active, remove it
+            if (this.plugin.settings.theme === name) {
+              this.plugin.settings.theme = '';
+              await this.plugin.saveSettings();
+              await this.plugin.theme.applyTheme('');
+            }
+          }
+          dropdown.setValue('');
+        });
+      });
       
-      new Setting(Cache)
-  .setName('📊 Cache Stats')
-  .setDesc('Show live cache usage and hit-rate in a pop-up.')
-  .addButton(btn => btn
-    .setButtonText('Show Stats')
-    .onClick(() => {
-      const s = this.plugin.cache.getStats();
-      new Notice(
-        `Cache: ${s.hitRate} | ${s.cacheSize} entries | Hits ${s.hits} | Misses ${s.misses}`,
-        8000
+    new Setting(Cache)
+      .setName('📊 Cache Stats')
+      .setDesc('Show live cache usage and hit-rate in a pop-up.')
+      .addButton(btn => btn
+        .setButtonText('Show Stats')
+        .onClick(() => {
+          const s = this.plugin.cache.getStats();
+          new Notice(
+            `Cache: ${s.hitRate} | ${s.cacheSize} entries | Hits ${s.hits} | Misses ${s.misses}`,
+            8000
+          );
+          console.table(s);
+        })
       );
-      console.table(s);
-    })
-  );
 
-      new Setting(Cache)
-  .setName('🧹 Clear Cache')
-  .setDesc('Delete all cached data (user, media, search results).')
-  .addButton(btn => btn
-    .setButtonText('Clear Cache')
-    .setWarning()
-    .onClick(async () => {
-      if (confirm('⚠️ This will delete ALL cached data. Continue?')) {
-        const cleared = this.plugin.cache.clear();
-        new Notice(`✅ Cache cleared (${cleared} entries)`, 3000);
-      }
-    })
-  );
-
+    new Setting(Cache)
+      .setName('🧹 Clear Cache')
+      .setDesc('Delete all cached data (user, media, search results).')
+      .addButton(btn => btn
+        .setButtonText('Clear Cache')
+        .setWarning()
+        .onClick(async () => {
+          if (confirm('⚠️ This will delete ALL cached data. Continue?')) {
+            const cleared = this.plugin.cache.clear();
+            new Notice(`✅ Cache cleared (${cleared} entries)`, 3000);
+          }
+        })
+      );
 
     const malAuthSetting = new Setting(Exp)
       .setName('🗾 MyAnimeList')
@@ -10991,72 +10988,70 @@ new Setting(Theme)
         await this.handleMALAuthButtonClick();
       });
     });
-const simklAuthSetting = new Setting(Exp)
-  .setName('🎬 SIMKL')
-  .setDesc('Track and sync your anime/movie/TV show progress with SIMKL.');
 
-simklAuthSetting.addButton(btn => {
-  this.simklAuthButton = btn;
-  this.updateSimklAuthButton();
-  btn.onClick(async () => {
-    await this.handleSimklAuthButtonClick();
-  });
-});
+    const simklAuthSetting = new Setting(Exp)
+      .setName('🎬 SIMKL')
+      .setDesc('Track and sync your anime/movie/TV show progress with SIMKL.');
+
+    simklAuthSetting.addButton(btn => {
+      this.simklAuthButton = btn;
+      this.updateSimklAuthButton();
+      btn.onClick(async () => {
+        await this.handleSimklAuthButtonClick();
+      });
+    });
     
     new Setting(Exp)
-  .setName('Default API Source')
-  .setDesc('Choose which API to use by default when no source is specified in code blocks')
-  .addDropdown(dropdown => dropdown
-    .addOption('anilist', 'AniList')
-    .addOption('mal', 'MyAnimeList')
-    .setValue(this.plugin.settings.defaultApiSource)
-    .onChange(async (value) => {
-      this.plugin.settings.defaultApiSource = value;
-      await this.plugin.saveSettings();
-    }));
-    
+      .setName('Default API Source')
+      .setDesc('Choose which API to use by default when no source is specified in code blocks')
+      .addDropdown(dropdown => dropdown
+        .addOption('anilist', 'AniList')
+        .addOption('mal', 'MyAnimeList')
+        .addOption('simkl', 'SIMKL')
+        .setValue(this.plugin.settings.defaultApiSource)
+        .onChange(async (value) => {
+          this.plugin.settings.defaultApiSource = value;
+          await this.plugin.saveSettings();
+        }));
 
-new Setting(Exp)
-  .setName('Dump metrics & health')
-  .setDesc('Open Dev-Tools console first, then click.')
-  .addButton(btn =>
-    btn
-      .setButtonText('Show')
-      .onClick(() => {
-        const api = this.plugin.api;
-        // 1. console table
-        console.table(api.metrics);
-        // 2. full health object
-        console.log('Health:', api.getHealthStatus());
-        // 3. quick notice
-        const h = api.getHealthStatus();
-        new Notice(
-          `Status: ${h.status}\n` +
-          `Requests: ${h.requests.total} (${h.latency.avg} ms avg)\n` +
-          `Errors: ${h.requests.failed}`,
-          8000
-        );
-      })
-  );
+    new Setting(Exp)
+      .setName('Dump metrics & health')
+      .setDesc('Open Dev-Tools console first, then click.')
+      .addButton(btn =>
+        btn
+          .setButtonText('Show')
+          .onClick(() => {
+            const api = this.plugin.api;
+            // 1. console table
+            console.table(api.metrics);
+            // 2. full health object
+            console.log('Health:', api.getHealthStatus());
+            // 3. quick notice
+            const h = api.getHealthStatus();
+            new Notice(
+              `Status: ${h.status}\n` +
+              `Requests: ${h.requests.total} (${h.latency.avg} ms avg)\n` +
+              `Errors: ${h.requests.failed}`,
+              8000
+            );
+          })
+      );
   
-  
-new Setting(Exp)
-  .setName('Debug Mode')
-  .setDesc('Enable detailed console logs and performance metrics')
-  .addToggle(toggle => toggle
-    .setValue(this.plugin.settings.debugMode || false)
-    .onChange(async (value) => {
-      this.plugin.settings.debugMode = value;
-      await this.plugin.saveSettings();
-      
-      // Enable/disable debug across components
-      this.plugin.api?.enableDebug?.(value);
-      this.plugin.cache?.enableDebug?.(value);
-      new Notice(`Debug mode ${value ? 'enabled' : 'disabled'}`, 2000);
-    })
-  );
-
-
+    new Setting(Exp)
+      .setName('Debug Mode')
+      .setDesc('Enable detailed console logs and performance metrics')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.debugMode || false)
+        .onChange(async (value) => {
+          this.plugin.settings.debugMode = value;
+          await this.plugin.saveSettings();
+          
+          // Enable/disable debug across components
+          this.plugin.api?.enableDebug?.(value);
+          this.plugin.cache?.enableDebug?.(value);
+          new Notice(`Debug mode ${value ? 'enabled' : 'disabled'}`, 2000);
+        })
+      );
 
     new Setting(About)
       .setName('Author')
@@ -11179,55 +11174,54 @@ new Setting(Exp)
     }
   }
   
-updateSimklAuthButton() {
-  if (!this.simklAuthButton) return;
-  const { settings } = this.plugin;
-  if (!settings.simklClientId) {
-    this.simklAuthButton.setButtonText('Enter Client ID');
-    this.simklAuthButton.removeCta();
-  } else if (!settings.simklClientSecret) {
-    this.simklAuthButton.setButtonText('Enter Client Secret');
-    this.simklAuthButton.removeCta();
-  } else if (!settings.simklAccessToken) {
-    this.simklAuthButton.setButtonText('Authenticate Now');
-    this.simklAuthButton.setCta();
-  } else {
-    this.simklAuthButton.setButtonText('Sign Out');
-    this.simklAuthButton.setWarning().removeCta();
-  }
-}
-
-async handleSimklAuthButtonClick() {
-  const { settings } = this.plugin;
-  if (!settings.simklClientId) {
-    const modal = AuthModal.clientId(this.app, async (clientId) => {
-      if (clientId?.trim()) {
-        settings.simklClientId = clientId.trim();
-        await this.plugin.saveSettings();
-        this.updateSimklAuthButton();
-      }
-    });
-    modal.open();
-  } else if (!settings.simklClientSecret) {
-    const modal = AuthModal.clientSecret(this.app, async (clientSecret) => {
-      if (clientSecret?.trim()) {
-        settings.simklClientSecret = clientSecret.trim();
-        await this.plugin.saveSettings();
-        this.updateSimklAuthButton();
-      }
-    });
-    modal.open();
-  } else if (!settings.simklAccessToken) {
-    await this.plugin.simklAuth.loginWithFlow();
-    this.updateSimklAuthButton();
-  } else {
-    if (confirm('⚠️ Are you sure you want to sign out?')) {
-      await this.plugin.simklAuth.logout();
-      this.updateSimklAuthButton();
+  updateSimklAuthButton() {
+    if (!this.simklAuthButton) return;
+    const { settings } = this.plugin;
+    if (!settings.simklClientId) {
+      this.simklAuthButton.setButtonText('Enter Client ID');
+      this.simklAuthButton.removeCta();
+    } else if (!settings.simklClientSecret) {
+      this.simklAuthButton.setButtonText('Enter Client Secret');
+      this.simklAuthButton.removeCta();
+    } else if (!settings.simklAccessToken) {
+      this.simklAuthButton.setButtonText('Authenticate Now');
+      this.simklAuthButton.setCta();
+    } else {
+      this.simklAuthButton.setButtonText('Sign Out');
+      this.simklAuthButton.setWarning().removeCta();
     }
   }
-}
-  
+
+  async handleSimklAuthButtonClick() {
+    const { settings } = this.plugin;
+    if (!settings.simklClientId) {
+      const modal = AuthModal.clientId(this.app, async (clientId) => {
+        if (clientId?.trim()) {
+          settings.simklClientId = clientId.trim();
+          await this.plugin.saveSettings();
+          this.updateSimklAuthButton();
+        }
+      });
+      modal.open();
+    } else if (!settings.simklClientSecret) {
+      const modal = AuthModal.clientSecret(this.app, async (clientSecret) => {
+        if (clientSecret?.trim()) {
+          settings.simklClientSecret = clientSecret.trim();
+          await this.plugin.saveSettings();
+          this.updateSimklAuthButton();
+        }
+      });
+      modal.open();
+    } else if (!settings.simklAccessToken) {
+      await this.plugin.simklAuth.loginWithFlow();
+      this.updateSimklAuthButton();
+    } else {
+      if (confirm('⚠️ Are you sure you want to sign out?')) {
+        await this.plugin.simklAuth.logout();
+        this.updateSimklAuthButton();
+      }
+    }
+  }
 }
 
 module.exports = {

@@ -636,7 +636,7 @@ class Cache {
     
     this.stores = {};
     this.indexes = { byUser: new Map(), byMedia: new Map(), byTag: new Map() };
-    this.apiSources = ['anilist', 'mal'];
+    this.apiSources = ['anilist', 'mal', 'simkl'];
     
     this.version = '3.2.0';
     this.maxSize = maxSize;
@@ -4636,7 +4636,6 @@ class MalApi {
     return { ...this.metrics };
   }
 }
-
 class SimklApi {
   constructor(plugin) {
     this.plugin = plugin;
@@ -4646,32 +4645,44 @@ class SimklApi {
     this.baseUrl = 'https://api.simkl.com';
     this.tokenUrl = 'https://api.simkl.com/oauth/token';
     
+    // Simkl uses different status names
     this.statusMappings = {
-      'CURRENT': 'watching',
+      'CURRENT': 'watching',      // AniList -> Simkl
       'COMPLETED': 'completed', 
       'PAUSED': 'hold',
       'DROPPED': 'dropped',
-      'PLANNING': 'plantowatch',
-      'watching': 'watching',
-      'reading': 'reading',
-      'completed': 'completed',
-      'hold': 'hold',
-      'dropped': 'dropped',
-      'plantowatch': 'plantowatch',
-      'plantoread': 'plantoread'
+      'PLANNING': 'plantowatch'
     };
 
     this.reverseStatusMappings = {
-      'watching': 'CURRENT',
-      'reading': 'CURRENT', 
+      'watching': 'CURRENT',      // Simkl -> AniList
       'completed': 'COMPLETED',
-      'hold': 'PAUSED',
+      'hold': 'PAUSED', 
       'dropped': 'DROPPED',
       'plantowatch': 'PLANNING',
       'plantoread': 'PLANNING'
     };
 
     this.metrics = { requests: 0, cached: 0, errors: 0 };
+    
+    // Much more efficient debug logging system
+    this.debugLogs = [];
+    this.maxDebugLogs = 20; // Drastically reduced from 100
+    this.debugEnabled = true;
+    this.debugLevel = 'ERRORS_ONLY'; // ERRORS_ONLY, SUMMARY, DETAILED
+    
+    // Track what we've logged to avoid duplicates
+    this.loggedErrors = new Map(); // Track error frequency
+    this.lastLogTime = Date.now();
+    
+    // Only log system info once at startup
+    if (this.debugLevel !== 'ERRORS_ONLY') {
+      this.logOnce('SYSTEM_INIT', {
+        cacheAvailable: !!this.cache,
+        debugLevel: this.debugLevel,
+        maxLogs: this.maxDebugLogs
+      });
+    }
   }
 
   // =================== CORE REQUEST METHODS ===================
@@ -4681,24 +4692,28 @@ class SimklApi {
     const startTime = performance.now();
     
     try {
-      // Validate config
       this.validateConfig(config);
       
-      // Check cache first
+      // Check cache first - NO LOGGING for cache operations
       const cacheKey = this.createCacheKey(config);
       const cacheType = this.determineCacheType(config);
       
       if (!config.nocache) {
-        const cached = this.cache.get(cacheKey, { scope: cacheType });
+        const cached = this.cache.get(cacheKey, { 
+          scope: cacheType,
+          source: 'simkl'
+        });
         if (cached) {
           this.metrics.cached++;
+          // Only log cache hits in DETAILED mode and only for important requests
+          if (this.debugLevel === 'DETAILED' && (config.type === 'single' || config.type === 'update')) {
+            this.debugLog('CACHE_HIT', requestId, { 
+              type: config.type,
+              duration: `${(performance.now() - startTime).toFixed(1)}ms`
+            });
+          }
           return cached;
         }
-      }
-      
-      // Authentication for user-specific requests
-      if (this.requiresAuth(config.type)) {
-        await this.ensureValidToken();
       }
       
       // Build and execute request
@@ -4706,21 +4721,37 @@ class SimklApi {
       const rawResponse = await this.makeRequest(requestParams);
       const transformedData = this.transformResponse(rawResponse, config);
       
-      // Cache successful results
+      // Cache successful results - NO LOGGING
       if (transformedData && !config.nocache) {
-        this.cache.set(cacheKey, transformedData, { scope: cacheType });
+        this.cache.set(cacheKey, transformedData, { 
+          scope: cacheType,
+          source: 'simkl'
+        });
       }
       
+      // Only log successful requests if they're important or take too long
       const duration = performance.now() - startTime;
-      this.log('REQUEST_SUCCESS', config.type, requestId, `${duration.toFixed(1)}ms`);
+      if (this.debugLevel === 'SUMMARY' || this.debugLevel === 'DETAILED') {
+        if (duration > 1000 || config.type === 'update' || this.debugLevel === 'DETAILED') {
+          this.debugLog('REQUEST_SUCCESS', requestId, {
+            type: config.type,
+            duration: `${duration.toFixed(1)}ms`,
+            resultCount: this.getResultCount(transformedData),
+            ...(duration > 2000 && { slow: true })
+          });
+        }
+      }
       
       return transformedData;
       
     } catch (error) {
       const duration = performance.now() - startTime;
       this.metrics.errors++;
-      this.log('REQUEST_FAILED', config.type, requestId, {
+      
+      // Always log errors, but deduplicate similar ones
+      this.logError('REQUEST_ERROR', requestId, {
         error: error.message,
+        type: config.type,
         duration: `${duration.toFixed(1)}ms`
       });
       
@@ -4730,6 +4761,7 @@ class SimklApi {
 
   async makeRequest(requestParams) {
     this.metrics.requests++;
+    const requestId = this.generateRequestId();
     
     const requestFn = () => requestUrl({
       url: requestParams.url,
@@ -4745,29 +4777,44 @@ class SimklApi {
       });
 
       if (!response?.json) {
+        this.logError('HTTP_ERROR', requestId, {
+          error: 'Empty response',
+          status: response?.status,
+          url: requestParams.url.split('?')[0]
+        });
         throw new Error('Empty response from Simkl');
       }
 
+      // Simkl error format - always log API errors
       if (response.json.error) {
+        this.logError('SIMKL_ERROR', requestId, {
+          error: response.json.error,
+          description: response.json.error_description,
+          url: requestParams.url.split('?')[0]
+        });
         throw new Error(response.json.error_description || response.json.error);
       }
 
       return response.json;
     } catch (error) {
-      if (error.message) throw error;
-      throw new Error('Simkl request failed');
+      this.logError('HTTP_ERROR', requestId, {
+        error: error.message,
+        type: error.constructor.name,
+        url: requestParams.url.split('?')[0]
+      });
+      throw new Error(`Simkl request failed: ${error.message}`);
     }
   }
 
   // =================== REQUEST BUILDERS ===================
 
   buildRequestParams(config) {
-    const url = this.buildEndpointUrl(config);
+    const endpoint = this.buildEndpointUrl(config);
     const params = this.buildQueryParams(config);
     const headers = this.getHeaders(config);
     
     return {
-      url: this.buildFullUrl(url, params),
+      url: this.buildFullUrl(endpoint, params),
       method: config.method || 'GET',
       headers,
       body: config.body,
@@ -4776,34 +4823,56 @@ class SimklApi {
   }
 
   buildEndpointUrl(config) {
+    let endpoint;
+    
     switch (config.type) {
       case 'stats':
-        return `${this.baseUrl}/users/settings`;
-      case 'single':
-        return `${this.baseUrl}/sync/all-items/`;
+        endpoint = `${this.baseUrl}/users/settings`;
+        break;
       case 'list':
-        return `${this.baseUrl}/sync/all-items/`;
+      case 'single':
+        endpoint = `${this.baseUrl}/sync/all-items`;
+        break;
       case 'search':
-        const mediaType = config.mediaType === 'ANIME' ? 'anime' : 'movies';
-        return `${this.baseUrl}/search/${mediaType}`;
+        endpoint = config.mediaType === 'ANIME' 
+          ? `${this.baseUrl}/search/anime`
+          : `${this.baseUrl}/search/movie`;
+        break;
       default:
+        this.logError('ENDPOINT_ERROR', 'unknown', {
+          requestType: config.type,
+          available: ['stats', 'list', 'single', 'search']
+        });
         throw new Error(`Unknown request type: ${config.type}`);
     }
+    
+    return endpoint;
   }
 
   buildQueryParams(config) {
-    const params = {
-      client_id: this.plugin.settings.simklClientId
-    };
+    const params = {};
+    
+    // Always include client_id for public endpoints
+    if (this.plugin.settings.simklClientId) {
+      params.client_id = this.plugin.settings.simklClientId;
+    }
     
     switch (config.type) {
       case 'search':
-        params.q = config.search || config.query || '';
-        params.limit = config.perPage || 10;
+        if (config.search || config.query) {
+          params.q = (config.search || config.query).trim();
+        }
+        params.limit = Math.min(config.perPage || 10, 50);
         break;
-      case 'single':
+        
       case 'list':
-        // Simkl returns all items in one response
+      case 'single':
+        // Simkl returns all user data in one call
+        // No additional params needed for authenticated requests
+        break;
+        
+      case 'stats':
+        // User settings/stats
         break;
     }
     
@@ -4813,9 +4882,11 @@ class SimklApi {
   getHeaders(config) {
     const headers = {
       'Accept': 'application/json',
-      'Content-Type': 'application/json'
+      'Content-Type': 'application/json',
+      'User-Agent': `Zoro-Plugin/${this.plugin.manifest?.version || '1.0.0'}`
     };
     
+    // Add auth token for user-specific requests
     if (this.requiresAuth(config.type) && this.plugin.settings.simklAccessToken) {
       headers['Authorization'] = `Bearer ${this.plugin.settings.simklAccessToken}`;
     }
@@ -4837,72 +4908,77 @@ class SimklApi {
         throw new Error('Authentication required to update entries');
       }
 
-      await this.ensureValidToken();
-      
-      // Get media type first
-      const mediaType = await this.getMediaType(mediaId);
-      const endpoint = mediaType === 'anime' ? 'anime' : 'movies';
-      
-      const body = {
-        [endpoint]: [{
-          ids: { simkl: parseInt(mediaId) }
-        }]
-      };
-      
-      // Add status update
-      if (updates.status !== undefined) {
-        const simklStatus = this.mapAniListStatusToSimkl(updates.status);
-        body[endpoint][0].status = simklStatus;
-      }
-      
-      // Add rating update
-      if (updates.score !== undefined && updates.score !== null) {
-        body[endpoint][0].rating = Math.round(updates.score);
-      }
-      
-      // Add progress update
-      if (updates.progress !== undefined) {
-        body[endpoint][0].watched_episodes = updates.progress;
-      }
+      // Build update payload
+      const updatePayload = this.buildUpdatePayload(mediaId, updates);
       
       const requestParams = {
         url: `${this.baseUrl}/sync/add-to-list`,
         method: 'POST',
         headers: this.getHeaders({ type: 'update' }),
-        body: JSON.stringify(body),
+        body: JSON.stringify(updatePayload),
         priority: 'high'
       };
       
       const response = await this.makeRequest(requestParams);
       
-      // Invalidate cache
-      this.cache.invalidateByMedia(mediaId);
+      // Invalidate cache - NO LOGGING
+      this.cache.invalidateByMedia(mediaId, { source: 'simkl' });
       
       const duration = performance.now() - startTime;
-      this.log('UPDATE_SUCCESS', 'mutation', requestId, {
+      
+      // Always log successful updates
+      this.debugLog('UPDATE_SUCCESS', requestId, {
         mediaId,
         updates: Object.keys(updates),
         duration: `${duration.toFixed(1)}ms`
       });
       
+      // Return AniList-compatible response
       return {
-        id: null, // Simkl doesn't return entry IDs
-        status: this.mapSimklStatusToAniList(body[endpoint][0].status),
-        score: body[endpoint][0].rating || 0,
-        progress: body[endpoint][0].watched_episodes || 0
+        id: null, // Simkl doesn't return specific entry IDs
+        status: updates.status || null,
+        score: updates.score || 0,
+        progress: updates.progress || 0
       };
 
     } catch (error) {
       const duration = performance.now() - startTime;
-      this.log('UPDATE_FAILED', 'mutation', requestId, {
+      this.logError('UPDATE_FAILED', requestId, {
         mediaId,
-        updates: Object.keys(updates),
         error: error.message,
         duration: `${duration.toFixed(1)}ms`
       });
       
       throw this.createUserFriendlyError(error);
     }
+  }
+
+  buildUpdatePayload(mediaId, updates) {
+    // Simkl expects different payload structure
+    const payload = {
+      anime: [{
+        ids: { simkl: parseInt(mediaId) }
+      }]
+    };
+    
+    const animeItem = payload.anime[0];
+    
+    // Map status
+    if (updates.status !== undefined) {
+      animeItem.status = this.mapAniListStatusToSimkl(updates.status);
+    }
+    
+    // Map score (Simkl uses 1-10 rating)
+    if (updates.score !== undefined && updates.score !== null) {
+      animeItem.rating = Math.max(1, Math.min(10, Math.round(updates.score)));
+    }
+    
+    // Map progress
+    if (updates.progress !== undefined) {
+      animeItem.watched_episodes = parseInt(updates.progress) || 0;
+    }
+    
+    return payload;
   }
 
   // =================== AUTH METHODS ===================
@@ -4916,26 +4992,39 @@ class SimklApi {
       code: code
     };
 
-    const requestFn = () => requestUrl({
-      url: this.tokenUrl,
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json'
-      },
-      body: JSON.stringify(body)
-    });
-
     try {
+      const requestFn = () => requestUrl({
+        url: this.tokenUrl,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(body)
+      });
+
       const response = await this.requestQueue.add(requestFn, { priority: 'high' });
       
       if (!response?.json || typeof response.json !== 'object') {
         throw new Error('Invalid auth response from Simkl');
       }
 
+      if (response.json.error) {
+        throw new Error(response.json.error_description || response.json.error);
+      }
+
+      // Log successful auth
+      this.debugLog('AUTH_SUCCESS', 'auth', {
+        hasToken: !!response.json.access_token,
+        expiresIn: response.json.expires_in
+      });
+
       return response.json;
     } catch (error) {
-      throw new Error('Simkl authentication failed: ' + error.message);
+      this.logError('AUTH_ERROR', 'auth', {
+        error: error.message
+      });
+      throw new Error(`Simkl authentication failed: ${error.message}`);
     }
   }
 
@@ -4943,140 +5032,175 @@ class SimklApi {
     if (!this.plugin.settings.simklAccessToken) {
       throw new Error('Authentication required');
     }
-    // Add token refresh logic here if needed
+    
+    // TODO: Implement token refresh logic if needed
+    // Simkl tokens might have expiration
     return true;
   }
 
   // =================== DATA TRANSFORMATION ===================
 
   transformResponse(data, config) {
-    switch (config.type) {
-      case 'search':
-        return { 
-          Page: { 
-            media: Array.isArray(data) ? data.map(item => this.transformMedia(item)) : [] 
-          } 
-        };
-      case 'single':
-        const targetMedia = this.findMediaInResponse(data, config.mediaId);
-        return { MediaList: targetMedia ? this.transformListEntry(targetMedia) : null };
-      case 'stats':
-        return { User: this.transformUser(data) };
-      case 'list':
-        const listData = this.extractListData(data, config);
-        return {
-          MediaListCollection: {
-            lists: [{ entries: listData.map(item => this.transformListEntry(item)) }]
+    let result;
+    
+    try {
+      switch (config.type) {
+        case 'search':
+          result = this.transformSearchResponse(data);
+          break;
+        case 'single':
+          result = this.transformSingleResponse(data, config);
+          break;
+        case 'list':
+          result = this.transformListResponse(data, config);
+          break;
+        case 'stats':
+          result = this.transformStatsResponse(data);
+          break;
+        default:
+          result = data;
+          if (this.debugLevel === 'DETAILED') {
+            this.debugLog('TRANSFORM_WARNING', 'unknown', {
+              configType: config.type,
+              message: 'Unknown transform type, returning raw data'
+            });
           }
-        };
-      default:
-        return data;
+      }
+      
+      return result;
+    } catch (error) {
+      this.logError('TRANSFORM_ERROR', 'transform', {
+        type: config.type,
+        error: error.message,
+        dataKeys: data ? Object.keys(data) : []
+      });
+      throw error;
     }
   }
 
-  transformMedia(simklMedia) {
-    if (!simklMedia) return null;
+  transformSearchResponse(data) {
+    const mediaList = Array.isArray(data) ? data : [];
     
     return {
-      id: simklMedia.ids?.simkl || simklMedia.id,
-      title: {
-        romaji: simklMedia.title || 'Unknown Title',
-        english: simklMedia.en_title || simklMedia.title || 'Unknown Title',
-        native: simklMedia.title || 'Unknown Title'
-      },
-      coverImage: {
-        large: simklMedia.poster || simklMedia.fanart || null,
-        medium: simklMedia.poster || null
-      },
-      format: this.mapSimklFormat(simklMedia.type),
-      averageScore: simklMedia.rating ? Math.round(simklMedia.rating * 10) : null,
-      status: simklMedia.status ? simklMedia.status.toUpperCase() : null,
-      genres: simklMedia.genres || [],
-      episodes: simklMedia.total_episodes || null,
-      chapters: null, // Simkl doesn't have manga
-      isFavourite: false,
-      startDate: this.parseDate(simklMedia.first_aired || simklMedia.released),
-      endDate: this.parseDate(simklMedia.last_aired)
+      Page: {
+        media: mediaList.map(item => this.transformMedia(item))
+      }
     };
   }
 
-  transformListEntry(simklEntry) {
-    const media = simklEntry.show || simklEntry.movie || simklEntry;
+  transformSingleResponse(data, config) {
+    const targetMediaId = parseInt(config.mediaId);
+    let targetEntry = null;
+    
+    // Look through anime list for the target media
+    if (data.anime && Array.isArray(data.anime)) {
+      targetEntry = data.anime.find(entry => {
+        const show = entry.show || entry;
+        return show.ids?.simkl === targetMediaId;
+      });
+    }
     
     return {
-      id: null, // Simkl doesn't have list entry IDs
-      status: this.mapSimklStatusToAniList(simklEntry.status),
-      score: simklEntry.rating || 0,
-      progress: simklEntry.watched_episodes || 0,
-      media: this.transformMedia(media)
+      MediaList: targetEntry ? this.transformListEntry(targetEntry) : null
     };
   }
 
-  transformUser(simklUser) {
+  transformListResponse(data, config) {
+    let entries = [];
+    
+    // Extract entries based on media type and status
+    if (config.mediaType === 'ANIME' && data.anime) {
+      entries = data.anime;
+    } else if (config.mediaType === 'MANGA' && data.manga) {
+      entries = data.manga || []; // Simkl might not have much manga
+    }
+    
+    // Filter by status if specified
+    if (config.listType) {
+      const targetStatus = this.mapAniListStatusToSimkl(config.listType);
+      entries = entries.filter(entry => entry.status === targetStatus);
+    }
+    
     return {
-      id: simklUser.user?.id || null,
-      name: simklUser.user?.name || 'Unknown User',
-      avatar: {
-        large: simklUser.user?.avatar || null,
-        medium: simklUser.user?.avatar || null
-      },
-      statistics: {
-        anime: { 
-          count: 0, 
-          meanScore: 0, 
-          standardDeviation: 0, 
-          episodesWatched: 0, 
-          minutesWatched: 0 
+      MediaListCollection: {
+        lists: [{
+          entries: entries.map(entry => this.transformListEntry(entry))
+        }]
+      }
+    };
+  }
+
+  transformStatsResponse(data) {
+    return {
+      User: {
+        id: data.user?.id || null,
+        name: data.user?.name || 'Unknown User',
+        avatar: {
+          large: data.user?.avatar || null,
+          medium: data.user?.avatar || null
         },
-        manga: { 
-          count: 0, 
-          meanScore: 0, 
-          standardDeviation: 0, 
-          chaptersRead: 0, 
-          volumesRead: 0 
+        statistics: {
+          anime: {
+            count: 0,
+            meanScore: 0,
+            standardDeviation: 0,
+            episodesWatched: 0,
+            minutesWatched: 0
+          },
+          manga: {
+            count: 0,
+            meanScore: 0,
+            standardDeviation: 0,
+            chaptersRead: 0,
+            volumesRead: 0
+          }
         }
       }
     };
   }
 
+  transformMedia(simklMedia) {
+    if (!simklMedia) return null;
+    
+    // Handle both search results and show objects
+    const media = simklMedia.show || simklMedia;
+    
+    return {
+      id: media.ids?.simkl || media.id,
+      title: {
+        romaji: media.title || 'Unknown Title',
+        english: media.en_title || media.title || 'Unknown Title',
+        native: media.title || 'Unknown Title'
+      },
+      coverImage: {
+        large: media.poster || null,
+        medium: media.poster || null
+      },
+      format: this.mapSimklFormat(media.type),
+      averageScore: media.rating ? Math.round(media.rating * 10) : null,
+      status: media.status ? media.status.toUpperCase().replace('_', '_') : null,
+      genres: media.genres || [],
+      episodes: media.total_episodes || null,
+      chapters: null, // Simkl is primarily for anime/movies
+      isFavourite: false,
+      startDate: this.parseDate(media.first_aired),
+      endDate: this.parseDate(media.last_aired)
+    };
+  }
+
+  transformListEntry(simklEntry) {
+    const media = simklEntry.show || simklEntry;
+    
+    return {
+      id: null, // Simkl doesn't provide list entry IDs
+      status: this.mapSimklStatusToAniList(simklEntry.status),
+      score: simklEntry.rating || 0,
+      progress: simklEntry.watched_episodes || 0,
+      media: this.transformMedia({ show: media })
+    };
+  }
+
   // =================== UTILITY METHODS ===================
-
-  findMediaInResponse(data, mediaId) {
-    const targetId = parseInt(mediaId);
-    
-    // Check all possible list sections
-    const sections = ['anime', 'movies', 'shows'];
-    
-    for (const section of sections) {
-      if (data[section] && Array.isArray(data[section])) {
-        const found = data[section].find(item => {
-          const media = item.show || item.movie || item;
-          return media.ids?.simkl === targetId || media.id === targetId;
-        });
-        if (found) return found;
-      }
-    }
-    
-    return null;
-  }
-
-  extractListData(data, config) {
-    let items = [];
-    
-    const mediaType = config.mediaType === 'ANIME' ? 'anime' : 'movies';
-    const status = config.listType ? this.mapAniListStatusToSimkl(config.listType) : null;
-    
-    if (data[mediaType] && Array.isArray(data[mediaType])) {
-      items = data[mediaType];
-      
-      // Filter by status if specified
-      if (status) {
-        items = items.filter(item => item.status === status);
-      }
-    }
-    
-    return items;
-  }
 
   async checkIfMediaInList(mediaId, mediaType) {
     if (!this.plugin.settings.simklAccessToken) return false;
@@ -5091,19 +5215,15 @@ class SimklApi {
       const response = await this.fetchSimklData(config);
       return response.MediaList !== null;
     } catch (error) {
+      // Don't log these checks - they happen frequently
       return false;
     }
-  }
-
-  async getMediaType(mediaId) {
-    // For now, assume anime. In a real implementation, you'd check Simkl's database
-    return 'anime';
   }
 
   // =================== MAPPING FUNCTIONS ===================
 
   mapAniListStatusToSimkl(status) {
-    return this.statusMappings[status] || status;
+    return this.statusMappings[status] || status?.toLowerCase();
   }
 
   mapSimklStatusToAniList(status) {
@@ -5116,9 +5236,10 @@ class SimklApi {
       'movie': 'MOVIE',
       'tv': 'TV',
       'special': 'SPECIAL',
-      'ova': 'OVA'
+      'ova': 'OVA',
+      'ona': 'ONA'
     };
-    return formatMap[type] || 'TV';
+    return formatMap[type?.toLowerCase()] || 'TV';
   }
 
   parseDate(dateString) {
@@ -5172,27 +5293,45 @@ class SimklApi {
   }
 
   requiresAuth(requestType) {
-    // Search requests don't require authentication
+    // Only search requests don't require authentication
     return requestType !== 'search';
   }
 
   // =================== CACHE & URL METHODS ===================
 
   createCacheKey(config) {
-    const sortedConfig = {};
-    Object.keys(config).sort().forEach(key => {
-      if (key === 'simklAccessToken' || key === 'simklClientSecret') return;
-      sortedConfig[key] = config[key];
+    // Create a structured cache key that works with your cache system
+    const keyParts = {
+      source: 'simkl',  // Always include source
+      type: config.type,
+      mediaType: config.mediaType || 'ANIME',
+      listType: config.listType,
+      layout: config.layout,
+      search: config.search,
+      query: config.query,
+      mediaId: config.mediaId,
+      page: config.page,
+      perPage: config.perPage
+    };
+    
+    // Remove undefined/null values
+    const cleanKey = {};
+    Object.keys(keyParts).forEach(key => {
+      if (keyParts[key] !== undefined && keyParts[key] !== null) {
+        cleanKey[key] = keyParts[key];
+      }
     });
-    return JSON.stringify(sortedConfig);
+    
+    return this.cache.key(cleanKey);
   }
 
   determineCacheType(config) {
+    // Map to your cache's scope types
     const typeMap = {
       'stats': 'userData',
-      'single': 'mediaData', 
+      'single': 'userData',  // Single entries are user-specific 
       'search': 'searchResults',
-      'list': 'userData'
+      'list': 'userData'     // User lists are userData
     };
     return typeMap[config.type] || 'userData';
   }
@@ -5206,8 +5345,7 @@ class SimklApi {
   getSimklUrl(mediaId, mediaType = 'ANIME') {
     try {
       this.validateMediaId(mediaId);
-      const type = mediaType === 'ANIME' ? 'anime' : 'movies';
-      return `https://simkl.com/${type}/${mediaId}`;
+      return `https://simkl.com/anime/${mediaId}`;
     } catch (error) {
       throw error;
     }
@@ -5241,26 +5379,305 @@ class SimklApi {
     return friendlyError;
   }
 
-  // =================== LOGGING & UTILITIES ===================
+  // =================== OPTIMIZED LOGGING SYSTEM ===================
 
-  log(level, category, requestId, data = '') {
-    if (!this.plugin.settings.debugMode && level !== 'ERROR') return;
+  debugLog(category, requestId, data) {
+    if (!this.debugEnabled) return;
     
-    const timestamp = new Date().toISOString();
-    const logData = typeof data === 'object' ? JSON.stringify(data, null, 2) : data;
+    // Skip all cache-related logs except in DETAILED mode
+    if (category.includes('CACHE') && this.debugLevel !== 'DETAILED') return;
     
-    console.log(`[${timestamp}] [Zoro-Simkl] [${level}] [${category}] [${requestId}] ${logData}`);
+    // Only log important categories based on debug level
+    const errorCategories = ['REQUEST_ERROR', 'HTTP_ERROR', 'SIMKL_ERROR', 'ENDPOINT_ERROR', 'AUTH_ERROR', 'UPDATE_FAILED', 'TRANSFORM_ERROR'];
+    const summaryCategories = [...errorCategories, 'REQUEST_SUCCESS', 'UPDATE_SUCCESS', 'AUTH_SUCCESS'];
+    const detailedCategories = [...summaryCategories, 'CACHE_HIT', 'TRANSFORM_WARNING'];
+    
+    let shouldLog = false;
+    switch (this.debugLevel) {
+      case 'ERRORS_ONLY':
+        shouldLog = errorCategories.includes(category);
+        break;
+      case 'SUMMARY':
+        shouldLog = summaryCategories.includes(category);
+        break;
+      case 'DETAILED':
+        shouldLog = detailedCategories.includes(category);
+        break;
+    }
+    
+    if (!shouldLog) return;
+    
+    const logEntry = {
+      timestamp: new Date().toLocaleTimeString(),
+      category,
+      requestId,
+      data: this.sanitizeLogData(data)
+    };
+    
+    this.debugLogs.push(logEntry);
+    
+    // Keep only the most recent logs
+    if (this.debugLogs.length > this.maxDebugLogs) {
+      this.debugLogs = this.debugLogs.slice(-this.maxDebugLogs);
+    }
+    
+    // Always console log errors, conditionally log others
+    if (errorCategories.includes(category)) {
+      console.error(`[Simkl] [${category}] [${requestId}]`, data);
+    } else if (this.debugLevel === 'DETAILED') {
+      console.log(`[Simkl] [${category}] [${requestId}]`, data);
+    }
+  }
+
+  logError(category, requestId, data) {
+    // Deduplicate similar errors
+    const errorKey = `${category}:${data.error}`;
+    const now = Date.now();
+    
+    if (this.loggedErrors.has(errorKey)) {
+      const lastLogged = this.loggedErrors.get(errorKey);
+      // Only log the same error again if it's been more than 5 minutes
+      if (now - lastLogged.time < 300000) {
+        lastLogged.count++;
+        return; // Skip logging
+      }
+    }
+    
+    this.loggedErrors.set(errorKey, { time: now, count: 1 });
+    
+    // Clean up old error tracking (keep last 50 errors)
+    if (this.loggedErrors.size > 50) {
+      const oldestKey = Array.from(this.loggedErrors.keys())[0];
+      this.loggedErrors.delete(oldestKey);
+    }
+    
+    this.debugLog(category, requestId, data);
+  }
+
+  logOnce(category, data) {
+    // For one-time logs like system initialization
+    if (!this._loggedOnce) this._loggedOnce = new Set();
+    if (this._loggedOnce.has(category)) return;
+    
+    this._loggedOnce.add(category);
+    this.debugLog(category, 'system', data);
+  }
+
+  sanitizeLogData(data) {
+    if (typeof data !== 'object' || !data) return data;
+    
+    // Remove sensitive information and truncate large objects
+    const sanitized = { ...data };
+    
+    // Remove sensitive keys
+    delete sanitized.token;
+    delete sanitized.password;
+    delete sanitized.secret;
+    delete sanitized.authorization;
+    
+    // Truncate large strings
+    Object.keys(sanitized).forEach(key => {
+      if (typeof sanitized[key] === 'string' && sanitized[key].length > 200) {
+        sanitized[key] = sanitized[key].substring(0, 200) + '...';
+      }
+    });
+    
+    return sanitized;
+  }
+
+  setDebugLevel(level) {
+    // ERRORS_ONLY: Only errors and failures
+    // SUMMARY: Errors + important successes (requests, updates, auth)
+    // DETAILED: Everything including cache operations and warnings
+    const validLevels = ['ERRORS_ONLY', 'SUMMARY', 'DETAILED'];
+    if (!validLevels.includes(level)) {
+      console.warn(`[Simkl] Invalid debug level: ${level}. Valid levels:`, validLevels);
+      return;
+    }
+    
+    this.debugLevel = level;
+    console.log(`[Simkl] Debug level set to: ${level}`);
+    
+    // Clear existing logs when changing level
+    this.clearDebugLogs();
   }
 
   generateRequestId() {
-    return `simkl_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    return `${Date.now().toString(36)}_${Math.random().toString(36).substr(2, 3)}`;
   }
 
   getMetrics() {
-    return { ...this.metrics };
+    return { 
+      ...this.metrics,
+      debugLogsCount: this.debugLogs.length,
+      debugLevel: this.debugLevel,
+      uniqueErrors: this.loggedErrors.size
+    };
   }
 
-  // =================== BASIC QUERY METHODS (for compatibility) ===================
+  // =================== HELPER METHODS ===================
+
+  getResultCount(data) {
+    if (!data) return 0;
+    if (data.Page?.media) return data.Page.media.length;
+    if (data.MediaListCollection?.lists?.[0]?.entries) return data.MediaListCollection.lists[0].entries.length;
+    if (data.MediaList) return 1;
+    if (data.User) return 1;
+    return 0;
+  }
+
+  // =================== COMPACT DEBUG LOG EXPORT ===================
+
+  getDebugLogsAsMarkdown() {
+    if (this.debugLogs.length === 0) {
+      return '# Simkl API Debug Logs\n\nNo debug logs available.\n';
+    }
+    
+    let markdown = '# Simkl API Debug Logs\n\n';
+    markdown += `Generated: ${new Date().toISOString()}\n`;
+    markdown += `Debug Level: ${this.debugLevel}\n`;
+    markdown += `Total Entries: ${this.debugLogs.length}\n`;
+    markdown += `Metrics: Requests: ${this.metrics.requests}, Cached: ${this.metrics.cached}, Errors: ${this.metrics.errors}\n`;
+    markdown += `Unique Error Types: ${this.loggedErrors.size}\n\n`;
+    
+    // Group logs by category for better readability
+    const logsByCategory = {};
+    this.debugLogs.forEach(log => {
+      if (!logsByCategory[log.category]) {
+        logsByCategory[log.category] = [];
+      }
+      logsByCategory[log.category].push(log);
+    });
+    
+    // Show error summary first
+    const errorCategories = Object.keys(logsByCategory).filter(cat => 
+      cat.includes('ERROR') || cat.includes('FAILED')
+    );
+    
+    if (errorCategories.length > 0) {
+      markdown += '## 🚨 Errors Summary\n\n';
+      errorCategories.forEach(category => {
+        const logs = logsByCategory[category];
+        markdown += `### ${category} (${logs.length} occurrences)\n\n`;
+        
+        // Show only the most recent few errors of each type
+        const recentLogs = logs.slice(-3);
+        recentLogs.forEach(log => {
+          markdown += `**${log.timestamp}** [${log.requestId}]\n`;
+          if (typeof log.data === 'object') {
+            markdown += `- Error: ${log.data.error || 'Unknown'}\n`;
+            if (log.data.type) markdown += `- Type: ${log.data.type}\n`;
+            if (log.data.url) markdown += `- URL: ${log.data.url}\n`;
+            if (log.data.duration) markdown += `- Duration: ${log.data.duration}\n`;
+          } else {
+            markdown += `- ${log.data}\n`;
+          }
+          markdown += '\n';
+        });
+        
+        if (logs.length > 3) {
+          markdown += `*... and ${logs.length - 3} more similar errors*\n\n`;
+        }
+      });
+    }
+    
+    // Show successful operations summary
+    const successCategories = Object.keys(logsByCategory).filter(cat => 
+      cat.includes('SUCCESS') && !cat.includes('ERROR')
+    );
+    
+    if (successCategories.length > 0) {
+      markdown += '## ✅ Recent Successful Operations\n\n';
+      successCategories.forEach(category => {
+        const logs = logsByCategory[category];
+        markdown += `### ${category} (${logs.length} total)\n\n`;
+        
+        // Show only the most recent successful operations
+        const recentLogs = logs.slice(-5);
+        recentLogs.forEach(log => {
+          markdown += `**${log.timestamp}** [${log.requestId}]`;
+          if (log.data.duration) markdown += ` - ${log.data.duration}`;
+          if (log.data.type) markdown += ` - ${log.data.type}`;
+          if (log.data.resultCount) markdown += ` - ${log.data.resultCount} results`;
+          markdown += '\n';
+        });
+        markdown += '\n';
+      });
+    }
+    
+    // Show other categories if in detailed mode
+    if (this.debugLevel === 'DETAILED') {
+      const otherCategories = Object.keys(logsByCategory).filter(cat => 
+        !cat.includes('ERROR') && !cat.includes('FAILED') && !cat.includes('SUCCESS')
+      );
+      
+      if (otherCategories.length > 0) {
+        markdown += '## 📋 Other Operations\n\n';
+        otherCategories.forEach(category => {
+          const logs = logsByCategory[category];
+          markdown += `### ${category} (${logs.length})\n`;
+          
+          // Just show count and most recent timestamp
+          if (logs.length > 0) {
+            const mostRecent = logs[logs.length - 1];
+            markdown += `Last occurrence: ${mostRecent.timestamp}\n`;
+          }
+          markdown += '\n';
+        });
+      }
+    }
+    
+    return markdown;
+  }
+
+  exportDebugLogs() {
+    const markdown = this.getDebugLogsAsMarkdown();
+    
+    // Try to save to file if in Node.js environment
+    if (typeof require !== 'undefined') {
+      try {
+        const fs = require('fs');
+        const filename = `simkl-debug-${Date.now()}.md`;
+        fs.writeFileSync(filename, markdown);
+        console.log(`Debug logs exported to: ${filename}`);
+        return filename;
+      } catch (error) {
+        console.warn('Could not save debug logs to file:', error.message);
+      }
+    }
+    
+    // Fallback: return markdown string
+    console.log('Debug logs (copy this to a .md file):');
+    console.log(markdown);
+    return markdown;
+  }
+
+  clearDebugLogs() {
+    const count = this.debugLogs.length;
+    this.debugLogs = [];
+    this.loggedErrors.clear();
+    this.metrics = { requests: 0, cached: 0, errors: 0 };
+    console.log(`[Simkl] Cleared ${count} debug log entries and reset metrics.`);
+  }
+
+  // =================== PERFORMANCE MONITORING ===================
+
+  getPerformanceReport() {
+    const report = {
+      metrics: this.getMetrics(),
+      cacheEfficiency: this.metrics.requests > 0 ? 
+        ((this.metrics.cached / (this.metrics.requests + this.metrics.cached)) * 100).toFixed(1) + '%' : 'N/A',
+      errorRate: this.metrics.requests > 0 ? 
+        ((this.metrics.errors / this.metrics.requests) * 100).toFixed(1) + '%' : 'N/A',
+      debugLevel: this.debugLevel,
+      logCount: this.debugLogs.length,
+      uptime: `${((Date.now() - this.lastLogTime) / 1000).toFixed(0)}s`
+    };
+    
+    return report;
+  }
+
+  // =================== COMPATIBILITY METHODS ===================
 
   async fetchSimklStats(config) {
     return this.fetchSimklData({ ...config, type: 'stats' });
@@ -5272,6 +5689,41 @@ class SimklApi {
 
   async searchSimklMedia(config) {
     return this.fetchSimklData({ ...config, type: 'search' });
+  }
+
+  async getUserEntryForMedia(mediaId, mediaType) {
+    try {
+      if (!this.plugin.settings.simklAccessToken) {
+        return null;
+      }
+      
+      const config = {
+        type: 'single',
+        mediaType,
+        mediaId: parseInt(mediaId),
+        nocache: true
+      };
+      
+      const result = await this.fetchSimklData(config);
+      return result.MediaList; // null if not in list, entry if in list
+      
+    } catch (error) {
+      // Don't log routine checks - they happen frequently and aren't errors
+      return null;
+    }
+  }
+
+  // =================== LEGACY SUPPORT ===================
+
+  log(level, category, requestId, data = '') {
+    // Legacy method - convert to new system
+    const newCategory = `${level.toUpperCase()}_${category.toUpperCase()}`;
+    
+    if (level === 'error' || level === 'ERROR') {
+      this.logError(newCategory, requestId, typeof data === 'string' ? { message: data } : data);
+    } else {
+      this.debugLog(newCategory, requestId, typeof data === 'string' ? { message: data } : data);
+    }
   }
 }
 
@@ -5337,6 +5789,23 @@ class ZoroPlugin extends Plugin {
     this.registerMarkdownPostProcessor(this.processor.processInlineLinks.bind(this.processor));
     
     this.addSettingTab(new ZoroSettingTab(this.app, this));
+    
+    this.addCommand({
+  id: 'export-simkl-debug-logs',
+  name: 'Export Simkl Debug Logs',
+  callback: () => {
+    if (this.simklApi) {
+      const logs = this.simklApi.getDebugLogsAsMarkdown();
+      
+      // Create a new note with the logs
+      const fileName = `Simkl Debug Logs ${new Date().toISOString().split('T')[0]}.md`;
+      this.app.vault.create(fileName, logs);
+      new Notice(`Debug logs saved to: ${fileName}`);
+    } else {
+      new Notice('No Simkl API instance available');
+    }
+  }
+});
 
     console.log('[Zoro] Plugin loaded successfully.');
   }
@@ -10947,21 +11416,6 @@ class ZoroSettingTab extends PluginSettingTab {
           dropdown.setValue('');
         });
       });
-      
-    new Setting(Cache)
-      .setName('📊 Cache Stats')
-      .setDesc('Show live cache usage and hit-rate in a pop-up.')
-      .addButton(btn => btn
-        .setButtonText('Show Stats')
-        .onClick(() => {
-          const s = this.plugin.cache.getStats();
-          new Notice(
-            `Cache: ${s.hitRate} | ${s.cacheSize} entries | Hits ${s.hits} | Misses ${s.misses}`,
-            8000
-          );
-          console.table(s);
-        })
-      );
 
     new Setting(Cache)
       .setName('🧹 Clear Cache')
@@ -11035,6 +11489,21 @@ class ZoroSettingTab extends PluginSettingTab {
               8000
             );
           })
+      );
+  
+  new Setting(Exp)
+      .setName('📊 Cache Stats')
+      .setDesc('Show live cache usage and hit-rate in a pop-up.')
+      .addButton(btn => btn
+        .setButtonText('Show Stats')
+        .onClick(() => {
+          const s = this.plugin.cache.getStats();
+          new Notice(
+            `Cache: ${s.hitRate} | ${s.cacheSize} entries | Hits ${s.hits} | Misses ${s.misses}`,
+            8000
+          );
+          console.table(s);
+        })
       );
   
     new Setting(Exp)

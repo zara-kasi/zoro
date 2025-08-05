@@ -4144,37 +4144,60 @@ class MalApi {
   }
 
   async fetchMALData(config) {
-    return await ZoroError.guard(
-      async () => await this.executeFetch(config),
-      'cache_fallback',
-      'MalApi.fetchMALData'
-    );
-  }
+    const requestId = this.generateRequestId(); // Add requestId generation
+    const startTime = performance.now();
 
-  async executeFetch(config) {
-    const normalizedConfig = this.validateConfig(config);
-    const cacheKey = this.createCacheKey(normalizedConfig);
-    const cacheScope = this.getCacheScope(normalizedConfig.type);
-    
-    if (!normalizedConfig.nocache) {
-      const cached = this.cache.get(cacheKey, { scope: cacheScope });
-      if (cached) {
-        this.metrics.cached++;
-        return cached;
+    try {
+      const normalizedConfig = this.validateConfig(config);
+      const cacheKey = this.createCacheKey(normalizedConfig);
+      const cacheScope = this.getCacheScope(normalizedConfig.type);
+
+      // Check cache first
+      if (!normalizedConfig.nocache) {
+        const cached = this.cache.get(cacheKey, { scope: cacheScope, source: 'mal' }); // Specify source
+        if (cached) {
+          this.recordMetrics('cached', normalizedConfig.type, performance.now() - startTime); // Record cache hit
+          this.log('CACHE_HIT', normalizedConfig.type, requestId, `Cache hit for ${normalizedConfig.type} in ${(performance.now() - startTime).toFixed(1)}ms`);
+          return cached;
+        }
       }
-    }
 
-    // Only require authentication for user-specific requests
-    if (this.requiresAuth(normalizedConfig.type)) {
-      await this.ensureValidToken();
+      // Only require authentication for user-specific requests
+      if (this.requiresAuth(normalizedConfig.type)) {
+        await this.ensureValidToken();
+      }
+
+      const requestParams = this.buildRequestParams(normalizedConfig);
+      
+      // Use a unified request execution with retry and rate limiting (conceptual, assuming it's added later)
+      const rawResponse = await this.executeRequestWithRetryMAL(async () => {
+        return await requestUrl({
+          url: requestParams.url,
+          method: requestParams.method || 'GET',
+          headers: requestParams.headers || {},
+          body: requestParams.body
+        });
+      }, normalizedConfig, requestId);
+
+      const transformedData = this.transformResponse(rawResponse, normalizedConfig);
+
+      // Cache successful results
+      if (transformedData && !normalizedConfig.nocache) {
+        this.cache.set(cacheKey, transformedData, { scope: cacheScope, source: 'mal' }); // Specify source
+      }
+
+      this.recordMetrics('success', normalizedConfig.type, performance.now() - startTime); // Record success
+      this.log('REQUEST_SUCCESS', normalizedConfig.type, requestId, `Request successful for ${normalizedConfig.type} in ${(performance.now() - startTime).toFixed(1)}ms`);
+
+      return transformedData;
+
+    } catch (error) {
+      const duration = performance.now() - startTime;
+      const classifiedError = this.classifyError(error, config); // Classify error
+      this.recordMetrics('error', config.type, duration, classifiedError.type); // Record error
+      this.log('REQUEST_FAILED', config.type, requestId, `Request failed for ${config.type} in ${duration.toFixed(1)}ms: ${classifiedError.message}`);
+      throw this.createUserFriendlyError(classifiedError); // Create user-friendly error
     }
-    
-    const requestParams = this.buildRequestParams(normalizedConfig);
-    const rawResponse = await this.makeRequest(requestParams);
-    const transformedData = this.transformResponse(rawResponse, normalizedConfig);
-    
-    this.cache.set(cacheKey, transformedData, { scope: cacheScope });
-    return transformedData;
   }
 
   requiresAuth(requestType) {
@@ -4308,7 +4331,8 @@ class MalApi {
       body.append('status', this.mapAniListStatusToMAL(updates.status));
     }
     if (updates.score !== undefined && updates.score !== null) {
-      body.append('score', Math.round(updates.score));
+      // Convert AniList 1-100 score to MAL 1-10 score
+      body.append("score", Math.round(updates.score / 10));
     }
     if (updates.progress !== undefined) {
       const progressField = mediaType === 'anime' ? 'num_episodes_watched' : 'num_chapters_read';
@@ -4495,13 +4519,42 @@ class MalApi {
       },
       format: media.media_type?.toUpperCase() || null,
       averageScore: media.mean ? Math.round(media.mean * 10) : null,
-      status: media.status?.toUpperCase()?.replace('_', '_') || null,
+      status: media.status?.toUpperCase()?.replace("_", "_") || null,
       genres: media.genres?.map(g => g.name) || [],
       episodes: media.num_episodes || null,
       chapters: media.num_chapters || null,
       isFavourite: false,
       startDate: this.parseDate(media.start_date),
-      endDate: this.parseDate(media.end_date)
+      endDate: this.parseDate(media.end_date),
+      description: media.synopsis || null,
+      siteUrl: this.getMALUrl(media.id, media.media_type?.toUpperCase()),
+      popularity: media.popularity || null,
+      rank: media.rank || null,
+      studios: media.studios?.map(s => ({ name: s.name })) || [],
+      relations: media.related_anime?.map(rel => ({ relationType: rel.relation_type_formatted?.toUpperCase(), node: this.transformMedia(rel.node) })) || [],
+      recommendations: media.recommendations?.map(rec => ({ node: this.transformMedia(rec.node) })) || [],
+      tags: media.genres?.map(g => ({ name: g.name })) || [], // MAL doesn't have explicit tags, using genres as a fallback
+      trailer: null, // MAL API v2 does not provide trailer links directly
+      externalLinks: [], // MAL API v2 does not provide external links directly
+      bannerImage: media.background || null,
+      nextAiringEpisode: null, // MAL API v2 does not provide airing info directly
+      countryOfOrigin: null, // Not directly available in MAL API v2 media object
+      season: media.start_season?.season?.toUpperCase() || null,
+      seasonYear: media.start_season?.year || null,
+      source: media.source?.toUpperCase() || null,
+      meanScore: media.mean ? Math.round(media.mean * 10) : null, // Duplicate of averageScore for consistency
+      favourites: media.num_list_users || null, // Using num_list_users as a proxy for favorites
+      isAdult: media.nsfw || false,
+      duration: media.average_episode_duration ? Math.round(media.average_episode_duration / 60) : null, // Convert seconds to minutes
+      episodesWatched: listStatus?.num_episodes_watched || 0, // For user's own list entry
+      chaptersRead: listStatus?.num_chapters_read || 0, // For user's own list entry
+      volumesRead: listStatus?.num_volumes_read || 0, // For user's own list entry
+      updatedAt: media.updated_at ? new Date(media.updated_at).getTime() / 1000 : null,
+      createdAt: media.created_at ? new Date(media.created_at).getTime() / 1000 : null,
+      siteStatistics: {
+        users: media.num_list_users || null,
+        scores: media.num_scoring_users || null
+      }
     };
   }
 
@@ -4512,13 +4565,33 @@ class MalApi {
     return {
       id: listStatus?.id || null,
       status: this.mapMALStatusToAniList(listStatus?.status),
-      score: listStatus?.score || 0,
+      score: listStatus?.score ? Math.round(listStatus.score * 10) : 0, // Convert MAL 1-10 score to 1-100
       progress: listStatus?.num_episodes_watched || listStatus?.num_chapters_read || 0,
-      media: this.transformMedia(malEntry)
+      media: this.transformMedia(malEntry),
+      updatedAt: listStatus?.updated_at ? new Date(listStatus.updated_at).getTime() / 1000 : null,
+      createdAt: listStatus?.created_at ? new Date(listStatus.created_at).getTime() / 1000 : null,
+      startedAt: this.parseDate(listStatus?.start_date),
+      completedAt: this.parseDate(listStatus?.finish_date),
+      notes: listStatus?.comments || null,
+      private: listStatus?.is_private || false,
+      hidden: listStatus?.is_hidden || false,
+      priority: listStatus?.priority || null,
+      rewatching: listStatus?.num_times_rewatched || 0,
+      reconsuming: listStatus?.num_times_rewatched || 0, // Same as rewatching for manga
+      rewatchValue: listStatus?.rewatch_value || null,
+      tags: [], // MAL list status does not provide tags
+      customLists: {}, // MAL list status does not provide custom lists
+      // Additional fields for consistency with AniList
+      userId: null, // Not directly available in MAL list status
+      userName: null, // Not directly available in MAL list status
+      siteUrl: this.getMALUrl(media.id, media.media_type?.toUpperCase()),
     };
   }
 
   transformUser(malUser) {
+    const animeStats = malUser.anime_statistics || {};
+    const mangaStats = malUser.manga_statistics || {};
+
     return {
       id: malUser.id || null,
       name: malUser.name || 'Unknown User',
@@ -4527,8 +4600,57 @@ class MalApi {
         medium: malUser.picture || null
       },
       statistics: {
-        anime: { count: 0, meanScore: 0, standardDeviation: 0, episodesWatched: 0, minutesWatched: 0 },
-        manga: { count: 0, meanScore: 0, standardDeviation: 0, chaptersRead: 0, volumesRead: 0 }
+        anime: {
+          count: animeStats.num_items || 0,
+          meanScore: animeStats.mean_score ? Math.round(animeStats.mean_score * 10) : 0,
+          standardDeviation: 0, // MAL API does not provide this directly
+          episodesWatched: animeStats.num_episodes || 0,
+          minutesWatched: animeStats.num_days ? Math.round(animeStats.num_days * 24 * 60) : 0, // Convert days to minutes
+          // Additional fields from AniList that might not have direct MAL equivalents:
+          genres: [],
+          tags: [],
+          formats: [],
+          statuses: [],
+          releaseYears: [],
+          studios: [],
+          voiceActors: [],
+          staff: [],
+          countries: [],
+          averageScore: animeStats.mean_score ? Math.round(animeStats.mean_score * 10) : 0,
+          chaptersRead: 0,
+          volumesRead: 0,
+          totalTimeWatched: animeStats.num_days ? `${animeStats.num_days} days` : '0 days',
+          completed: animeStats.num_items_completed || 0,
+          dropped: animeStats.num_items_dropped || 0,
+          onHold: animeStats.num_items_on_hold || 0,
+          planned: animeStats.num_items_plan_to_watch || 0,
+          watching: animeStats.num_items_watching || 0,
+        },
+        manga: {
+          count: mangaStats.num_items || 0,
+          meanScore: mangaStats.mean_score ? Math.round(mangaStats.mean_score * 10) : 0,
+          standardDeviation: 0, // MAL API does not provide this directly
+          chaptersRead: mangaStats.num_chapters || 0,
+          volumesRead: mangaStats.num_volumes || 0,
+          // Additional fields from AniList that might not have direct MAL equivalents:
+          genres: [],
+          tags: [],
+          formats: [],
+          statuses: [],
+          releaseYears: [],
+          authors: [],
+          publishers: [],
+          countries: [],
+          averageScore: mangaStats.mean_score ? Math.round(mangaStats.mean_score * 10) : 0,
+          episodesWatched: 0,
+          minutesWatched: 0,
+          totalTimeRead: mangaStats.num_days ? `${mangaStats.num_days} days` : '0 days',
+          completed: mangaStats.num_items_completed || 0,
+          dropped: mangaStats.num_items_dropped || 0,
+          onHold: mangaStats.num_items_on_hold || 0,
+          planned: mangaStats.num_items_plan_to_read || 0,
+          reading: mangaStats.num_items_reading || 0,
+        }
       }
     };
   }
@@ -4634,6 +4756,159 @@ class MalApi {
 
   getMetrics() {
     return { ...this.metrics };
+  }
+
+  // Utility methods for metrics and logging (similar to AnilistApi)
+  generateRequestId() {
+    return `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  }
+
+  recordMetrics(type, apiType, duration, errorType = null) {
+    if (!this.metrics.requests) this.metrics.requests = { total: 0, success: 0, failed: 0, cached: 0 };
+    if (!this.metrics.latency) this.metrics.latency = { samples: [], min: Infinity, max: 0, avg: 0, p95: 0 };
+    if (!this.metrics.errors) this.metrics.errors = new Map();
+    if (!this.metrics.endpoints) this.metrics.endpoints = new Map();
+
+    this.metrics.requests.total++;
+    if (type === 'success') {
+      this.metrics.requests.success++;
+      this.metrics.latency.samples.push(duration);
+      this.metrics.latency.min = Math.min(this.metrics.latency.min, duration);
+      this.metrics.latency.max = Math.max(this.metrics.latency.max, duration);
+      this.metrics.latency.avg = (this.metrics.latency.avg * (this.metrics.requests.success - 1) + duration) / this.metrics.requests.success;
+      const sortedSamples = [...this.metrics.latency.samples].sort((a, b) => a - b);
+      this.metrics.latency.p95 = sortedSamples[Math.floor(0.95 * sortedSamples.length)] || 0;
+    } else if (type === 'error') {
+      this.metrics.requests.failed++;
+      this.incrementMap(this.metrics.errors, errorType || 'UNKNOWN_ERROR');
+    } else if (type === 'cached') {
+      this.metrics.requests.cached++;
+    }
+    this.incrementMap(this.metrics.endpoints, apiType);
+  }
+
+  log(type, component, requestId, message) {
+    // Use ZoroError's logging mechanism for consistency
+    this.errorHandler.build(type, message, { component, requestId }, 'info');
+  }
+
+  sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  incrementMap(map, key) {
+    map.set(key, (map.get(key) || 0) + 1);
+  }
+
+  // Error classification and user-friendly error creation
+  classifyError(error, config) {
+    if (error.type) return error; // Already a classified ZoroError
+
+    let type = 'UNKNOWN_ERROR';
+    let message = error.message || 'An unknown error occurred.';
+    let severity = 'error';
+
+    if (error.name === 'TypeError' && error.message.includes('Failed to fetch')) {
+      type = 'NETWORK_ERROR';
+      message = 'Network error. Please check your internet connection.';
+    } else if (error.message.includes('timed out')) {
+      type = 'TIMEOUT';
+      message = 'Request timed out. The MAL API might be slow or unresponsive.';
+    } else if (error.status === 401 || error.status === 403) {
+      type = 'AUTH_ERROR';
+      message = 'Authentication failed. Please re-authenticate with MyAnimeList.';
+      severity = 'fatal';
+    } else if (error.status === 429) {
+      type = 'RATE_LIMITED';
+      message = 'Too many requests to MAL. Please wait a moment before trying again.';
+      severity = 'warn';
+    } else if (error.status >= 500) {
+      type = 'SERVER_ERROR';
+      message = 'MAL API server error. Please try again later.';
+    } else if (error.status >= 400) {
+      type = 'CLIENT_ERROR';
+      message = `MAL API client error: ${error.message || error.status}`; 
+      severity = 'warn';
+    }
+
+    return this.errorHandler.create(type, message, { originalError: error, config }, severity);
+  }
+
+  createUserFriendlyError(classifiedError) {
+    return this.errorHandler.createErrorObject(classifiedError);
+  }
+
+  // Unified request execution with retry logic (similar to AnilistApi's executeRequestWithRetry)
+  async executeRequestWithRetryMAL(requestFn, config, requestId) {
+    const maxRetries = 3; // Default retries for MAL
+    const baseRetryDelay = 1000; // 1 second
+    const maxRetryDelay = 10000; // 10 seconds
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        // MAL-specific rate limiting (more conservative than AniList)
+        const rateLimitCheck = this.canMakeMALRequest();
+        if (!rateLimitCheck.allowed) {
+          this.log('RATE_LIMITED', config.type, requestId, `Waiting ${rateLimitCheck.waitTime}ms due to MAL rate limit.`);
+          await this.sleep(rateLimitCheck.waitTime);
+        }
+
+        const response = await this.requestQueue.add(requestFn, {
+          priority: config.priority || 'normal',
+          metadata: { type: config.type, mediaType: config.mediaType, requestId },
+          timeout: config.requestTimeout || 30000 // Use config timeout or default
+        });
+
+        if (!response?.json) {
+          throw this.errorHandler.create('EMPTY_RESPONSE', 'Empty response from MAL', { url: response.url }, 'error');
+        }
+
+        if (response.json.error) {
+          throw this.errorHandler.create('MAL_API_ERROR', response.json.message || 'MAL API error', { error: response.json }, 'error');
+        }
+
+        return response.json;
+      } catch (error) {
+        const classifiedError = this.classifyError(error, config);
+
+        if (attempt < maxRetries && this.shouldRetryMAL(classifiedError)) {
+          const delay = Math.min(baseRetryDelay * Math.pow(2, attempt), maxRetryDelay);
+          this.log('RETRY_ATTEMPT', config.type, requestId, `Attempt ${attempt + 1}/${maxRetries} failed. Retrying in ${delay}ms. Error: ${classifiedError.type}`);
+          await this.sleep(delay);
+        } else {
+          throw classifiedError; // Re-throw classified error for fetchMALData to handle
+        }
+      }
+    }
+  }
+
+  shouldRetryMAL(classifiedError) {
+    const retriableErrors = ['NETWORK_ERROR', 'TIMEOUT', 'RATE_LIMITED', 'SERVER_ERROR'];
+    return retriableErrors.includes(classifiedError.type);
+  }
+
+  // MAL-specific rate limiter (more conservative)
+  canMakeMALRequest() {
+    const now = Date.now();
+    const windowMs = 60000; // 1 minute
+    const maxRequests = 60; // MAL limit is generally 60/min
+
+    if (!this._malRateLimiterRequests) {
+      this._malRateLimiterRequests = [];
+    }
+
+    this._malRateLimiterRequests = this._malRateLimiterRequests.filter(
+      time => now - time < windowMs
+    );
+
+    if (this._malRateLimiterRequests.length >= maxRequests) {
+      const oldestRequest = Math.min(...this._malRateLimiterRequests);
+      const waitTime = windowMs - (now - oldestRequest);
+      return { allowed: false, waitTime };
+    }
+
+    this._malRateLimiterRequests.push(now);
+    return { allowed: true, waitTime: 0 };
   }
 }
 class SimklApi {
@@ -9644,10 +9919,68 @@ return;
     await this.plugin.saveSettings();
   }
 
+  async ensureValidToken() {
+    if (!this.plugin.settings.malAccessToken) {
+      throw ZoroError.create("AUTH_REQUIRED", "MyAnimeList authentication required.", {}, "error");
+    }
+
+    if (this.isTokenValid()) {
+      return true;
+    }
+
+    // Token is expired or invalid, attempt to refresh
+    this.plugin.errorHandler.build("MAL_TOKEN_REFRESH", "Attempting to refresh MAL access token.", {}, "info");
+    try {
+      await this.refreshToken();
+      return true;
+    } catch (error) {
+      this.plugin.errorHandler.build("MAL_TOKEN_REFRESH_FAILED", "Failed to refresh MAL access token.", { originalError: error.message }, "error");
+      throw ZoroError.create("AUTH_EXPIRED", "MyAnimeList session expired. Please re-authenticate.", {}, "fatal");
+    }
+  }
+
+  async refreshToken() {
+    const body = new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: this.plugin.settings.malRefreshToken,
+      client_id: this.plugin.settings.malClientId,
+      client_secret: this.plugin.settings.malClientSecret || undefined, // Client secret is optional for PKCE
+    });
+
+    const headers = {
+      "Content-Type": "application/x-www-form-urlencoded",
+      Accept: "application/json",
+    };
+
+    try {
+      const res = await this.plugin.requestQueue.add(() =>
+        requestUrl({
+          url: MALAuthentication.MAL_TOKEN_URL,
+          method: "POST",
+          headers,
+          body: body.toString(),
+        })
+      );
+
+      const data = res.json;
+
+      if (data.access_token) {
+        this.plugin.settings.malAccessToken = data.access_token;
+        this.plugin.settings.malRefreshToken = data.refresh_token || this.plugin.settings.malRefreshToken; // Refresh token might not always be returned
+        this.plugin.settings.malTokenExpiry = Date.now() + data.expires_in * 1000; // expires_in is in seconds
+        await this.plugin.saveSettings();
+        this.plugin.errorHandler.build("MAL_TOKEN_REFRESH_SUCCESS", "MAL access token refreshed successfully.", {}, "info");
+      } else {
+        throw ZoroError.create("MAL_TOKEN_REFRESH_NO_TOKEN", "No access token received during refresh.", { response: data }, "error");
+      }
+    } catch (error) {
+      this.plugin.errorHandler.build("MAL_TOKEN_REFRESH_ERROR", "Error during MAL token refresh request.", { originalError: error.message }, "error");
+      throw error; // Re-throw to be caught by ensureValidToken
+    }
+  }
+
   isTokenValid() {
-    return !!(this.plugin.settings.malAccessToken && 
-              this.plugin.settings.malTokenExpiry && 
-              Date.now() < (this.plugin.settings.malTokenExpiry - 5 * 60 * 1000));
+    return this.plugin.settings.malAccessToken && this.plugin.settings.malTokenExpiry > Date.now() + 60000; // Check if token expires in next 60 seconds              Date.now() < (this.plugin.settings.malTokenExpiry - 5 * 60 * 1000));
   }
 
   async checkTokenExpiry() {

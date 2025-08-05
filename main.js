@@ -4296,78 +4296,120 @@ class MalApi {
   }
 
   async executeUpdate(mediaId, updates) {
-    if (!this.isValidMediaId(mediaId)) {
-      throw ZoroError.create('INVALID_MEDIA_ID', `Invalid media ID: ${mediaId}`, { mediaId }, 'error');
-    }
+  if (!this.isValidMediaId(mediaId)) {
+    throw ZoroError.create('INVALID_MEDIA_ID', `Invalid media ID: ${mediaId}`, { mediaId }, 'error');
+  }
 
-    await this.ensureValidToken();
-    const mediaType = await this.getMediaType(mediaId);
-    const endpoint = mediaType === 'anime' ? 'anime' : 'manga';
-    const body = new URLSearchParams();
-    
-    if (updates.status !== undefined) {
-      const malStatus = this.mapAniListStatusToMAL(updates.status, mediaType);
-      if (malStatus) body.append('status', malStatus);
+  await this.ensureValidToken();
+  const mediaType = await this.getMediaType(mediaId);
+  const endpoint = mediaType === 'anime' ? 'anime' : 'manga';
+  const body = new URLSearchParams();
+  
+  if (updates.status !== undefined && updates.status !== null) {
+    const malStatus = this.mapAniListStatusToMAL(updates.status, mediaType);
+    if (malStatus) {
+      body.append('status', malStatus);
     }
-    
-    if (updates.score !== undefined && updates.score !== null) {
-      body.append('score', Math.round(updates.score));
-    }
-    
-    if (updates.progress !== undefined) {
-      const progressField = mediaType === 'anime' ? 'num_episodes_watched' : 'num_chapters_read';
-      body.append(progressField, updates.progress);
-    }
+  }
+  
+  if (updates.score !== undefined && updates.score !== null && updates.score > 0) {
+    const score = Math.max(0, Math.min(10, Math.round(updates.score)));
+    body.append('score', score.toString());
+  }
+  
+  if (updates.progress !== undefined && updates.progress !== null) {
+    const progress = Math.max(0, parseInt(updates.progress) || 0);
+    const progressField = mediaType === 'anime' ? 'num_episodes_watched' : 'num_chapters_read';
+    body.append(progressField, progress.toString());
+  }
 
-    const requestFn = async () => requestUrl({
+  if (body.toString().length === 0) {
+    throw ZoroError.create('NO_UPDATES', 'No valid updates provided', { updates }, 'error');
+  }
+
+  const requestFn = async () => {
+    const response = await requestUrl({
       url: `${this.baseUrl}/${endpoint}/${mediaId}/my_list_status`,
       method: 'PATCH',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'application/json',
-        'Authorization': `Bearer ${this.plugin.settings.malAccessToken}`
+        'Authorization': `Bearer ${this.plugin.settings.malAccessToken}`,
+        'User-Agent': 'Obsidian-Zoro-Plugin'
       },
       body: body.toString()
     });
-
-    const response = await this.requestQueue.add(requestFn, { priority: 'high' });
     
-    if (!response?.json) {
-      throw ZoroError.create('EMPTY_UPDATE_RESPONSE', 'Empty response from MAL update', { mediaId }, 'error');
-    }
-
-    if (response.json.error) {
-      throw ZoroError.create('MAL_UPDATE_ERROR', response.json.message || 'MAL update failed', { error: response.json }, 'error');
-    }
-
-    this.cache.invalidateByMedia(mediaId);
-    this.cache.invalidateScope('userData');
-    
-    return {
-      id: response.json.id || null,
-      status: this.mapMALStatusToAniList(response.json.status, mediaType),
-      score: response.json.score || 0,
-      progress: response.json.num_episodes_watched || response.json.num_chapters_read || 0
-    };
-  }
-
-  mapMALStatusToAniList(malStatus, mediaType = 'anime') {
-    if (!malStatus) return null;
-    return this.malToAniListStatus[malStatus.toLowerCase().trim()] || null;
-  }
-
-  mapAniListStatusToMAL(aniListStatus, mediaType = 'anime') {
-    if (!aniListStatus) return null;
-    
-    let malStatus = this.aniListToMalStatus[aniListStatus];
-    
-    if (mediaType === 'manga') {
-      if (aniListStatus === 'CURRENT') malStatus = 'reading';
-      if (aniListStatus === 'PLANNING') malStatus = 'plan_to_read';
+    if (response.status >= 400) {
+      throw new Error(`HTTP ${response.status}: ${response.text || 'Unknown error'}`);
     }
     
-    return malStatus || aniListStatus.toLowerCase();
+    return response;
+  };
+
+  const response = await this.requestQueue.add(requestFn, { priority: 'high' });
+  
+  if (!response?.json && response.status !== 200) {
+    throw ZoroError.create('EMPTY_UPDATE_RESPONSE', 'Invalid response from MAL update', { 
+      mediaId, 
+      status: response.status,
+      body: body.toString()
+    }, 'error');
   }
+
+  let responseData = response.json || {};
+  
+  if (responseData.error) {
+    throw ZoroError.create('MAL_UPDATE_ERROR', responseData.message || 'MAL update failed', { 
+      error: responseData,
+      requestBody: body.toString(),
+      mediaId 
+    }, 'error');
+  }
+
+  this.cache.invalidateByMedia(mediaId);
+  this.cache.invalidateScope('userData');
+  
+  return {
+    id: responseData.id || null,
+    status: responseData.status ? this.mapMALStatusToAniList(responseData.status, mediaType) : updates.status,
+    score: responseData.score !== undefined ? responseData.score : (updates.score || 0),
+    progress: mediaType === 'anime' 
+      ? (responseData.num_episodes_watched !== undefined ? responseData.num_episodes_watched : (updates.progress || 0))
+      : (responseData.num_chapters_read !== undefined ? responseData.num_chapters_read : (updates.progress || 0))
+  };
+}
+
+ mapAniListStatusToMAL(aniListStatus, mediaType = 'anime') {
+  if (!aniListStatus) return null;
+  
+  const statusMap = {
+    'CURRENT': mediaType === 'anime' ? 'watching' : 'reading',
+    'COMPLETED': 'completed',
+    'PAUSED': 'on_hold',
+    'DROPPED': 'dropped',
+    'PLANNING': mediaType === 'anime' ? 'plan_to_watch' : 'plan_to_read',
+    'REPEATING': mediaType === 'anime' ? 'watching' : 'reading'
+  };
+  
+  return statusMap[aniListStatus] || null;
+}
+
+mapMALStatusToAniList(malStatus, mediaType = 'anime') {
+  if (!malStatus) return null;
+  
+  const statusMap = {
+    'watching': 'CURRENT',
+    'reading': 'CURRENT', 
+    'completed': 'COMPLETED',
+    'on_hold': 'PAUSED',
+    'dropped': 'DROPPED',
+    'plan_to_watch': 'PLANNING',
+    'plan_to_read': 'PLANNING'
+  };
+  
+  return statusMap[malStatus.toLowerCase()] || null;
+}
 
   transformMedia(malMedia) {
     const media = malMedia.node || malMedia;
@@ -7586,14 +7628,14 @@ generateInsights(stats, type, user) {
           rating.className = 'score';
           
           if (isSearch) {
-            rating.textContent = `★ ${(score / 10).toFixed(1)}`;
-          } else {
-            if (score > 10) {
-              rating.textContent = `★ ${(score / 10).toFixed(1)}`;
-            } else {
-              rating.textContent = `★ ${score.toFixed(1)}`;
-            }
-          }
+  rating.textContent = `★ ${Math.round(score / 10)}`;
+} else {
+  if (score > 10) {
+    rating.textContent = `★ ${Math.round(score / 10)}`;
+  } else {
+    rating.textContent = `★ ${Math.round(score)}`;
+  }
+}
           
           overlay.appendChild(rating);
         } else {
@@ -8343,102 +8385,100 @@ class Edit {
     }
   }
 
-  async handleRemove(entry, modalElement, source = 'anilist') {
-    if (!confirm('Remove this entry?')) return;
+  async handleSave(entry, onSave, saveBtn, formFields, modal, source = 'anilist') {
+  if (this.saving) return;
+  this.saving = true;
+  saveBtn.disabled = true;
+  saveBtn.textContent = 'Saving...';
+  
+  const form = modal.form;
+  const scoreVal = parseFloat(formFields.score.input.value);
+  
+  if (formFields.score.input.value && (isNaN(scoreVal) || scoreVal < 0 || scoreVal > 10)) {
+    this.showModalError(form, "Score must be between 0 and 10");
+    this.resetSaveButton(saveBtn);
+    return;
+  }
+  
+  try {
+    const updates = {
+      status: formFields.status.input.value,
+      score: formFields.score.input.value === '' ? null : scoreVal,
+      progress: parseInt(formFields.progress.input.value) || 0
+    };
     
-    const removeBtn = modalElement.querySelector('.zoro-remove-btn');
-    removeBtn.disabled = true;
-    removeBtn.innerHTML = `
-  <div class="sharingan-glow">
-    <div class="tomoe-container">
-      <span class="tomoe"></span>
-      <span class="tomoe"></span>
-      <span class="tomoe"></span>
-    </div>
+    let updatedEntry;
+    if (source === 'mal') {
+      updatedEntry = await this.plugin.malApi.updateMediaListEntry(entry.media.id, updates);
+      Object.assign(entry, updatedEntry);
+    } else {
+      await onSave(updates);
+      Object.assign(entry, updates);
+    }
+    
+    this.invalidateCache(entry, source);
+    this.refreshUI(entry);
+    this.closeModal(modal.container, () => {});
+    
+    new Notice('✅ Saved');
+  } catch (err) {
+    this.showModalError(form, `Save failed: ${err.message}`);
+    this.resetSaveButton(saveBtn);
+    return;
+  }
+  
+  this.resetSaveButton(saveBtn);
+}
+
+async handleRemove(entry, modalElement, source = 'anilist') {
+  if (!confirm('Remove this entry?')) return;
+  
+  const removeBtn = modalElement.querySelector('.zoro-remove-btn');
+  removeBtn.disabled = true;
+  removeBtn.innerHTML = `
+<div class="sharingan-glow">
+  <div class="tomoe-container">
+    <span class="tomoe"></span>
+    <span class="tomoe"></span>
+    <span class="tomoe"></span>
   </div>
+</div>
 `;
 
-    
-    try {
-      if (source === 'mal') {
-        // MAL doesn't support removing entries via API in most cases
-        // It would require setting status to a "not in list" state
-        new Notice('❌ MAL does not support removing entries via API', 5000);
-        throw new Error('MAL remove not supported');
-      } else {
-        // AniList remove
-        const mutation = `
-          mutation ($id: Int) {
-            DeleteMediaListEntry(id: $id) { deleted }
-          }`;
-        await this.plugin.requestQueue.add(() =>
-          requestUrl({
-            url: 'https://graphql.anilist.co',
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${this.plugin.settings.accessToken}`
-            },
-            body: JSON.stringify({ query: mutation, variables: { id: entry.id } })
-          })
-        );
-      }
-      
-      this.invalidateCache(entry);
-      this.refreshUI(entry);
-      this.closeModal(modalElement, () => {});
-      
-      new Notice('✅ Removed');
-    } catch (e) {
-      this.showModalError(modalElement.querySelector('.zoro-edit-form'), `Remove failed: ${e.message}`);
-      removeBtn.disabled = false;
-      removeBtn.textContent = '🗑️';
+  
+  try {
+    if (source === 'mal') {
+      new Notice('❌ MAL does not support removing entries via API', 5000);
+      throw new Error('MAL remove not supported');
+    } else {
+      const mutation = `
+        mutation ($id: Int) {
+          DeleteMediaListEntry(id: $id) { deleted }
+        }`;
+      await this.plugin.requestQueue.add(() =>
+        requestUrl({
+          url: 'https://graphql.anilist.co',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.plugin.settings.accessToken}`
+          },
+          body: JSON.stringify({ query: mutation, variables: { id: entry.id } })
+        })
+      );
     }
+    
+    this.invalidateCache(entry, source);
+    this.refreshUI(entry);
+    this.closeModal(modalElement, () => {});
+    
+    new Notice('✅ Removed');
+  } catch (e) {
+    this.showModalError(modalElement.querySelector('.zoro-edit-form'), `Remove failed: ${e.message}`);
+    removeBtn.disabled = false;
+    removeBtn.textContent = '🗑️';
   }
-
-  async handleSave(entry, onSave, saveBtn, formFields, modal, source = 'anilist') {
-    if (this.saving) return;
-    this.saving = true;
-    saveBtn.disabled = true;
-    saveBtn.textContent = 'Saving...';
-    
-    const form = modal.form;
-    const scoreVal = parseFloat(formFields.score.input.value);
-    
-    if (formFields.score.input.value && (isNaN(scoreVal) || scoreVal < 0 || scoreVal > 10)) {
-      this.showModalError(form, "Score must be between 0 and 10");
-      this.resetSaveButton(saveBtn);
-      return;
-    }
-    
-    try {
-      const updates = {
-        status: formFields.status.input.value,
-        score: formFields.score.input.value === '' ? null : scoreVal,
-        progress: parseInt(formFields.progress.input.value) || 0
-      };
-      
-      if (source === 'mal') {
-        await this.plugin.malApi.updateMediaListEntry(entry.media.id, updates);
-      } else {
-        await onSave(updates);
-      }
-      
-      Object.assign(entry, updates);
-      
-      this.invalidateCache(entry, source);
-      this.refreshUI(entry);
-      this.closeModal(modal.container, () => {});
-      
-      new Notice('✅ Saved');
-    } catch (err) {
-      this.showModalError(form, `Save failed: ${err.message}`);
-      this.resetSaveButton(saveBtn);
-      return;
-    }
-    
-    this.resetSaveButton(saveBtn);
-  }
+}
   
   resetSaveButton(saveBtn) {
     saveBtn.disabled = false;
@@ -8454,9 +8494,14 @@ class Edit {
     form.appendChild(banner);
   }
   
-  invalidateCache(entry) {
+  invalidateCache(entry, source = 'anilist') {
+  if (source === 'mal') {
+    this.plugin.cache.invalidateByMedia(String(entry.media.id));
+    this.plugin.cache.invalidateScope('userData');
+  } else {
     this.plugin.cache.invalidateByMedia(String(entry.media.id));
   }
+}
   
   updateAllFavoriteButtons(entry) {
     document.querySelectorAll(`[data-media-id="${entry.media.id}"] .zoro-fav-btn`)
@@ -8464,6 +8509,13 @@ class Edit {
         btn.className = entry.media.isFavourite ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart';
       });
   }
+  
+  detectSource(entry) {
+  if (this.plugin.currentApi === 'mal' || entry.source === 'mal') {
+    return 'mal';
+  }
+  return 'anilist';
+}
   
   refreshUI(entry) {
     const card = document.querySelector(`.zoro-container [data-media-id="${entry.media.id}"]`);
@@ -8499,29 +8551,25 @@ class Edit {
 class MoreDetailsPanel {
   constructor(plugin) {
     this.plugin = plugin;
-    this.currentPanel = null;
-    this.boundOutsideClickHandler = this.handleOutsideClick.bind(this);
+    this.openDetailPanel = new OpenDetailPanel(plugin);
   }
 
   async showPanel(media, entry = null, triggerElement) {
-    this.closePanel();
+    return await this.openDetailPanel.showPanel(media, entry, triggerElement);
+  }
 
-    const panel = this.createPanel(media, entry);
-    this.currentPanel = panel;
-    this.positionPanel(panel, triggerElement);
-    document.body.appendChild(panel);
+  closePanel() {
+    this.openDetailPanel.closePanel();
+  }
 
-    document.addEventListener('click', this.boundOutsideClickHandler);
-    this.plugin.requestQueue.showGlobalLoader();
-    
-    if (this.shouldFetchDetailedData(media)) {
-      this.fetchAndUpdatePanel(media.id, panel)
-        .finally(() => {
-          this.plugin.requestQueue.hideGlobalLoader();
-        });
-    } else {
-      this.plugin.requestQueue.hideGlobalLoader();
-    }
+  get currentPanel() {
+    return this.openDetailPanel.currentPanel;
+  }
+}
+
+class DetailPanelSource {
+  constructor(plugin) {
+    this.plugin = plugin;
   }
 
   shouldFetchDetailedData(media) {
@@ -8531,23 +8579,81 @@ class MoreDetailsPanel {
     return missingBasicData || isAnimeWithoutAiring;
   }
 
-  async fetchAndUpdatePanel(mediaId, panel) {
+  async fetchDetailedData(mediaId) {
+    const cacheKey = `details:${mediaId}`;
+    const cached = this.plugin.cache.get(cacheKey, { scope: 'mediaDetails' });
+    if (cached) return cached;
+
+    const query = this.getDetailedMediaQuery();
+    const variables = { id: mediaId };
+
+    let response;
     try {
-      const detailedMedia = await this.fetchDetailedMediaData(mediaId);
+      if (this.plugin.fetchAniListData) {
+        response = await this.plugin.fetchAniListData(query, variables);
+      } else {
+        const apiResponse = await fetch('https://graphql.anilist.co', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query, variables })
+        });
+        response = await apiResponse.json();
+      }
+
+      if (!response?.data?.Media)
+        throw new Error('No media data received');
+
+      const data = response.data.Media;
+      this.plugin.cache.set(cacheKey, data, { scope: 'mediaDetails' });
+      return data;
+
+    } catch (error) {
+      console.error('API fetch failed:', error);
+      throw error;
+    }
+  }
+
+  async fetchMALData(malId, mediaType) {
+    if (!malId) return null;
+
+    const cacheKey = `mal:${malId}:${mediaType}`;
+    const cached = this.plugin.cache.get(cacheKey, { scope: 'malData' });
+    if (cached) return cached;
+
+    try {
+      const type = mediaType === 'MANGA' ? 'manga' : 'anime';
+      const response = await fetch(`https://api.jikan.moe/v4/${type}/${malId}`);
+
+      if (!response.ok)
+        throw new Error(`Jikan API error: ${response.status}`);
+
+      const data = (await response.json())?.data;
+      this.plugin.cache.set(cacheKey, data, { scope: 'malData' });
+      return data;
+
+    } catch (error) {
+      console.error('Failed to fetch MAL data:', error);
+      return null;
+    }
+  }
+
+  async fetchAndUpdateData(mediaId, onUpdate) {
+    try {
+      const detailedMedia = await this.fetchDetailedData(mediaId);
       
       let malDataPromise = null;
       if (detailedMedia.idMal) {
         malDataPromise = this.fetchMALData(detailedMedia.idMal, detailedMedia.type);
       }
       
-      if (this.currentPanel === panel && this.hasMoreData(detailedMedia)) {
-        this.updatePanelContent(panel, detailedMedia, null);
+      if (this.hasMoreData(detailedMedia)) {
+        onUpdate(detailedMedia, null);
       }
       
       if (malDataPromise) {
         const malData = await malDataPromise;
-        if (this.currentPanel === panel && malData) {
-          this.updatePanelContent(panel, detailedMedia, malData);
+        if (malData) {
+          onUpdate(detailedMedia, malData);
         }
       }
     } catch (error) {
@@ -8560,6 +8666,67 @@ class MoreDetailsPanel {
     const hasAiringData = newMedia.type === 'ANIME' && newMedia.nextAiringEpisode;
     
     return hasBasicData || hasAiringData;
+  }
+
+  getDetailedMediaQuery() {
+    return `query($id:Int){Media(id:$id){id type title{romaji english native}description(asHtml:false)format status season seasonYear averageScore genres nextAiringEpisode{airingAt episode timeUntilAiring}idMal}}`;
+  }
+
+  getAniListUrl(mediaId, mediaType = 'ANIME') {
+    return this.plugin.getAniListUrl(mediaId, mediaType);
+  }
+
+  getMyAnimeListUrl(malId, mediaType = 'ANIME') {
+    if (!malId) return null;
+    const type = mediaType === 'MANGA' ? 'manga' : 'anime';
+    return `https://myanimelist.net/${type}/${malId}`;
+  }
+}
+
+class RenderDetailPanel {
+  constructor(plugin) {
+    this.plugin = plugin;
+  }
+
+  createPanel(media, entry) {
+    const fragment = document.createDocumentFragment();
+    
+    const panel = document.createElement('div');
+    panel.className = 'zoro-more-details-panel';
+
+    const content = document.createElement('div');
+    content.className = 'panel-content';
+
+    const sections = [];
+
+    sections.push(this.createHeaderSection(media));
+    sections.push(this.createMetadataSection(media, entry));
+
+    if (media.type === 'ANIME' && media.nextAiringEpisode) {
+      sections.push(this.createAiringSection(media.nextAiringEpisode));
+    }
+
+    if (media.averageScore > 0) {
+      sections.push(this.createStatisticsSection(media));
+    }
+
+    if (media.genres?.length > 0) {
+      sections.push(this.createGenresSection(media.genres));
+    }
+
+    sections.push(this.createSynopsisSection(media.description));
+    sections.push(this.createExternalLinksSection(media));
+
+    sections.forEach(section => content.appendChild(section));
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'panel-close-btn';
+    closeBtn.innerHTML = '×';
+
+    panel.appendChild(closeBtn);
+    panel.appendChild(content);
+
+    return panel;
   }
 
   updatePanelContent(panel, media, malData = null) {
@@ -8611,120 +8778,6 @@ class MoreDetailsPanel {
         content.replaceChild(newStats, existingStats);
       }
     }
-  }
-
-  async fetchDetailedMediaData(mediaId) {
-  const cacheKey = `details:${mediaId}`;
-  const cached   = this.plugin.cache.get(cacheKey, { scope: 'mediaDetails' });
-  if (cached) return cached;
-
-  const query     = this.getDetailedMediaQuery();
-  const variables = { id: mediaId };
-
-  let response;
-  try {
-    if (this.plugin.fetchAniListData) {
-      response = await this.plugin.fetchAniListData(query, variables);
-    } else {
-      const apiResponse = await fetch('https://graphql.anilist.co', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, variables })
-      });
-      response = await apiResponse.json();
-    }
-
-    if (!response?.data?.Media)
-      throw new Error('No media data received');
-
-    const data = response.data.Media;
-    this.plugin.cache.set(cacheKey, data, { scope: 'mediaDetails' });
-    return data;
-
-  } catch (error) {
-    console.error('API fetch failed:', error);
-    throw error;
-  }
-}
-
-  async fetchMALData(malId, mediaType) {
-  if (!malId) return null;
-
-  const cacheKey = `mal:${malId}:${mediaType}`;
-  const cached   = this.plugin.cache.get(cacheKey, { scope: 'malData' });
-  if (cached) return cached;
-
-  try {
-    const type     = mediaType === 'MANGA' ? 'manga' : 'anime';
-    const response = await fetch(`https://api.jikan.moe/v4/${type}/${malId}`);
-
-    if (!response.ok)
-      throw new Error(`Jikan API error: ${response.status}`);
-
-    const data = (await response.json())?.data;
-    this.plugin.cache.set(cacheKey, data, { scope: 'malData' });
-    return data;
-
-  } catch (error) {
-    console.error('Failed to fetch MAL data:', error);
-    return null;
-  }
-}
-
-  getDetailedMediaQuery() {
-    return `query($id:Int){Media(id:$id){id type title{romaji english native}description(asHtml:false)format status season seasonYear averageScore genres nextAiringEpisode{airingAt episode timeUntilAiring}idMal}}`;
-  }
-
-  getAniListUrl(mediaId, mediaType = 'ANIME') {
-    return this.plugin.getAniListUrl(mediaId, mediaType);
-  }
-
-  getMyAnimeListUrl(malId, mediaType = 'ANIME') {
-    if (!malId) return null;
-    const type = mediaType === 'MANGA' ? 'manga' : 'anime';
-    return `https://myanimelist.net/${type}/${malId}`;
-  }
-
-  createPanel(media, entry) {
-    const fragment = document.createDocumentFragment();
-    
-    const panel = document.createElement('div');
-    panel.className = 'zoro-more-details-panel';
-
-    const content = document.createElement('div');
-    content.className = 'panel-content';
-
-    const sections = [];
-
-    sections.push(this.createHeaderSection(media));
-    sections.push(this.createMetadataSection(media, entry));
-
-    if (media.type === 'ANIME' && media.nextAiringEpisode) {
-      sections.push(this.createAiringSection(media.nextAiringEpisode));
-    }
-
-    if (media.averageScore > 0) {
-      sections.push(this.createStatisticsSection(media));
-    }
-
-    if (media.genres?.length > 0) {
-      sections.push(this.createGenresSection(media.genres));
-    }
-
-    sections.push(this.createSynopsisSection(media.description));
-    sections.push(this.createExternalLinksSection(media));
-
-    sections.forEach(section => content.appendChild(section));
-
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'panel-close-btn';
-    closeBtn.innerHTML = '×';
-    closeBtn.onclick = () => this.closePanel();
-
-    panel.appendChild(closeBtn);
-    panel.appendChild(content);
-
-    return panel;
   }
 
   createAiringSection(nextAiringEpisode) {
@@ -8981,9 +9034,6 @@ class MoreDetailsPanel {
   }
 
   createExternalLinksSection(media) {
-    console.log('Creating external links for media:', media);
-    console.log('Media idMal:', media.idMal);
-    
     const section = document.createElement('div');
     section.className = 'panel-section external-links-section';
 
@@ -9000,22 +9050,21 @@ class MoreDetailsPanel {
     anilistBtn.innerHTML = '🔗 View on AniList';
     anilistBtn.onclick = (e) => {
       e.stopPropagation();
-      window.open(this.getAniListUrl(media.id, media.type), '_blank');
+      const url = this.plugin.getAniListUrl ? this.plugin.getAniListUrl(media.id, media.type) : `https://anilist.co/${media.type.toLowerCase()}/${media.id}`;
+      window.open(url, '_blank');
     };
     linksContainer.appendChild(anilistBtn);
 
     if (media.idMal) {
-      console.log('MAL ID found, creating MAL button');
       const malBtn = document.createElement('button');
       malBtn.className = 'external-link-btn mal-btn';
       malBtn.innerHTML = '🔗 View on MAL';
       malBtn.onclick = (e) => {
         e.stopPropagation();
-        window.open(this.getMyAnimeListUrl(media.idMal, media.type), '_blank');
+        const type = media.type === 'MANGA' ? 'manga' : 'anime';
+        window.open(`https://myanimelist.net/${type}/${media.idMal}`, '_blank');
       };
       linksContainer.appendChild(malBtn);
-    } else {
-      console.log('No MAL ID found for this media');
     }
 
     section.appendChild(linksContainer);
@@ -9039,6 +9088,57 @@ class MoreDetailsPanel {
     panel.className = 'zoro-more-details-panel';
   }
 
+  cleanupCountdowns(panel) {
+    const countdownElements = panel.querySelectorAll('.countdown-value[data-interval-id]');
+    countdownElements.forEach(element => {
+      const intervalId = element.dataset.intervalId;
+      if (intervalId) {
+        clearInterval(parseInt(intervalId));
+      }
+    });
+  }
+}
+
+class OpenDetailPanel {
+  constructor(plugin) {
+    this.plugin = plugin;
+    this.currentPanel = null;
+    this.boundOutsideClickHandler = this.handleOutsideClick.bind(this);
+    
+    this.renderer = new RenderDetailPanel(plugin);
+    this.dataSource = new DetailPanelSource(plugin);
+  }
+
+  async showPanel(media, entry = null, triggerElement) {
+    this.closePanel();
+
+    const panel = this.renderer.createPanel(media, entry);
+    this.currentPanel = panel;
+    this.renderer.positionPanel(panel, triggerElement);
+    
+    const closeBtn = panel.querySelector('.panel-close-btn');
+    if (closeBtn) {
+      closeBtn.onclick = () => this.closePanel();
+    }
+    
+    document.body.appendChild(panel);
+    document.addEventListener('click', this.boundOutsideClickHandler);
+    
+    this.plugin.requestQueue.showGlobalLoader();
+    
+    if (this.dataSource.shouldFetchDetailedData(media)) {
+      this.dataSource.fetchAndUpdateData(media.id, (detailedMedia, malData) => {
+        if (this.currentPanel === panel) {
+          this.renderer.updatePanelContent(panel, detailedMedia, malData);
+        }
+      }).finally(() => {
+        this.plugin.requestQueue.hideGlobalLoader();
+      });
+    } else {
+      this.plugin.requestQueue.hideGlobalLoader();
+    }
+  }
+
   handleOutsideClick(event) {
     if (this.currentPanel && !this.currentPanel.contains(event.target)) {
       this.closePanel();
@@ -9047,21 +9147,12 @@ class MoreDetailsPanel {
 
   closePanel() {
     if (this.currentPanel) {
-      const countdownElements = this.currentPanel.querySelectorAll('.countdown-value[data-interval-id]');
-      countdownElements.forEach(element => {
-        const intervalId = element.dataset.intervalId;
-        if (intervalId) {
-          clearInterval(parseInt(intervalId));
-        }
-      });
-
+      this.renderer.cleanupCountdowns(this.currentPanel);
       document.removeEventListener('click', this.boundOutsideClickHandler);
       this.currentPanel.remove();
       this.currentPanel = null;
     }
   }
-  
-  
 }
 
 class Trending {
@@ -10017,7 +10108,6 @@ class SimklAuthentication {
   }
 }
 
-// SIMKL PIN Modal
 class SimklPinModal extends Modal {
   constructor(app, deviceData, onCancel) {
     super(app);

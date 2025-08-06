@@ -5817,6 +5817,19 @@ class ZoroPlugin extends Plugin {
   getSimklUrl(mediaId, mediaType = 'ANIME') {
     return this.simklApi.getSimklUrl(mediaId, mediaType);
   }
+  
+  getSourceSpecificUrl(mediaId, mediaType, source) {
+  switch (source) {
+    case 'mal':
+      return this.getMALUrl(mediaId, mediaType);
+    case 'simkl':
+      return this.getSimklUrl(mediaId, mediaType);
+    case 'anilist':
+    default:
+      return this.getAniListUrl(mediaId, mediaType);
+  }
+}
+
 
   async onload() {
     console.log('[Zoro] Plugin loading...');
@@ -6209,16 +6222,22 @@ class Processor {
     }
   }
 
-  injectMetadata(data, config) {
-  
+injectMetadata(data, config) {
   if (!data) return data;
+  
+  const metadata = {
+    source: config.source || 'anilist',
+    mediaType: config.mediaType || (data.media?.type || 'ANIME')
+  };
+
   if (Array.isArray(data)) {
     data.forEach(entry => {
       if (entry) {
-        entry._zoroMeta = {
-          source: config.source,
-          mediaType: config.mediaType
-        };
+        entry._zoroMeta = metadata;
+        // Ensure media type is consistent
+        if (entry.media && !entry.media.type) {
+          entry.media.type = metadata.mediaType;
+        }
       }
     });
     return data;
@@ -6226,14 +6245,15 @@ class Processor {
   
   // Handle single entry
   if (data && typeof data === 'object') {
-    data._zoroMeta = {
-      source: config.source,
-      mediaType: config.mediaType
-    };
+    data._zoroMeta = metadata;
+    if (data.media && !data.media.type) {
+      data.media.type = metadata.mediaType;
+    }
   }
   
   return data;
 }
+
 
  async handleStatsOperation(api, config) {
   if (config.source === 'mal') {
@@ -6561,45 +6581,45 @@ async handleTrendingOperation(api, config) {
     }
   }
 
-  parseInlineLink(href) {
-    try {
-      const [base, hash] = href.replace('zoro:', '').split('#');
-      const parts = base.split('/').filter(part => part !== '');
 
-      let username, pathParts;
+parseInlineLink(href) {
+  try {
+    const [base, hash] = href.replace('zoro:', '').split('#');
+    const parts = base.split('/').filter(part => part !== '');
 
-      if (parts.length === 0 || parts[0] === '') {
-        if (!this.plugin.settings.defaultUsername) {
-          throw new Error('⚠️ Default username not set. Configure it in plugin settings.');
-        }
-        username = this.plugin.settings.defaultUsername;
-        pathParts = parts.slice(1);
-      } else {
-        username = parts[0];
-        pathParts = parts.slice(1);
+    let username, pathParts;
+
+    if (parts.length === 0 || parts[0] === '') {
+      if (!this.plugin.settings.defaultUsername) {
+        throw new Error('⚠️ Default username not set. Configure it in plugin settings.');
       }
-
-      const config = {
-        username: username,
-        layout: 'card',
-        type: 'list',
-        source: this.plugin.settings.defaultApiSource || 'anilist'
-      };
-
-      if (pathParts.length > 0) {
-        this.parseInlineLinkPath(config, pathParts);
-      }
-
-      if (hash) {
-        this.parseInlineLinkHash(config, hash);
-      }
-
-      return config;
-
-    } catch (error) {
-      throw new Error(`❌ Invalid Zoro inline link format: ${error.message}`);
+      username = this.plugin.settings.defaultUsername;
+      pathParts = parts.slice(1);
+    } else {
+      username = parts[0];
+      pathParts = parts.slice(1);
     }
+
+    const config = {
+      username: username,
+      layout: 'card',
+      type: 'list',
+      source: this.plugin.settings.defaultApiSource || 'anilist'
+    };
+
+    if (hash) {
+      this.parseInlineLinkHash(config, hash);
+    }
+
+    // Always inject metadata for inline links
+    config.injectMetadata = true;
+    
+    return config;
+  } catch (error) {
+    throw new Error(`❌ Invalid Zoro inline link format: ${error.message}`);
   }
+}
+
 
   parseInlineLinkPath(config, pathParts) {
     const [main, second] = pathParts;
@@ -7548,12 +7568,13 @@ generateInsights(stats, type, user) {
     return container;
 }
 
-  createMediaCard(data, config, options = {}) {
+createMediaCard(data, config, options = {}) {
   const isSearch = options.isSearch || false;
   const isCompact = config.layout === 'compact';
   const entry = isSearch ? null : data;
   const media = isSearch ? data : data.media;
-
+  const source = entry?._zoroMeta?.source || config.source || 'anilist';
+  const mediaType = entry?._zoroMeta?.mediaType || config.mediaType || 'ANIME';
   const card = document.createElement('div');
   card.className = `zoro-card ${isCompact ? 'compact' : ''}`;
   card.dataset.mediaId = media.id;
@@ -7689,20 +7710,26 @@ generateInsights(stats, type, user) {
 
   const title = document.createElement('h4');
 
-  if (this.plugin.settings.hideUrlsInTitles) {
-    title.textContent = media.title.english || media.title.romaji;
-  } else {
-    const titleLink = document.createElement('a');
-    if (config.source === 'mal') {
-      titleLink.href = this.plugin.getMALUrl(media.id, config.mediaType);
-    } else {
-      titleLink.href = this.plugin.getAniListUrl(media.id, config.mediaType);
-    }
-    titleLink.target = '_blank';
-    titleLink.textContent = media.title.english || media.title.romaji;
-    titleLink.className = 'media-title-link';
-    title.appendChild(titleLink);
-  }
+  // Replace the existing URL generation with this:
+if (this.plugin.settings.hideUrlsInTitles) {
+  title.textContent = media.title.english || media.title.romaji;
+} else {
+  const titleLink = document.createElement('a');
+  
+  // Use metadata injection for source detection
+  const source = entry?._zoroMeta?.source || config.source || 'anilist';
+  const mediaType = entry?._zoroMeta?.mediaType || config.mediaType || 
+                   (media.episodes ? 'ANIME' : 'MANGA');
+  
+  // Use the unified URL generator
+  titleLink.href = this.plugin.getSourceSpecificUrl(media.id, mediaType, source);
+  
+  titleLink.target = '_blank';
+  titleLink.textContent = media.title.english || media.title.romaji;
+  titleLink.className = 'media-title-link';
+  title.appendChild(titleLink);
+}
+
 
   info.appendChild(title);
 
@@ -7918,22 +7945,32 @@ generateInsights(stats, type, user) {
     }
   }
 
-  handleStatusClick(e, entry, badge, config = {}) {
+handleStatusClick(e, entry, badge, config = {}) {
   e.preventDefault();
   e.stopPropagation();
   
+  // Use injected metadata if available
+  const source = entry._zoroMeta?.source || config.source || 'anilist';
+  const mediaType = entry._zoroMeta?.mediaType || config.mediaType || 'ANIME';
+  
   // Check authentication based on source
-  const isAuthenticated = config.source === 'mal' 
+  const isAuthenticated = source === 'mal' 
     ? this.plugin.settings.malAccessToken 
+    : source === 'simkl'
+    ? this.plugin.settings.simklAccessToken
     : this.plugin.settings.accessToken;
     
   if (!isAuthenticated) {
-    this.plugin.prompt.createAuthenticationPrompt();
+    this.plugin.prompt.createAuthenticationPrompt(source);
     return;
   }
   
-  this.plugin.handleEditClick(e, entry, badge, config);
+  this.plugin.handleEditClick(e, entry, badge, {
+    source,
+    mediaType
+  });
 }
+
 
   handleAddClick(e, media, config) {
     e.preventDefault();
@@ -8002,8 +8039,11 @@ class Edit {
     };
   }
 
-  createEditModal(entry, onSave, onCancel, source = 'anilist') {
-    const provider = this.providers[source];
+  
+createEditModal(entry, onSave, onCancel, source = 'anilist') {
+  
+  const actualSource = entry._zoroMeta?.source || source;
+  const provider = this.providers[actualSource];
     const modal = this.renderer.createModalStructure();
     const { overlay, content, form } = modal;
     
@@ -8695,9 +8735,24 @@ class MoreDetailsPanel {
     this.openDetailPanel = new OpenDetailPanel(plugin);
   }
 
-  async showPanel(media, entry = null, triggerElement) {
-    return await this.openDetailPanel.showPanel(media, entry, triggerElement);
-  }
+  // In MoreDetailsPanel's showPanel method
+async showPanel(media, entry = null, triggerElement) {
+  const source = entry?._zoroMeta?.source || 'anilist';
+  const mediaType = entry?._zoroMeta?.mediaType || media.type || 'ANIME';
+  
+  // Pass the source to dataSource
+  this.dataSource.fetchAndUpdateData(
+    media.id, 
+    source, 
+    mediaType, 
+    (detailedMedia, malData) => {
+      if (this.currentPanel === panel) {
+        this.renderer.updatePanelContent(panel, detailedMedia, malData);
+      }
+    }
+  );
+}
+
 
   closePanel() {
     this.openDetailPanel.closePanel();

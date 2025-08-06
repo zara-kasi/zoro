@@ -8572,6 +8572,79 @@ class DetailPanelSource {
     this.plugin = plugin;
   }
 
+  async convertMalToAnilistId(malId, malType) {
+    const anilistType = this.convertMalTypeToAnilistType(malType);
+    
+    if (!anilistType) {
+      for (const tryType of ['ANIME', 'MANGA']) {
+        const result = await this.tryConvertWithType(malId, tryType);
+        if (result) {
+          return result;
+        }
+      }
+      return null;
+    }
+    
+    return await this.tryConvertWithType(malId, anilistType);
+  }
+
+  async tryConvertWithType(malId, anilistType) {
+    const query = `query($idMal: Int, $type: MediaType) { Media(idMal: $idMal, type: $type) { id type } }`;
+    const variables = { idMal: malId, type: anilistType };
+
+    try {
+      let response;
+      if (this.plugin.fetchAniListData) {
+        response = await this.plugin.fetchAniListData(query, variables);
+      } else {
+        const apiResponse = await fetch('https://graphql.anilist.co', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query, variables })
+        });
+        response = await apiResponse.json();
+      }
+
+      const anilistId = response?.data?.Media?.id;
+      const anilistTypeResult = response?.data?.Media?.type;
+      
+      if (anilistId) {
+        return { id: anilistId, type: anilistTypeResult };
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Conversion attempt failed for type', anilistType, ':', error);
+      return null;
+    }
+  }
+
+  convertMalTypeToAnilistType(malType) {
+    if (!malType) {
+      return null;
+    }
+    
+    const normalizedType = malType.toString().toLowerCase();
+    
+    const typeMap = {
+      'anime': 'ANIME',
+      'manga': 'MANGA',
+      'tv': 'ANIME',
+      'movie': 'ANIME',
+      'ova': 'ANIME',
+      'ona': 'ANIME',
+      'special': 'ANIME',
+      'music': 'ANIME',
+      'manhwa': 'MANGA',
+      'manhua': 'MANGA',
+      'novel': 'MANGA',
+      'light_novel': 'MANGA',
+      'one_shot': 'MANGA'
+    };
+    
+    return typeMap[normalizedType] || null;
+  }
+
   shouldFetchDetailedData(media) {
     const missingBasicData = !media.description || !media.genres || !media.averageScore;
     const isAnimeWithoutAiring = media.type === 'ANIME' && !media.nextAiringEpisode;
@@ -8579,13 +8652,33 @@ class DetailPanelSource {
     return missingBasicData || isAnimeWithoutAiring;
   }
 
-  async fetchDetailedData(mediaId) {
-    const cacheKey = `details:${mediaId}`;
+  async fetchDetailedData(mediaId, source = 'anilist', mediaType = null) {
+    let targetId = mediaId;
+    let originalMalId = null;
+    let correctedType = mediaType;
+
+    if (source === 'mal') {
+      originalMalId = mediaId;
+      const typeForConversion = mediaType;
+      
+      const conversionResult = await this.convertMalToAnilistId(mediaId, typeForConversion);
+      
+      if (!conversionResult || !conversionResult.id) {
+        throw new Error(`Could not convert MAL ID ${mediaId} to AniList ID`);
+      }
+      
+      targetId = conversionResult.id;
+      correctedType = conversionResult.type;
+    }
+
+    const cacheKey = `details:${targetId}`;
     const cached = this.plugin.cache.get(cacheKey, { scope: 'mediaDetails' });
-    if (cached) return cached;
+    if (cached) {
+      return cached;
+    }
 
     const query = this.getDetailedMediaQuery();
-    const variables = { id: mediaId };
+    const variables = { id: targetId };
 
     let response;
     try {
@@ -8604,11 +8697,16 @@ class DetailPanelSource {
         throw new Error('No media data received');
 
       const data = response.data.Media;
+      
+      if (originalMalId) {
+        data.originalMalId = originalMalId;
+      }
+      
       this.plugin.cache.set(cacheKey, data, { scope: 'mediaDetails' });
       return data;
 
     } catch (error) {
-      console.error('API fetch failed:', error);
+      console.error('AniList API fetch failed:', error);
       throw error;
     }
   }
@@ -8637,13 +8735,15 @@ class DetailPanelSource {
     }
   }
 
-  async fetchAndUpdateData(mediaId, onUpdate) {
+  async fetchAndUpdateData(mediaId, source, mediaType, onUpdate) {
     try {
-      const detailedMedia = await this.fetchDetailedData(mediaId);
+      const detailedMedia = await this.fetchDetailedData(mediaId, source, mediaType);
+      
+      const malId = source === 'mal' ? (detailedMedia.originalMalId || mediaId) : detailedMedia.idMal;
       
       let malDataPromise = null;
-      if (detailedMedia.idMal) {
-        malDataPromise = this.fetchMALData(detailedMedia.idMal, detailedMedia.type);
+      if (malId) {
+        malDataPromise = this.fetchMALData(malId, detailedMedia.type);
       }
       
       if (this.hasMoreData(detailedMedia)) {
@@ -8657,7 +8757,7 @@ class DetailPanelSource {
         }
       }
     } catch (error) {
-      console.error('Background fetch failed:', error);
+      console.error('fetchAndUpdateData failed:', error);
     }
   }
   
@@ -9110,6 +9210,8 @@ class OpenDetailPanel {
   }
 
   async showPanel(media, entry = null, triggerElement) {
+    const source = entry?.source || media.apiSource || this.plugin.settings.defaultApiSource || 'anilist';
+
     this.closePanel();
 
     const panel = this.renderer.createPanel(media, entry);
@@ -9127,7 +9229,7 @@ class OpenDetailPanel {
     this.plugin.requestQueue.showGlobalLoader();
     
     if (this.dataSource.shouldFetchDetailedData(media)) {
-      this.dataSource.fetchAndUpdateData(media.id, (detailedMedia, malData) => {
+      this.dataSource.fetchAndUpdateData(media.id, source, media.type, (detailedMedia, malData) => {
         if (this.currentPanel === panel) {
           this.renderer.updatePanelContent(panel, detailedMedia, malData);
         }

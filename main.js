@@ -8736,8 +8736,8 @@ class MoreDetailsPanel {
   }
 
 async showPanel(media, entry = null, triggerElement) {
-  return await this.openDetailPanel.showPanel(media, entry, triggerElement);
-}
+    return await this.openDetailPanel.showPanel(media, entry, triggerElement);
+  }
 
   closePanel() {
     this.openDetailPanel.closePanel();
@@ -8841,109 +8841,77 @@ class DetailPanelSource {
     return entry?._zoroMeta?.mediaType || entry?.media?.type || null;
   }
 
-async fetchDetailedData(mediaId, source = 'anilist', mediaType = 'ANIME') {
-  const cacheKey = `details:${source}:${mediaId}:${mediaType}`;
-  const cached = this.plugin.cache.get(cacheKey, { scope: 'mediaDetails' });
-  if (cached) {
-    return cached;
-  }
+  async fetchDetailedData(mediaId, entryOrSource = null, mediaType = null) {
+    let source, resolvedMediaType;
 
-  let responseData;
-  
-  try {
-    if (source === 'mal') {
-      // For MAL, use the existing MAL API
-      responseData = await this.plugin.malApi.fetchMALData({
-        type: 'single',
-        mediaId: mediaId,
-        mediaType: mediaType,
-        layout: 'full'
-      });
-      
-      // Transform MAL response to AniList format
-      responseData = responseData?.MediaList?.media || responseData;
-    } else if (source === 'simkl') {
-      // For SIMKL, use the SIMKL API
-      responseData = await this.plugin.simklApi.fetchSimklData({
-        type: 'single',
-        mediaId: mediaId,
-        mediaType: mediaType
-      });
-      
-      responseData = responseData?.MediaList?.media || responseData;
+    if (typeof entryOrSource === 'object' && entryOrSource !== null) {
+      source = this.extractSourceFromEntry(entryOrSource);
+      resolvedMediaType = this.extractMediaTypeFromEntry(entryOrSource);
+    } else if (typeof entryOrSource === 'string') {
+      source = entryOrSource;
+      resolvedMediaType = mediaType;
     } else {
-      // Default to AniList
-      const query = `
-        query ($id: Int) {
-          Media(id: $id) {
-            id
-            idMal
-            type
-            title {
-              romaji
-              english
-              native
-            }
-            description(asHtml: false)
-            format
-            status
-            season
-            seasonYear
-            averageScore
-            genres
-            nextAiringEpisode {
-              airingAt
-              episode
-              timeUntilAiring
-            }
-            startDate {
-              year
-              month
-              day
-            }
-            endDate {
-              year
-              month
-              day
-            }
-            episodes
-            chapters
-            volumes
-            coverImage {
-              large
-              medium
-            }
-          }
-        }
-      `;
-      
-      const response = await fetch('https://graphql.anilist.co', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query, variables: { id: mediaId } })
-      });
-      
-      const data = await response.json();
-      responseData = data?.data?.Media;
+      source = 'anilist';
+      resolvedMediaType = mediaType;
     }
 
-    if (responseData) {
-      // Ensure consistent structure
-      responseData._zoroMeta = {
-        source: source,
-        mediaType: mediaType
-      };
+    let targetId = mediaId;
+    let originalMalId = null;
+    let correctedType = resolvedMediaType;
+
+    if (source === 'mal') {
+      originalMalId = mediaId;
+      const typeForConversion = resolvedMediaType;
       
-      this.plugin.cache.set(cacheKey, responseData, { scope: 'mediaDetails' });
+      const conversionResult = await this.convertMalToAnilistId(mediaId, typeForConversion);
+      
+      if (!conversionResult || !conversionResult.id) {
+        throw new Error(`Could not convert MAL ID ${mediaId} to AniList ID`);
+      }
+      
+      targetId = conversionResult.id;
+      correctedType = conversionResult.type;
     }
-    
-    return responseData;
-  } catch (error) {
-    console.error(`Failed to fetch detailed data for ${source}:`, error);
-    throw error;
+
+    const cacheKey = `details:${targetId}`;
+    const cached = this.plugin.cache.get(cacheKey, { scope: 'mediaDetails' });
+    if (cached) {
+      return cached;
+    }
+
+    const query = this.getDetailedMediaQuery();
+    const variables = { id: targetId };
+
+    let response;
+    try {
+      if (this.plugin.fetchAniListData) {
+        response = await this.plugin.fetchAniListData(query, variables);
+      } else {
+        const apiResponse = await fetch('https://graphql.anilist.co', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query, variables })
+        });
+        response = await apiResponse.json();
+      }
+
+      if (!response?.data?.Media)
+        throw new Error('No media data received');
+
+      const data = response.data.Media;
+      
+      if (originalMalId) {
+        data.originalMalId = originalMalId;
+      }
+      
+      this.plugin.cache.set(cacheKey, data, { scope: 'mediaDetails' });
+      return data;
+
+    } catch (error) {
+      console.error('AniList API fetch failed:', error);
+      throw error;
+    }
   }
-}
-
 
   async fetchMALData(malId, mediaType) {
     if (!malId) return null;
@@ -9388,63 +9356,43 @@ class RenderDetailPanel {
     return section;
   }
 
+  createExternalLinksSection(media) {
+    const section = document.createElement('div');
+    section.className = 'panel-section external-links-section';
 
-createExternalLinksSection(media) {
-  const section = document.createElement('div');
-  section.className = 'panel-section external-links-section';
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'External Links';
+    section.appendChild(title);
 
-  const title = document.createElement('h3');
-  title.className = 'section-title';
-  title.textContent = 'External Links';
-  section.appendChild(title);
+    const linksContainer = document.createElement('div');
+    linksContainer.className = 'external-links-container';
 
-  const linksContainer = document.createElement('div');
-  linksContainer.className = 'external-links-container';
-
-  const source = media._zoroMeta?.source || 'anilist';
-  const mediaType = media._zoroMeta?.mediaType || media.type || 'ANIME';
-
-  // Always show AniList link
-  const anilistBtn = document.createElement('button');
-  anilistBtn.className = 'external-link-btn anilist-btn';
-  anilistBtn.innerHTML = '🔗 View on AniList';
-  anilistBtn.onclick = (e) => {
-    e.stopPropagation();
-    const url = this.plugin.getAniListUrl(media.id, mediaType);
-    window.open(url, '_blank');
-  };
-  linksContainer.appendChild(anilistBtn);
-
-  // Show MAL link if we have MAL ID
-  if (media.idMal) {
-    const malBtn = document.createElement('button');
-    malBtn.className = 'external-link-btn mal-btn';
-    malBtn.innerHTML = '🔗 View on MAL';
-    malBtn.onclick = (e) => {
+    const anilistBtn = document.createElement('button');
+    anilistBtn.className = 'external-link-btn anilist-btn';
+    anilistBtn.innerHTML = '🔗 View on AniList';
+    anilistBtn.onclick = (e) => {
       e.stopPropagation();
-      const url = this.plugin.getMALUrl(media.idMal, mediaType);
+      const url = this.plugin.getAniListUrl ? this.plugin.getAniListUrl(media.id, media.type) : `https://anilist.co/${media.type.toLowerCase()}/${media.id}`;
       window.open(url, '_blank');
     };
-    linksContainer.appendChild(malBtn);
+    linksContainer.appendChild(anilistBtn);
+
+    if (media.idMal) {
+      const malBtn = document.createElement('button');
+      malBtn.className = 'external-link-btn mal-btn';
+      malBtn.innerHTML = '🔗 View on MAL';
+      malBtn.onclick = (e) => {
+        e.stopPropagation();
+        const type = media.type === 'MANGA' ? 'manga' : 'anime';
+        window.open(`https://myanimelist.net/${type}/${media.idMal}`, '_blank');
+      };
+      linksContainer.appendChild(malBtn);
+    }
+
+    section.appendChild(linksContainer);
+    return section;
   }
-
-  // Show SIMKL link if from SIMKL
-  if (source === 'simkl') {
-    const simklBtn = document.createElement('button');
-    simklBtn.className = 'external-link-btn simkl-btn';
-    simklBtn.innerHTML = '🔗 View on SIMKL';
-    simklBtn.onclick = (e) => {
-      e.stopPropagation();
-      const url = this.plugin.getSimklUrl(media.id, mediaType);
-      window.open(url, '_blank');
-    };
-    linksContainer.appendChild(simklBtn);
-  }
-
-  section.appendChild(linksContainer);
-  return section;
-}
-
 
   formatDisplayName(str) {
     if (!str) return '';
@@ -9484,43 +9432,37 @@ class OpenDetailPanel {
     this.dataSource = new DetailPanelSource(plugin);
   }
 
-async showPanel(media, entry = null, triggerElement) {
-  this.closePanel(); // Close any existing panel
+  async showPanel(media, entry = null, triggerElement) {
+    const source = entry?.source || media.apiSource || this.plugin.settings.defaultApiSource || 'anilist';
 
-  // Use metadata injection for source detection
-  const source = entry?._zoroMeta?.source || 'anilist';
-  const mediaType = entry?._zoroMeta?.mediaType || media.type || 'ANIME';
-  
-  const panel = this.renderer.createPanel(media, entry);
-  this.currentPanel = panel;
-  this.renderer.positionPanel(panel, triggerElement);
+    this.closePanel();
 
-  const closeBtn = panel.querySelector('.panel-close-btn');
-  if (closeBtn) {
-    closeBtn.onclick = () => this.closePanel();
-  }
-
-  document.body.appendChild(panel);
-  document.addEventListener('click', this.boundOutsideClickHandler);
-
-  // Show loading
-  this.plugin.requestQueue.showGlobalLoader();
-
-  // Fetch detailed data using source detection
-  this.dataSource.fetchAndUpdateData(
-    media.id, 
-    source, 
-    mediaType, 
-    (detailedMedia, malData) => {
-      if (this.currentPanel === panel) {
-        this.renderer.updatePanelContent(panel, detailedMedia, malData);
-      }
+    const panel = this.renderer.createPanel(media, entry);
+    this.currentPanel = panel;
+    this.renderer.positionPanel(panel, triggerElement);
+    
+    const closeBtn = panel.querySelector('.panel-close-btn');
+    if (closeBtn) {
+      closeBtn.onclick = () => this.closePanel();
     }
-  ).finally(() => {
-    this.plugin.requestQueue.hideGlobalLoader();
-  });
-}
-
+    
+    document.body.appendChild(panel);
+    document.addEventListener('click', this.boundOutsideClickHandler);
+    
+    this.plugin.requestQueue.showGlobalLoader();
+    
+    if (this.dataSource.shouldFetchDetailedData(media)) {
+      this.dataSource.fetchAndUpdateData(media.id, source, media.type, (detailedMedia, malData) => {
+        if (this.currentPanel === panel) {
+          this.renderer.updatePanelContent(panel, detailedMedia, malData);
+        }
+      }).finally(() => {
+        this.plugin.requestQueue.hideGlobalLoader();
+      });
+    } else {
+      this.plugin.requestQueue.hideGlobalLoader();
+    }
+  }
 
   handleOutsideClick(event) {
     if (this.currentPanel && !this.currentPanel.contains(event.target)) {

@@ -2475,7 +2475,7 @@ body.theme-light .zoro-heart.favorited::before {
     width: 24px;
     height: 24px;
     position: relative;
-    animation: smoothRotate 2.5s linear infinite;
+    animation: smoothRotate 0.6s linear infinite;
 }
 
 .sharingan-glow::before {
@@ -2491,7 +2491,7 @@ body.theme-light .zoro-heart.favorited::before {
     box-shadow: 
         0 0 4px hsl(var(--accent-h), var(--accent-s), var(--accent-l)),
         0 0 8px hsl(var(--accent-h), var(--accent-s), var(--accent-l));
-    animation: pulse-glow 2s ease-in-out infinite;
+    animation: pulse-glow 0.7s ease-in-out infinite;
 }
 
 .sharingan-glow .tomoe-container {

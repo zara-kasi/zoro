@@ -6209,64 +6209,99 @@ class Processor {
     }
   }
 
-  async handleStatsOperation(api, config) {
-    if (config.source === 'mal') {
-      const response = await api.fetchMALData({ ...config, type: 'stats' });
-      return response?.User || response;
-    } else if (config.source === 'simkl') {
-      const response = await api.fetchSimklData({ ...config, type: 'stats' });
-      return response?.User || response;
-    } else {
-      const data = await api.fetchAniListData?.(config);
-      return data?.User || data;
-    }
-  }
-
-  async handleSearchOperation(api, config) {
-    return { isSearchInterface: true, config };
-  }
-
-  async handleSingleOperation(api, config) {
-    if (config.source === 'mal') {
-      if (!config.mediaId) {
-        throw new Error('❌ Media ID is required for single media view');
+  injectMetadata(data, config) {
+  
+  if (!data) return data;
+  if (Array.isArray(data)) {
+    data.forEach(entry => {
+      if (entry) {
+        entry._zoroMeta = {
+          source: config.source,
+          mediaType: config.mediaType
+        };
       }
-      const response = await api.fetchMALData({ ...config, type: 'single' });
-      return response?.MediaList;
-    } else if (config.source === 'simkl') {
-      if (!config.mediaId) {
-        throw new Error('❌ Media ID is required for single media view');
-      }
-      const response = await api.fetchSimklData({ ...config, type: 'single' });
-      return response?.MediaList;
-    } else {
-      const data = await api.fetchAniListData?.(config);
-      return data?.MediaList;
-    }
+    });
+    return data;
   }
+  
+  // Handle single entry
+  if (data && typeof data === 'object') {
+    data._zoroMeta = {
+      source: config.source,
+      mediaType: config.mediaType
+    };
+  }
+  
+  return data;
+}
 
-  async handleListOperation(api, config) {
-    if (config.source === 'mal') {
-      const response = await api.fetchMALData({
-        ...config,
-        type: 'list'
-      });
-      return response?.MediaListCollection?.lists?.flatMap(l => l.entries) || [];
-    } else if (config.source === 'simkl') {
-      const response = await api.fetchSimklData({
-        ...config,
-        type: 'list'
-      });
-      return response?.MediaListCollection?.lists?.flatMap(l => l.entries) || [];
-    } else {
-      const data = await api.fetchAniListData?.({ ...config });
-      return data?.MediaListCollection?.lists?.flatMap(l => l.entries) || [];
-    }
+ async handleStatsOperation(api, config) {
+  if (config.source === 'mal') {
+    const response = await api.fetchMALData({ ...config, type: 'stats' });
+    const data = response?.User || response;
+    return this.injectMetadata(data, config);
+  } else if (config.source === 'simkl') {
+    const response = await api.fetchSimklData({ ...config, type: 'stats' });
+    const data = response?.User || response;
+    return this.injectMetadata(data, config);
+  } else {
+    const data = await api.fetchAniListData?.(config);
+    const result = data?.User || data;
+    return this.injectMetadata(result, config);
   }
+}
 
-  async handleTrendingOperation(api, config) {
-    return { isTrendingOperation: true, config };
+async handleSearchOperation(api, config) {
+  return { isSearchInterface: true, config };
+}
+
+async handleSingleOperation(api, config) {
+  if (config.source === 'mal') {
+    if (!config.mediaId) {
+      throw new Error('❌ Media ID is required for single media view');
+    }
+    const response = await api.fetchMALData({ ...config, type: 'single' });
+    const data = response?.MediaList;
+    return this.injectMetadata(data, config);
+  } else if (config.source === 'simkl') {
+    if (!config.mediaId) {
+      throw new Error('❌ Media ID is required for single media view');
+    }
+    const response = await api.fetchSimklData({ ...config, type: 'single' });
+    const data = response?.MediaList;
+    return this.injectMetadata(data, config);
+  } else {
+    const data = await api.fetchAniListData?.(config);
+    const result = data?.MediaList;
+    return this.injectMetadata(result, config);
   }
+}
+
+async handleListOperation(api, config) {
+  if (config.source === 'mal') {
+    const response = await api.fetchMALData({
+      ...config,
+      type: 'list'
+    });
+    const entries = response?.MediaListCollection?.lists?.flatMap(l => l.entries) || [];
+    return this.injectMetadata(entries, config);
+  } else if (config.source === 'simkl') {
+    const response = await api.fetchSimklData({
+      ...config,
+      type: 'list'
+    });
+    const entries = response?.MediaListCollection?.lists?.flatMap(l => l.entries) || [];
+    return this.injectMetadata(entries, config);
+  } else {
+    const data = await api.fetchAniListData?.({ ...config });
+    const entries = data?.MediaListCollection?.lists?.flatMap(l => l.entries) || [];
+    return this.injectMetadata(entries, config);
+  }
+}
+
+async handleTrendingOperation(api, config) {
+  return { isTrendingOperation: true, config };
+}
 
   async renderData(el, data, config) {
     const { type } = config;
@@ -7703,16 +7738,19 @@ generateInsights(stats, type, user) {
       editBtn.onclick = async (e) => {
         e.preventDefault();
         e.stopPropagation();
+        
+        const entrySource = entry?._zoroMeta?.source || config.source || 'anilist';
+  const entryMediaType = entry?._zoroMeta?.mediaType || config.mediaType;
 
-        const isAuthenticated = config.source === 'mal' 
-          ? this.plugin.settings.malAccessToken 
-          : this.plugin.settings.accessToken;
+        const isAuthenticated = entrySource === 'mal' 
+    ? this.plugin.settings.malAccessToken 
+    : this.plugin.settings.accessToken;
 
-        if (!isAuthenticated) {
-          console.log(`[Zoro] Not authenticated with ${config.source || 'anilist'}`);
-          this.plugin.prompt.createAuthenticationPrompt(config.source || 'anilist');
-          return;
-        }
+  if (!isAuthenticated) {
+    console.log(`[Zoro] Not authenticated with ${entrySource}`);
+    this.plugin.prompt.createAuthenticationPrompt(entrySource);
+    return;
+  }
 
         editBtn.dataset.loading = 'true';
         editBtn.innerHTML = `
@@ -7732,11 +7770,11 @@ generateInsights(stats, type, user) {
           
           let existingEntry = null;
           
-          if (config.source === 'mal') {
-            existingEntry = await this.plugin.malApi.getUserEntryForMedia?.(media.id, config.mediaType) || null;
-          } else {
-            existingEntry = await this.plugin.api.getUserEntryForMedia(media.id, config.mediaType);
-          }
+          if (entrySource === 'mal') {
+    existingEntry = await this.plugin.malApi.getUserEntryForMedia?.(media.id, entryMediaType) || null;
+  } else {
+    existingEntry = await this.plugin.api.getUserEntryForMedia(media.id, entryMediaType);
+  }
           
           console.log(`[Zoro] User entry result:`, existingEntry ? 'Found existing entry' : 'Not in user list');
           
@@ -7762,8 +7800,8 @@ generateInsights(stats, type, user) {
             async (updates) => {
               try {
                 console.log(`[Zoro] Updating media ${media.id} with:`, updates);
-                
-                const api = config.source === 'mal' ? this.plugin.malApi : this.plugin.api;
+                 
+                 const api = entrySource === 'mal' ? this.plugin.malApi : this.plugin.api;
                 await api.updateMediaListEntry(media.id, updates);
                 
                 const successMessage = isNewEntry ? '✅ Added to list!' : '✅ Updated!';
@@ -7787,7 +7825,7 @@ generateInsights(stats, type, user) {
               editBtn.dataset.loading = 'false';
               editBtn.style.pointerEvents = 'auto';
             },
-            config.source
+            entrySource
           );
 
         } catch (error) {
@@ -7953,26 +7991,36 @@ class Edit {
         close: { class: 'zoro-modal-close' }
       }
     };
+
+    this.renderer = new RenderEditModal(this.config);
+    this.support = new SupportEditModal(plugin, this.renderer);
+    this.anilistProvider = new AniListEditModal(plugin);
+    this.malProvider = new MALEditModal(plugin);
+    this.providers = {
+      'anilist': this.anilistProvider,
+      'mal': this.malProvider
+    };
   }
 
   createEditModal(entry, onSave, onCancel, source = 'anilist') {
-    const modal = this.createModalStructure();
+    const provider = this.providers[source];
+    const modal = this.renderer.createModalStructure();
     const { overlay, content, form } = modal;
     
-    const title = this.createTitle(entry);
-    const closeBtn = Edit.createCloseButton(() => this.closeModal(modal.container, onCancel));
-    const favoriteBtn = this.createFavoriteButton(entry, source);
-    const formFields = this.createFormFields(entry);
-    const quickButtons = this.createQuickProgressButtons(entry, formFields.progress.input, formFields.status.input);
-    const actionButtons = this.createActionButtons(entry, onSave, modal, source);
+    const title = this.renderer.createTitle(entry);
+    const closeBtn = this.renderer.createCloseButton(() => this.support.closeModal(modal.container, onCancel));
+    const favoriteBtn = this.renderer.createFavoriteButton(entry, source, (entry, btn, src) => this.toggleFavorite(entry, btn, src));
+    const formFields = this.renderer.createFormFields(entry);
+    const quickButtons = this.renderer.createQuickProgressButtons(entry, formFields.progress.input, formFields.status.input);
+    const actionButtons = this.renderer.createActionButtons(entry, () => this.handleRemove(entry, modal.container, source), this.config);
     
-    this.setupModalInteractions(modal, overlay, onCancel);
-    this.setupFormSubmission(form, entry, onSave, actionButtons.save, formFields, modal, source);
-    this.setupEscapeListener(onCancel, modal, () => {
+    this.support.setupModalInteractions(modal, overlay, onCancel);
+    this.support.setupFormSubmission(form, () => this.handleSave(entry, onSave, actionButtons.save, formFields, modal, source));
+    this.support.setupEscapeListener(onCancel, modal, () => {
       this.handleSave(entry, onSave, actionButtons.save, formFields, modal, source);
     });
     
-    this.assembleModal(content, form, {
+    this.renderer.assembleModal(content, form, {
       title,
       closeBtn,
       favoriteBtn,
@@ -7983,15 +8031,90 @@ class Edit {
     
     document.body.appendChild(modal.container);
     
-    if (source === 'anilist') {
-      this.initializeFavoriteButton(entry, favoriteBtn);
+    if (provider.supportsFeature('favorites')) {
+      this.initializeFavoriteButton(entry, favoriteBtn, source);
     } else {
       favoriteBtn.style.display = 'none';
     }
     
     return modal;
   }
-  
+
+  async initializeFavoriteButton(entry, favBtn, source) {
+    const provider = this.providers[source];
+    await provider.initializeFavoriteButton(entry, favBtn);
+  }
+
+  async toggleFavorite(entry, favBtn, source) {
+    const provider = this.providers[source];
+    await provider.toggleFavorite(entry, favBtn);
+  }
+
+  async handleSave(entry, onSave, saveBtn, formFields, modal, source) {
+    if (this.saving) return;
+    this.saving = true;
+    this.support.setSavingState(saveBtn);
+    
+    const form = modal.form;
+    
+    try {
+      const updates = this.support.extractFormData(formFields);
+      const provider = this.providers[source];
+      
+      await provider.updateEntry(entry, updates, onSave);
+      
+      provider.invalidateCache(entry);
+      this.support.refreshUI(entry);
+      this.support.closeModal(modal.container, () => {});
+      
+      new Notice('✅ Saved');
+    } catch (err) {
+      this.support.showModalError(form, `Save failed: ${err.message}`);
+      this.support.resetSaveButton(saveBtn);
+      this.saving = false;
+      return;
+    }
+    
+    this.support.resetSaveButton(saveBtn);
+    this.saving = false;
+  }
+
+  async handleRemove(entry, modalElement, source) {
+    if (!confirm('Remove this entry?')) return;
+    
+    const removeBtn = modalElement.querySelector('.zoro-remove-btn');
+    this.support.setRemovingState(removeBtn);
+    
+    try {
+      const provider = this.providers[source];
+      
+      if (!provider.supportsFeature('remove')) {
+        throw new Error(`${source.toUpperCase()} does not support removing entries via API`);
+      }
+      
+      await provider.removeEntry(entry);
+      
+      provider.invalidateCache(entry);
+      this.support.refreshUI(entry);
+      this.support.closeModal(modalElement, () => {});
+      
+      new Notice('✅ Removed');
+    } catch (e) {
+      this.support.showModalError(modalElement.querySelector('.zoro-edit-form'), `Remove failed: ${e.message}`);
+      this.support.resetRemoveButton(removeBtn);
+    }
+  }
+
+  closeModal(modalElement, onCancel) {
+    this.support.closeModal(modalElement, onCancel);
+  }
+}
+
+class RenderEditModal {
+  constructor(config) {
+    this.config = config;
+  }
+
   createModalStructure() {
     const container = document.createElement('div');
     container.className = 'zoro-edit-modal';
@@ -8018,7 +8141,7 @@ class Edit {
     return title;
   }
   
-  static createCloseButton(onClick) {
+  createCloseButton(onClick) {
     const btn = document.createElement('button');
     btn.className = 'panel-close-btn';
     btn.innerHTML = '×';
@@ -8027,7 +8150,7 @@ class Edit {
     return btn;
   }
 
-  createFavoriteButton(entry, source) {
+  createFavoriteButton(entry, source, onToggle) {
     const favBtn = document.createElement('button');
     favBtn.className = this.config.buttons.favorite.class;
     favBtn.type = 'button';
@@ -8042,7 +8165,7 @@ class Edit {
       'zoro-fav-btn zoro-heart' : 
       'zoro-fav-btn zoro-no-heart';
     
-    favBtn.onclick = () => this.toggleFavorite(entry, favBtn, source);
+    favBtn.onclick = () => onToggle(entry, favBtn, source);
     return favBtn;
   }
   
@@ -8201,19 +8324,19 @@ class Edit {
     return button;
   }
 
-  createActionButtons(entry, onSave, modal, source) {
+  createActionButtons(entry, onRemove, config) {
     const container = document.createElement('div');
     container.className = 'zoro-modal-buttons';
     
     const removeBtn = this.createActionButton({
-      label: this.config.buttons.remove.label,
-      className: this.config.buttons.remove.class,
-      onClick: () => this.handleRemove(entry, modal.container, source)
+      label: config.buttons.remove.label,
+      className: config.buttons.remove.class,
+      onClick: onRemove
     });
     
     const saveBtn = this.createActionButton({
-      label: this.config.buttons.save.label,
-      className: this.config.buttons.save.class,
+      label: config.buttons.save.label,
+      className: config.buttons.save.class,
       type: 'submit'
     });
     
@@ -8247,41 +8370,11 @@ class Edit {
       elements.actionButtons.container
     );
   }
-  
-  setupModalInteractions(modal, overlay, onCancel) {
-    overlay.onclick = () => this.closeModal(modal.container, onCancel);
-  }
-  
-  setupFormSubmission(form, entry, onSave, saveBtn, formFields, modal, source) {
-    form.onsubmit = async (e) => {
-      e.preventDefault();
-      await this.handleSave(entry, onSave, saveBtn, formFields, modal, source);
-    };
-  }
-  
-  setupEscapeListener(onCancel, modal, saveFunction) {
-    const escListener = (e) => {
-      if (e.key === 'Escape') {
-        this.closeModal(modal.container, onCancel);
-      }
-      if (e.key === 'Enter' && e.ctrlKey) {
-        saveFunction();
-      }
-    };
-    
-    this.plugin.addGlobalListener(document, 'keydown', escListener);
-    modal._escListener = escListener;
-  }
-  
-  closeModal(modalElement, onCancel) {
-    if (modalElement && modalElement.parentNode) {
-      modalElement.parentNode.removeChild(modalElement);
-    }
-    if (modalElement._escListener) {
-      document.removeEventListener('keydown', modalElement._escListener);
-    }
-    this.plugin.removeAllGlobalListeners();
-    onCancel();
+}
+
+class AniListEditModal {
+  constructor(plugin) {
+    this.plugin = plugin;
   }
 
   async initializeFavoriteButton(entry, favBtn) {
@@ -8320,9 +8413,7 @@ class Edit {
     }
   }
 
-  async toggleFavorite(entry, favBtn, source = 'anilist') {
-    if (source !== 'anilist') return;
-    
+  async toggleFavorite(entry, favBtn) {
     favBtn.disabled = true;
     const wasAlreadyFavorited = entry.media.isFavourite;
     
@@ -8385,57 +8476,166 @@ class Edit {
     }
   }
 
-  async handleSave(entry, onSave, saveBtn, formFields, modal, source = 'anilist') {
-  if (this.saving) return;
-  this.saving = true;
-  saveBtn.disabled = true;
-  saveBtn.textContent = 'Saving...';
-  
-  const form = modal.form;
-  const scoreVal = parseFloat(formFields.score.input.value);
-  
-  if (formFields.score.input.value && (isNaN(scoreVal) || scoreVal < 0 || scoreVal > 10)) {
-    this.showModalError(form, "Score must be between 0 and 10");
-    this.resetSaveButton(saveBtn);
-    return;
+  async updateEntry(entry, updates, onSave) {
+    await onSave(updates);
+    Object.assign(entry, updates);
+    return entry;
   }
-  
-  try {
-    const updates = {
-      status: formFields.status.input.value,
-      score: formFields.score.input.value === '' ? null : scoreVal,
-      progress: parseInt(formFields.progress.input.value) || 0
-    };
-    
-    let updatedEntry;
-    if (source === 'mal') {
-      updatedEntry = await this.plugin.malApi.updateMediaListEntry(entry.media.id, updates);
-      Object.assign(entry, updatedEntry);
-    } else {
-      await onSave(updates);
-      Object.assign(entry, updates);
-    }
-    
-    this.invalidateCache(entry, source);
-    this.refreshUI(entry);
-    this.closeModal(modal.container, () => {});
-    
-    new Notice('✅ Saved');
-  } catch (err) {
-    this.showModalError(form, `Save failed: ${err.message}`);
-    this.resetSaveButton(saveBtn);
-    return;
+
+  async removeEntry(entry) {
+    const mutation = `
+      mutation ($id: Int) {
+        DeleteMediaListEntry(id: $id) { deleted }
+      }`;
+    await this.plugin.requestQueue.add(() =>
+      requestUrl({
+        url: 'https://graphql.anilist.co',
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.plugin.settings.accessToken}`
+        },
+        body: JSON.stringify({ query: mutation, variables: { id: entry.id } })
+      })
+    );
   }
-  
-  this.resetSaveButton(saveBtn);
+
+  invalidateCache(entry) {
+    this.plugin.cache.invalidateByMedia(String(entry.media.id));
+  }
+
+  updateAllFavoriteButtons(entry) {
+    document.querySelectorAll(`[data-media-id="${entry.media.id}"] .zoro-fav-btn`)
+      .forEach(btn => {
+        btn.className = entry.media.isFavourite ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart';
+      });
+  }
+
+  supportsFeature(feature) {
+    return ['favorites', 'remove', 'update'].includes(feature);
+  }
 }
 
-async handleRemove(entry, modalElement, source = 'anilist') {
-  if (!confirm('Remove this entry?')) return;
-  
-  const removeBtn = modalElement.querySelector('.zoro-remove-btn');
-  removeBtn.disabled = true;
-  removeBtn.innerHTML = `
+class MALEditModal {
+  constructor(plugin) {
+    this.plugin = plugin;
+  }
+
+  async initializeFavoriteButton(entry, favBtn) {
+    favBtn.style.display = 'none';
+  }
+
+  async toggleFavorite(entry, favBtn) {
+    return;
+  }
+
+  async updateEntry(entry, updates) {
+    const updatedEntry = await this.plugin.malApi.updateMediaListEntry(entry.media.id, updates);
+    Object.assign(entry, updatedEntry);
+    return entry;
+  }
+
+  async removeEntry(entry) {
+    throw new Error('MAL does not support removing entries via API');
+  }
+
+  invalidateCache(entry) {
+    this.plugin.cache.invalidateByMedia(String(entry.media.id));
+    this.plugin.cache.invalidateScope('userData');
+  }
+
+  updateAllFavoriteButtons(entry) {
+  }
+
+  supportsFeature(feature) {
+    return ['update'].includes(feature);
+  }
+}
+
+class SupportEditModal {
+  constructor(plugin, renderer) {
+    this.plugin = plugin;
+    this.renderer = renderer;
+  }
+
+  validateScore(scoreValue) {
+    const scoreVal = parseFloat(scoreValue);
+    if (scoreValue && (isNaN(scoreVal) || scoreVal < 0 || scoreVal > 10)) {
+      return { valid: false, error: "Score must be between 0 and 10" };
+    }
+    return { valid: true, value: scoreValue === '' ? null : scoreVal };
+  }
+
+  extractFormData(formFields) {
+    const scoreValidation = this.validateScore(formFields.score.input.value);
+    if (!scoreValidation.valid) {
+      throw new Error(scoreValidation.error);
+    }
+
+    return {
+      status: formFields.status.input.value,
+      score: scoreValidation.value,
+      progress: parseInt(formFields.progress.input.value) || 0
+    };
+  }
+
+  setupModalInteractions(modal, overlay, onCancel) {
+    overlay.onclick = () => this.closeModal(modal.container, onCancel);
+  }
+
+  setupFormSubmission(form, handleSaveFunction) {
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      await handleSaveFunction();
+    };
+  }
+
+  setupEscapeListener(onCancel, modal, saveFunction) {
+    const escListener = (e) => {
+      if (e.key === 'Escape') {
+        this.closeModal(modal.container, onCancel);
+      }
+      if (e.key === 'Enter' && e.ctrlKey) {
+        saveFunction();
+      }
+    };
+    
+    this.plugin.addGlobalListener(document, 'keydown', escListener);
+    modal._escListener = escListener;
+  }
+
+  closeModal(modalElement, onCancel) {
+    if (modalElement && modalElement.parentNode) {
+      modalElement.parentNode.removeChild(modalElement);
+    }
+    if (modalElement._escListener) {
+      document.removeEventListener('keydown', modalElement._escListener);
+    }
+    this.plugin.removeAllGlobalListeners();
+    onCancel();
+  }
+
+  showModalError(form, msg) {
+    form.querySelector('.zoro-modal-error')?.remove();
+    const banner = document.createElement('div');
+    banner.className = 'zoro-modal-error';
+    banner.textContent = msg;
+    form.appendChild(banner);
+  }
+
+  resetSaveButton(saveBtn) {
+    saveBtn.disabled = false;
+    saveBtn.textContent = 'Save';
+  }
+
+  setSavingState(saveBtn) {
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'Saving...';
+  }
+
+  setRemovingState(removeBtn) {
+    removeBtn.disabled = true;
+    removeBtn.innerHTML = `
 <div class="sharingan-glow">
   <div class="tomoe-container">
     <span class="tomoe"></span>
@@ -8444,79 +8644,20 @@ async handleRemove(entry, modalElement, source = 'anilist') {
   </div>
 </div>
 `;
+  }
 
-  
-  try {
-    if (source === 'mal') {
-      new Notice('❌ MAL does not support removing entries via API', 5000);
-      throw new Error('MAL remove not supported');
-    } else {
-      const mutation = `
-        mutation ($id: Int) {
-          DeleteMediaListEntry(id: $id) { deleted }
-        }`;
-      await this.plugin.requestQueue.add(() =>
-        requestUrl({
-          url: 'https://graphql.anilist.co',
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${this.plugin.settings.accessToken}`
-          },
-          body: JSON.stringify({ query: mutation, variables: { id: entry.id } })
-        })
-      );
-    }
-    
-    this.invalidateCache(entry, source);
-    this.refreshUI(entry);
-    this.closeModal(modalElement, () => {});
-    
-    new Notice('✅ Removed');
-  } catch (e) {
-    this.showModalError(modalElement.querySelector('.zoro-edit-form'), `Remove failed: ${e.message}`);
+  resetRemoveButton(removeBtn) {
     removeBtn.disabled = false;
     removeBtn.textContent = '🗑️';
   }
-}
-  
-  resetSaveButton(saveBtn) {
-    saveBtn.disabled = false;
-    saveBtn.textContent = 'Save';
-    this.saving = false;
-  }
-  
-  showModalError(form, msg) {
-    form.querySelector('.zoro-modal-error')?.remove();
-    const banner = document.createElement('div');
-    banner.className = 'zoro-modal-error';
-    banner.textContent = msg;
-    form.appendChild(banner);
-  }
-  
-  invalidateCache(entry, source = 'anilist') {
-  if (source === 'mal') {
-    this.plugin.cache.invalidateByMedia(String(entry.media.id));
-    this.plugin.cache.invalidateScope('userData');
-  } else {
-    this.plugin.cache.invalidateByMedia(String(entry.media.id));
-  }
-}
-  
-  updateAllFavoriteButtons(entry) {
-    document.querySelectorAll(`[data-media-id="${entry.media.id}"] .zoro-fav-btn`)
-      .forEach(btn => {
-        btn.className = entry.media.isFavourite ? 'zoro-fav-btn zoro-heart' : 'zoro-fav-btn zoro-no-heart';
-      });
-  }
-  
+
   detectSource(entry) {
-  if (this.plugin.currentApi === 'mal' || entry.source === 'mal') {
-    return 'mal';
+    if (this.plugin.currentApi === 'mal' || entry.source === 'mal') {
+      return 'mal';
+    }
+    return 'anilist';
   }
-  return 'anilist';
-}
-  
+
   refreshUI(entry) {
     const card = document.querySelector(`.zoro-container [data-media-id="${entry.media.id}"]`);
     if (card) {
@@ -8652,14 +8793,35 @@ class DetailPanelSource {
     return missingBasicData || isAnimeWithoutAiring;
   }
 
-  async fetchDetailedData(mediaId, source = 'anilist', mediaType = null) {
+  extractSourceFromEntry(entry) {
+    return entry?._zoroMeta?.source || 'anilist';
+  }
+
+  extractMediaTypeFromEntry(entry) {
+    return entry?._zoroMeta?.mediaType || entry?.media?.type || null;
+  }
+
+  async fetchDetailedData(mediaId, entryOrSource = null, mediaType = null) {
+    let source, resolvedMediaType;
+
+    if (typeof entryOrSource === 'object' && entryOrSource !== null) {
+      source = this.extractSourceFromEntry(entryOrSource);
+      resolvedMediaType = this.extractMediaTypeFromEntry(entryOrSource);
+    } else if (typeof entryOrSource === 'string') {
+      source = entryOrSource;
+      resolvedMediaType = mediaType;
+    } else {
+      source = 'anilist';
+      resolvedMediaType = mediaType;
+    }
+
     let targetId = mediaId;
     let originalMalId = null;
-    let correctedType = mediaType;
+    let correctedType = resolvedMediaType;
 
     if (source === 'mal') {
       originalMalId = mediaId;
-      const typeForConversion = mediaType;
+      const typeForConversion = resolvedMediaType;
       
       const conversionResult = await this.convertMalToAnilistId(mediaId, typeForConversion);
       
@@ -8735,7 +8897,28 @@ class DetailPanelSource {
     }
   }
 
-  async fetchAndUpdateData(mediaId, source, mediaType, onUpdate) {
+  async fetchAndUpdateData(mediaId, entryOrSource = null, mediaTypeOrCallback = null, onUpdate = null) {
+    let source, mediaType, callback;
+
+    if (typeof entryOrSource === 'object' && entryOrSource !== null) {
+      source = this.extractSourceFromEntry(entryOrSource);
+      mediaType = this.extractMediaTypeFromEntry(entryOrSource);
+      callback = mediaTypeOrCallback;
+    } else if (typeof entryOrSource === 'string') {
+      source = entryOrSource;
+      if (typeof mediaTypeOrCallback === 'function') {
+        mediaType = null;
+        callback = mediaTypeOrCallback;
+      } else {
+        mediaType = mediaTypeOrCallback;
+        callback = onUpdate;
+      }
+    } else {
+      source = 'anilist';
+      mediaType = null;
+      callback = mediaTypeOrCallback;
+    }
+
     try {
       const detailedMedia = await this.fetchDetailedData(mediaId, source, mediaType);
       
@@ -8747,13 +8930,13 @@ class DetailPanelSource {
       }
       
       if (this.hasMoreData(detailedMedia)) {
-        onUpdate(detailedMedia, null);
+        callback(detailedMedia, null);
       }
       
       if (malDataPromise) {
         const malData = await malDataPromise;
         if (malData) {
-          onUpdate(detailedMedia, malData);
+          callback(detailedMedia, malData);
         }
       }
     } catch (error) {

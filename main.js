@@ -8834,7 +8834,7 @@ class DetailPanelSource {
   }
 
   extractSourceFromEntry(entry) {
-    return entry?._zoroMeta?.source || 'anilist';
+    return entry?._zoroMeta?.source || this.plugin.settings.defaultApiSource || 'anilist';
   }
 
   extractMediaTypeFromEntry(entry) {
@@ -8851,7 +8851,7 @@ class DetailPanelSource {
       source = entryOrSource;
       resolvedMediaType = mediaType;
     } else {
-      source = 'anilist';
+      source = this.plugin.settings.defaultApiSource || 'anilist';
       resolvedMediaType = mediaType;
     }
 
@@ -8954,7 +8954,7 @@ class DetailPanelSource {
         callback = onUpdate;
       }
     } else {
-      source = 'anilist';
+      source = this.plugin.settings.defaultApiSource || 'anilist';
       mediaType = null;
       callback = mediaTypeOrCallback;
     }
@@ -9433,8 +9433,6 @@ class OpenDetailPanel {
   }
 
   async showPanel(media, entry = null, triggerElement) {
-    const source = entry?.source || media.apiSource || this.plugin.settings.defaultApiSource || 'anilist';
-
     this.closePanel();
 
     const panel = this.renderer.createPanel(media, entry);
@@ -9452,7 +9450,8 @@ class OpenDetailPanel {
     this.plugin.requestQueue.showGlobalLoader();
     
     if (this.dataSource.shouldFetchDetailedData(media)) {
-      this.dataSource.fetchAndUpdateData(media.id, source, media.type, (detailedMedia, malData) => {
+      // NEW: Let DetailPanelSource handle source detection automatically
+      this.dataSource.fetchAndUpdateData(media.id, entry, (detailedMedia, malData) => {
         if (this.currentPanel === panel) {
           this.renderer.updatePanelContent(panel, detailedMedia, malData);
         }
@@ -9485,124 +9484,158 @@ class Trending {
     this.plugin = plugin; 
   }
 
-  async fetchAniListTrending(mediaType = 'ANIME', perPage = 20) {
-    const query = `
-      query ($type: MediaType, $perPage: Int) {
-        Page(page: 1, perPage: $perPage) {
-          media(type: $type, sort: TRENDING_DESC, status: RELEASING) {
-            id
-            title {
-              romaji
-              english
-              native
-            }
-            coverImage {
-              large
-              medium
-            }
-            format
-            averageScore
-            genres
-            episodes
-            chapters
-            status
+  async fetchAniListTrending(mediaType = 'ANIME', limit = 20) {
+  const query = `
+    query ($type: MediaType, $perPage: Int) {
+      Page(page: 1, perPage: $perPage) {
+        media(type: $type, sort: TRENDING_DESC, status: RELEASING) {
+          id
+          idMal  // Include MAL ID for cross-reference
+          title {
+            romaji
+            english
+            native
           }
+          coverImage {
+            large
+            medium
+          }
+          format
+          averageScore
+          genres
+          episodes
+          chapters
+          status
         }
       }
-    `;
-
-    const variables = {
-      type: mediaType.toUpperCase(),
-      perPage: perPage
-    };
-
-    const response = await fetch('https://graphql.anilist.co', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ query, variables })
-    });
-
-    if (!response.ok) {
-      throw new Error(`AniList API error: ${response.status}`);
     }
+  `;
 
-    const data = await response.json();
-    return data.data.Page.media;
+  const variables = {
+    type: mediaType.toUpperCase(),
+    perPage: limit
+  };
+
+  const response = await fetch('https://graphql.anilist.co', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ query, variables })
+  });
+
+  if (!response.ok) {
+    throw new Error(`AniList API error: ${response.status}`);
   }
 
-  async fetchJikanTrending(mediaType = 'anime', limit = 20) {
-    const type = mediaType.toLowerCase();
-    const url = `https://api.jikan.moe/v4/top/${type}?filter=airing&limit=${limit}`;
-    
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`Jikan API error: ${response.status}`);
+  const data = await response.json();
+  
+  return (data.data.Page.media || []).map(media => ({
+    ...media,
+    _zoroMeta: {
+      source: 'anilist', // Explicitly mark as AniList
+      mediaType: mediaType
+    }
+  }));
+}
+
+
+  
+async fetchJikanTrending(mediaType = 'anime', limit = 20) {
+  const type = mediaType.toLowerCase();
+  const url = `https://api.jikan.moe/v4/top/${type}?filter=airing&limit=${limit}`;
+  
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Jikan API error: ${response.status}`);
+  }
+
+  const data = await response.json();
+  
+  const unique = [];
+  const seen = new Set();
+  
+  (data.data || []).forEach(item => {
+    if (!seen.has(item.mal_id)) {
+      seen.add(item.mal_id);
+      unique.push({
+        id: item.mal_id,  // Keep MAL ID as primary
+        malId: item.mal_id, // Explicitly store MAL ID
+        title: {
+          romaji: item.title || '',
+          english: item.title_english || '',
+          native: item.title_japanese || ''
+        },
+        coverImage: {
+          large: item.images?.jpg?.large_image_url,
+          medium: item.images?.jpg?.image_url
+        },
+        format: item.type,
+        averageScore: item.score ? Math.round(item.score * 10) : null,
+        genres: item.genres?.map(g => g.name) || [],
+        episodes: item.episodes,
+        chapters: type === 'manga' ? item.chapters : undefined,
+        status: item.status,
+        _zoroMeta: {
+          source: 'mal', // Explicitly mark as MAL
+          mediaType: type === 'manga' ? 'MANGA' : 'ANIME'
+        }
+      });
+    }
+  });
+
+  return unique.slice(0, limit);
+}
+
+
+async renderTrendingBlock(el, config) {
+  el.empty();
+  el.appendChild(this.plugin.render.createListSkeleton(10));
+
+  try {
+    const type = (config.mediaType || 'ANIME').toLowerCase();
+    let items = [];
+    let source = config.source || 'anilist';
+
+    if (config.source === 'mal') {
+      items = await this.plugin.requestQueue.add(() => 
+        this.fetchJikanTrending(type, 20)
+      );
+      source = 'mal';
+    } else if (config.source === 'anilist') {
+      items = await this.plugin.requestQueue.add(() => 
+        this.fetchAniListTrending(config.mediaType || 'ANIME', 20)
+      );
+      source = 'anilist';
+    } else {
+      // Default behavior - fetch AniList trending
+      items = await this.plugin.requestQueue.add(() => 
+        this.fetchAniListTrending(config.mediaType || 'ANIME', 20)
+      );
+      source = 'anilist';
     }
 
-    const data = await response.json();
-    
-    const unique = [];
-    const seen = new Set();
-    
-    (data.data || []).forEach(item => {
-      if (!seen.has(item.mal_id)) {
-        seen.add(item.mal_id);
-        unique.push({
-          id: item.mal_id,
-          title: {
-            romaji: item.title || '',
-            english: item.title_english,
-            native: item.title_japanese
-          },
-          coverImage: {
-            large: item.images?.jpg?.large_image_url,
-            medium: item.images?.jpg?.image_url
-          },
-          format: item.type,
-          averageScore: item.score ? Math.round(item.score * 10) : null,
-          genres: item.genres?.map(g => g.name) || [],
-          episodes: item.episodes,
-          chapters: type === 'manga' ? item.chapters : undefined,
-          status: item.status
-        });
+    // Ensure metadata is set for each item
+    items.forEach(item => {
+      if (!item._zoroMeta) {
+        item._zoroMeta = {
+          source: source,
+          mediaType: config.mediaType || 'ANIME'
+        };
       }
     });
 
-    return unique.slice(0, limit);
-  }
-
-  async renderTrendingBlock(el, config) {
     el.empty();
-    el.appendChild(this.plugin.render.createListSkeleton(10));
-
-    try {
-      const type = (config.mediaType || 'ANIME').toLowerCase();
-      let items = [];
-
-      if (config.source === 'mal') {
-        items = await this.plugin.requestQueue.add(() => 
-          this.fetchJikanTrending(type, 20)
-        );
-      } else if (config.source === 'anilist') {
-        items = await this.plugin.requestQueue.add(() => 
-          this.fetchAniListTrending(config.mediaType || 'ANIME', 20)
-        );
-      } else {
-        const [anilistItems, malItems] = await Promise.all([
-          this.plugin.requestQueue.add(() => this.fetchAniListTrending(config.mediaType || 'ANIME', 10)),
-          this.plugin.requestQueue.add(() => this.fetchJikanTrending(type, 10))
-        ]);
-        items = [...anilistItems, ...malItems];
-      }
-
-      el.empty();
-      this.plugin.render.renderSearchResults(el, items, { layout: config.layout || 'card', mediaType: config.mediaType || 'ANIME' });
-    } catch (err) {
-      this.plugin.renderError(el, err.message, 'Trending');
-    }
+    this.plugin.render.renderSearchResults(el, items, {
+      layout: config.layout || 'card',
+      mediaType: config.mediaType || 'ANIME',
+      source: source
+    });
+  } catch (err) {
+    this.plugin.renderError(el, err.message, 'Trending');
   }
+}
+
 }
 
 class Authentication {

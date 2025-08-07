@@ -4312,7 +4312,7 @@ class MalApi {
     }
   }
   
-  if (updates.score !== undefined && updates.score !== null && updates.score > 0) {
+  if (updates.score !== undefined && updates.score !== null) {
     const score = Math.max(0, Math.min(10, Math.round(updates.score)));
     body.append('score', score.toString());
   }
@@ -6661,925 +6661,247 @@ parseInlineLink(href) {
 class Render {
   constructor(plugin) {
     this.plugin = plugin;
-  }
-  logDebug(...args) {
-  if (this.plugin.settings.debugMode) {
-    console.log('[Zoro-Render]', ...args);
-  }
-}
-  renderSearchInterface(el, config) {
-  el.empty();
-  el.className = 'zoro-search-container';
-
-  const searchDiv = el.createDiv({ cls: 'zoro-search-input-container' });
-  const input = searchDiv.createEl('input', { type: 'text', cls: 'zoro-search-input' });
-  input.placeholder = config.mediaType === 'ANIME' ? 'Search anime…' : 'Search manga…';
-
-  const resultsDiv = el.createDiv({ cls: 'zoro-search-results' });
-  let timeout;
-
-  const doSearch = async () => {
-    const term = input.value.trim();
-    if (term.length < 3) {
-      resultsDiv.innerHTML = '<div class="zoro-search-message">Type at least 3 characters…</div>';
-      return;
-    }
     
-    try {
-      resultsDiv.innerHTML = '';
-      resultsDiv.appendChild(this.createListSkeleton(5));
-      
-      let data;
-      if (config.source === 'mal') {
-        data = await this.plugin.malApi.fetchMALData({ 
-          ...config, 
-          type: 'search',
-          search: term, 
-          query: term, // Support both parameters
-          page: 1, 
-          perPage: 5 
-        });
-      } else {
-        data = await this.plugin.api.fetchAniListData({ 
-          ...config, 
-          type: 'search',
-          search: term, 
-          page: 1, 
-          perPage: 5 
-        });
-      }
-      
-      resultsDiv.innerHTML = '';
-      this.renderSearchResults(resultsDiv, data.Page.media, config);
-    } catch (e) {
-      this.plugin.renderError(resultsDiv, e.message);
+    // Initialize utility helpers
+    this.apiHelper = new APISourceHelper(plugin);
+    this.formatter = new FormatterHelper();
+    
+    // Initialize specialized renderers
+    this.cardRenderer = new CardRenderer(this);
+    this.searchRenderer = new SearchRenderer(this);
+    this.tableRenderer = new TableRenderer(this);
+    this.mediaListRenderer = new MediaListRenderer(this);
+    this.statsRenderer = new StatsRenderer(this);
+  }
+
+  // Debug logging - unchanged
+  logDebug(...args) {
+    if (this.plugin.settings.debugMode) {
+      console.log('[Zoro-Render]', ...args);
     }
-  };
+  }
 
-  input.addEventListener('input', () => { clearTimeout(timeout); timeout = setTimeout(doSearch, 300); });
-  input.addEventListener('keypress', e => { if (e.key === 'Enter') doSearch(); });
-}
-
+  // ========== PUBLIC API METHODS - UNCHANGED INTERFACE ==========
+  
+  renderSearchInterface(el, config) {
+    return this.searchRenderer.render(el, config);
+  }
 
   renderMediaList(el, entries, config) {
-    el.empty();
-    el.className = 'zoro-container';
-    
-    if (config.layout === 'table') {
-      this.renderTableLayout(el, entries, config);
-      return;
-    }
-
-    const grid = el.createDiv({ cls: 'zoro-cards-grid' });
-    const fragment = document.createDocumentFragment();
-    entries.forEach(entry => {
-      fragment.appendChild(this.createMediaCard(entry, config));
-    });
-    
-    grid.appendChild(fragment);
+    return this.mediaListRenderer.render(el, entries, config);
   }
 
   renderSearchResults(el, media, config) {
-    el.empty();
-    if (media.length === 0) {
-      el.innerHTML = '<div class="zoro-search-message">No results found.</div>';
-      return;
-    }
-
-    const grid = el.createDiv({ cls: 'zoro-cards-grid' });
-    const fragment = document.createDocumentFragment();
-    media.forEach(item => {
-      fragment.appendChild(this.createMediaCard(item, config, { isSearch: true }));
-    });
-    
-    grid.appendChild(fragment);
+    return this.searchRenderer.renderSearchResults(el, media, config);
   }
 
-   renderTableLayout(el, entries, config) {
-  const table = el.createEl('table', { cls: 'zoro-table' });
-  const headers = ['Title', 'Format', 'Status'];
-  if (this.plugin.settings.showProgress) headers.push('Progress');
-  if (this.plugin.settings.showRatings) headers.push('Score');
-  if (this.plugin.settings.showGenres) headers.push('Genres');
-
-  table.createTHead().createEl('tr', null, tr =>
-    headers.forEach(h => tr.createEl('th', { text: h }))
-  );
-
-  const tbody = table.createTBody();
-  const fragment = document.createDocumentFragment();
-
-  entries.forEach(entry => {
-    const m = entry.media;
-    const tr = fragment.createEl('tr');
-    tr.createEl('td', null, td =>
-      td.createEl('a', {
-        text: m.title.english || m.title.romaji,
-        href: config.source === 'mal' 
-          ? this.plugin.getMALUrl(m.id, config.mediaType)
-          : this.plugin.getAniListUrl(m.id, config.mediaType),
-        cls: 'zoro-title-link',
-        target: '_blank'
-      })
-    );
-    tr.createEl('td', { text: m.format || '-' });
-    tr.createEl('td', null, td => {
-      const s = td.createEl('span', {
-        text: entry.status,
-        cls: `status-badge status-${entry.status.toLowerCase()} clickable-status`
-      });
-      s.onclick = e => {
-        e.preventDefault();
-        e.stopPropagation();
-        
-        // Check authentication based on source
-        const isAuthenticated = config.source === 'mal' 
-          ? this.plugin.settings.malAccessToken 
-          : this.plugin.settings.accessToken;
-          
-        if (!isAuthenticated) {
-          this.plugin.prompt.createAuthenticationPrompt();
-          return;
-        }
-        this.plugin.handleEditClick(e, entry, s, config);
-      };
-    });
-    if (this.plugin.settings.showProgress)
-      tr.createEl('td', {
-        text: `${entry.progress ?? 0}/${m.episodes ?? m.chapters ?? '?'}`
-      });
-    if (this.plugin.settings.showRatings)
-      tr.createEl('td', { text: entry.score != null ? `★ ${entry.score}` : '-' });
-    if (this.plugin.settings.showGenres)
-      tr.createEl('td', {
-        text: (m.genres || []).slice(0, 3).join(', ') || '-'
-      });
-  });
-
-  tbody.appendChild(fragment);
-}
-
+  renderTableLayout(el, entries, config) {
+    return this.tableRenderer.render(el, entries, config);
+  }
 
   renderSingleMedia(el, mediaList, config) {
-  const m = mediaList.media;
-  el.empty(); 
-  el.className = 'zoro-container';
-  const card = el.createDiv({ cls: 'zoro-single-card' });
-
-  if (this.plugin.settings.showCoverImages) {
-    card.createEl('img', { 
-      cls: 'media-cover', 
-      attr: { 
-        src: m.coverImage.large, 
-        alt: m.title.english || m.title.romaji 
-      } 
-    });
-  }
-  
-  const info = card.createDiv({ cls: 'media-info' });
-  info.createEl('h3', null, h => {
-    h.createEl('a', { 
-      text: m.title.english || m.title.romaji, 
-      href: config.source === 'mal' 
-        ? this.plugin.getMALUrl(m.id, config.mediaType)
-        : this.plugin.getAniListUrl(m.id, config.mediaType), 
-      cls: 'zoro-title-link', 
-      target: '_blank' 
-    });
-  });
-
-  const details = info.createDiv({ cls: 'media-details' });
-  if (m.format) details.createEl('span', { text: m.format, cls: 'format-badge' });
-  details.createEl('span', { 
-    text: mediaList.status, 
-    cls: `status-badge status-${mediaList.status.toLowerCase()}` 
-  });
-  
-  const status = details.lastChild;
-  status.classList.add('clickable-status');
-  status.onclick = e => {
-    e.preventDefault(); 
-    e.stopPropagation();
-    
-    // Check authentication based on source
-    const isAuthenticated = config.source === 'mal' 
-      ? this.plugin.settings.malAccessToken 
-      : this.plugin.settings.accessToken;
-      
-    if (!isAuthenticated) {
-      this.plugin.prompt.createAuthenticationPrompt();
-      return;
-    }
-    this.plugin.handleEditClick(e, mediaList, status, config);
-  };
-
-  if (this.plugin.settings.showProgress) {
-    details.createEl('span', { 
-      text: `${mediaList.progress}/${m.episodes || m.chapters || '?'}`, 
-      cls: 'progress' 
-    });
-  }
-  
-  if (this.plugin.settings.showRatings && mediaList.score != null) {
-    details.createEl('span', { 
-      text: `★ ${mediaList.score}`, 
-      cls: 'score' 
-    });
+    return this.mediaListRenderer.renderSingle(el, mediaList, config);
   }
 
-  if (this.plugin.settings.showGenres && m.genres?.length) {
-    const g = info.createDiv({ cls: 'genres' });
-    m.genres.slice(0, 3).forEach(genre => 
-      g.createEl('span', { text: genre, cls: 'genre-tag' })
-    );
+  renderUserStats(el, user, options = {}) {
+    return this.statsRenderer.render(el, user, options);
   }
-}
-
-// Optimized and functional stats rendering methods for the Render class
-
-renderUserStats(el, user, options = {}) {
-  const {
-    layout = 'standard',
-    mediaType = 'ANIME',
-    showComparisons = true,
-    showTrends = true
-  } = options;
-
-  el.empty();
-  el.className = `zoro-container zoro-stats-container zoro-stats-${layout}`;
-
-  if (!user || !user.statistics) {
-    this.renderStatsError(el, 'No statistics available for this user');
-    return;
-  }
-
-  const fragment = document.createDocumentFragment();
-
-  // User header with key info
-  this.renderStatsHeader(fragment, user);
-
-  // Main overview cards
-  this.renderStatsOverview(fragment, user, { showComparisons });
-
-  // Detailed breakdowns based on layout
-  if (layout !== 'minimal') {
-    this.renderStatsBreakdowns(fragment, user, mediaType);
-  }
-
-  // Activity insights
-  if (layout === 'detailed' && showTrends) {
-    this.renderStatsInsights(fragment, user, mediaType);
-  }
-
-  // Favorites showcase
-  this.renderStatsFavorites(fragment, user, mediaType);
-
-  el.appendChild(fragment);
-}
-
-renderStatsError(el, message) {
-  const errorDiv = el.createDiv({ cls: 'zoro-stats-error' });
-  errorDiv.createEl('div', { 
-    cls: 'zoro-error-icon',
-    text: '📊' 
-  });
-  errorDiv.createEl('h3', { 
-    text: 'Stats Unavailable',
-    cls: 'zoro-error-title'
-  });
-  errorDiv.createEl('p', { 
-    text: message,
-    cls: 'zoro-error-message'
-  });
-}
-
-renderStatsHeader(fragment, user) {
-  const header = fragment.createDiv({ cls: 'zoro-stats-header' });
-  
-  const userInfo = header.createDiv({ cls: 'zoro-user-info' });
-  
-  if (user.avatar?.medium) {
-    userInfo.createEl('img', {
-      cls: 'zoro-user-avatar',
-      attr: { 
-        src: user.avatar.medium,
-        alt: `${user.name}'s avatar`
-      }
-    });
-  }
-
-  const userDetails = userInfo.createDiv({ cls: 'zoro-user-details' });
-
-// Create clickable user name that opens profile
-const userName = userDetails.createEl('h2', { 
-  text: user.name,
-  cls: 'zoro-user-name zoro-user-name-clickable'
-});
-
-// Make the user name clickable
-userName.style.cursor = 'pointer';
-userName.addEventListener('click', () => {
-  window.open(`https://anilist.co/user/${user.name}`, '_blank');
-});
-
-// Optional: hover effect for better UX
-userName.addEventListener('mouseenter', () => {
-  userName.style.textDecoration = 'underline';
-});
-
-userName.addEventListener('mouseleave', () => {
-  userName.style.textDecoration = 'none';
-});
-}
-
-renderStatsOverview(fragment, user, options) {
-  const { showComparisons } = options;
-  const overview = fragment.createDiv({ cls: 'zoro-stats-overview' });
-  
-  const statsGrid = overview.createDiv({ cls: 'zoro-stats-grid' });
-
-  // Anime stats
-  const animeStats = user.statistics.anime;
-  if (animeStats && animeStats.count > 0) {
-    this.renderMediaTypeCard(statsGrid, 'anime', animeStats, user.mediaListOptions);
-  }
-
-  // Manga stats  
-  const mangaStats = user.statistics.manga;
-  if (mangaStats && mangaStats.count > 0) {
-    this.renderMediaTypeCard(statsGrid, 'manga', mangaStats, user.mediaListOptions);
-  }
-
-  // Combined insights card
-  if (animeStats?.count > 0 && mangaStats?.count > 0 && showComparisons) {
-    this.renderComparisonCard(statsGrid, animeStats, mangaStats);
-  }
-}
-
-renderMediaTypeCard(container, type, stats, listOptions) {
-  const card = container.createDiv({ 
-    cls: `zoro-stat-card zoro-${type}-card`,
-    attr: { 'data-type': type }
-  });
-
-  // Header
-  const header = card.createDiv({ cls: 'zoro-card-header' });
-  header.createEl('h3', { 
-    text: type.charAt(0).toUpperCase() + type.slice(1),
-    cls: 'zoro-card-title'
-  });
-
-  // Primary metrics
-  const metrics = card.createDiv({ cls: 'zoro-primary-metrics' });
-  
-  // Total count - most important metric
-  const totalMetric = metrics.createDiv({ cls: 'zoro-metric zoro-metric-primary' });
-  totalMetric.createEl('div', { 
-    text: stats.count.toLocaleString(),
-    cls: 'zoro-metric-value'
-  });
-  totalMetric.createEl('div', { 
-    text: 'Total',
-    cls: 'zoro-metric-label'
-  });
-
-  // Mean score if available
-  if (stats.meanScore > 0) {
-    const scoreMetric = metrics.createDiv({ cls: 'zoro-metric' });
-    const scoreFormat = listOptions?.scoreFormat || 'POINT_10';
-    const displayScore = this.formatScore(stats.meanScore, scoreFormat);
-    
-    scoreMetric.createEl('div', { 
-      text: displayScore,
-      cls: 'zoro-metric-value zoro-score-value'
-    });
-    scoreMetric.createEl('div', { 
-      text: 'Avg Score',
-      cls: 'zoro-metric-label'
-    });
-  }
-
-  // Secondary metrics
-  const secondaryMetrics = card.createDiv({ cls: 'zoro-secondary-metrics' });
-  
-  if (type === 'anime') {
-    if (stats.episodesWatched) {
-      this.addSecondaryMetric(secondaryMetrics, 'Episodes', stats.episodesWatched.toLocaleString());
-    }
-    if (stats.minutesWatched) {
-      const timeFormatted = this.formatWatchTime(stats.minutesWatched);
-      this.addSecondaryMetric(secondaryMetrics, 'Time Watched', timeFormatted);
-    }
-  } else {
-    if (stats.chaptersRead) {
-      this.addSecondaryMetric(secondaryMetrics, 'Chapters', stats.chaptersRead.toLocaleString());
-    }
-    if (stats.volumesRead) {
-      this.addSecondaryMetric(secondaryMetrics, 'Volumes', stats.volumesRead.toLocaleString());
-    }
-  }
-
-  if (stats.standardDeviation) {
-    this.addSecondaryMetric(secondaryMetrics, 'Score Deviation', stats.standardDeviation.toFixed(1));
-  }
-}
-
-renderComparisonCard(container, animeStats, mangaStats) {
-  const card = container.createDiv({ cls: 'zoro-stat-card zoro-comparison-card' });
-
-  const header = card.createDiv({ cls: 'zoro-card-header' });
-  header.createEl('h3', { 
-    text: 'At a Glance',
-    cls: 'zoro-card-title'
-  });
-
-  const comparisons = card.createDiv({ cls: 'zoro-comparisons' });
-
-  // Total entries
-  const totalAnime = animeStats.count || 0;
-  const totalManga = mangaStats.count || 0;
-  const totalCombined = totalAnime + totalManga;
-  
-  const totalComp = comparisons.createDiv({ cls: 'zoro-comparison' });
-  totalComp.createEl('div', { 
-    text: totalCombined.toLocaleString(),
-    cls: 'zoro-comparison-value'
-  });
-  totalComp.createEl('div', { 
-    text: 'Total Entries',
-    cls: 'zoro-comparison-label'
-  });
-
-  // Preference indicator
-  if (totalAnime > 0 && totalManga > 0) {
-    const preference = totalAnime > totalManga ? 'Anime' : 
-                     totalManga > totalAnime ? 'Manga' : 'Balanced';
-    const ratio = totalAnime > totalManga ? 
-                  (totalAnime / totalManga).toFixed(1) : 
-                  (totalManga / totalAnime).toFixed(1);
-    
-    const prefComp = comparisons.createDiv({ cls: 'zoro-comparison' });
-    prefComp.createEl('div', { 
-      text: preference,
-      cls: 'zoro-comparison-value'
-    });
-    prefComp.createEl('div', { 
-      text: preference === 'Balanced' ? 'Preference' : `${ratio}:1 Ratio`,
-      cls: 'zoro-comparison-label'
-    });
-  }
-
-  // Score comparison
-  const animeScore = animeStats.meanScore || 0;
-  const mangaScore = mangaStats.meanScore || 0;
-  if (animeScore > 0 && mangaScore > 0) {
-    const scoreDiff = Math.abs(animeScore - mangaScore);
-    const higherType = animeScore > mangaScore ? 'Anime' : 'Manga';
-    
-    const scoreComp = comparisons.createDiv({ cls: 'zoro-comparison' });
-    scoreComp.createEl('div', { 
-      text: scoreDiff < 0.5 ? 'Similar' : higherType,
-      cls: 'zoro-comparison-value'
-    });
-    scoreComp.createEl('div', { 
-      text: 'Higher Rated',
-      cls: 'zoro-comparison-label'
-    });
-  }
-}
-
-renderStatsBreakdowns(fragment, user, mediaType) {
-  const type = mediaType.toLowerCase();
-  const stats = user.statistics[type];
-  
-  if (!stats || stats.count === 0) return;
-
-  const section = fragment.createDiv({ cls: 'zoro-stats-breakdowns' });
-  section.createEl('h3', { 
-    text: `${mediaType} Breakdown`,
-    cls: 'zoro-section-title'
-  });
-
-  const breakdownGrid = section.createDiv({ cls: 'zoro-breakdown-grid' });
-
-  // Status distribution (most useful)
-  if (stats.statuses?.length) {
-    this.renderBreakdownChart(breakdownGrid, 'Status Distribution', stats.statuses, 'status', {
-      showPercentages: true,
-      maxItems: 6
-    });
-  }
-
-  // Score distribution (if user rates)
-  if (stats.scores?.length) {
-    const validScores = stats.scores.filter(s => s.score > 0 && s.count > 0);
-    if (validScores.length >= 3) {
-      this.renderScoreDistribution(breakdownGrid, validScores, user.mediaListOptions);
-    }
-  }
-
-  // Format breakdown
-  if (stats.formats?.length) {
-    const topFormats = stats.formats.slice(0, 6);
-    this.renderBreakdownChart(breakdownGrid, 'Format Distribution', topFormats, 'format', {
-      showPercentages: true
-    });
-  }
-
-  // Release years (activity timeline)
-  if (stats.releaseYears?.length) {
-    this.renderYearlyActivity(breakdownGrid, stats.releaseYears);
-  }
-}
-
-renderStatsInsights(fragment, user, mediaType) {
-  const type = mediaType.toLowerCase();
-  const stats = user.statistics[type];
-  
-  if (!stats) return;
-
-  const insights = fragment.createDiv({ cls: 'zoro-stats-insights' });
-  insights.createEl('h3', { 
-    text: 'Insights',
-    cls: 'zoro-section-title'
-  });
-
-  const insightsList = insights.createDiv({ cls: 'zoro-insights-list' });
-
-  // Generate meaningful insights
-  const insightData = this.generateInsights(stats, type, user);
-  insightData.forEach(insight => {
-    const item = insightsList.createDiv({ cls: 'zoro-insight-item' });
-    item.createEl('div', { 
-      text: insight.icon,
-      cls: 'zoro-insight-icon'
-    });
-    item.createEl('div', { 
-      text: insight.text,
-      cls: 'zoro-insight-text'
-    });
-  });
-}
-
-renderStatsFavorites(fragment, user, mediaType) {
-  const type = mediaType.toLowerCase();
-  const favorites = user.favourites?.[type]?.nodes;
-  
-  if (!favorites?.length) return;
-
-  const section = fragment.createDiv({ cls: 'zoro-stats-favorites' });
-  section.createEl('h3', { 
-    text: `Favorite ${mediaType}`,
-    cls: 'zoro-section-title'
-  });
-
-  const favGrid = section.createDiv({ cls: 'zoro-favorites-grid' });
-  
-  favorites.slice(0, 6).forEach(item => {
-    const favItem = favGrid.createDiv({ cls: 'zoro-favorite-item' });
-    
-    if (item.coverImage?.medium) {
-      favItem.createEl('img', {
-        cls: 'zoro-favorite-cover',
-        attr: {
-          src: item.coverImage.medium,
-          alt: item.title?.romaji || item.title?.english
-        }
-      });
-    }
-    
-    const info = favItem.createDiv({ cls: 'zoro-favorite-info' });
-    info.createEl('div', { 
-      text: item.title?.english || item.title?.romaji || 'Unknown',
-      cls: 'zoro-favorite-title'
-    });
-    
-    if (item.meanScore) {
-      info.createEl('div', { 
-        text: `★ ${(item.meanScore / 10).toFixed(1)}`,
-        cls: 'zoro-favorite-score'
-      });
-    }
-  });
-}
-
-// Helper methods
-
-renderBreakdownChart(container, title, data, keyField, options = {}) {
-  const { showPercentages = false, maxItems = 8 } = options;
-  
-  const chartContainer = container.createDiv({ cls: 'zoro-breakdown-chart' });
-  chartContainer.createEl('h4', { 
-    text: title,
-    cls: 'zoro-breakdown-title'
-  });
-
-  const chartData = data.slice(0, maxItems);
-  const total = chartData.reduce((sum, item) => sum + item.count, 0);
-  const maxCount = Math.max(...chartData.map(item => item.count));
-
-  const chart = chartContainer.createDiv({ cls: 'zoro-chart' });
-  
-  chartData.forEach((item, index) => {
-    const barContainer = chart.createDiv({ cls: 'zoro-chart-bar-container' });
-    
-    const label = barContainer.createDiv({ cls: 'zoro-chart-label' });
-    label.textContent = item[keyField] || item.status || item.genre || item.format;
-    
-    const barSection = barContainer.createDiv({ cls: 'zoro-chart-bar-section' });
-    const bar = barSection.createDiv({ cls: 'zoro-chart-bar' });
-    
-    const percentage = (item.count / maxCount) * 100;
-    bar.style.setProperty('--bar-width', `${percentage}%`);
-    bar.style.animationDelay = `${index * 0.1}s`;
-    
-    const value = barSection.createDiv({ cls: 'zoro-chart-value' });
-    if (showPercentages && total > 0) {
-      const percent = ((item.count / total) * 100).toFixed(1);
-      value.textContent = `${item.count} (${percent}%)`;
-    } else {
-      value.textContent = item.count.toLocaleString();
-    }
-  });
-}
-
-renderScoreDistribution(container, scores, listOptions) {
-  const chartContainer = container.createDiv({ cls: 'zoro-breakdown-chart' });
-  chartContainer.createEl('h4', { 
-    text: 'Score Distribution',
-    cls: 'zoro-breakdown-title'
-  });
-
-  const chart = chartContainer.createDiv({ cls: 'zoro-score-chart' });
-  const maxCount = Math.max(...scores.map(s => s.count));
-
-  scores.forEach((scoreData, index) => {
-    const barContainer = chart.createDiv({ cls: 'zoro-score-bar-container' });
-    
-    const label = barContainer.createDiv({ cls: 'zoro-score-label' });
-    label.textContent = this.formatScore(scoreData.score, listOptions?.scoreFormat);
-    
-    const bar = barContainer.createDiv({ cls: 'zoro-score-bar' });
-    const percentage = (scoreData.count / maxCount) * 100;
-    bar.style.setProperty('--bar-width', `${percentage}%`);
-    bar.style.animationDelay = `${index * 0.1}s`;
-    
-    const value = barContainer.createDiv({ cls: 'zoro-score-value' });
-    value.textContent = scoreData.count;
-  });
-}
-
-renderYearlyActivity(container, yearData) {
-  const chartContainer = container.createDiv({ cls: 'zoro-breakdown-chart' });
-  chartContainer.createEl('h4', { 
-    text: 'Activity by Year',
-    cls: 'zoro-breakdown-title'
-  });
-
-  // Show recent years (last 10 years or top 8 by count)
-  const recentYears = yearData
-    .filter(y => y.releaseYear >= new Date().getFullYear() - 15)
-    .slice(0, 8);
-
-  if (recentYears.length === 0) return;
-
-  const timeline = chartContainer.createDiv({ cls: 'zoro-year-timeline' });
-  const maxCount = Math.max(...recentYears.map(y => y.count));
-
-  recentYears.forEach((yearData, index) => {
-    const yearItem = timeline.createDiv({ cls: 'zoro-year-item' });
-    
-    yearItem.createEl('div', { 
-      text: yearData.releaseYear,
-      cls: 'zoro-year-label'
-    });
-    
-    const bar = yearItem.createDiv({ cls: 'zoro-year-bar' });
-    const percentage = (yearData.count / maxCount) * 100;
-    bar.style.setProperty('--bar-width', `${percentage}%`);
-    bar.style.animationDelay = `${index * 0.1}s`;
-    
-    yearItem.createEl('div', { 
-      text: yearData.count,
-      cls: 'zoro-year-count'
-    });
-  });
-}
-
-// Utility methods
-
-addSecondaryMetric(container, label, value) {
-  const metric = container.createDiv({ cls: 'zoro-secondary-metric' });
-  metric.createEl('span', { 
-    text: label,
-    cls: 'zoro-metric-label-small'
-  });
-  metric.createEl('span', { 
-    text: value,
-    cls: 'zoro-metric-value-small'
-  });
-}
-
-formatScore(score, scoreFormat = 'POINT_10') {
-  switch (scoreFormat) {
-    case 'POINT_100':
-      return `${Math.round(score * 10)}/100`;
-    case 'POINT_10':
-      return `${(score / 10).toFixed(1)}/10`;
-    case 'POINT_5':
-      return `${Math.round(score / 20)}/5`;
-    case 'POINT_3':
-      return score >= 70 ? '😊' : score >= 40 ? '😐' : '😞';
-    default:
-      return `${Math.round(score / 10)}/10`;
-  }
-}
-
-formatWatchTime(minutes) {
-  const hours = Math.floor(minutes / 60);
-  const days = Math.floor(hours / 24);
-  
-  if (days > 365) {
-    const years = (days / 365).toFixed(1);
-    return `${years} years`;
-  } else if (days > 30) {
-    const months = Math.floor(days / 30);
-    return `${months} months`;
-  } else if (days > 0) {
-    return `${days} days`;
-  } else {
-    return `${hours} hours`;
-  }
-}
-
-generateInsights(stats, type, user) {
-  const insights = [];
-  
-  // Completion rate insight
-  if (stats.statuses) {
-    const completed = stats.statuses.find(s => s.status === 'COMPLETED')?.count || 0;
-    const total = stats.count;
-    const completionRate = (completed / total * 100).toFixed(0);
-    
-    if (completionRate >= 80) {
-      insights.push({
-        icon: '🏆',
-        text: `High completion rate: ${completionRate}% of your ${type} are completed`
-      });
-    } else if (completionRate <= 30) {
-      insights.push({
-        icon: '📚',
-        text: `Lots to explore: Only ${completionRate}% completed, plenty of ${type} to discover!`
-      });
-    }
-  }
-
-  // Score distribution insight
-  if (stats.meanScore > 0) {
-    if (stats.meanScore >= 80) {
-      insights.push({
-        icon: '⭐',
-        text: `You're generous with ratings! Average score: ${(stats.meanScore/10).toFixed(1)}/10`
-      });
-    } else if (stats.meanScore <= 60) {
-      insights.push({
-        icon: '🔍',
-        text: `Selective taste: You rate ${type} conservatively with ${(stats.meanScore/10).toFixed(1)}/10 average`
-      });
-    }
-  }
-
-  // Volume insight for anime
-  if (type === 'anime' && stats.episodesWatched) {
-    if (stats.episodesWatched >= 5000) {
-      insights.push({
-        icon: '🎭',
-        text: `Anime veteran: ${stats.episodesWatched.toLocaleString()} episodes watched!`
-      });
-    }
-    
-    if (stats.minutesWatched >= 100000) { // ~69 days
-      const days = Math.floor(stats.minutesWatched / (60 * 24));
-      insights.push({
-        icon: '⏰',
-        text: `Time investment: ${days} days worth of anime watched`
-      });
-    }
-  }
-
-  // Genre diversity (if available)
-  if (stats.genres && stats.genres.length >= 15) {
-    insights.push({
-      icon: '🌈',
-      text: `Diverse taste: You enjoy ${stats.genres.length} different genres`
-    });
-  }
-
-  return insights.slice(0, 4); // Limit to 4 insights
-}
-
 
   renderMediaListChunked(el, entries, config, chunkSize = 20) {
-    el.empty();
-    el.className = 'zoro-container';
-    
-    const grid = el.createDiv({ cls: 'zoro-cards-grid' });
-    let index = 0;
-    
-    const renderChunk = () => {
-      const fragment = document.createDocumentFragment();
-      const end = Math.min(index + chunkSize, entries.length);
-      
-      for (; index < end; index++) {
-        fragment.appendChild(this.createMediaCard(entries[index], config));
-      }
-      
-      grid.appendChild(fragment);
-      
-      if (index < entries.length) {
-        requestAnimationFrame(renderChunk);
-      }
-    };
-    
-    renderChunk();
+    return this.mediaListRenderer.renderChunked(el, entries, config, chunkSize);
   }
 
-  createListSkeleton(count = 6) {
-  const fragment = document.createDocumentFragment();
-  for (let i = 0; i < count; i++) {
-    const skeleton = document.createElement('div');
-    skeleton.className = 'zoro-card zoro-skeleton';
-    skeleton.innerHTML = `
-      <div class="skeleton-cover"></div>
-      <div class="media-info">
-        <div class="skeleton-title"></div>
-        <div class="skeleton-details">
-          <span class="skeleton-badge"></span>
-          <span class="skeleton-badge"></span>
-        </div>
-      </div>
-    `;
-    fragment.appendChild(skeleton);
+  createMediaCard(data, config, options = {}) {
+    return this.cardRenderer.createMediaCard(data, config, options);
   }
-  return fragment;
-}
+
+  // ========== SKELETON CREATION METHODS - UNCHANGED ==========
+  
+  createListSkeleton(count = 6) {
+    return DOMHelper.createListSkeleton(count);
+  }
 
   createStatsSkeleton() {
-    const container = document.createElement('div');
-    container.className = 'zoro-container zoro-stats-skeleton';
-    container.innerHTML = `
-      <div class="zoro-user-stats">
-        <div class="zoro-user-header">
-          <div class="skeleton-avatar"></div>
-          <div class="skeleton-title"></div>
-        </div>
-        <div class="zoro-stats-grid">
-          <div class="skeleton-stat-section"></div>
-          <div class="skeleton-stat-section"></div>
-        </div>
-      </div>
-    `;
-    return container;
+    return DOMHelper.createStatsSkeleton();
   }
 
   createSearchSkeleton() {
-    const container = document.createElement('div');
-    container.className = 'zoro-search-container zoro-search-skeleton';
-    container.innerHTML = `
-      <div class="zoro-search-input-container">
-        <input type="text" class="zoro-search-input" disabled placeholder="Loading search...">
-      </div>
-      <div class="zoro-search-results">
-        <div class="zoro-cards-grid">
-          ${Array(3).fill().map(() => `
-            <div class="zoro-card zoro-skeleton">
-              <div class="skeleton-cover"></div>
-              <div class="media-info">
-                <div class="skeleton-title"></div>
-                <div class="skeleton-details">
-                  <span class="skeleton-badge"></span>
-                </div>
-              </div>
-            </div>
-          `).join('')}
-        </div>
-      </div>
-    `;
-    return container;
+    return DOMHelper.createSearchSkeleton();
+  }
+
+  // ========== EVENT HANDLING METHODS - UNCHANGED ==========
+  
+  attachEventListeners(card, entry, media, config) {
+    const statusBadge = card.querySelector('.clickable-status[data-entry-id]');
+    if (statusBadge) {
+      statusBadge.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.handleStatusClick(e, entry, statusBadge, config);
+      };
+    }
+    
+    const addBtn = card.querySelector('.clickable-status[data-media-id]');
+    if (addBtn) {
+      addBtn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.handleAddClick(e, media, config);
+      };
+    }
+  }
+
+  handleStatusClick(e, entry, badge, config = {}) {
+    return this.cardRenderer.handleStatusClick(e, entry, badge, config);
+  }
+
+  handleAddClick(e, media, config) {
+    return this.cardRenderer.handleAddClick(e, media, config);
+  }
+
+  // ========== UTILITY METHODS - UNCHANGED ==========
+  
+  clear(el) { 
+    el.empty?.(); 
+  }
+
+  // Method to refresh active views (used by card renderer)
+  refreshActiveViews() {
+    // This method should trigger refresh of any active views
+    // Implementation depends on your plugin's architecture
+    if (this.plugin.refreshActiveViews) {
+      this.plugin.refreshActiveViews();
+    }
+  }
+
+  // ========== MISSING UTILITY METHODS FROM ORIGINAL ==========
+  
+  // URL generation methods that might be called from outside
+  getAniListUrl(id, mediaType) {
+    return this.plugin.getAniListUrl(id, mediaType);
+  }
+
+  getMALUrl(id, mediaType) {
+    return this.plugin.getMALUrl(id, mediaType);
+  }
+
+  getSourceSpecificUrl(id, mediaType, source) {
+    return this.apiHelper.getSourceSpecificUrl(id, mediaType, source);
+  }
+
+  // Error rendering (might be called from outside)
+  renderError(el, message) {
+    if (el.innerHTML !== undefined) {
+      el.innerHTML = DOMHelper.createErrorMessage(message);
+    } else {
+      const errorDiv = el.createDiv({ cls: 'zoro-error' });
+      errorDiv.textContent = message;
+    }
+  }
+
+  // ========== STATS RENDERING HELPER METHODS - DELEGATED ==========
+  
+  renderStatsError(el, message) {
+    return this.statsRenderer.renderError(el, message);
+  }
+
+  renderStatsHeader(fragment, user) {
+    return this.statsRenderer.renderHeader(fragment, user);
+  }
+
+  renderStatsOverview(fragment, user, options) {
+    return this.statsRenderer.renderOverview(fragment, user, options);
+  }
+
+  renderMediaTypeCard(container, type, stats, listOptions) {
+    return this.statsRenderer.renderMediaTypeCard(container, type, stats, listOptions);
+  }
+
+  renderComparisonCard(container, animeStats, mangaStats) {
+    return this.statsRenderer.renderComparisonCard(container, animeStats, mangaStats);
+  }
+
+  renderStatsBreakdowns(fragment, user, mediaType) {
+    return this.statsRenderer.renderBreakdowns(fragment, user, mediaType);
+  }
+
+  renderStatsInsights(fragment, user, mediaType) {
+    return this.statsRenderer.renderInsights(fragment, user, mediaType);
+  }
+
+  renderStatsFavorites(fragment, user, mediaType) {
+    return this.statsRenderer.renderFavorites(fragment, user, mediaType);
+  }
+
+  renderBreakdownChart(container, title, data, keyField, options = {}) {
+    return this.statsRenderer.renderBreakdownChart(container, title, data, keyField, options);
+  }
+
+  renderScoreDistribution(container, scores, listOptions) {
+    return this.statsRenderer.renderScoreDistribution(container, scores, listOptions);
+  }
+
+  renderYearlyActivity(container, yearData) {
+    return this.statsRenderer.renderYearlyActivity(container, yearData);
+  }
+
+  addSecondaryMetric(container, label, value) {
+    return DOMHelper.addSecondaryMetric(container, label, value);
+  }
+
+  formatScore(score, scoreFormat = 'POINT_10') {
+    return this.formatter.formatScore(score, scoreFormat);
+  }
+
+  formatWatchTime(minutes) {
+    return this.formatter.formatWatchTime(minutes);
+  }
+
+  generateInsights(stats, type, user) {
+    return this.statsRenderer.generateInsights(stats, type, user);
+  }
 }
 
-createMediaCard(data, config, options = {}) {
-  const isSearch = options.isSearch || false;
-  const isCompact = config.layout === 'compact';
-  const entry = isSearch ? null : data;
-  const media = isSearch ? data : data.media;
-  const source = entry?._zoroMeta?.source || config.source || 'anilist';
-  const mediaType = entry?._zoroMeta?.mediaType || config.mediaType || 'ANIME';
-  const card = document.createElement('div');
-  card.className = `zoro-card ${isCompact ? 'compact' : ''}`;
-  card.dataset.mediaId = media.id;
+class CardRenderer {
+  constructor(parentRenderer) {
+    this.parent = parentRenderer;
+    this.plugin = parentRenderer.plugin;
+    this.apiHelper = parentRenderer.apiHelper;
+    this.formatter = parentRenderer.formatter;
+  }
 
-  if (this.plugin.settings.showCoverImages && media.coverImage?.large) {
+  createMediaCard(data, config, options = {}) {
+    const isSearch = options.isSearch || false;
+    const isCompact = config.layout === 'compact';
+    const entry = isSearch ? null : data;
+    const media = isSearch ? data : data.media;
+    const source = this.apiHelper.detectSource(entry, config);
+    const mediaType = this.apiHelper.detectMediaType(entry, config, media);
+    
+    const card = document.createElement('div');
+    card.className = `zoro-card ${isCompact ? 'compact' : ''}`;
+    card.dataset.mediaId = media.id;
+
+    // Create cover image if enabled
+    if (this.plugin.settings.showCoverImages && media.coverImage?.large) {
+      const coverContainer = this.createCoverContainer(media, entry, isSearch, isCompact);
+      card.appendChild(coverContainer);
+    }
+
+    // Create media info section
+    const info = this.createMediaInfo(media, entry, config, isSearch, isCompact);
+    card.appendChild(info);
+    
+    // Add heart for favorites
+    const heart = document.createElement('span');
+    heart.className = 'zoro-heart';
+    if (!media.isFavourite) heart.style.display = 'none';
+    card.appendChild(heart);
+
+    return card;
+  }
+
+  createCoverContainer(media, entry, isSearch, isCompact) {
     const coverContainer = document.createElement('div');
     coverContainer.className = 'cover-container';
     
@@ -7664,123 +6986,1238 @@ createMediaCard(data, config, options = {}) {
                         (this.plugin.settings.showRatings && ((isSearch && media.averageScore != null) || (!isSearch && entry?.score != null)));
                         
     if (needsOverlay) {
-      const overlay = document.createElement('div');
-      overlay.className = 'cover-overlay';
-      
-      if (!isSearch && entry && this.plugin.settings.showProgress) {
-        const progress = document.createElement('span');
-        progress.className = 'progress';
-        const total = media.episodes || media.chapters || '?';
-        progress.textContent = `${entry.progress || 0}/${total}`;
-        overlay.appendChild(progress);
-      } else {
-        overlay.appendChild(document.createElement('span'));
-      }
-      
-      if (this.plugin.settings.showRatings) {
-        const score = isSearch ? media.averageScore : entry?.score;
-        if (score != null) {
-          const rating = document.createElement('span');
-          rating.className = 'score';
-          
-          if (isSearch) {
-  rating.textContent = `★ ${Math.round(score / 10)}`;
-} else {
-  if (score > 10) {
-    rating.textContent = `★ ${Math.round(score / 10)}`;
-  } else {
-    rating.textContent = `★ ${Math.round(score)}`;
-  }
-}
-          
-          overlay.appendChild(rating);
-        } else {
-          overlay.appendChild(document.createElement('span'));
-        }
-      }
-      
+      const overlay = this.createCoverOverlay(media, entry, isSearch);
       coverContainer.appendChild(overlay);
     }
     
-    card.appendChild(coverContainer);
+    return coverContainer;
   }
 
-  const info = document.createElement('div');
-  info.className = 'media-info';
+  createCoverOverlay(media, entry, isSearch) {
+    const overlay = document.createElement('div');
+    overlay.className = 'cover-overlay';
+    
+    // Progress indicator
+    if (!isSearch && entry && this.plugin.settings.showProgress) {
+      const progress = document.createElement('span');
+      progress.className = 'progress';
+      const total = media.episodes || media.chapters || '?';
+      progress.textContent = this.formatter.formatProgress(entry.progress, total);
+      overlay.appendChild(progress);
+    } else {
+      overlay.appendChild(document.createElement('span'));
+    }
+    
+    // Rating indicator
+    if (this.plugin.settings.showRatings) {
+      const score = isSearch ? media.averageScore : entry?.score;
+      if (score != null) {
+        const rating = document.createElement('span');
+        rating.className = 'score';
+        rating.textContent = this.formatter.formatRating(score, isSearch);
+        overlay.appendChild(rating);
+      } else {
+        overlay.appendChild(document.createElement('span'));
+      }
+    }
+    
+    return overlay;
+  }
 
-  const title = document.createElement('h4');
+  createMediaInfo(media, entry, config, isSearch, isCompact) {
+    const info = document.createElement('div');
+    info.className = 'media-info';
 
-  // Replace the existing URL generation with this:
-if (this.plugin.settings.hideUrlsInTitles) {
-  title.textContent = media.title.english || media.title.romaji;
-} else {
-  const titleLink = document.createElement('a');
-  
-  // Use metadata injection for source detection
-  const source = entry?._zoroMeta?.source || config.source || 'anilist';
-  const mediaType = entry?._zoroMeta?.mediaType || config.mediaType || 
-                   (media.episodes ? 'ANIME' : 'MANGA');
-  
-  // Use the unified URL generator
-  titleLink.href = this.plugin.getSourceSpecificUrl(media.id, mediaType, source);
-  
-  titleLink.target = '_blank';
-  titleLink.textContent = media.title.english || media.title.romaji;
-  titleLink.className = 'media-title-link';
-  title.appendChild(titleLink);
-}
+    // Title
+    const title = this.createTitle(media, entry, config);
+    info.appendChild(title);
 
+    // Details (format, status, edit button)
+    if (!isCompact) {
+      const details = this.createMediaDetails(media, entry, config, isSearch);
+      info.appendChild(details);
+    }
 
-  info.appendChild(title);
+    // Genres
+    if (!isCompact && this.plugin.settings.showGenres && media.genres?.length) {
+      const genres = this.createGenres(media);
+      info.appendChild(genres);
+    }
 
-  if (!isCompact) {
+    return info;
+  }
+
+  createTitle(media, entry, config) {
+    const title = document.createElement('h4');
+
+    if (this.plugin.settings.hideUrlsInTitles) {
+      title.textContent = this.formatter.formatTitle(media);
+    } else {
+      const titleLink = document.createElement('a');
+      const source = this.apiHelper.detectSource(entry, config);
+      const mediaType = this.apiHelper.detectMediaType(entry, config, media);
+      
+      // Use the proper URL method based on available plugin methods
+      titleLink.href = this.plugin.getSourceSpecificUrl 
+        ? this.apiHelper.getSourceSpecificUrl(media.id, mediaType, source)
+        : this.apiHelper.getSourceUrl(media.id, mediaType, source);
+      
+      titleLink.target = '_blank';
+      titleLink.textContent = this.formatter.formatTitle(media);
+      titleLink.className = 'media-title-link';
+      title.appendChild(titleLink);
+    }
+
+    return title;
+  }
+
+  createMediaDetails(media, entry, config, isSearch) {
     const details = document.createElement('div');
     details.className = 'media-details';
 
+    // Format badge
     if (media.format) {
       const formatBadge = document.createElement('span');
       formatBadge.className = 'format-badge';
-      formatBadge.textContent = media.format.substring(0, 2).toUpperCase();
+      formatBadge.textContent = this.formatter.formatFormat(media.format);
       details.appendChild(formatBadge);
     }
 
+    // Status badge or edit button
     if (!isSearch && entry && entry.status) {
-      const statusBadge = document.createElement('span');
-      // FIX: Add null check and fallback for status
-      const statusClass = entry.status ? entry.status.toLowerCase() : 'unknown';
-      const statusText = entry.status || 'Unknown';
-      
-      statusBadge.className = `status-badge status-${statusClass} clickable-status`;
-      statusBadge.textContent = statusText;
-      statusBadge.onclick = (e) => this.handleStatusClick(e, entry, statusBadge, config);
+      const statusBadge = this.createStatusBadge(entry, config);
       details.appendChild(statusBadge);
     }
 
     if (isSearch) {
-      const editBtn = document.createElement('span');
-      editBtn.className = 'status-badge status-edit clickable-status';
-      editBtn.textContent = 'Edit';
-      editBtn.dataset.loading = 'false';
-      
-      editBtn.onclick = async (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        
-        const entrySource = entry?._zoroMeta?.source || config.source || 'anilist';
-  const entryMediaType = entry?._zoroMeta?.mediaType || config.mediaType;
+      const editBtn = this.createEditButton(media, entry, config);
+      details.appendChild(editBtn);
+    }
 
-        const isAuthenticated = entrySource === 'mal' 
-    ? this.plugin.settings.malAccessToken 
-    : this.plugin.settings.accessToken;
-
-  if (!isAuthenticated) {
-    console.log(`[Zoro] Not authenticated with ${entrySource}`);
-    this.plugin.prompt.createAuthenticationPrompt(entrySource);
-    return;
+    return details;
   }
 
-        editBtn.dataset.loading = 'true';
-        editBtn.innerHTML = `
+  createStatusBadge(entry, config) {
+    const statusBadge = document.createElement('span');
+    const statusClass = this.formatter.getStatusClass(entry.status);
+    const statusText = this.formatter.getStatusText(entry.status);
+    
+    statusBadge.className = `status-badge status-${statusClass} clickable-status`;
+    statusBadge.textContent = statusText;
+    statusBadge.onclick = (e) => this.handleStatusClick(e, entry, statusBadge, config);
+    
+    return statusBadge;
+  }
+
+  createEditButton(media, entry, config) {
+    const editBtn = document.createElement('span');
+    editBtn.className = 'status-badge status-edit clickable-status';
+    editBtn.textContent = 'Edit';
+    editBtn.dataset.loading = 'false';
+    
+    editBtn.onclick = (e) => this.handleEditClick(e, media, entry, config, editBtn);
+    
+    return editBtn;
+  }
+
+  createGenres(media) {
+    const genres = document.createElement('div');
+    genres.className = 'genres';
+    
+    const genreList = this.formatter.formatGenres(media.genres);
+    genreList.forEach(g => {
+      const tag = document.createElement('span');
+      tag.className = 'genre-tag';
+      tag.textContent = g || 'Unknown';
+      genres.appendChild(tag);
+    });
+    
+    return genres;
+  }
+
+  handleStatusClick(e, entry, badge, config) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const source = this.apiHelper.detectSource(entry, config);
+    const mediaType = this.apiHelper.detectMediaType(entry, config);
+    
+    if (!this.apiHelper.isAuthenticated(source)) {
+      this.plugin.prompt.createAuthenticationPrompt(source);
+      return;
+    }
+    
+    this.plugin.handleEditClick(e, entry, badge, { source, mediaType });
+  }
+
+  async handleEditClick(e, media, entry, config, editBtn) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    const entrySource = this.apiHelper.detectSource(entry, config);
+    const entryMediaType = this.apiHelper.detectMediaType(entry, config, media);
+
+    if (!this.apiHelper.isAuthenticated(entrySource)) {
+      console.log(`[Zoro] Not authenticated with ${entrySource}`);
+      this.plugin.prompt.createAuthenticationPrompt(entrySource);
+      return;
+    }
+
+    editBtn.dataset.loading = 'true';
+    editBtn.innerHTML = DOMHelper.createLoadingSpinner();
+    editBtn.style.pointerEvents = 'none';
+
+    try {
+      console.log(`[Zoro] Checking user entry for media ${media.id} via ${entrySource}`);
+      
+      const existingEntry = await this.apiHelper.getUserEntryForMedia(media.id, entryMediaType, entrySource);
+      console.log(`[Zoro] User entry result:`, existingEntry ? 'Found existing entry' : 'Not in user list');
+      
+      const entryToEdit = existingEntry || {
+        media: media,
+        status: 'PLANNING',
+        progress: 0,
+        score: null,
+        id: null
+      };
+
+      const isNewEntry = !existingEntry;
+      editBtn.textContent = isNewEntry ? 'Add' : 'Edit';
+      editBtn.className = `status-badge ${isNewEntry ? 'status-add' : 'status-edit'} clickable-status`;
+      editBtn.dataset.loading = 'false';
+      editBtn.style.pointerEvents = 'auto';
+
+      console.log(`[Zoro] Opening edit modal for ${isNewEntry ? 'new' : 'existing'} entry`);
+
+      this.plugin.edit.createEditModal(
+        entryToEdit,
+        async (updates) => {
+          try {
+            console.log(`[Zoro] Updating media ${media.id} with:`, updates);
+            await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource);
+            
+            const successMessage = isNewEntry ? '✅ Added to list!' : '✅ Updated!';
+            new Notice(successMessage, 3000);
+            console.log(`[Zoro] ${successMessage}`);
+            
+            editBtn.textContent = 'Edit';
+            editBtn.className = 'status-badge status-edit clickable-status';
+            
+            this.parent.refreshActiveViews();
+            
+          } catch (updateError) {
+            console.error('[Zoro] Update failed:', updateError);
+            new Notice(`❌ Update failed: ${updateError.message}`, 5000);
+          }
+        },
+        () => {
+          console.log('[Zoro] Edit modal cancelled');
+          editBtn.textContent = 'Edit';
+          editBtn.className = 'status-badge status-edit clickable-status';
+          editBtn.dataset.loading = 'false';
+          editBtn.style.pointerEvents = 'auto';
+        },
+        entrySource
+      );
+
+    } catch (error) {
+      console.error('[Zoro] User entry check failed:', error);
+      
+      editBtn.textContent = 'Edit';
+      editBtn.dataset.loading = 'false';
+      editBtn.style.pointerEvents = 'auto';
+      
+      new Notice('⚠️ Could not check list status, assuming new entry', 3000);
+      
+      const defaultEntry = {
+        media: media,
+        status: 'PLANNING',
+        progress: 0,
+        score: null,
+        id: null
+      };
+
+      this.plugin.edit.createEditModal(
+        defaultEntry,
+        async (updates) => {
+          try {
+            await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource);
+            new Notice('✅ Added to list!', 3000);
+            this.parent.refreshActiveViews();
+          } catch (updateError) {
+            console.error('[Zoro] Update failed:', updateError);
+            new Notice(`❌ Failed to add: ${updateError.message}`, 5000);
+          }
+        },
+        () => {
+          console.log('[Zoro] Fallback edit modal cancelled');
+        },
+        entrySource
+      );
+    }
+  }
+}
+
+class SearchRenderer {
+  constructor(parentRenderer) {
+    this.parent = parentRenderer;
+    this.plugin = parentRenderer.plugin;
+    this.apiHelper = parentRenderer.apiHelper;
+    this.cardRenderer = parentRenderer.cardRenderer;
+  }
+
+  render(el, config) {
+    el.empty();
+    el.className = 'zoro-search-container';
+
+    const searchDiv = el.createDiv({ cls: 'zoro-search-input-container' });
+    const input = searchDiv.createEl('input', { type: 'text', cls: 'zoro-search-input' });
+    input.placeholder = config.mediaType === 'ANIME' ? 'Search anime…' : 'Search manga…';
+
+    const resultsDiv = el.createDiv({ cls: 'zoro-search-results' });
+    let timeout;
+
+    const doSearch = async () => {
+      const term = input.value.trim();
+      if (term.length < 3) {
+        resultsDiv.innerHTML = DOMHelper.createErrorMessage('Type at least 3 characters…');
+        return;
+      }
+      
+      try {
+        resultsDiv.innerHTML = '';
+        resultsDiv.appendChild(DOMHelper.createListSkeleton(5));
+        
+        const data = await this.apiHelper.fetchSearchData(config, term);
+        
+        resultsDiv.innerHTML = '';
+        this.renderSearchResults(resultsDiv, data.Page.media, config);
+      } catch (e) {
+        this.plugin.renderError(resultsDiv, e.message);
+      }
+    };
+
+    input.addEventListener('input', () => { 
+      clearTimeout(timeout); 
+      timeout = setTimeout(doSearch, 300); 
+    });
+    
+    input.addEventListener('keypress', e => { 
+      if (e.key === 'Enter') doSearch(); 
+    });
+  }
+
+  renderSearchResults(el, media, config) {
+    el.empty();
+    if (media.length === 0) {
+      el.innerHTML = DOMHelper.createErrorMessage('No results found.');
+      return;
+    }
+
+    const grid = el.createDiv({ cls: 'zoro-cards-grid' });
+    const fragment = document.createDocumentFragment();
+    
+    media.forEach(item => {
+      fragment.appendChild(this.cardRenderer.createMediaCard(item, config, { isSearch: true }));
+    });
+    
+    grid.appendChild(fragment);
+  }
+}
+
+class MediaListRenderer {
+  constructor(parentRenderer) {
+    this.parent = parentRenderer;
+    this.plugin = parentRenderer.plugin;
+    this.cardRenderer = parentRenderer.cardRenderer;
+    this.tableRenderer = parentRenderer.tableRenderer;
+  }
+
+  render(el, entries, config) {
+    el.empty();
+    el.className = 'zoro-container';
+    
+    if (config.layout === 'table') {
+      this.tableRenderer.render(el, entries, config);
+      return;
+    }
+
+    const grid = el.createDiv({ cls: 'zoro-cards-grid' });
+    const fragment = document.createDocumentFragment();
+    
+    entries.forEach(entry => {
+      fragment.appendChild(this.cardRenderer.createMediaCard(entry, config));
+    });
+    
+    grid.appendChild(fragment);
+  }
+
+  renderChunked(el, entries, config, chunkSize = 20) {
+    el.empty();
+    el.className = 'zoro-container';
+    
+    const grid = el.createDiv({ cls: 'zoro-cards-grid' });
+    let index = 0;
+    
+    const renderChunk = () => {
+      const fragment = document.createDocumentFragment();
+      const end = Math.min(index + chunkSize, entries.length);
+      
+      for (; index < end; index++) {
+        fragment.appendChild(this.cardRenderer.createMediaCard(entries[index], config));
+      }
+      
+      grid.appendChild(fragment);
+      
+      if (index < entries.length) {
+        requestAnimationFrame(renderChunk);
+      }
+    };
+    
+    renderChunk();
+  }
+
+  renderSingle(el, mediaList, config) {
+    const media = mediaList.media;
+    el.empty(); 
+    el.className = 'zoro-container';
+    const card = el.createDiv({ cls: 'zoro-single-card' });
+
+    if (this.plugin.settings.showCoverImages) {
+      card.createEl('img', { 
+        cls: 'media-cover', 
+        attr: { 
+          src: media.coverImage.large, 
+          alt: this.parent.formatter.formatTitle(media)
+        } 
+      });
+    }
+    
+    const info = card.createDiv({ cls: 'media-info' });
+    info.createEl('h3', null, h => {
+      if (this.plugin.settings.hideUrlsInTitles) {
+        h.textContent = this.parent.formatter.formatTitle(media);
+      } else {
+        h.createEl('a', { 
+          text: this.parent.formatter.formatTitle(media), 
+          href: this.parent.apiHelper.getSourceUrl(media.id, config.mediaType, config.source), 
+          cls: 'zoro-title-link', 
+          target: '_blank' 
+        });
+      }
+    });
+
+    const details = info.createDiv({ cls: 'media-details' });
+    if (media.format) {
+      details.createEl('span', { text: media.format, cls: 'format-badge' });
+    }
+    
+    details.createEl('span', { 
+      text: mediaList.status, 
+      cls: `status-badge status-${this.parent.formatter.getStatusClass(mediaList.status)}` 
+    });
+    
+    const status = details.lastChild;
+    status.classList.add('clickable-status');
+    status.onclick = e => {
+      e.preventDefault(); 
+      e.stopPropagation();
+      
+      const source = this.parent.apiHelper.detectSource(mediaList, config);
+      
+      if (!this.parent.apiHelper.isAuthenticated(source)) {
+        this.plugin.prompt.createAuthenticationPrompt();
+        return;
+      }
+      this.plugin.handleEditClick(e, mediaList, status, config);
+    };
+
+    if (this.plugin.settings.showProgress) {
+      details.createEl('span', { 
+        text: this.parent.formatter.formatProgress(mediaList.progress, media.episodes || media.chapters), 
+        cls: 'progress' 
+      });
+    }
+    
+    if (this.plugin.settings.showRatings && mediaList.score != null) {
+      details.createEl('span', { 
+        text: this.parent.formatter.formatRating(mediaList.score), 
+        cls: 'score' 
+      });
+    }
+
+    if (this.plugin.settings.showGenres && media.genres?.length) {
+      const genresDiv = info.createDiv({ cls: 'genres' });
+      this.parent.formatter.formatGenres(media.genres).forEach(genre => 
+        genresDiv.createEl('span', { text: genre, cls: 'genre-tag' })
+      );
+    }
+  }
+}
+
+class TableRenderer {
+  constructor(parentRenderer) {
+    this.parent = parentRenderer;
+    this.plugin = parentRenderer.plugin;
+    this.apiHelper = parentRenderer.apiHelper;
+    this.formatter = parentRenderer.formatter;
+  }
+
+  render(el, entries, config) {
+    const table = el.createEl('table', { cls: 'zoro-table' });
+    const headers = ['Title', 'Format', 'Status'];
+    if (this.plugin.settings.showProgress) headers.push('Progress');
+    if (this.plugin.settings.showRatings) headers.push('Score');
+    if (this.plugin.settings.showGenres) headers.push('Genres');
+
+    table.createTHead().createEl('tr', null, tr =>
+      headers.forEach(h => tr.createEl('th', { text: h }))
+    );
+
+    const tbody = table.createTBody();
+    const fragment = document.createDocumentFragment();
+
+    entries.forEach(entry => {
+      const m = entry.media;
+      const tr = fragment.createEl('tr');
+      tr.createEl('td', null, td =>
+        td.createEl('a', {
+          text: m.title.english || m.title.romaji,
+          href: config.source === 'mal' 
+            ? this.plugin.getMALUrl(m.id, config.mediaType)
+            : this.plugin.getAniListUrl(m.id, config.mediaType),
+          cls: 'zoro-title-link',
+          target: '_blank'
+        })
+      );
+      tr.createEl('td', { text: m.format || '-' });
+      tr.createEl('td', null, td => {
+        const s = td.createEl('span', {
+          text: entry.status,
+          cls: `status-badge status-${entry.status.toLowerCase()} clickable-status`
+        });
+        s.onclick = e => {
+          e.preventDefault();
+          e.stopPropagation();
+          
+          // Check authentication based on source
+          const isAuthenticated = config.source === 'mal' 
+            ? this.plugin.settings.malAccessToken 
+            : this.plugin.settings.accessToken;
+            
+          if (!isAuthenticated) {
+            this.plugin.prompt.createAuthenticationPrompt();
+            return;
+          }
+          this.plugin.handleEditClick(e, entry, s, config);
+        };
+      });
+      if (this.plugin.settings.showProgress)
+        tr.createEl('td', {
+          text: `${entry.progress ?? 0}/${m.episodes ?? m.chapters ?? '?'}`
+        });
+      if (this.plugin.settings.showRatings)
+        tr.createEl('td', { text: entry.score != null ? `★ ${entry.score}` : '-' });
+      if (this.plugin.settings.showGenres)
+        tr.createEl('td', {
+          text: (m.genres || []).slice(0, 3).join(', ') || '-'
+        });
+    });
+
+    tbody.appendChild(fragment);
+  }
+}
+
+class StatsRenderer {
+  constructor(parentRenderer) {
+    this.parent = parentRenderer;
+    this.plugin = parentRenderer.plugin;
+    this.formatter = parentRenderer.formatter;
+  }
+
+  render(el, user, options = {}) {
+    const {
+      layout = 'standard',
+      mediaType = 'ANIME',
+      showComparisons = true,
+      showTrends = true
+    } = options;
+
+    el.empty();
+    el.className = `zoro-container zoro-stats-container zoro-stats-${layout}`;
+
+    if (!user || !user.statistics) {
+      this.renderError(el, 'No statistics available for this user');
+      return;
+    }
+
+    const fragment = DOMHelper.createFragment();
+
+    // User header with key info
+    this.renderHeader(fragment, user);
+
+    // Main overview cards
+    this.renderOverview(fragment, user, { showComparisons });
+
+    // Detailed breakdowns based on layout
+    if (layout !== 'minimal') {
+      this.renderBreakdowns(fragment, user, mediaType);
+    }
+
+    // Activity insights
+    if (layout === 'detailed' && showTrends) {
+      this.renderInsights(fragment, user, mediaType);
+    }
+
+    // Favorites showcase
+    this.renderFavorites(fragment, user, mediaType);
+
+    el.appendChild(fragment);
+  }
+
+  renderError(el, message) {
+    const errorDiv = el.createDiv({ cls: 'zoro-stats-error' });
+    errorDiv.createEl('div', { 
+      cls: 'zoro-error-icon',
+      text: '📊' 
+    });
+    errorDiv.createEl('h3', { 
+      text: 'Stats Unavailable',
+      cls: 'zoro-error-title'
+    });
+    errorDiv.createEl('p', { 
+      text: message,
+      cls: 'zoro-error-message'
+    });
+  }
+
+  renderHeader(fragment, user) {
+    const header = fragment.createDiv({ cls: 'zoro-stats-header' });
+    
+    const userInfo = header.createDiv({ cls: 'zoro-user-info' });
+    
+    if (user.avatar?.medium) {
+      userInfo.createEl('img', {
+        cls: 'zoro-user-avatar',
+        attr: { 
+          src: user.avatar.medium,
+          alt: `${user.name}'s avatar`
+        }
+      });
+    }
+
+    const userDetails = userInfo.createDiv({ cls: 'zoro-user-details' });
+    const userName = userDetails.createEl('h2', { 
+      text: user.name,
+      cls: 'zoro-user-name zoro-user-name-clickable'
+    });
+
+    // Make the user name clickable
+    userName.style.cursor = 'pointer';
+    userName.addEventListener('click', () => {
+      window.open(`https://anilist.co/user/${user.name}`, '_blank');
+    });
+
+    userName.addEventListener('mouseenter', () => {
+      userName.style.textDecoration = 'underline';
+    });
+
+    userName.addEventListener('mouseleave', () => {
+      userName.style.textDecoration = 'none';
+    });
+  }
+
+  renderOverview(fragment, user, options) {
+    const { showComparisons } = options;
+    const overview = fragment.createDiv({ cls: 'zoro-stats-overview' });
+    
+    const statsGrid = overview.createDiv({ cls: 'zoro-stats-grid' });
+
+    // Anime stats
+    const animeStats = user.statistics.anime;
+    if (animeStats && animeStats.count > 0) {
+      this.renderMediaTypeCard(statsGrid, 'anime', animeStats, user.mediaListOptions);
+    }
+
+    // Manga stats  
+    const mangaStats = user.statistics.manga;
+    if (mangaStats && mangaStats.count > 0) {
+      this.renderMediaTypeCard(statsGrid, 'manga', mangaStats, user.mediaListOptions);
+    }
+
+    // Combined insights card
+    if (animeStats?.count > 0 && mangaStats?.count > 0 && showComparisons) {
+      this.renderComparisonCard(statsGrid, animeStats, mangaStats);
+    }
+  }
+
+  renderMediaTypeCard(container, type, stats, listOptions) {
+    const card = container.createDiv({ 
+      cls: `zoro-stat-card zoro-${type}-card`,
+      attr: { 'data-type': type }
+    });
+
+    // Header
+    const header = card.createDiv({ cls: 'zoro-card-header' });
+    header.createEl('h3', { 
+      text: type.charAt(0).toUpperCase() + type.slice(1),
+      cls: 'zoro-card-title'
+    });
+
+    // Primary metrics
+    const metrics = card.createDiv({ cls: 'zoro-primary-metrics' });
+    
+    // Total count - most important metric
+    const totalMetric = metrics.createDiv({ cls: 'zoro-metric zoro-metric-primary' });
+    totalMetric.createEl('div', { 
+      text: stats.count.toLocaleString(),
+      cls: 'zoro-metric-value'
+    });
+    totalMetric.createEl('div', { 
+      text: 'Total',
+      cls: 'zoro-metric-label'
+    });
+
+    // Mean score if available
+    if (stats.meanScore > 0) {
+      const scoreMetric = metrics.createDiv({ cls: 'zoro-metric' });
+      const scoreFormat = listOptions?.scoreFormat || 'POINT_10';
+      const displayScore = this.formatter.formatScore(stats.meanScore, scoreFormat);
+      
+      scoreMetric.createEl('div', { 
+        text: displayScore,
+        cls: 'zoro-metric-value zoro-score-value'
+      });
+      scoreMetric.createEl('div', { 
+        text: 'Avg Score',
+        cls: 'zoro-metric-label'
+      });
+    }
+
+    // Secondary metrics
+    const secondaryMetrics = card.createDiv({ cls: 'zoro-secondary-metrics' });
+    
+    if (type === 'anime') {
+      if (stats.episodesWatched) {
+        DOMHelper.addSecondaryMetric(secondaryMetrics, 'Episodes', stats.episodesWatched.toLocaleString());
+      }
+      if (stats.minutesWatched) {
+        const timeFormatted = this.formatter.formatWatchTime(stats.minutesWatched);
+        DOMHelper.addSecondaryMetric(secondaryMetrics, 'Time Watched', timeFormatted);
+      }
+    } else {
+      if (stats.chaptersRead) {
+        DOMHelper.addSecondaryMetric(secondaryMetrics, 'Chapters', stats.chaptersRead.toLocaleString());
+      }
+      if (stats.volumesRead) {
+        DOMHelper.addSecondaryMetric(secondaryMetrics, 'Volumes', stats.volumesRead.toLocaleString());
+      }
+    }
+
+    if (stats.standardDeviation) {
+      DOMHelper.addSecondaryMetric(secondaryMetrics, 'Score Deviation', stats.standardDeviation.toFixed(1));
+    }
+  }
+
+  renderComparisonCard(container, animeStats, mangaStats) {
+    const card = container.createDiv({ cls: 'zoro-stat-card zoro-comparison-card' });
+
+    const header = card.createDiv({ cls: 'zoro-card-header' });
+    header.createEl('h3', { 
+      text: 'At a Glance',
+      cls: 'zoro-card-title'
+    });
+
+    const comparisons = card.createDiv({ cls: 'zoro-comparisons' });
+
+    // Total entries
+    const totalAnime = animeStats.count || 0;
+    const totalManga = mangaStats.count || 0;
+    const totalCombined = totalAnime + totalManga;
+    
+    const totalComp = comparisons.createDiv({ cls: 'zoro-comparison' });
+    totalComp.createEl('div', { 
+      text: totalCombined.toLocaleString(),
+      cls: 'zoro-comparison-value'
+    });
+    totalComp.createEl('div', { 
+      text: 'Total Entries',
+      cls: 'zoro-comparison-label'
+    });
+
+    // Preference indicator
+    if (totalAnime > 0 && totalManga > 0) {
+      const preference = totalAnime > totalManga ? 'Anime' : 
+                       totalManga > totalAnime ? 'Manga' : 'Balanced';
+      const ratio = totalAnime > totalManga ? 
+                    (totalAnime / totalManga).toFixed(1) : 
+                    (totalManga / totalAnime).toFixed(1);
+      
+      const prefComp = comparisons.createDiv({ cls: 'zoro-comparison' });
+      prefComp.createEl('div', { 
+        text: preference,
+        cls: 'zoro-comparison-value'
+      });
+      prefComp.createEl('div', { 
+        text: preference === 'Balanced' ? 'Preference' : `${ratio}:1 Ratio`,
+        cls: 'zoro-comparison-label'
+      });
+    }
+
+    // Score comparison
+    const animeScore = animeStats.meanScore || 0;
+    const mangaScore = mangaStats.meanScore || 0;
+    if (animeScore > 0 && mangaScore > 0) {
+      const scoreDiff = Math.abs(animeScore - mangaScore);
+      const higherType = animeScore > mangaScore ? 'Anime' : 'Manga';
+      
+      const scoreComp = comparisons.createDiv({ cls: 'zoro-comparison' });
+      scoreComp.createEl('div', { 
+        text: scoreDiff < 0.5 ? 'Similar' : higherType,
+        cls: 'zoro-comparison-value'
+      });
+      scoreComp.createEl('div', { 
+        text: 'Higher Rated',
+        cls: 'zoro-comparison-label'
+      });
+    }
+  }
+
+  renderBreakdowns(fragment, user, mediaType) {
+    const type = mediaType.toLowerCase();
+    const stats = user.statistics[type];
+    
+    if (!stats || stats.count === 0) return;
+
+    const section = fragment.createDiv({ cls: 'zoro-stats-breakdowns' });
+    section.createEl('h3', { 
+      text: `${mediaType} Breakdown`,
+      cls: 'zoro-section-title'
+    });
+
+    const breakdownGrid = section.createDiv({ cls: 'zoro-breakdown-grid' });
+
+    // Status distribution (most useful)
+    if (stats.statuses?.length) {
+      this.renderBreakdownChart(breakdownGrid, 'Status Distribution', stats.statuses, 'status', {
+        showPercentages: true,
+        maxItems: 6
+      });
+    }
+
+    // Score distribution (if user rates)
+    if (stats.scores?.length) {
+      const validScores = stats.scores.filter(s => s.score > 0 && s.count > 0);
+      if (validScores.length >= 3) {
+        this.renderScoreDistribution(breakdownGrid, validScores, user.mediaListOptions);
+      }
+    }
+
+    // Format breakdown
+    if (stats.formats?.length) {
+      const topFormats = stats.formats.slice(0, 6);
+      this.renderBreakdownChart(breakdownGrid, 'Format Distribution', topFormats, 'format', {
+        showPercentages: true
+      });
+    }
+
+    // Release years (activity timeline)
+    if (stats.releaseYears?.length) {
+      this.renderYearlyActivity(breakdownGrid, stats.releaseYears);
+    }
+  }
+
+  renderInsights(fragment, user, mediaType) {
+    const type = mediaType.toLowerCase();
+    const stats = user.statistics[type];
+    
+    if (!stats) return;
+
+    const insights = fragment.createDiv({ cls: 'zoro-stats-insights' });
+    insights.createEl('h3', { 
+      text: 'Insights',
+      cls: 'zoro-section-title'
+    });
+
+    const insightsList = insights.createDiv({ cls: 'zoro-insights-list' });
+
+    // Generate meaningful insights
+    const insightData = this.generateInsights(stats, type, user);
+    insightData.forEach(insight => {
+      const item = insightsList.createDiv({ cls: 'zoro-insight-item' });
+      item.createEl('div', { 
+        text: insight.icon,
+        cls: 'zoro-insight-icon'
+      });
+      item.createEl('div', { 
+        text: insight.text,
+        cls: 'zoro-insight-text'
+      });
+    });
+  }
+
+  renderFavorites(fragment, user, mediaType) {
+    const type = mediaType.toLowerCase();
+    const favorites = user.favourites?.[type]?.nodes;
+    
+    if (!favorites?.length) return;
+
+    const section = fragment.createDiv({ cls: 'zoro-stats-favorites' });
+    section.createEl('h3', { 
+      text: `Favorite ${mediaType}`,
+      cls: 'zoro-section-title'
+    });
+
+    const favGrid = section.createDiv({ cls: 'zoro-favorites-grid' });
+    
+    favorites.slice(0, 6).forEach(item => {
+      const favItem = favGrid.createDiv({ cls: 'zoro-favorite-item' });
+      
+      if (item.coverImage?.medium) {
+        favItem.createEl('img', {
+          cls: 'zoro-favorite-cover',
+          attr: {
+            src: item.coverImage.medium,
+            alt: this.formatter.formatTitle(item)
+          }
+        });
+      }
+      
+      const info = favItem.createDiv({ cls: 'zoro-favorite-info' });
+      info.createEl('div', { 
+        text: this.formatter.formatTitle(item),
+        cls: 'zoro-favorite-title'
+      });
+      
+      if (item.meanScore) {
+        info.createEl('div', { 
+          text: `★ ${(item.meanScore / 10).toFixed(1)}`,
+          cls: 'zoro-favorite-score'
+        });
+      }
+    });
+  }
+
+  renderBreakdownChart(container, title, data, keyField, options = {}) {
+    const { showPercentages = false, maxItems = 8 } = options;
+    
+    const chartContainer = container.createDiv({ cls: 'zoro-breakdown-chart' });
+    chartContainer.createEl('h4', { 
+      text: title,
+      cls: 'zoro-breakdown-title'
+    });
+
+    const chartData = data.slice(0, maxItems);
+    const total = chartData.reduce((sum, item) => sum + item.count, 0);
+    const maxCount = Math.max(...chartData.map(item => item.count));
+
+    const chart = chartContainer.createDiv({ cls: 'zoro-chart' });
+    
+    chartData.forEach((item, index) => {
+      const barContainer = chart.createDiv({ cls: 'zoro-chart-bar-container' });
+      
+      const label = barContainer.createDiv({ cls: 'zoro-chart-label' });
+      label.textContent = item[keyField] || item.status || item.genre || item.format;
+      
+      const barSection = barContainer.createDiv({ cls: 'zoro-chart-bar-section' });
+      const bar = barSection.createDiv({ cls: 'zoro-chart-bar' });
+      
+      const percentage = (item.count / maxCount) * 100;
+      bar.style.setProperty('--bar-width', `${percentage}%`);
+      bar.style.animationDelay = `${index * 0.1}s`;
+      
+      const value = barSection.createDiv({ cls: 'zoro-chart-value' });
+      if (showPercentages && total > 0) {
+        const percent = ((item.count / total) * 100).toFixed(1);
+        value.textContent = `${item.count} (${percent}%)`;
+      } else {
+        value.textContent = item.count.toLocaleString();
+      }
+    });
+  }
+
+  renderScoreDistribution(container, scores, listOptions) {
+    const chartContainer = container.createDiv({ cls: 'zoro-breakdown-chart' });
+    chartContainer.createEl('h4', { 
+      text: 'Score Distribution',
+      cls: 'zoro-breakdown-title'
+    });
+
+    const chart = chartContainer.createDiv({ cls: 'zoro-score-chart' });
+    const maxCount = Math.max(...scores.map(s => s.count));
+
+    scores.forEach((scoreData, index) => {
+      const barContainer = chart.createDiv({ cls: 'zoro-score-bar-container' });
+      
+      const label = barContainer.createDiv({ cls: 'zoro-score-label' });
+      label.textContent = this.formatter.formatScore(scoreData.score, listOptions?.scoreFormat);
+      
+      const bar = barContainer.createDiv({ cls: 'zoro-score-bar' });
+      const percentage = (scoreData.count / maxCount) * 100;
+      bar.style.setProperty('--bar-width', `${percentage}%`);
+      bar.style.animationDelay = `${index * 0.1}s`;
+      
+      const value = barContainer.createDiv({ cls: 'zoro-score-value' });
+      value.textContent = scoreData.count;
+    });
+  }
+
+  renderYearlyActivity(container, yearData) {
+    const chartContainer = container.createDiv({ cls: 'zoro-breakdown-chart' });
+    chartContainer.createEl('h4', { 
+      text: 'Activity by Year',
+      cls: 'zoro-breakdown-title'
+    });
+
+    const recentYears = yearData
+      .filter(y => y.releaseYear >= new Date().getFullYear() - 15)
+      .slice(0, 8);
+
+    if (recentYears.length === 0) return;
+
+    const timeline = chartContainer.createDiv({ cls: 'zoro-year-timeline' });
+    const maxCount = Math.max(...recentYears.map(y => y.count));
+
+    recentYears.forEach((yearData, index) => {
+      const yearItem = timeline.createDiv({ cls: 'zoro-year-item' });
+      
+      yearItem.createEl('div', { 
+        text: yearData.releaseYear,
+        cls: 'zoro-year-label'
+      });
+      
+      const bar = yearItem.createDiv({ cls: 'zoro-year-bar' });
+      const percentage = (yearData.count / maxCount) * 100;
+      bar.style.setProperty('--bar-width', `${percentage}%`);
+      bar.style.animationDelay = `${index * 0.1}s`;
+      
+      yearItem.createEl('div', { 
+        text: yearData.count,
+        cls: 'zoro-year-count'
+      });
+    });
+  }
+
+  generateInsights(stats, type, user) {
+    const insights = [];
+    
+    // Completion rate insight
+    if (stats.statuses) {
+      const completed = stats.statuses.find(s => s.status === 'COMPLETED')?.count || 0;
+      const total = stats.count;
+      const completionRate = (completed / total * 100).toFixed(0);
+      
+      if (completionRate >= 80) {
+        insights.push({
+          icon: '🏆',
+          text: `High completion rate: ${completionRate}% of your ${type} are completed`
+        });
+      } else if (completionRate <= 30) {
+        insights.push({
+          icon: '📚',
+          text: `Lots to explore: Only ${completionRate}% completed, plenty of ${type} to discover!`
+        });
+      }
+    }
+
+    // Score distribution insight
+    if (stats.meanScore > 0) {
+      if (stats.meanScore >= 80) {
+        insights.push({
+          icon: '⭐',
+          text: `You're generous with ratings! Average score: ${(stats.meanScore/10).toFixed(1)}/10`
+        });
+      } else if (stats.meanScore <= 60) {
+        insights.push({
+          icon: '🔍',
+          text: `Selective taste: You rate ${type} conservatively with ${(stats.meanScore/10).toFixed(1)}/10 average`
+        });
+      }
+    }
+
+    // Volume insight for anime
+    if (type === 'anime' && stats.episodesWatched) {
+      if (stats.episodesWatched >= 5000) {
+        insights.push({
+          icon: '🎭',
+          text: `Anime veteran: ${stats.episodesWatched.toLocaleString()} episodes watched!`
+        });
+      }
+      
+      if (stats.minutesWatched >= 100000) { // ~69 days
+        const days = Math.floor(stats.minutesWatched / (60 * 24));
+        insights.push({
+          icon: '⏰',
+          text: `Time investment: ${days} days worth of anime watched`
+        });
+      }
+    }
+
+    // Genre diversity (if available)
+    if (stats.genres && stats.genres.length >= 15) {
+      insights.push({
+        icon: '🌈',
+        text: `Diverse taste: You enjoy ${stats.genres.length} different genres`
+      });
+    }
+
+    return insights.slice(0, 4); // Limit to 4 insights
+  }
+}
+
+class APISourceHelper {
+  constructor(plugin) {
+    this.plugin = plugin;
+  }
+
+  getAPI(source) {
+    return source === 'mal' ? this.plugin.malApi : this.plugin.api;
+  }
+
+  isAuthenticated(source) {
+    return source === 'mal' 
+      ? this.plugin.settings.malAccessToken 
+      : this.plugin.settings.accessToken;
+  }
+
+  getSourceUrl(id, mediaType, source) {
+    return source === 'mal' 
+      ? this.plugin.getMALUrl(id, mediaType)
+      : this.plugin.getAniListUrl(id, mediaType);
+  }
+
+  async fetchSearchData(config, term) {
+    if (config.source === 'mal') {
+      return await this.plugin.malApi.fetchMALData({ 
+        ...config, 
+        type: 'search',
+        search: term, 
+        query: term, // Support both parameters
+        page: 1, 
+        perPage: 5 
+      });
+    } else {
+      return await this.plugin.api.fetchAniListData({ 
+        ...config, 
+        type: 'search',
+        search: term, 
+        page: 1, 
+        perPage: 5 
+      });
+    }
+  }
+
+  async getUserEntryForMedia(mediaId, mediaType, source) {
+    if (source === 'mal') {
+      return await this.plugin.malApi.getUserEntryForMedia?.(mediaId, mediaType) || null;
+    } else {
+      return await this.plugin.api.getUserEntryForMedia(mediaId, mediaType);
+    }
+  }
+
+  async updateMediaListEntry(mediaId, updates, source) {
+    const api = source === 'mal' ? this.plugin.malApi : this.plugin.api;
+    return await api.updateMediaListEntry(mediaId, updates);
+  }
+
+  getSourceSpecificUrl(id, mediaType, source) {
+    return this.plugin.getSourceSpecificUrl(id, mediaType, source);
+  }
+
+  getSourceUrl(id, mediaType, source) {
+    if (source === 'mal') {
+      return this.plugin.getMALUrl(id, mediaType);
+    } else {
+      return this.plugin.getAniListUrl(id, mediaType);
+    }
+  }
+
+  detectSource(entry, config) {
+    return entry?._zoroMeta?.source || config.source || 'anilist';
+  }
+
+  detectMediaType(entry, config, media) {
+    return entry?._zoroMeta?.mediaType || config.mediaType || 
+           (media?.episodes ? 'ANIME' : 'MANGA');
+  }
+}
+
+class FormatterHelper {
+  formatScore(score, scoreFormat = 'POINT_10') {
+    switch (scoreFormat) {
+      case 'POINT_100':
+        return `${Math.round(score * 10)}/100`;
+      case 'POINT_10':
+        return `${(score / 10).toFixed(1)}/10`;
+      case 'POINT_5':
+        return `${Math.round(score / 20)}/5`;
+      case 'POINT_3':
+        return score >= 70 ? '😊' : score >= 40 ? '😐' : '😞';
+      default:
+        return `${Math.round(score / 10)}/10`;
+    }
+  }
+
+  formatWatchTime(minutes) {
+    const hours = Math.floor(minutes / 60);
+    const days = Math.floor(hours / 24);
+    
+    if (days > 365) {
+      const years = (days / 365).toFixed(1);
+      return `${years} years`;
+    } else if (days > 30) {
+      const months = Math.floor(days / 30);
+      return `${months} months`;
+    } else if (days > 0) {
+      return `${days} days`;
+    } else {
+      return `${hours} hours`;
+    }
+  }
+
+  formatProgress(current, total) {
+    return `${current || 0}/${total || '?'}`;
+  }
+
+  formatRating(score, isSearch = false) {
+    if (score == null) return null;
+    
+    if (isSearch) {
+      return `★ ${Math.round(score / 10)}`;
+    } else {
+      if (score > 10) {
+        return `★ ${Math.round(score / 10)}`;
+      } else {
+        return `★ ${Math.round(score)}`;
+      }
+    }
+  }
+
+  getStatusClass(status) {
+    return status ? status.toLowerCase() : 'unknown';
+  }
+
+  getStatusText(status) {
+    return status || 'Unknown';
+  }
+
+  formatGenres(genres, maxCount = 3) {
+    if (!genres?.length) return [];
+    return genres.slice(0, maxCount);
+  }
+
+  formatTitle(media) {
+    return media.title?.english || media.title?.romaji || 'Unknown';
+  }
+
+  formatFormat(format) {
+    return format ? format.substring(0, 2).toUpperCase() : '';
+  }
+}
+
+class DOMHelper {
+  static createLoadingSpinner() {
+    return `
       <div class="sharingan-glow">
         <div class="tomoe-container">
           <span class="tomoe"></span>
@@ -7789,218 +8226,189 @@ if (this.plugin.settings.hideUrlsInTitles) {
         </div>
       </div>
     `;
-
-        editBtn.style.pointerEvents = 'none';
-
-        try {
-          console.log(`[Zoro] Checking user entry for media ${media.id} via ${config.source || 'anilist'}`);
-          
-          let existingEntry = null;
-          
-          if (entrySource === 'mal') {
-    existingEntry = await this.plugin.malApi.getUserEntryForMedia?.(media.id, entryMediaType) || null;
-  } else {
-    existingEntry = await this.plugin.api.getUserEntryForMedia(media.id, entryMediaType);
   }
-          
-          console.log(`[Zoro] User entry result:`, existingEntry ? 'Found existing entry' : 'Not in user list');
-          
-          const entryToEdit = existingEntry || {
-            media: media,
-            status: 'PLANNING',
-            progress: 0,
-            score: null,
-            id: null
-          };
 
-          const isNewEntry = !existingEntry;
-          editBtn.textContent = isNewEntry ? 'Add' : 'Edit';
-          editBtn.className = `status-badge ${isNewEntry ? 'status-add' : 'status-edit'} clickable-status`;
+  static createSkeletonCard() {
+    const skeleton = document.createElement('div');
+    skeleton.className = 'zoro-card zoro-skeleton';
+    skeleton.innerHTML = `
+      <div class="skeleton-cover"></div>
+      <div class="media-info">
+        <div class="skeleton-title"></div>
+        <div class="skeleton-details">
+          <span class="skeleton-badge"></span>
+          <span class="skeleton-badge"></span>
+        </div>
+      </div>
+    `;
+    return skeleton;
+  }
 
-          editBtn.dataset.loading = 'false';
-          editBtn.style.pointerEvents = 'auto';
+  static createListSkeleton(count = 6) {
+    const fragment = document.createDocumentFragment();
+    for (let i = 0; i < count; i++) {
+      const skeleton = document.createElement('div');
+      skeleton.className = 'zoro-card zoro-skeleton';
+      skeleton.innerHTML = `
+        <div class="skeleton-cover"></div>
+        <div class="media-info">
+          <div class="skeleton-title"></div>
+          <div class="skeleton-details">
+            <span class="skeleton-badge"></span>
+            <span class="skeleton-badge"></span>
+          </div>
+        </div>
+      `;
+      fragment.appendChild(skeleton);
+    }
+    return fragment;
+  }
 
-          console.log(`[Zoro] Opening edit modal for ${isNewEntry ? 'new' : 'existing'} entry`);
+  static createStatsSkeleton() {
+    const container = document.createElement('div');
+    container.className = 'zoro-container zoro-stats-skeleton';
+    container.innerHTML = `
+      <div class="zoro-user-stats">
+        <div class="zoro-user-header">
+          <div class="skeleton-avatar"></div>
+          <div class="skeleton-title"></div>
+        </div>
+        <div class="zoro-stats-grid">
+          <div class="skeleton-stat-section"></div>
+          <div class="skeleton-stat-section"></div>
+        </div>
+      </div>
+    `;
+    return container;
+  }
 
-          this.plugin.edit.createEditModal(
-            entryToEdit,
-            async (updates) => {
-              try {
-                console.log(`[Zoro] Updating media ${media.id} with:`, updates);
-                 
-                 const api = entrySource === 'mal' ? this.plugin.malApi : this.plugin.api;
-                await api.updateMediaListEntry(media.id, updates);
-                
-                const successMessage = isNewEntry ? '✅ Added to list!' : '✅ Updated!';
-                new Notice(successMessage, 3000);
-                console.log(`[Zoro] ${successMessage}`);
-                
-                editBtn.textContent = 'Edit';
-                editBtn.className = 'status-badge status-edit clickable-status';
-                
-                this.refreshActiveViews();
-                
-              } catch (updateError) {
-                console.error('[Zoro] Update failed:', updateError);
-                new Notice(`❌ Update failed: ${updateError.message}`, 5000);
-              }
-            },
-            () => {
-              console.log('[Zoro] Edit modal cancelled');
-              editBtn.textContent = 'Edit';
-              editBtn.className = 'status-badge status-edit clickable-status';
-              editBtn.dataset.loading = 'false';
-              editBtn.style.pointerEvents = 'auto';
-            },
-            entrySource
-          );
+  static createSearchSkeleton() {
+    const container = document.createElement('div');
+    container.className = 'zoro-search-container zoro-search-skeleton';
+    container.innerHTML = `
+      <div class="zoro-search-input-container">
+        <input type="text" class="zoro-search-input" disabled placeholder="Loading search...">
+      </div>
+      <div class="zoro-search-results">
+        <div class="zoro-cards-grid">
+          ${Array(3).fill().map(() => `
+            <div class="zoro-card zoro-skeleton">
+              <div class="skeleton-cover"></div>
+              <div class="media-info">
+                <div class="skeleton-title"></div>
+                <div class="skeleton-details">
+                  <span class="skeleton-badge"></span>
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+    return container;
+  }
 
-        } catch (error) {
-          console.error('[Zoro] User entry check failed:', error);
-          
-          editBtn.textContent = 'Edit';
-          editBtn.dataset.loading = 'false';
-          editBtn.style.pointerEvents = 'auto';
-          
-          new Notice('⚠️ Could not check list status, assuming new entry', 3000);
-          
-          const defaultEntry = {
-            media: media,
-            status: 'PLANNING',
-            progress: 0,
-            score: null,
-            id: null
-          };
+  static createErrorMessage(message) {
+    return `<div class="zoro-search-message">${message}</div>`;
+  }
 
-          console.log('[Zoro] Falling back to default entry data');
+  static createFragment() {
+    return document.createDocumentFragment();
+  }
 
-          this.plugin.edit.createEditModal(
-            defaultEntry,
-            async (updates) => {
-              try {
-                const api = config.source === 'mal' ? this.plugin.malApi : this.plugin.api;
-                await api.updateMediaListEntry(media.id, updates);
-                new Notice('✅ Added to list!', 3000);
-                this.refreshActiveViews();
-              } catch (updateError) {
-                console.error('[Zoro] Update failed:', updateError);
-                new Notice(`❌ Failed to add: ${updateError.message}`, 5000);
-              }
-            },
-            () => {
-              console.log('[Zoro] Fallback edit modal cancelled');
-            },
-            config.source
-          );
+  static setupFragment() {
+    // Create fragment with Obsidian's createEl method if available
+    const fragment = document.createDocumentFragment();
+    
+    // Add Obsidian's createEl method to fragment if it doesn't exist
+    if (!fragment.createEl && document.createEl) {
+      fragment.createEl = function(tag, attr, callback) {
+        const el = document.createElement(tag);
+        if (attr) {
+          if (attr.cls) el.className = attr.cls;
+          if (attr.text) el.textContent = attr.text;
+          if (attr.attr) {
+            Object.entries(attr.attr).forEach(([key, value]) => {
+              el.setAttribute(key, value);
+            });
+          }
         }
+        if (callback) callback(el);
+        this.appendChild(el);
+        return el;
       };
+    }
+    
+    return fragment;
+  }
+
+  static setupPressAndHold(element, callback, duration = 400) {
+    let pressTimer = null;
+    let isPressed = false;
+    
+    const startPress = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      isPressed = true;
+      element.classList.add('pressed');
       
-      details.appendChild(editBtn);
-    }
+      pressTimer = setTimeout(() => {
+        if (isPressed) {
+          callback(e);
+          element.classList.remove('pressed');
+          isPressed = false;
+        }
+      }, duration);
+    };
 
-    info.appendChild(details);
+    const endPress = (e) => {
+      if (pressTimer) {
+        clearTimeout(pressTimer);
+        pressTimer = null;
+      }
+      element.classList.remove('pressed');
+      isPressed = false;
+    };
+
+    // Mouse events
+    element.onmousedown = startPress;
+    element.onmouseup = element.onmouseleave = endPress;
+    
+    // Touch events
+    element.ontouchstart = startPress;
+    element.ontouchend = element.ontouchcancel = element.ontouchmove = endPress;
+    
+    // Prevent default behaviors
+    element.onclick = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      return false;
+    };
+    
+    element.oncontextmenu = (e) => {
+      e.preventDefault();
+      return false;
+    };
+    
+    element.ondragstart = (e) => {
+      e.preventDefault();
+      return false;
+    };
+
+    return { startPress, endPress };
   }
 
-  if (!isCompact && this.plugin.settings.showGenres && media.genres?.length) {
-    const genres = document.createElement('div');
-    genres.className = 'genres';
-    media.genres.slice(0, 3).forEach(g => {
-      const tag = document.createElement('span');
-      tag.className = 'genre-tag';
-      // FIX: Add null check for genre
-      tag.textContent = g || 'Unknown';
-      genres.appendChild(tag);
+  static addSecondaryMetric(container, label, value) {
+    const metric = container.createDiv({ cls: 'zoro-secondary-metric' });
+    metric.createEl('span', { 
+      text: label,
+      cls: 'zoro-metric-label-small'
     });
-    info.appendChild(genres);
+    metric.createEl('span', { 
+      text: value,
+      cls: 'zoro-metric-value-small'
+    });
   }
-
-  card.appendChild(info);
-  
-  const heart = document.createElement('span');
-  heart.className = 'zoro-heart';
-  if (!media.isFavourite) heart.style.display = 'none';
-  card.appendChild(heart);
-
-  return card;
-}
-
-
-  attachEventListeners(card, entry, media, config) {
-    const statusBadge = card.querySelector('.clickable-status[data-entry-id]');
-    if (statusBadge) {
-      statusBadge.onclick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this.handleStatusClick(e, entry, statusBadge);
-      };
-    }
-    
-    const addBtn = card.querySelector('.clickable-status[data-media-id]');
-    if (addBtn) {
-      addBtn.onclick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this.handleAddClick(e, media, config);
-      };
-    }
-  }
-
-handleStatusClick(e, entry, badge, config = {}) {
-  e.preventDefault();
-  e.stopPropagation();
-  
-  // Use injected metadata if available
-  const source = entry._zoroMeta?.source || config.source || 'anilist';
-  const mediaType = entry._zoroMeta?.mediaType || config.mediaType || 'ANIME';
-  
-  // Check authentication based on source
-  const isAuthenticated = source === 'mal' 
-    ? this.plugin.settings.malAccessToken 
-    : source === 'simkl'
-    ? this.plugin.settings.simklAccessToken
-    : this.plugin.settings.accessToken;
-    
-  if (!isAuthenticated) {
-    this.plugin.prompt.createAuthenticationPrompt(source);
-    return;
-  }
-  
-  this.plugin.handleEditClick(e, entry, badge, {
-    source,
-    mediaType
-  });
-}
-
-
-  handleAddClick(e, media, config) {
-    e.preventDefault();
-    e.stopPropagation();
-    const btn = e.target;
-    btn.innerHTML = `
-  <div class="sharingan-glow">
-    <div class="tomoe-container">
-      <span class="tomoe"></span>
-      <span class="tomoe"></span>
-      <span class="tomoe"></span>
-    </div>
-  </div>
-`;
-
-    btn.disabled = true;
-    
-    this.plugin.api.addMediaToList(media.id, { status: 'PLANNING' }, config.mediaType)
-      .then(() => {
-        btn.textContent = '✅';
-        new Notice('Added to list!');
-      })
-      .catch(err => {
-        btn.textContent = 'ADD';
-        btn.disabled = false;
-        new Notice(`❌ ${err.message}`);
-      });
-  }
-
-  clear(el) { el.empty?.(); }
 }
 
 class Edit {
@@ -8040,45 +8448,46 @@ class Edit {
   }
 
   
-createEditModal(entry, onSave, onCancel, source = 'anilist') {
-  
+ createEditModal(entry, onSave, onCancel, source = 'anilist') {
+  // Use metadata source if available, otherwise use provided source
   const actualSource = entry._zoroMeta?.source || source;
   const provider = this.providers[actualSource];
-    const modal = this.renderer.createModalStructure();
-    const { overlay, content, form } = modal;
-    
-    const title = this.renderer.createTitle(entry);
-    const closeBtn = this.renderer.createCloseButton(() => this.support.closeModal(modal.container, onCancel));
-    const favoriteBtn = this.renderer.createFavoriteButton(entry, source, (entry, btn, src) => this.toggleFavorite(entry, btn, src));
-    const formFields = this.renderer.createFormFields(entry);
-    const quickButtons = this.renderer.createQuickProgressButtons(entry, formFields.progress.input, formFields.status.input);
-    const actionButtons = this.renderer.createActionButtons(entry, () => this.handleRemove(entry, modal.container, source), this.config);
-    
-    this.support.setupModalInteractions(modal, overlay, onCancel);
-    this.support.setupFormSubmission(form, () => this.handleSave(entry, onSave, actionButtons.save, formFields, modal, source));
-    this.support.setupEscapeListener(onCancel, modal, () => {
-      this.handleSave(entry, onSave, actionButtons.save, formFields, modal, source);
-    });
-    
-    this.renderer.assembleModal(content, form, {
-      title,
-      closeBtn,
-      favoriteBtn,
-      formFields,
-      quickButtons,
-      actionButtons
-    });
-    
-    document.body.appendChild(modal.container);
-    
-    if (provider.supportsFeature('favorites')) {
-      this.initializeFavoriteButton(entry, favoriteBtn, source);
-    } else {
-      favoriteBtn.style.display = 'none';
-    }
-    
-    return modal;
+  
+  const modal = this.renderer.createModalStructure();
+  const { overlay, content, form } = modal;
+  
+  const title = this.renderer.createTitle(entry);
+  const closeBtn = this.renderer.createCloseButton(() => this.support.closeModal(modal.container, onCancel));
+  const favoriteBtn = this.renderer.createFavoriteButton(entry, actualSource, (entry, btn, src) => this.toggleFavorite(entry, btn, src));
+  const formFields = this.renderer.createFormFields(entry);
+  const quickButtons = this.renderer.createQuickProgressButtons(entry, formFields.progress.input, formFields.status.input);
+  const actionButtons = this.renderer.createActionButtons(entry, () => this.handleRemove(entry, modal.container, actualSource), this.config);
+  
+  this.support.setupModalInteractions(modal, overlay, onCancel);
+  this.support.setupFormSubmission(form, () => this.handleSave(entry, onSave, actionButtons.save, formFields, modal, actualSource));
+  this.support.setupEscapeListener(onCancel, modal, () => {
+    this.handleSave(entry, onSave, actionButtons.save, formFields, modal, actualSource);
+  });
+  
+  this.renderer.assembleModal(content, form, {
+    title,
+    closeBtn,
+    favoriteBtn,
+    formFields,
+    quickButtons,
+    actionButtons
+  });
+  
+  document.body.appendChild(modal.container);
+  
+  if (provider.supportsFeature('favorites')) {
+    this.initializeFavoriteButton(entry, favoriteBtn, actualSource);
+  } else {
+    favoriteBtn.style.display = 'none';
   }
+  
+  return modal;
+}
 
   async initializeFavoriteButton(entry, favBtn, source) {
     const provider = this.providers[source];
@@ -8569,10 +8978,56 @@ class MALEditModal {
     return;
   }
 
-  async updateEntry(entry, updates) {
-    const updatedEntry = await this.plugin.malApi.updateMediaListEntry(entry.media.id, updates);
+  async updateEntry(entry, updates, onSave) {
+    const mediaId = entry.media?.id || entry.mediaId;
+    const mediaType = this.detectMediaType(entry);
+    
+    if (!mediaId) {
+      throw new Error('Media ID not found');
+    }
+
+    // Prepare MAL API updates using the format expected by your MAL API
+    const malUpdates = {};
+    
+    // Map status - let the MAL API handle the conversion
+    if (updates.status !== undefined) {
+      malUpdates.status = updates.status; // Pass AniList format, let MAL API convert
+    }
+    
+    // Map score
+    if (updates.score !== undefined) {
+      malUpdates.score = updates.score === null ? 0 : updates.score;
+    }
+    
+    // Map progress
+    if (updates.progress !== undefined) {
+      malUpdates.progress = updates.progress;
+    }
+
+    try {
+      // Call the MAL API updateMediaListEntry method
+      const updatedEntry = await this.plugin.malApi.updateMediaListEntry(mediaId, malUpdates);
+      
+      // The MAL API already returns normalized data, so use it directly
+      await onSave(updatedEntry);
+      Object.assign(entry, updatedEntry);
+      
+      return entry;
+    } catch (error) {
+  // Handle specific MAL API errors
+  if (error.message?.includes('No valid updates provided')) {
+    throw new Error('No changes to save');
+  }
+  if (error.message?.includes('invalidateScope is not a function')) {
+    // Log the cache error but don't fail the update
+    console.warn('Cache cleanup failed:', error.message);
+    // Still call onSave since the update actually succeeded
+    await onSave(updatedEntry);
     Object.assign(entry, updatedEntry);
     return entry;
+  }
+  throw new Error(`MAL update failed: ${error.message}`);
+}
   }
 
   async removeEntry(entry) {
@@ -8580,15 +9035,50 @@ class MALEditModal {
   }
 
   invalidateCache(entry) {
-    this.plugin.cache.invalidateByMedia(String(entry.media.id));
+    if (entry.media?.id) {
+      this.plugin.cache.invalidateByMedia(String(entry.media.id));
+    }
     this.plugin.cache.invalidateScope('userData');
   }
 
   updateAllFavoriteButtons(entry) {
+    // MAL doesn't have favorites
   }
 
   supportsFeature(feature) {
     return ['update'].includes(feature);
+  }
+
+  detectMediaType(entry) {
+    // Try multiple ways to determine media type for MAL API
+    if (entry._zoroMeta?.mediaType) {
+      return entry._zoroMeta.mediaType.toLowerCase();
+    }
+    
+    if (entry.media?.type) {
+      return entry.media.type.toLowerCase();
+    }
+    
+    // Check media format
+    if (entry.media?.format) {
+      const format = entry.media.format.toLowerCase();
+      if (['tv', 'movie', 'ova', 'ona', 'special', 'music'].includes(format)) {
+        return 'anime';
+      }
+      if (['manga', 'novel', 'one_shot'].includes(format)) {
+        return 'manga';
+      }
+    }
+    
+    // Fall back to checking for episodes vs chapters
+    if (entry.media?.episodes !== undefined || entry.media?.episodes !== null) {
+      return 'anime';
+    } else if (entry.media?.chapters !== undefined || entry.media?.chapters !== null) {
+      return 'manga';
+    }
+    
+    // Default fallback
+    return 'anime';
   }
 }
 
@@ -9485,157 +9975,207 @@ class Trending {
   }
 
   async fetchAniListTrending(mediaType = 'ANIME', limit = 20) {
-  const query = `
-    query ($type: MediaType, $perPage: Int) {
-      Page(page: 1, perPage: $perPage) {
-        media(type: $type, sort: TRENDING_DESC, status: RELEASING) {
-          id
-          idMal  // Include MAL ID for cross-reference
-          title {
-            romaji
-            english
-            native
+    const query = `
+      query ($type: MediaType, $perPage: Int) {
+        Page(page: 1, perPage: $perPage) {
+          media(type: $type, sort: TRENDING_DESC) {
+            id
+            idMal
+            title {
+              romaji
+              english
+              native
+            }
+            coverImage {
+              large
+              medium
+            }
+            format
+            averageScore
+            genres
+            episodes
+            chapters
+            status
+            startDate {
+              year
+              month
+              day
+            }
           }
-          coverImage {
-            large
-            medium
-          }
-          format
-          averageScore
-          genres
-          episodes
-          chapters
-          status
         }
       }
-    }
-  `;
+    `;
 
-  const variables = {
-    type: mediaType.toUpperCase(),
-    perPage: limit
-  };
+    const variables = {
+      type: mediaType.toUpperCase(),
+      perPage: limit
+    };
 
-  const response = await fetch('https://graphql.anilist.co', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ query, variables })
-  });
+    console.log('[Trending] AniList query:', { query: query.trim(), variables });
 
-  if (!response.ok) {
-    throw new Error(`AniList API error: ${response.status}`);
-  }
-
-  const data = await response.json();
-  
-  return (data.data.Page.media || []).map(media => ({
-    ...media,
-    _zoroMeta: {
-      source: 'anilist', // Explicitly mark as AniList
-      mediaType: mediaType
-    }
-  }));
-}
-
-
-  
-async fetchJikanTrending(mediaType = 'anime', limit = 20) {
-  const type = mediaType.toLowerCase();
-  const url = `https://api.jikan.moe/v4/top/${type}?filter=airing&limit=${limit}`;
-  
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Jikan API error: ${response.status}`);
-  }
-
-  const data = await response.json();
-  
-  const unique = [];
-  const seen = new Set();
-  
-  (data.data || []).forEach(item => {
-    if (!seen.has(item.mal_id)) {
-      seen.add(item.mal_id);
-      unique.push({
-        id: item.mal_id,  // Keep MAL ID as primary
-        malId: item.mal_id, // Explicitly store MAL ID
-        title: {
-          romaji: item.title || '',
-          english: item.title_english || '',
-          native: item.title_japanese || ''
+    try {
+      const response = await fetch('https://graphql.anilist.co', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
         },
-        coverImage: {
-          large: item.images?.jpg?.large_image_url,
-          medium: item.images?.jpg?.image_url
-        },
-        format: item.type,
-        averageScore: item.score ? Math.round(item.score * 10) : null,
-        genres: item.genres?.map(g => g.name) || [],
-        episodes: item.episodes,
-        chapters: type === 'manga' ? item.chapters : undefined,
-        status: item.status,
+        body: JSON.stringify({ query, variables })
+      });
+
+      console.log('[Trending] AniList response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[Trending] AniList error response:', errorText);
+        throw new Error(`AniList API error: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      
+      console.log('[Trending] AniList response data:', data);
+
+      if (data.errors) {
+        console.error('[Trending] AniList GraphQL errors:', data.errors);
+        throw new Error(`AniList GraphQL error: ${data.errors[0]?.message || 'Unknown error'}`);
+      }
+
+      if (!data.data?.Page?.media) {
+        console.error('[Trending] No media data in response:', data);
+        throw new Error('No trending data received from AniList');
+      }
+
+      const mediaList = data.data.Page.media.map(media => ({
+        ...media,
         _zoroMeta: {
-          source: 'mal', // Explicitly mark as MAL
-          mediaType: type === 'manga' ? 'MANGA' : 'ANIME'
+          source: 'anilist',
+          mediaType: mediaType.toUpperCase()
+        }
+      }));
+
+      console.log('[Trending] Successfully fetched AniList trending:', mediaList.length, 'items');
+      return mediaList;
+
+    } catch (error) {
+      console.error('[Trending] AniList fetch failed:', error);
+      throw error;
+    }
+  }
+
+  async fetchJikanTrending(mediaType = 'anime', limit = 20) {
+    const type = mediaType.toLowerCase();
+    const url = `https://api.jikan.moe/v4/top/${type}?filter=airing&limit=${limit}`;
+    
+    console.log('[Trending] Jikan URL:', url);
+
+    try {
+      const response = await fetch(url);
+      
+      console.log('[Trending] Jikan response status:', response.status);
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[Trending] Jikan error response:', errorText);
+        throw new Error(`Jikan API error: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      
+      console.log('[Trending] Jikan response data:', data?.data?.length, 'items');
+      
+      const unique = [];
+      const seen = new Set();
+      
+      (data.data || []).forEach(item => {
+        if (!seen.has(item.mal_id)) {
+          seen.add(item.mal_id);
+          unique.push({
+            id: item.mal_id,
+            malId: item.mal_id,
+            title: {
+              romaji: item.title || '',
+              english: item.title_english || '',
+              native: item.title_japanese || ''
+            },
+            coverImage: {
+              large: item.images?.jpg?.large_image_url,
+              medium: item.images?.jpg?.image_url
+            },
+            format: item.type,
+            averageScore: item.score ? Math.round(item.score * 10) : null,
+            genres: item.genres?.map(g => g.name) || [],
+            episodes: item.episodes,
+            chapters: type === 'manga' ? item.chapters : undefined,
+            status: item.status,
+            _zoroMeta: {
+              source: 'mal',
+              mediaType: type === 'manga' ? 'MANGA' : 'ANIME'
+            }
+          });
         }
       });
+
+      const result = unique.slice(0, limit);
+      console.log('[Trending] Successfully fetched Jikan trending:', result.length, 'items');
+      return result;
+
+    } catch (error) {
+      console.error('[Trending] Jikan fetch failed:', error);
+      throw error;
     }
-  });
-
-  return unique.slice(0, limit);
-}
-
-
-async renderTrendingBlock(el, config) {
-  el.empty();
-  el.appendChild(this.plugin.render.createListSkeleton(10));
-
-  try {
-    const type = (config.mediaType || 'ANIME').toLowerCase();
-    let items = [];
-    let source = config.source || 'anilist';
-
-    if (config.source === 'mal') {
-      items = await this.plugin.requestQueue.add(() => 
-        this.fetchJikanTrending(type, 20)
-      );
-      source = 'mal';
-    } else if (config.source === 'anilist') {
-      items = await this.plugin.requestQueue.add(() => 
-        this.fetchAniListTrending(config.mediaType || 'ANIME', 20)
-      );
-      source = 'anilist';
-    } else {
-      // Default behavior - fetch AniList trending
-      items = await this.plugin.requestQueue.add(() => 
-        this.fetchAniListTrending(config.mediaType || 'ANIME', 20)
-      );
-      source = 'anilist';
-    }
-
-    // Ensure metadata is set for each item
-    items.forEach(item => {
-      if (!item._zoroMeta) {
-        item._zoroMeta = {
-          source: source,
-          mediaType: config.mediaType || 'ANIME'
-        };
-      }
-    });
-
-    el.empty();
-    this.plugin.render.renderSearchResults(el, items, {
-      layout: config.layout || 'card',
-      mediaType: config.mediaType || 'ANIME',
-      source: source
-    });
-  } catch (err) {
-    this.plugin.renderError(el, err.message, 'Trending');
   }
-}
 
+  async renderTrendingBlock(el, config) {
+    console.log('[Trending] renderTrendingBlock called with config:', config);
+    
+    el.empty();
+    el.appendChild(this.plugin.render.createListSkeleton(10));
+
+    try {
+      const type = (config.mediaType || 'ANIME').toLowerCase();
+      const source = config.source || this.plugin.settings.defaultApiSource || 'anilist';
+      let items = [];
+
+      console.log('[Trending] Fetching trending for:', { type, source });
+
+      if (source === 'mal') {
+        console.log('[Trending] Using MAL/Jikan API');
+        items = await this.plugin.requestQueue.add(() => 
+          this.fetchJikanTrending(type, 20)
+        );
+      } else {
+        console.log('[Trending] Using AniList API');
+        items = await this.plugin.requestQueue.add(() => 
+          this.fetchAniListTrending(config.mediaType || 'ANIME', 20)
+        );
+      }
+
+      // Ensure metadata is set for each item
+      items.forEach(item => {
+        if (!item._zoroMeta) {
+          item._zoroMeta = {
+            source: source,
+            mediaType: config.mediaType || 'ANIME'
+          };
+        }
+      });
+
+      console.log('[Trending] Rendering', items.length, 'trending items');
+
+      el.empty();
+      this.plugin.render.renderSearchResults(el, items, {
+        layout: config.layout || 'card',
+        mediaType: config.mediaType || 'ANIME',
+        source: source
+      });
+
+      console.log('[Trending] Successfully rendered trending block');
+
+    } catch (err) {
+      console.error('[Trending] Error in renderTrendingBlock:', err);
+      el.empty();
+      this.plugin.renderError(el, err.message, 'Trending');
+    }
+  }
 }
 
 class Authentication {

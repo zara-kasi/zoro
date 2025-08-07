@@ -2491,7 +2491,7 @@ body.theme-light .zoro-heart.favorited::before {
     box-shadow: 
         0 0 4px hsl(var(--accent-h), var(--accent-s), var(--accent-l)),
         0 0 8px hsl(var(--accent-h), var(--accent-s), var(--accent-l));
-    animation: pulse-glow 0.7s ease-in-out infinite;
+    animation: pulse-glow 0.5s ease-in-out infinite;
 }
 
 .sharingan-glow .tomoe-container {

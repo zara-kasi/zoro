@@ -1,273 +1,355 @@
+🍥 Zoro - Your Ultimate Anime & Manga Tracker for Obsidian
 
-# Zoro
+[![Obsidian Plugin](https://img.shields.io/badge/Obsidian-Plugin-blueviolet?style=flat-square&logo=obsidian)](https://obsidian.md/plugins?id=zoro)
+[![GitHub release](https://img.shields.io/github/v/release/username/zoro-obsidian?style=flat-square)](https://github.com/username/zoro-obsidian/releases)
+![GitHub Stars](https://img.shields.io/github/stars/username/zoro-obsidian?style=flat-square)
+![GitHub Issues](https://img.shields.io/github/issues-raw/username/zoro-obsidian?style=flat-square)
 
-**Integrate your AniList anime & manga data directly into Obsidian notes!**
-
----
-
-## Features
-
-- 📺 **Embed your AniList data** - Display your anime/manga lists directly in your notes
-- 🎨 **Multiple display options** - Choose between card layout or table layout
-- 🔍 **Inline references** - Link to specific anime/manga or show user stats
-- ⚡ **Cached data** - Fast loading with smart caching (5-minute cache)
-- 🎯 **Customizable** - Show/hide images, ratings, progress, and more
-- 📱 **Mobile friendly** - Works on desktop and mobile versions of Obsidian
-### 📋 Media Lists
-- Display your AniList anime/manga lists with customizable layouts
-- Support for all list statuses (Current, Completed, Paused, Dropped, Planning, Repeating)
-- Card and table layout options
-- Real-time data fetching with 5-minute caching
-
-### 🔍 Search Functionality
-- Interactive search interface for anime and manga
-- Real-time search results with debouncing
-- Clickable results with direct links to AniList
-
-### 📊 User Statistics
-- Display comprehensive user statistics
-- Anime and manga viewing/reading stats
-- Mean scores and standard deviations
-- Episodes watched, chapters read, and more
-
-### 🎯 Single Media Display
-- Show individual anime/manga entries
-- Personal progress and ratings
-- Detailed media information
-
-### 🔗 Inline Links
-- Special `anilist:` link syntax for quick media embedding
-- Automatic link processing in your notes
-
-### ⚙️ Customizable Settings
-- Toggle cover images, ratings, progress, and genres
-- Choose default layout preferences
-- Responsive design for mobile and desktop
-
+> "Track your anime journey inside Obsidian - beautifully rendered, intelligently cached, and seamlessly integrated."
 
 ---
 
-## Installation
-### Option 1 ( Recommended):
--  Use BRAT community plugin to install.
-### Option 2:
-1. Download the latest release from [Releases](https://github.com/zara-kasi/AniList-Obsidian/releases).  
-2. Unzip into your Obsidian vault’s `plugins/` folder, e.g.  
+📋 Table of Contents
+- [Features](#-features)
+- [Installation](#-installation)
+- [Quick Start](#-quick-start)
+- [Supported Platforms](#-supported-platforms)
+- [Configuration](#-configuration)
+- [Usage Guide](#-usage-guide)
+- [Advanced Features](#-advanced-features)
+- [API Support](#-api-support)
+- [Troubleshooting](#-troubleshooting)
+- [Contributing](#-contributing)
+- [License](#-license)
 
-3. Reload Obsidian and enable “AniList-Obsidian” in Settings → Community Plugins.
+---
+
+🌟 Features
+
+📊 Multi-Platform Support
+- AniList - Full GraphQL integration
+- MyAnimeList (MAL) - OAuth2 authentication
+- Simkl - Modern tracking platform
+
+🎨 Beautiful Renderings
+- Card Layout - Grid-based with cover art
+- Table Layout - Compact tabular view
+- Stats Dashboard - Comprehensive analytics
+- Real-time Search - Instant results with thumbnails
+
+⚡ Enterprise-Grade Performance
+- Smart Caching - 30min user data, 10min media data
+- Request Queueing - Prevents rate limiting
+- Circuit Breakers - Graceful degradation
+- Progressive Loading - Chunked rendering for large lists
+
+🛠 Advanced Features
+- In-note Editing - Update progress without leaving Obsidian
+- Rich Details Panel - Press & hold covers for more info
+- Trending Discovery - See what's popular across platforms
+- Cross-platform Sync - Convert between AniList/MAL IDs automatically
 
 ---
 
-## Configuration
+📦 Installation
 
-1. Open Settings → AniList-Obsidian  
-2. Enter your AniList **Username** (e.g. `your-anilist-username`)  
-3. You can begin by using the templates available in the settings.
+Method 1: Community Plugins (Recommended)
+1. Open Obsidian Settings
+2. Go to Community Plugins → Browse
+3. Search for "Zoro"
+4. Click Install → Enable
+
+Method 2: Manual Installation
+1. Download latest release from [GitHub Releases](https://github.com/username/zoro-obsidian/releases)
+2. Extract to `.obsidian/plugins/zoro/`
+3. Restart Obsidian
+4. Enable in Community Plugins settings
 
 ---
-## Usage
 
-1. Go to Settings → Community Plugins → AniList Integration
-2. Enter your AniList username in the "Default Username" field
-3. Configure your display preferences
-4. Start using the plugin in your notes!
-5. You can begin by using the templates available here.
-[Anime](https://github.com/zara-kasi/AniList-Obsidian/blob/main/Anime-Template.md) ,
-[Manga](https://github.com/zara-kasi/AniList-Obsidian/blob/main/Manga-Template.md)
+🚀 Quick Start
 
-### Code Blocks
+Step 1: Connect Your Account
+1. Open Settings → Zoro
+2. Click Authenticate with AniList (or MAL/Simkl)
+3. Follow the OAuth flow
+4. Done! 🎉
 
-#### Media Lists
-Display your anime or manga lists using code blocks:
+Step 2: Your First Code Block
 
-## [Comprehensive guide on how to use all its features:](Guide.md)
-```markdown
-```anilist
-listType: CURRENT
-```
-**Parameters:**
-- `username`: Your AniList username (required)
-- `listType`: List status (CURRENT, COMPLETED, PAUSED, DROPPED, PLANNING, REPEATING)
-- `layout`: Display layout (card, table)
-
-## Advanced Features
-#### Search Interface
-Create an interactive search interface:
-
-### Caching
-```markdown
-```anilist-search
-mediaType: ANIME
-```
-
-The plugin automatically caches AniList data for 5 minutes to improve performance and reduce API calls. You can manually clear the cache in the plugin settings.
-**Parameters:**
-- `mediaType`: Type of media to search (ANIME, MANGA)
-- `layout`: Display layout (card, table)
-
-#### User Statistics
-Display user statistics:
-
-```markdown
-```anilist
+```zoro
+username: your_username
 type: stats
-```
-
-### Responsive Design
-#### Single Media Item
-Display a specific anime/manga from your list:
-
-The plugin automatically adapts to different screen sizes and works well on both desktop and mobile versions of Obsidian.
-```markdown
-```anilist
-type: single
 mediaType: ANIME
-mediaId: 123456
+layout: enhanced
 ```
 
-## Customization
-### Inline Links
+Step 3: Track Your Watching
 
-### Settings
-Use special `anilist:` links in your notes:
-
-<!-- User's current anime list -->
-[My Current Anime](anilist:username/current)
-
-- **Default Username**: Your AniList username
-- **Default List Type**: Which list to show by default
-- **Show Cover Images**: Toggle image display
-- **Show Ratings**: Toggle rating display
-- **Show Progress**: Toggle progress display
-- **Card Layout**: Choose between card or table layout
-<!-- User statistics -->
-[My Stats](anilist:username/stats)
-
-### CSS Customization
-<!-- Specific anime/manga -->
-[Attack on Titan](anilist:username/anime/16498)
-
-
-You can customize the appearance by adding CSS to your vault's `snippets` folder:
-**Link Format:**
-- `anilist:username/current` - Current watching/reading list
-- `anilist:username/completed` - Completed list
-- `anilist:username/stats` - User statistics
-- `anilist:username/anime/ID` - Specific anime
-- `anilist:username/manga/ID` - Specific manga
-
-## Configuration
-
-Access plugin settings through Obsidian Settings → Community Plugins → AniList Integration:
-
-### Display Options
-- **Default Layout**: Choose between card or table layout
-- **Show Cover Images**: Toggle anime/manga cover images
-- **Show Ratings**: Display user scores and ratings
-- **Show Progress**: Show watching/reading progress
-- **Show Genres**: Display genre tags
-
-### Performance Features
-- **Caching**: 5-minute cache for API responses
-- **Debounced Search**: 300ms delay for search queries
-- **Responsive Design**: Optimized for mobile and desktop
-
-## Supported List Types
-
-| Status | Description |
-|--------|-------------|
-| CURRENT | Currently watching/reading |
-| COMPLETED | Finished anime/manga |
-| PAUSED | On hold |
-| DROPPED | Discontinued |
-| PLANNING | Plan to watch/read |
-| REPEATING | Rewatching/rereading |
-
-## Layout Options
-
-### Card Layout
-- Grid-based display (3 columns on desktop)
-- Cover images with media information
-- Responsive design
-- Hover effects and animations
-
-### Table Layout
-- Tabular format with sortable columns
-- Compact information display
-- Better for large lists
-- Mobile-friendly
-
-## API Integration
-
-The plugin uses the AniList GraphQL API:
-- **Endpoint**: `https://graphql.anilist.co`
-- **Rate Limiting**: Handled automatically with caching
-- **Authentication**: Not required for public data
-
-## Examples
-
-### Basic Usage
-```markdown
-# My Current Anime
-```anilist
+```zoro
+username: your_username
+type: list
 listType: CURRENT
-```
-
-```css
-/* Make cards smaller */
-.anilist-grid {
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-}
-# Search for Anime
-```anilist-search
 mediaType: ANIME
+layout: card
 ```
 
-/* Change genre tag colors */
-.anilist-genre-tag {
-    background: #ff6b6b;
-    color: white;
-}
-# My AniList Stats
-```anilist
+---
+
+📱 Supported Platforms
+
+Platform	Status	Features	
+AniList	✅ Full	All features including favorites	
+MyAnimeList	✅ Full	Progress tracking, updates	
+Simkl	✅ Beta	Basic tracking & discovery	
+
+---
+
+⚙️ Configuration
+
+Basic Settings
+
+```yaml
+# In Obsidian Settings → Zoro
+defaultApiSource: anilist  # anilist | mal | simkl
+defaultUsername: your_username
+defaultLayout: card       # card | table | minimal
+showCoverImages: true
+showRatings: true
+showProgress: true
+```
+
+Advanced Settings
+
+```yaml
+# Cache & Performance
+cacheTTL: 1800000        # 30 minutes
+maxCacheSize: 10000
+backgroundRefresh: true
+
+# Display Options
+theme: auto              # auto | light | dark
+statsLayout: enhanced    # enhanced | compact | minimal
+hideUrlsInTitles: true
+forceScoreFormat: true   # Forces 0-10 scale
+```
+
+---
+
+🎯 Usage Guide
+
+📊 Display Your Stats
+
+```zoro
+# Anime Statistics
+username: your_username
 type: stats
-```
+mediaType: ANIME
+layout: enhanced
 ```
 
-/* Customize card hover effects */
-.anilist-card:hover {
-    transform: scale(1.05);
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
-}
-### Advanced Usage
-```markdown
-# Completed Manga (Table View)
-```anilist
-username: myusername
-listType: COMPLETED
+📺 Current Watching List
+
+```zoro
+# Currently Watching
+username: your_username
+type: list
+listType: CURRENT
+mediaType: ANIME
+layout: card
+```
+
+📖 Manga Reading
+
+```zoro
+# Manga Reading List
+username: your_username
+type: list
+listType: CURRENT
+mediaType: MANGA
 layout: table
 ```
 
-### Error Messages
-- "Username is required": Add a username in settings or in code block.
-- "API Error": Check AniList service status and your internet connection
-- "No results found": Try different search terms or check spelling
+🔍 Search & Discover
+
+```zoro
+# Search for "Attack on Titan"
+type: search
+search: attack on titan
+mediaType: ANIME
+layout: card
+```
+
+📈 Trending Now
+
+```zoro
+# Trending Anime
+type: trending
+mediaType: ANIME
+source: anilist
+limit: 20
+```
+
 ---
 
+🎨 Layout Options
+
+Card Layout (Default)
+- Grid-based display
+- Cover images with hover effects
+- Progress overlays
+- Status badges
+- Edit buttons
+
+Table Layout
+- Compact tabular view
+- Sortable columns
+- Quick editing
+- Efficient for large lists
+
+Stats Layout (Enhanced)
+- User statistics dashboard
+- Completion rates
+- Score distributions
+- Time watched
+- Genre breakdowns
 
 ---
 
-## License
+🧩 Inline Links
 
-MIT © 2025 zara-kasi
+Use anywhere in your notes:
+
+```markdown
+[zoro:username/CURRENT](zoro:username/CURRENT#card)
+[zoro:username/stats](zoro:username/stats#enhanced)
+[zoro:username/search](zoro:username/search#attack on titan)
+```
 
 ---
 
-## 🚀 Future Features
+🔧 Advanced Features
 
-- [ ] Support filters (genres, scores, tags, etc.)
-- [ ] Custom sorting (e.g. by score, date)
-- [ ] Inline charts or rating bars
-- [ ] Support for custom field rendering (markdown or HTML)
+🖱️ Interactive Elements
+- Press & Hold on cover images for detailed info
+- Click status badges to edit entries
+- Real-time search with live results
 
+🔄 Smart Caching
+- User Data: 30 minutes
+- Media Data: 10 minutes
+- Search Results: 2 minutes
+- Airing Data: 1 hour
+- Conversions: 30 days
 
+⚡ Performance Features
+- Request Queue: Prevents rate limiting
+- Progressive Loading: Large lists load in chunks
+- Background Refresh: Updates cache silently
+- Error Recovery: Automatic retries with backoff
+
+---
+
+🔍 API Support
+
+AniList (GraphQL)
+
+```zoro
+source: anilist
+# Full feature set
+```
+
+MyAnimeList (REST + OAuth2)
+
+```zoro
+source: mal
+# Progress tracking, updates
+```
+
+Simkl (Modern API)
+
+```zoro
+source: simkl
+# Basic tracking & discovery
+```
+
+---
+
+🛠 Troubleshooting
+
+❌ Loading Icon Not Showing
+1. Check CSS targeting: Use `#zoro-global-loader` (ID) not `.zoro-global-loader` (class)
+2. Ensure styles are loaded before requests
+3. Test with: `Developer Tools → Elements → #zoro-global-loader`
+
+❌ Authentication Failed
+
+```bash
+# Check console for errors
+Developer Tools → Console → [Zoro]
+```
+
+❌ Rate Limiting
+- AniList: 90 requests/minute
+- MAL: 60 requests/minute
+- Simkl: 100 requests/minute
+
+❌ Cache Issues
+
+```zoro
+# Force refresh
+nocache: true
+```
+
+---
+
+📊 FAQ
+
+---
+
+🤝 Contributing
+
+We welcome contributions! Here's how:
+
+🐛 Report Bugs
+1. Check [existing issues](https://github.com/username/zoro-obsidian/issues)
+2. Create new issue with reproduction steps
+3. Include console logs from Developer Tools
+
+💡 Feature Requests
+1. Search [existing requests](https://github.com/username/zoro-obsidian/issues)
+2. Submit detailed feature description
+3. Include mockups if possible
+
+🔧 Code Contributions
+1. Fork the repository
+2. Create feature branch: `git checkout -b feature/amazing-feature`
+3. Commit changes: `git commit -m 'Add amazing feature'`
+4. Push to branch: `git push origin feature/amazing-feature`
+5. Open Pull Request
+
+---
+
+📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+🙏 Acknowledgments
+
+- AniList for the amazing GraphQL API
+- MyAnimeList for the comprehensive database
+- Simkl for modern tracking capabilities
+- Obsidian Team for the plugin framework
+- Community for feedback and testing
+
+---
+
+📱 Connect With Us
+
+- 🐦 Twitter: [@zoro_obsidian](https://twitter.com/zoro_obsidian)
+- 💬 Discord: [Join our server](https://discord.gg/zoro-obsidian)
+- 📧 Email: zoro@obsidian.com
+
+---

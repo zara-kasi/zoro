@@ -1472,7 +1472,8 @@ class RequestQueue {
     this.loaderState = {
       visible: false,
       requestCount: 0,
-      lastUpdate: 0
+      lastUpdate: 0,
+      debounceTimeout: null
     };
     
     this.startBackgroundTasks();
@@ -1514,8 +1515,11 @@ class RequestQueue {
       this.queues[priority].push(requestItem);
       this.metrics.requestsQueued++;
       this.updateQueueMetrics();
-      this.updateLoaderState();
       
+      // Fixed: Update loader state immediately when request is queued
+      this.updateLoaderState(true);
+      
+      // Start processing
       this.process();
       
       this.requestTracker.set(requestId, {
@@ -1540,24 +1544,27 @@ class RequestQueue {
   async process() {
     if (this.state.isProcessing || this.getTotalQueueSize() === 0) {
       if (this.getTotalQueueSize() === 0) {
-        this.hideGlobalLoader();
+        this.updateLoaderState(false);
       }
       return;
     }
     
     this.state.isProcessing = true;
-    this.updateLoaderState();
+    this.updateLoaderState(true);
     
     try {
       const requestItem = this.getNextRequest();
       if (!requestItem) {
         this.state.isProcessing = false;
+        this.updateLoaderState(false);
         return;
       }
       
       if (!this.canProcessRequest(requestItem)) {
         this.queues[requestItem.priority].unshift(requestItem);
         this.state.isProcessing = false;
+        // Fixed: Don't hide loader when just deferring a request
+        setTimeout(() => this.process(), this.config.minDelay);
         return;
       }
       
@@ -1588,6 +1595,9 @@ class RequestQueue {
       
       if (this.getTotalQueueSize() > 0) {
         setTimeout(() => this.process(), this.config.minDelay);
+      } else {
+        // Fixed: Ensure loader is hidden when all requests are done
+        this.updateLoaderState(false);
       }
     }
   }
@@ -1644,6 +1654,9 @@ class RequestQueue {
       this.state.concurrentCount--;
       this.state.activeRequests.delete(id);
       this.requestTracker.delete(id);
+      
+      // Fixed: Update loader state when request completes
+      this.updateLoaderState();
     }
   }
 
@@ -1653,6 +1666,7 @@ class RequestQueue {
     if (malService.authState.consecutiveAuthFailures >= this.config.malConfig.maxAuthRetries) {
       requestItem.reject(new Error(`MAL authentication persistently failing: ${errorMessage}`));
       this.state.isProcessing = false;
+      this.updateLoaderState(false);
       return;
     }
     
@@ -1680,6 +1694,84 @@ class RequestQueue {
     }
     
     return shouldRetry;
+  }
+
+  // Fixed: Improved loader state management with debouncing
+  updateLoaderState(forceShow = null) {
+    // Clear any pending debounced hide
+    if (this.loaderState.debounceTimeout) {
+      clearTimeout(this.loaderState.debounceTimeout);
+      this.loaderState.debounceTimeout = null;
+    }
+    
+    const totalRequests = this.getTotalQueueSize() + this.state.concurrentCount;
+    let shouldShow;
+    
+    if (forceShow !== null) {
+      shouldShow = forceShow;
+    } else {
+      shouldShow = totalRequests > 0;
+    }
+    
+    if (shouldShow && !this.loaderState.visible) {
+      this.showGlobalLoader();
+    } else if (!shouldShow && this.loaderState.visible) {
+      // Debounce hiding to prevent flickering
+      this.loaderState.debounceTimeout = setTimeout(() => {
+        if (this.getTotalQueueSize() + this.state.concurrentCount === 0) {
+          this.hideGlobalLoader();
+        }
+      }, 300);
+    }
+    
+    this.loaderState.requestCount = totalRequests;
+    this.loaderState.lastUpdate = Date.now();
+    
+    // Update counter if loader is visible
+    if (this.loaderState.visible) {
+      this.updateLoaderCounter();
+    }
+  }
+  
+  showGlobalLoader() {
+    if (!this.plugin?.settings?.showLoadingIcon) return;
+    
+    const loader = document.getElementById('zoro-global-loader');
+    if (loader) {
+      loader.classList.add('zoro-show');
+      this.loaderState.visible = true;
+      this.updateLoaderCounter();
+      
+    } else {
+      console.warn('Zoro: Global loader element not found');
+    }
+  }
+  
+  hideGlobalLoader() {
+    const loader = document.getElementById('zoro-global-loader');
+    if (loader) {
+      loader.classList.remove('zoro-show');
+      loader.removeAttribute('data-count');
+      this.loaderState.visible = false;
+    }
+  }
+  
+  // Fixed: New method to update counter separately
+  updateLoaderCounter() {
+    const loader = document.getElementById('zoro-global-loader');
+    if (loader && this.loaderState.visible) {
+      const queueSize = this.getTotalQueueSize() + this.state.concurrentCount;
+      if (queueSize > 1) {
+        loader.setAttribute('data-count', queueSize);
+      } else {
+        loader.removeAttribute('data-count');
+      }
+    }
+  }
+  
+  updateQueueMetrics() {
+    const totalQueued = this.getTotalQueueSize();
+    this.metrics.queuePeakSize = Math.max(this.metrics.queuePeakSize, totalQueued);
   }
 
   getMetrics() {
@@ -1729,6 +1821,10 @@ class RequestQueue {
         authFailures: this.services.mal.authState.consecutiveAuthFailures,
         lastRequest: this.services.mal.authState.lastRequest ? 
           new Date(this.services.mal.authState.lastRequest).toISOString() : 'never'
+      },
+      loader: {
+        visible: this.loaderState.visible,
+        requestCount: this.loaderState.requestCount
       }
     };
   }
@@ -1753,49 +1849,6 @@ class RequestQueue {
       sizes[priority] = this.queues[priority].length;
     });
     return sizes;
-  }
-  
-  updateLoaderState() {
-    const totalRequests = this.getTotalQueueSize() + this.state.concurrentCount;
-    const shouldShow = totalRequests > 0;
-    
-    if (shouldShow && !this.loaderState.visible) {
-      this.showGlobalLoader();
-    } else if (!shouldShow && this.loaderState.visible) {
-      this.hideGlobalLoader();
-    }
-    
-    this.loaderState.requestCount = totalRequests;
-    this.loaderState.lastUpdate = Date.now();
-  }
-  
-  showGlobalLoader() {
-    if (!this.plugin?.settings?.showLoadingIcon) return;
-    
-    const loader = document.getElementById('zoro-global-loader');
-    if (loader) {
-      loader.classList.add('zoro-show');
-      this.loaderState.visible = true;
-      
-      const queueSize = this.getTotalQueueSize();
-      if (queueSize > 1) {
-        loader.setAttribute('data-count', queueSize);
-      }
-    }
-  }
-  
-  hideGlobalLoader() {
-    const loader = document.getElementById('zoro-global-loader');
-    if (loader) {
-      loader.classList.remove('zoro-show');
-      loader.removeAttribute('data-count');
-      this.loaderState.visible = false;
-    }
-  }
-  
-  updateQueueMetrics() {
-    const totalQueued = this.getTotalQueueSize();
-    this.metrics.queuePeakSize = Math.max(this.metrics.queuePeakSize, totalQueued);
   }
   
   getHealthStatus() {
@@ -1870,6 +1923,7 @@ class RequestQueue {
     if (priority) {
       const cleared = this.queues[priority].length;
       this.queues[priority] = [];
+      this.updateLoaderState();
       return cleared;
     } else {
       let total = 0;
@@ -1877,6 +1931,7 @@ class RequestQueue {
         total += this.queues[p].length;
         this.queues[p] = [];
       });
+      this.updateLoaderState();
       return total;
     }
   }
@@ -1893,10 +1948,16 @@ class RequestQueue {
       });
     });
     
+    this.updateLoaderState();
     return cleared;
   }
   
   async destroy() {
+    // Clear debounce timeout
+    if (this.loaderState.debounceTimeout) {
+      clearTimeout(this.loaderState.debounceTimeout);
+    }
+    
     const activeRequests = Array.from(this.state.activeRequests.values());
     if (activeRequests.length > 0) {
       await Promise.allSettled(
@@ -3681,7 +3742,6 @@ class MalApi {
       progress = 0;
       entryId = null;
       
-      console.log('[MAL-DEBUG] Using default list type:', status);
     }
 
     return {
@@ -5368,51 +5428,6 @@ class ZoroPlugin extends Plugin {
       new Notice(`Debug logs saved to: ${fileName}`);
     } else {
       new Notice('No Simkl API instance available');
-    }
-  }
-});
-
-   this.addCommand({
-  id: 'export-mal-debug-logs',
-  name: 'Export MAL Debug Logs',
-  callback: async () => {
-    if (this.malApi) {
-      try {
-        // Capture logs in a variable instead of console
-        let debugLogs = '# MAL Debug Report\n\n';
-        
-        const config = { type: 'list', mediaType: 'ANIME', layout: 'card' };
-        const response = await this.malApi.fetchMALData(config);
-        const entries = response?.MediaListCollection?.lists?.[0]?.entries?.slice(0, 3) || [];
-        
-        debugLogs += `**Total Entries Found:** ${entries.length}\n\n`;
-        
-        // Get raw MAL data directly
-        const rawResponse = await this.malApi.makeRequest({
-          url: 'https://api.myanimelist.net/v2/users/@me/animelist?fields=id,title,main_picture,media_type,status,genres,num_episodes,mean,start_date,end_date,my_list_status&limit=3',
-          method: 'GET',
-          headers: this.malApi.getAuthHeaders(),
-          priority: 'normal'
-        });
-        
-        debugLogs += '## Raw MAL Response\n\n';
-        debugLogs += '```json\n' + JSON.stringify(rawResponse, null, 2) + '\n```\n\n';
-        
-        debugLogs += '## Transformed Entries\n\n';
-        entries.forEach((entry, index) => {
-          debugLogs += `### Entry ${index + 1}: ${entry.media?.title?.romaji}\n\n`;
-          debugLogs += `**Status:** ${entry.status || 'NULL'}\n\n`;
-          debugLogs += '```json\n' + JSON.stringify(entry, null, 2) + '\n```\n\n';
-        });
-        
-        const fileName = `MAL Debug Logs ${new Date().toISOString().split('T')[0]}.md`;
-        await this.app.vault.create(fileName, debugLogs);
-        new Notice(`MAL debug logs saved to: ${fileName}`);
-      } catch (error) {
-        new Notice(`Debug failed: ${error.message}`);
-      }
-    } else {
-      new Notice('No MAL API instance available');
     }
   }
 });

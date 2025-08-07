@@ -6189,6 +6189,8 @@ parseInlineLink(href) {
   }
 }
 
+
+
 class Render {
   constructor(plugin) {
     this.plugin = plugin;

@@ -619,20 +619,12 @@ class Cache {
       batchSize = 100
     } = config;
 
-    this.ttlMap = { 
-      'anilist:userData': 30 * 60 * 1000,
-      'anilist:mediaData': 10 * 60 * 1000, 
-      'anilist:searchResults': 2 * 60 * 1000,
-      'mal:userData': 60 * 60 * 1000,
-      'mal:mediaData': 30 * 60 * 1000,
-      'mal:searchResults': 5 * 60 * 1000,
-      userData: 30 * 60 * 1000, 
-      mediaData: 10 * 60 * 1000, 
-      searchResults: 2 * 60 * 1000, 
-      mediaDetails: 60 * 60 * 1000, 
-      malData: 60 * 60 * 1000, 
-      ...ttlMap 
-    };
+    this.ttlMap = {
+  userData: 30 * 60 * 1000,     // 30 minutes for ALL APIs
+  mediaData: 10 * 60 * 1000,    // 10 minutes for ALL APIs  
+  searchResults: 2 * 60 * 1000, // 2 minutes for ALL APIs
+  mediaDetails: 60 * 60 * 1000  // 1 hour for ALL APIs
+};
     
     this.stores = {};
     this.indexes = { byUser: new Map(), byMedia: new Map(), byTag: new Map() };
@@ -8071,28 +8063,62 @@ class APISourceHelper {
   }
 
   getAPI(source) {
-    return source === 'mal' ? this.plugin.malApi : this.plugin.api;
+    const normalizedSource = source?.toLowerCase();
+    
+    switch(normalizedSource) {
+      case 'mal': return this.plugin.malApi;
+      case 'simkl': return this.plugin.simklApi;
+      case 'anilist':
+      default: return this.plugin.api;
+    }
   }
 
   isAuthenticated(source) {
-    return source === 'mal' 
-      ? this.plugin.settings.malAccessToken 
-      : this.plugin.settings.accessToken;
+    const normalizedSource = source?.toLowerCase();
+    
+    switch(normalizedSource) {
+      case 'mal':
+        return !!this.plugin.settings.malAccessToken;
+      case 'simkl':
+        return !!this.plugin.settings.simklAccessToken;
+      case 'anilist':
+      default:
+        return !!this.plugin.settings.accessToken;
+    }
   }
 
   getSourceUrl(id, mediaType, source) {
-    return source === 'mal' 
-      ? this.plugin.getMALUrl(id, mediaType)
-      : this.plugin.getAniListUrl(id, mediaType);
+    const normalizedSource = source?.toLowerCase();
+    
+    switch(normalizedSource) {
+      case 'mal':
+        return this.plugin.getMALUrl?.(id, mediaType);
+      case 'simkl':
+        return this.plugin.getSimklUrl?.(id, mediaType);
+      case 'anilist':
+      default:
+        return this.plugin.getAniListUrl?.(id, mediaType);
+    }
   }
 
   async fetchSearchData(config, term) {
-    if (config.source === 'mal') {
+    const normalizedSource = config.source?.toLowerCase();
+    
+    if (normalizedSource === 'mal') {
       return await this.plugin.malApi.fetchMALData({ 
         ...config, 
         type: 'search',
         search: term, 
-        query: term, // Support both parameters
+        query: term,
+        page: 1, 
+        perPage: 5 
+      });
+    } else if (normalizedSource === 'simkl') {
+      return await this.plugin.simklApi.fetchSimklData({ 
+        ...config, 
+        type: 'search',
+        search: term, 
+        query: term,
         page: 1, 
         perPage: 5 
       });
@@ -8108,15 +8134,19 @@ class APISourceHelper {
   }
 
   async getUserEntryForMedia(mediaId, mediaType, source) {
-    if (source === 'mal') {
+    const normalizedSource = source?.toLowerCase();
+    
+    if (normalizedSource === 'mal') {
       return await this.plugin.malApi.getUserEntryForMedia?.(mediaId, mediaType) || null;
+    } else if (normalizedSource === 'simkl') {
+      return await this.plugin.simklApi.getUserEntryForMedia?.(mediaId, mediaType) || null;
     } else {
       return await this.plugin.api.getUserEntryForMedia(mediaId, mediaType);
     }
   }
 
   async updateMediaListEntry(mediaId, updates, source) {
-    const api = source === 'mal' ? this.plugin.malApi : this.plugin.api;
+    const api = this.getAPI(source);
     return await api.updateMediaListEntry(mediaId, updates);
   }
 
@@ -8124,16 +8154,75 @@ class APISourceHelper {
     return this.plugin.getSourceSpecificUrl(id, mediaType, source);
   }
 
-  getSourceUrl(id, mediaType, source) {
-    if (source === 'mal') {
-      return this.plugin.getMALUrl(id, mediaType);
-    } else {
-      return this.plugin.getAniListUrl(id, mediaType);
+  detectSource(entry, config) {
+    // 1. Check existing metadata first
+    if (entry?._zoroMeta?.source) {
+      return this.validateAndReturnSource(entry._zoroMeta.source);
     }
+    
+    // 2. Try config source
+    if (config?.source) {
+      return this.validateAndReturnSource(config.source);
+    }
+    
+    // 3. Detect from data structure patterns
+    const detectedSource = this.detectFromDataStructure(entry);
+    if (detectedSource) {
+      return detectedSource;
+    }
+    
+    // 4. Fallback to best available source
+    return this.getFallbackSource();
   }
 
-  detectSource(entry, config) {
-    return entry?._zoroMeta?.source || config.source || 'anilist';
+  detectFromDataStructure(entry) {
+    if (!entry || typeof entry !== 'object') return null;
+    
+    // AniList patterns
+    if (entry.media?.siteUrl?.includes('anilist.co') ||
+        entry.user?.siteUrl?.includes('anilist.co') ||
+        entry.media?.idMal !== undefined ||
+        entry.media?.id && entry.media?.title && entry.media?.type) {
+      return 'anilist';
+    }
+    
+    // MAL patterns  
+    if (entry.node?.main_picture ||
+        entry.ranking ||
+        entry.media?.mal_id ||
+        entry.user?.joined_at ||
+        entry.node?.id && entry.node?.title) {
+      return 'mal';
+    }
+    
+    // SIMKL patterns
+    if (entry.show?.ids?.simkl ||
+        entry.user_stats ||
+        entry.media?.simkl_id ||
+        entry.show?.title && entry.show?.year) {
+      return 'simkl';
+    }
+    
+    return null;
+  }
+
+  validateAndReturnSource(source) {
+    const normalizedSource = source?.toLowerCase();
+    const validSources = ['anilist', 'mal', 'simkl'];
+    
+    if (validSources.includes(normalizedSource)) {
+      return normalizedSource;
+    }
+    
+    return null;
+  }
+
+  getFallbackSource() {
+    // Return first available authenticated source, or default to anilist
+    if (this.isAuthenticated('mal')) return 'mal';
+    if (this.isAuthenticated('simkl')) return 'simkl'; 
+    if (this.isAuthenticated('anilist')) return 'anilist';
+    return 'anilist';
   }
 
   detectMediaType(entry, config, media) {
@@ -9225,7 +9314,7 @@ class MoreDetailsPanel {
     this.openDetailPanel = new OpenDetailPanel(plugin);
   }
 
-async showPanel(media, entry = null, triggerElement) {
+  async showPanel(media, entry = null, triggerElement) {
     return await this.openDetailPanel.showPanel(media, entry, triggerElement);
   }
 
@@ -9244,19 +9333,44 @@ class DetailPanelSource {
   }
 
   async convertMalToAnilistId(malId, malType) {
+    // Cache ID conversions for a very long time since they never change
+    const cacheKey = this.plugin.cache.structuredKey('conversion', 'mal_to_anilist', `${malId}_${malType || 'unknown'}`);
+    
+    const cached = this.plugin.cache.get(cacheKey, {
+      scope: 'mediaData',
+      source: 'anilist'
+    });
+    
+    if (cached) {
+      console.log('[DetailPanel] Using cached MAL->AniList conversion');
+      return cached;
+    }
+
     const anilistType = this.convertMalTypeToAnilistType(malType);
     
+    let result = null;
     if (!anilistType) {
       for (const tryType of ['ANIME', 'MANGA']) {
-        const result = await this.tryConvertWithType(malId, tryType);
+        result = await this.tryConvertWithType(malId, tryType);
         if (result) {
-          return result;
+          break;
         }
       }
-      return null;
+    } else {
+      result = await this.tryConvertWithType(malId, anilistType);
     }
     
-    return await this.tryConvertWithType(malId, anilistType);
+    // Cache conversions for 30 days - they never change
+    if (result) {
+      this.plugin.cache.set(cacheKey, result, {
+        scope: 'mediaData',
+        source: 'anilist',
+        ttl: 30 * 24 * 60 * 60 * 1000, // 30 days
+        tags: ['conversion', 'mal_to_anilist']
+      });
+    }
+    
+    return result;
   }
 
   async tryConvertWithType(malId, anilistType) {
@@ -9363,12 +9477,35 @@ class DetailPanelSource {
       correctedType = conversionResult.type;
     }
 
-    const cacheKey = `details:${targetId}`;
-    const cached = this.plugin.cache.get(cacheKey, { scope: 'mediaDetails' });
-    if (cached) {
-      return cached;
+    // Use separate cache keys for stable vs dynamic data
+    const stableCacheKey = this.plugin.cache.structuredKey('details', 'stable', targetId);
+    const dynamicCacheKey = this.plugin.cache.structuredKey('details', 'airing', targetId);
+
+    // Check for cached stable data first (long-term cache)
+    let stableData = this.plugin.cache.get(stableCacheKey, {
+      scope: 'mediaData',
+      source: 'anilist'
+    });
+
+    // Check for cached airing data (short-term cache)
+    let airingData = this.plugin.cache.get(dynamicCacheKey, {
+      scope: 'mediaData', 
+      source: 'anilist'
+    });
+
+    // If we have complete cached data, return it
+    if (stableData && (stableData.type !== 'ANIME' || airingData)) {
+      const combinedData = { ...stableData };
+      if (airingData?.nextAiringEpisode) {
+        combinedData.nextAiringEpisode = airingData.nextAiringEpisode;
+      }
+      console.log('[DetailPanel] Using cached detailed data');
+      return combinedData;
     }
 
+    // Fetch fresh data if cache miss
+    console.log('[DetailPanel] Fetching fresh detailed data for:', targetId);
+    
     const query = this.getDetailedMediaQuery();
     const variables = { id: targetId };
 
@@ -9394,11 +9531,43 @@ class DetailPanelSource {
         data.originalMalId = originalMalId;
       }
       
-      this.plugin.cache.set(cacheKey, data, { scope: 'mediaDetails' });
+      // Split data into stable and dynamic parts
+      const { nextAiringEpisode, ...stableDataOnly } = data;
+      
+      // Cache stable data for 30 days
+      this.plugin.cache.set(stableCacheKey, stableDataOnly, {
+        scope: 'mediaData',
+        source: 'anilist',
+        ttl: 30 * 24 * 60 * 60 * 1000, // 30 days
+        tags: ['details', 'stable', data.type?.toLowerCase()]
+      });
+
+      // Cache airing data for 1 hour (only for anime with airing info)
+      if (data.type === 'ANIME' && nextAiringEpisode) {
+        this.plugin.cache.set(dynamicCacheKey, { nextAiringEpisode }, {
+          scope: 'mediaData',
+          source: 'anilist', 
+          ttl: 60 * 60 * 1000, // 1 hour
+          tags: ['details', 'airing', 'anime']
+        });
+      }
+
+      console.log('[DetailPanel] Cached detailed data with split strategy');
       return data;
 
     } catch (error) {
       console.error('AniList API fetch failed:', error);
+      
+      // Fallback to any cached data, even if stale
+      if (stableData) {
+        console.log('[DetailPanel] Returning stale stable data as fallback');
+        const combinedData = { ...stableData };
+        if (airingData?.nextAiringEpisode) {
+          combinedData.nextAiringEpisode = airingData.nextAiringEpisode;
+        }
+        return combinedData;
+      }
+      
       throw error;
     }
   }
@@ -9406,9 +9575,20 @@ class DetailPanelSource {
   async fetchMALData(malId, mediaType) {
     if (!malId) return null;
 
-    const cacheKey = `mal:${malId}:${mediaType}`;
-    const cached = this.plugin.cache.get(cacheKey, { scope: 'malData' });
-    if (cached) return cached;
+    const cacheKey = this.plugin.cache.structuredKey('mal', 'details', `${malId}_${mediaType}`);
+    
+    // Check cache first - MAL data is very stable, cache for 7 days
+    const cached = this.plugin.cache.get(cacheKey, {
+      scope: 'mediaData',
+      source: 'mal'
+    });
+    
+    if (cached) {
+      console.log('[DetailPanel] Using cached MAL data');
+      return cached;
+    }
+
+    console.log('[DetailPanel] Fetching fresh MAL data for:', malId);
 
     try {
       const type = mediaType === 'MANGA' ? 'manga' : 'anime';
@@ -9418,7 +9598,16 @@ class DetailPanelSource {
         throw new Error(`Jikan API error: ${response.status}`);
 
       const data = (await response.json())?.data;
-      this.plugin.cache.set(cacheKey, data, { scope: 'malData' });
+      
+      // Cache MAL data for 7 days - scores/ranks change rarely
+      this.plugin.cache.set(cacheKey, data, {
+        scope: 'mediaData',
+        source: 'mal',
+        ttl: 7 * 24 * 60 * 60 * 1000, // 7 days
+        tags: ['mal', 'details', type]
+      });
+      
+      console.log('[DetailPanel] Cached MAL data');
       return data;
 
     } catch (error) {
@@ -9493,6 +9682,38 @@ class DetailPanelSource {
     if (!malId) return null;
     const type = mediaType === 'MANGA' ? 'manga' : 'anime';
     return `https://myanimelist.net/${type}/${malId}`;
+  }
+
+  // Cache management utilities
+  invalidateDetailCache(mediaId, source = null) {
+    const stableCacheKey = this.plugin.cache.structuredKey('details', 'stable', mediaId);
+    const dynamicCacheKey = this.plugin.cache.structuredKey('details', 'airing', mediaId);
+    
+    this.plugin.cache.delete(stableCacheKey, { scope: 'mediaData', source: source || 'anilist' });
+    this.plugin.cache.delete(dynamicCacheKey, { scope: 'mediaData', source: source || 'anilist' });
+    
+    console.log('[DetailPanel] Invalidated detail cache for:', mediaId);
+  }
+
+  invalidateConversionCache(malId = null) {
+    if (malId) {
+      // Invalidate specific conversion
+      const cacheKey = this.plugin.cache.structuredKey('conversion', 'mal_to_anilist', `${malId}_unknown`);
+      this.plugin.cache.delete(cacheKey, { scope: 'mediaData', source: 'anilist' });
+    } else {
+      // Invalidate all conversions
+      this.plugin.cache.invalidateByTag('conversion');
+    }
+    console.log('[DetailPanel] Invalidated conversion cache');
+  }
+
+  // Force refresh airing data only
+  async refreshAiringData(mediaId) {
+    const dynamicCacheKey = this.plugin.cache.structuredKey('details', 'airing', mediaId);
+    this.plugin.cache.delete(dynamicCacheKey, { scope: 'mediaData', source: 'anilist' });
+    
+    // This will fetch only the airing data on next request
+    return await this.fetchDetailedData(mediaId);
   }
 }
 
@@ -9940,7 +10161,7 @@ class OpenDetailPanel {
     this.plugin.requestQueue.showGlobalLoader();
     
     if (this.dataSource.shouldFetchDetailedData(media)) {
-      // NEW: Let DetailPanelSource handle source detection automatically
+      // Let DetailPanelSource handle source detection and smart caching automatically
       this.dataSource.fetchAndUpdateData(media.id, entry, (detailedMedia, malData) => {
         if (this.currentPanel === panel) {
           this.renderer.updatePanelContent(panel, detailedMedia, malData);
@@ -9974,7 +10195,25 @@ class Trending {
     this.plugin = plugin; 
   }
 
+  // Generate cache key for trending data
+  getTrendingCacheKey(source, mediaType, limit) {
+    return this.plugin.cache.structuredKey('trending', 'trending', `${source}_${mediaType}_${limit}`);
+  }
+
   async fetchAniListTrending(mediaType = 'ANIME', limit = 20) {
+    const cacheKey = this.getTrendingCacheKey('anilist', mediaType, limit);
+    
+    // Try cache first
+    const cached = this.plugin.cache.get(cacheKey, {
+      scope: 'mediaData',
+      source: 'anilist'
+    });
+    
+    if (cached) {
+      console.log('[Trending] Using cached AniList trending data');
+      return cached;
+    }
+
     const query = `
       query ($type: MediaType, $perPage: Int) {
         Page(page: 1, perPage: $perPage) {
@@ -10011,7 +10250,7 @@ class Trending {
       perPage: limit
     };
 
-    console.log('[Trending] AniList query:', { query: query.trim(), variables });
+    console.log('[Trending] Fetching fresh AniList data:', { mediaType, limit });
 
     try {
       const response = await fetch('https://graphql.anilist.co', {
@@ -10048,24 +10287,59 @@ class Trending {
         ...media,
         _zoroMeta: {
           source: 'anilist',
-          mediaType: mediaType.toUpperCase()
+          mediaType: mediaType.toUpperCase(),
+          fetchedAt: Date.now()
         }
       }));
 
-      console.log('[Trending] Successfully fetched AniList trending:', mediaList.length, 'items');
+      // Cache the result with trending-specific tags and longer TTL
+      this.plugin.cache.set(cacheKey, mediaList, {
+        scope: 'mediaData',
+        source: 'anilist',
+        ttl: 24 * 60 * 60 * 1000, // 24 hours for trending data
+        tags: ['trending', mediaType.toLowerCase(), 'anilist']
+      });
+
+      console.log('[Trending] Successfully fetched and cached AniList trending:', mediaList.length, 'items');
       return mediaList;
 
     } catch (error) {
       console.error('[Trending] AniList fetch failed:', error);
+      
+      // Try to return stale cache data as fallback
+      const staleData = this.plugin.cache.get(cacheKey, {
+        scope: 'mediaData',
+        source: 'anilist',
+        ttl: Infinity // Accept any cached data as fallback
+      });
+      
+      if (staleData) {
+        console.log('[Trending] Returning stale cache data as fallback');
+        return staleData;
+      }
+      
       throw error;
     }
   }
 
   async fetchJikanTrending(mediaType = 'anime', limit = 20) {
     const type = mediaType.toLowerCase();
+    const cacheKey = this.getTrendingCacheKey('mal', mediaType, limit);
+    
+    // Try cache first
+    const cached = this.plugin.cache.get(cacheKey, {
+      scope: 'mediaData',
+      source: 'mal'
+    });
+    
+    if (cached) {
+      console.log('[Trending] Using cached Jikan trending data');
+      return cached;
+    }
+
     const url = `https://api.jikan.moe/v4/top/${type}?filter=airing&limit=${limit}`;
     
-    console.log('[Trending] Jikan URL:', url);
+    console.log('[Trending] Fetching fresh Jikan data:', url);
 
     try {
       const response = await fetch(url);
@@ -10108,19 +10382,55 @@ class Trending {
             status: item.status,
             _zoroMeta: {
               source: 'mal',
-              mediaType: type === 'manga' ? 'MANGA' : 'ANIME'
+              mediaType: type === 'manga' ? 'MANGA' : 'ANIME',
+              fetchedAt: Date.now()
             }
           });
         }
       });
 
       const result = unique.slice(0, limit);
-      console.log('[Trending] Successfully fetched Jikan trending:', result.length, 'items');
+      
+      // Cache the result with trending-specific tags and longer TTL
+      this.plugin.cache.set(cacheKey, result, {
+        scope: 'mediaData',
+        source: 'mal',
+        ttl: 24 * 60 * 60 * 1000, // 24 hours for trending data
+        tags: ['trending', type, 'mal']
+      });
+
+      console.log('[Trending] Successfully fetched and cached Jikan trending:', result.length, 'items');
       return result;
 
     } catch (error) {
       console.error('[Trending] Jikan fetch failed:', error);
+      
+      // Try to return stale cache data as fallback
+      const staleData = this.plugin.cache.get(cacheKey, {
+        scope: 'mediaData',
+        source: 'mal',
+        ttl: Infinity // Accept any cached data as fallback
+      });
+      
+      if (staleData) {
+        console.log('[Trending] Returning stale cache data as fallback');
+        return staleData;
+      }
+      
       throw error;
+    }
+  }
+
+  // Unified method that works with any API source
+  async fetchTrending(source, mediaType, limit = 20) {
+    console.log('[Trending] fetchTrending called:', { source, mediaType, limit });
+    
+    switch (source) {
+      case 'mal':
+        return await this.fetchJikanTrending(mediaType, limit);
+      case 'anilist':
+      default:
+        return await this.fetchAniListTrending(mediaType, limit);
     }
   }
 
@@ -10133,28 +10443,22 @@ class Trending {
     try {
       const type = (config.mediaType || 'ANIME').toLowerCase();
       const source = config.source || this.plugin.settings.defaultApiSource || 'anilist';
-      let items = [];
+      const limit = config.limit || 20;
 
-      console.log('[Trending] Fetching trending for:', { type, source });
+      console.log('[Trending] Fetching trending for:', { type, source, limit });
 
-      if (source === 'mal') {
-        console.log('[Trending] Using MAL/Jikan API');
-        items = await this.plugin.requestQueue.add(() => 
-          this.fetchJikanTrending(type, 20)
-        );
-      } else {
-        console.log('[Trending] Using AniList API');
-        items = await this.plugin.requestQueue.add(() => 
-          this.fetchAniListTrending(config.mediaType || 'ANIME', 20)
-        );
-      }
+      // Use unified method with proper queue management
+      const items = await this.plugin.requestQueue.add(() => 
+        this.fetchTrending(source, type === 'manga' ? 'MANGA' : 'ANIME', limit)
+      );
 
       // Ensure metadata is set for each item
       items.forEach(item => {
         if (!item._zoroMeta) {
           item._zoroMeta = {
             source: source,
-            mediaType: config.mediaType || 'ANIME'
+            mediaType: config.mediaType || 'ANIME',
+            fetchedAt: Date.now()
           };
         }
       });
@@ -10175,6 +10479,48 @@ class Trending {
       el.empty();
       this.plugin.renderError(el, err.message, 'Trending');
     }
+  }
+
+  // Utility methods for cache management
+  invalidateTrendingCache(source = null, mediaType = null) {
+    if (source && mediaType) {
+      // Invalidate specific trending cache
+      const cacheKey = this.getTrendingCacheKey(source, mediaType, 20); // assuming default limit
+      this.plugin.cache.delete(cacheKey, { scope: 'mediaData', source });
+    } else if (source) {
+      // Invalidate all trending for a source
+      this.plugin.cache.invalidateByTag('trending', { source });
+    } else {
+      // Invalidate all trending cache
+      this.plugin.cache.invalidateByTag('trending');
+    }
+    console.log('[Trending] Cache invalidated for:', { source, mediaType });
+  }
+
+  // Force refresh trending data
+  async refreshTrending(source, mediaType, limit = 20) {
+    console.log('[Trending] Force refreshing trending data:', { source, mediaType });
+    
+    // Clear existing cache
+    this.invalidateTrendingCache(source, mediaType);
+    
+    // Fetch fresh data
+    return await this.fetchTrending(source, mediaType, limit);
+  }
+
+  // Get cache stats for trending data
+  getTrendingCacheStats() {
+    const stats = this.plugin.cache.getStats();
+    return {
+      totalCacheSize: stats.cacheSize,
+      hitRate: stats.hitRate,
+      storeBreakdown: Object.entries(stats.storeBreakdown)
+        .filter(([key]) => key.includes('mediaData'))
+        .reduce((acc, [key, value]) => {
+          acc[key] = value;
+          return acc;
+        }, {})
+    };
   }
 }
 

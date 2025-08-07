@@ -6404,34 +6404,54 @@ class CardRenderer {
   }
 
   createMediaCard(data, config, options = {}) {
-    const isSearch = options.isSearch || false;
-    const isCompact = config.layout === 'compact';
-    const entry = isSearch ? null : data;
-    const media = isSearch ? data : data.media;
+    const context = this.determineDataContext(data, options);
+    const { entry, media } = this.extractEntryAndMedia(data, context);
     const source = this.apiHelper.detectSource(entry, config);
     const mediaType = this.apiHelper.detectMediaType(entry, config, media);
     
     const card = document.createElement('div');
+    const isCompact = config.layout === 'compact';
     card.className = `zoro-card ${isCompact ? 'compact' : ''}`;
     card.dataset.mediaId = media.id;
-
-    // Create cover image if enabled
+    
     if (this.plugin.settings.showCoverImages && media.coverImage?.large) {
-      const coverContainer = this.createCoverContainer(media, entry, isSearch, isCompact);
+      const coverContainer = this.createCoverContainer(media, entry, context !== 'search', isCompact);
       card.appendChild(coverContainer);
     }
-
-    // Create media info section
-    const info = this.createMediaInfo(media, entry, config, isSearch, isCompact);
+    
+    const info = this.createMediaInfo(media, entry, config, context !== 'search', isCompact);
     card.appendChild(info);
     
-    // Add heart for favorites
     const heart = document.createElement('span');
     heart.className = 'zoro-heart';
     if (!media.isFavourite) heart.style.display = 'none';
     card.appendChild(heart);
-
+    
     return card;
+  }
+
+  determineDataContext(data, options) {
+    if (options.isTrending) return 'trending';
+    if (options.isSearch && !data._zoroMeta) return 'search';
+    if (options.isSearch && data._zoroMeta) return 'search_with_meta';
+    if (data.media) return 'list_entry';
+    if (data._zoroMeta) return 'direct_media';
+    return 'search';
+  }
+
+  extractEntryAndMedia(data, context) {
+    switch (context) {
+      case 'list_entry':
+        return { entry: data, media: data.media };
+      case 'search':
+        return { entry: null, media: data };
+      case 'trending':
+      case 'search_with_meta':
+      case 'direct_media':
+        return { entry: data, media: data };
+      default:
+        return { entry: null, media: data };
+    }
   }
 
   createCoverContainer(media, entry, isSearch, isCompact) {
@@ -6840,18 +6860,17 @@ class SearchRenderer {
     });
   }
 
-  renderSearchResults(el, media, config) {
+  renderSearchResults(el, media, config, options = {}) {
     el.empty();
     if (media.length === 0) {
       el.innerHTML = DOMHelper.createErrorMessage('No results found.');
       return;
     }
-
     const grid = el.createDiv({ cls: 'zoro-cards-grid' });
     const fragment = document.createDocumentFragment();
     
     media.forEach(item => {
-      fragment.appendChild(this.cardRenderer.createMediaCard(item, config, { isSearch: true }));
+      fragment.appendChild(this.cardRenderer.createMediaCard(item, config, options));
     });
     
     grid.appendChild(fragment);
@@ -9964,8 +9983,6 @@ class Trending {
   }
 
   async renderTrendingBlock(el, config) {
-    
-    
     el.empty();
     el.appendChild(this.plugin.render.createListSkeleton(10));
 
@@ -9974,14 +9991,10 @@ class Trending {
       const source = config.source || this.plugin.settings.defaultApiSource || 'anilist';
       const limit = config.limit || 20;
 
-      
-
-      // Use unified method with proper queue management
       const items = await this.plugin.requestQueue.add(() => 
         this.fetchTrending(source, type === 'manga' ? 'MANGA' : 'ANIME', limit)
       );
 
-      // Ensure metadata is set for each item
       items.forEach(item => {
         if (!item._zoroMeta) {
           item._zoroMeta = {
@@ -9992,16 +10005,12 @@ class Trending {
         }
       });
 
-      
-
       el.empty();
       this.plugin.render.renderSearchResults(el, items, {
         layout: config.layout || 'card',
         mediaType: config.mediaType || 'ANIME',
         source: source
-      });
-
-      
+      }, { isTrending: true });
 
     } catch (err) {
       console.error('[Trending] Error in renderTrendingBlock:', err);
@@ -10009,8 +10018,7 @@ class Trending {
       this.plugin.renderError(el, err.message, 'Trending');
     }
   }
-
-  // Utility methods for cache management
+  
   invalidateTrendingCache(source = null, mediaType = null) {
     if (source && mediaType) {
       // Invalidate specific trending cache

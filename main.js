@@ -15,7 +15,7 @@ const DEFAULT_SETTINGS = {
   showLoadingIcon: true,
   gridColumns: getDefaultGridColumns(),
   theme: '', 
-  hideUrlsInTitles: true,
+  hideUrlsInTitles: false,
   forceScoreFormat: true,
   showAvatar: true,
   showFavorites: true,
@@ -1742,8 +1742,7 @@ class RequestQueue {
       this.loaderState.visible = true;
       this.updateLoaderCounter();
       
-    } else {
-      console.warn('Zoro: Global loader element not found');
+
     }
   }
   
@@ -1754,6 +1753,7 @@ class RequestQueue {
       loader.removeAttribute('data-count');
       this.loaderState.visible = false;
     }
+    
   }
   
   // Fixed: New method to update counter separately
@@ -3608,9 +3608,9 @@ class MalApi {
     // FIXED: Corrected field syntax based on MAL API v2 specification
     // MAL API v2 uses curly braces {} for nested fields, not parentheses
     this.fieldSets = {
-      compact: 'id,title,main_picture,my_list_status{status,score,num_episodes_watched,num_chapters_read}',
-      card: 'id,title,main_picture,media_type,status,genres,num_episodes,num_chapters,mean,start_date,end_date,my_list_status{status,score,num_episodes_watched,num_chapters_read,num_volumes_read,is_rewatching,is_rereading,updated_at}',
-      full: 'id,title,main_picture,alternative_titles,start_date,end_date,synopsis,mean,rank,popularity,num_list_users,num_scoring_users,nsfw,created_at,updated_at,media_type,status,genres,my_list_status{status,score,num_episodes_watched,num_chapters_read,num_volumes_read,is_rewatching,is_rereading,updated_at},num_episodes,num_chapters,start_season,broadcast,source,average_episode_duration,rating,pictures,background,related_anime,related_manga,recommendations,studios,statistics'
+      compact: 'id,title,main_picture,list_status{status,score,num_episodes_watched,num_chapters_read}',
+      card: 'id,title,main_picture,media_type,status,genres,num_episodes,num_chapters,mean,start_date,end_date,list_status{status,score,num_episodes_watched,num_chapters_read,num_volumes_read,is_rewatching,is_rereading,updated_at}',
+      full: 'id,title,main_picture,alternative_titles,start_date,end_date,synopsis,mean,rank,popularity,num_list_users,num_scoring_users,nsfw,created_at,updated_at,media_type,status,genres,list_status{status,score,num_episodes_watched,num_chapters_read,num_volumes_read,is_rewatching,is_rereading,updated_at},num_episodes,num_chapters,start_season,broadcast,source,average_episode_duration,rating,pictures,background,related_anime,related_manga,recommendations,studios,statistics'
     };
 
     // Search-specific field sets (no user data)
@@ -3661,7 +3661,6 @@ class MalApi {
     }
     
     const requestParams = this.buildRequestParams(normalizedConfig);
-    console.log('[MAL-DEBUG] Request URL:', requestParams.url);
     
     const rawResponse = await this.makeRequest(requestParams);
     const transformedData = this.transformResponse(rawResponse, normalizedConfig);
@@ -3671,12 +3670,6 @@ class MalApi {
   }
 
   transformResponse(data, config) {
-    console.log('[MAL-DEBUG] Raw response data:', {
-      type: config.type,
-      hasData: !!data?.data,
-      dataLength: data?.data?.length,
-      firstEntry: data?.data?.[0]
-    });
 
     switch (config.type) {
       case 'search':
@@ -3703,17 +3696,11 @@ class MalApi {
 
   transformListEntry(malEntry, config = {}) {
     const media = malEntry.node || malEntry;
-    const listStatus = malEntry.my_list_status;
+    const listStatus = malEntry.list_status;
     const mediaType = media?.media_type || 'tv';
     
     
-    console.log('[MAL-DEBUG] Transform entry:', {
-      mediaId: media?.id,
-      mediaTitle: media?.title,
-      hasListStatus: !!listStatus,
-      listStatus: listStatus,
-      mediaType: mediaType
-    });
+    
     
     let status = null;
     let score = 0;
@@ -3733,9 +3720,7 @@ class MalApi {
       
       entryId = listStatus.id || null;
       
-      console.log('[MAL-DEBUG] Extracted list data:', {
-        status, score, progress, entryId
-      });
+    
     } else if (config.listType) {
       status = config.listType;
       score = 0;
@@ -3760,7 +3745,7 @@ class MalApi {
     switch (config.type) {
       case 'single':
       case 'list':
-        // Use list field sets that include my_list_status
+        // Use list field sets that include list_status
         params.fields = this.getFieldsForLayout(config.layout || 'card', false);
         params.limit = config.limit || 1000;
         
@@ -3787,7 +3772,6 @@ class MalApi {
         break;
     }
     
-    console.log('[MAL-DEBUG] Built params:', params);
     return params;
   }
 
@@ -3816,11 +3800,7 @@ class MalApi {
         throw ZoroError.create('MAL_API_ERROR', response.json.message || 'MAL API error', { error: response.json }, 'error');
       }
 
-      console.log('[MAL-DEBUG] Response sample:', {
-        hasData: !!response.json.data,
-        dataCount: response.json.data?.length || 0,
-        firstEntryHasListStatus: !!response.json.data?.[0]?.my_list_status
-      });
+      
 
       return response.json;
     } catch (error) {
@@ -3848,6 +3828,12 @@ class MalApi {
     const endpoint = mediaType === 'anime' ? 'anime' : 'manga';
     const body = new URLSearchParams();
     
+    if (mediaType === 'anime') {
+        body.append('is_rewatching', 'false');
+    } else {
+        body.append('is_rereading', 'false'); 
+    }
+    
     if (updates.status !== undefined && updates.status !== null) {
       const malStatus = this.mapAniListStatusToMAL(updates.status, mediaType);
       if (malStatus) {
@@ -3872,8 +3858,8 @@ class MalApi {
 
     const requestFn = async () => {
       const response = await requestUrl({
-        url: `${this.baseUrl}/${endpoint}/${mediaId}/my_list_status`,
-        method: 'PATCH',
+        url: `${this.baseUrl}/${endpoint}/${mediaId}/list_status`,
+        method: 'PUT',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
           'Accept': 'application/json',
@@ -5384,12 +5370,10 @@ class ZoroPlugin extends Plugin {
 
 
   async onload() {
-    console.log('[Zoro] Plugin loading...');
     this.render = new Render(this);
     
     try {
       await this.loadSettings();
-      console.log('[Zoro] Settings loaded.');
     } catch (err) {
       console.error('[Zoro] Failed to load settings:', err);
     }
@@ -5399,7 +5383,7 @@ class ZoroPlugin extends Plugin {
     
     try {
       this.injectCSS();
-      console.log('[Zoro] CSS injected.');
+      
     } catch (err) {
       console.error('[Zoro] Failed to inject CSS:', err);
     }
@@ -5432,7 +5416,6 @@ class ZoroPlugin extends Plugin {
   }
 });
 
-    console.log('[Zoro] Plugin loaded successfully.');
   }
 
   validateSettings(settings) {
@@ -5447,7 +5430,7 @@ class ZoroPlugin extends Plugin {
       showLoadingIcon: typeof settings?.showLoadingIcon === 'boolean' ? settings.showLoadingIcon : true,
       gridColumns: Number.isInteger(settings?.gridColumns) ? settings.gridColumns : getDefaultGridColumns(),
       theme: typeof settings?.theme === 'string' ? settings.theme : '',
-      hideUrlsInTitles: typeof settings?.hideUrlsInTitles === 'boolean' ? settings.hideUrlsInTitles : true,
+      hideUrlsInTitles: typeof settings?.hideUrlsInTitles === 'boolean' ? settings.hideUrlsInTitles : false,
       forceScoreFormat: typeof settings?.forceScoreFormat === 'boolean' ? settings.forceScoreFormat : true,
       showAvatar: typeof settings?.showAvatar === 'boolean' ? settings.showAvatar : true,
       showFavorites: typeof settings?.showFavorites === 'boolean' ? settings.showFavorites : true,
@@ -5477,7 +5460,7 @@ class ZoroPlugin extends Plugin {
     try {
       const validSettings = this.validateSettings(this.settings);
       await this.saveData(validSettings);
-      console.log('[Zoro] Settings saved successfully.');
+      
     } catch (err) {
       console.error('[Zoro] Failed to save settings:', err);
       new Notice('⚠️ Failed to save settings. See console for details.');
@@ -5597,7 +5580,6 @@ class ZoroPlugin extends Plugin {
   }
 
   onunload() {
-    console.log('[Zoro] Unloading plugin...');
 
     this.cache.stopAutoPrune()
        .stopBackgroundRefresh()
@@ -5608,7 +5590,7 @@ class ZoroPlugin extends Plugin {
     const existingStyle = document.getElementById(styleId);
     if (existingStyle) {
         existingStyle.remove();
-        console.log(`Removed style element with ID: ${styleId}`);
+      
     }
 
     const loader = document.getElementById('zoro-global-loader');
@@ -8583,56 +8565,51 @@ class MALEditModal {
   }
 
   async updateEntry(entry, updates, onSave) {
-    const mediaId = entry.media?.id || entry.mediaId;
-    const mediaType = this.detectMediaType(entry);
-    
-    if (!mediaId) {
-      throw new Error('Media ID not found');
-    }
-
-    // Prepare MAL API updates using the format expected by your MAL API
-    const malUpdates = {};
-    
-    // Map status - let the MAL API handle the conversion
-    if (updates.status !== undefined) {
-      malUpdates.status = updates.status; // Pass AniList format, let MAL API convert
-    }
-    
-    // Map score
-    if (updates.score !== undefined) {
-      malUpdates.score = updates.score === null ? 0 : updates.score;
-    }
-    
-    // Map progress
-    if (updates.progress !== undefined) {
-      malUpdates.progress = updates.progress;
-    }
-
-    try {
-      // Call the MAL API updateMediaListEntry method
-      const updatedEntry = await this.plugin.malApi.updateMediaListEntry(mediaId, malUpdates);
-      
-      // The MAL API already returns normalized data, so use it directly
-      await onSave(updatedEntry);
-      Object.assign(entry, updatedEntry);
-      
-      return entry;
-    } catch (error) {
-  // Handle specific MAL API errors
-  if (error.message?.includes('No valid updates provided')) {
-    throw new Error('No changes to save');
+  const mediaId = entry.media?.id || entry.mediaId;
+  const mediaType = this.detectMediaType(entry);
+  
+  if (!mediaId) {
+    throw new Error('Media ID not found');
   }
-  if (error.message?.includes('invalidateScope is not a function')) {
-    // Log the cache error but don't fail the update
-    console.warn('Cache cleanup failed:', error.message);
-    // Still call onSave since the update actually succeeded
+
+  const malUpdates = {};
+  
+  if (updates.status !== undefined) {
+    malUpdates.status = updates.status;
+  }
+  
+  if (updates.score !== undefined) {
+    malUpdates.score = updates.score === null ? 0 : updates.score;
+  }
+  
+  if (updates.progress !== undefined) {
+    malUpdates.progress = updates.progress;
+  }
+
+  let updatedEntry;
+  
+  try {
+    updatedEntry = await this.plugin.malApi.updateMediaListEntry(mediaId, malUpdates);
+    
     await onSave(updatedEntry);
     Object.assign(entry, updatedEntry);
+    
     return entry;
+  } catch (error) {
+    if (error.message?.includes('No valid updates provided')) {
+      throw new Error('No changes to save');
+    }
+    if (error.message?.includes('invalidateScope is not a function')) {
+      console.warn('Cache cleanup failed:', error.message);
+      if (updatedEntry) {
+        await onSave(updatedEntry);
+        Object.assign(entry, updatedEntry);
+        return entry;
+      }
+    }
+    throw new Error(`MAL update failed: ${error.message}`);
   }
-  throw new Error(`MAL update failed: ${error.message}`);
 }
-  }
 
   async removeEntry(entry) {
     throw new Error('MAL does not support removing entries via API');
@@ -9014,12 +8991,8 @@ class DetailPanelSource {
       if (airingData?.nextAiringEpisode) {
         combinedData.nextAiringEpisode = airingData.nextAiringEpisode;
       }
-      console.log('[DetailPanel] Using cached detailed data');
       return combinedData;
     }
-
-    // Fetch fresh data if cache miss
-    console.log('[DetailPanel] Fetching fresh detailed data for:', targetId);
     
     const query = this.getDetailedMediaQuery();
     const variables = { id: targetId };
@@ -9066,8 +9039,7 @@ class DetailPanelSource {
           tags: ['details', 'airing', 'anime']
         });
       }
-
-      console.log('[DetailPanel] Cached detailed data with split strategy');
+      
       return data;
 
     } catch (error) {
@@ -9075,7 +9047,7 @@ class DetailPanelSource {
       
       // Fallback to any cached data, even if stale
       if (stableData) {
-        console.log('[DetailPanel] Returning stale stable data as fallback');
+        
         const combinedData = { ...stableData };
         if (airingData?.nextAiringEpisode) {
           combinedData.nextAiringEpisode = airingData.nextAiringEpisode;
@@ -9099,11 +9071,9 @@ class DetailPanelSource {
     });
     
     if (cached) {
-      console.log('[DetailPanel] Using cached MAL data');
+      
       return cached;
     }
-
-    console.log('[DetailPanel] Fetching fresh MAL data for:', malId);
 
     try {
       const type = mediaType === 'MANGA' ? 'manga' : 'anime';
@@ -9122,7 +9092,7 @@ class DetailPanelSource {
         tags: ['mal', 'details', type]
       });
       
-      console.log('[DetailPanel] Cached MAL data');
+      
       return data;
 
     } catch (error) {
@@ -9725,7 +9695,7 @@ class Trending {
     });
     
     if (cached) {
-      console.log('[Trending] Using cached AniList trending data');
+      
       return cached;
     }
 
@@ -9765,7 +9735,7 @@ class Trending {
       perPage: limit
     };
 
-    console.log('[Trending] Fetching fresh AniList data:', { mediaType, limit });
+    
 
     try {
       const response = await fetch('https://graphql.anilist.co', {
@@ -9776,7 +9746,7 @@ class Trending {
         body: JSON.stringify({ query, variables })
       });
 
-      console.log('[Trending] AniList response status:', response.status);
+      
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -9786,7 +9756,7 @@ class Trending {
 
       const data = await response.json();
       
-      console.log('[Trending] AniList response data:', data);
+      
 
       if (data.errors) {
         console.error('[Trending] AniList GraphQL errors:', data.errors);
@@ -9815,7 +9785,7 @@ class Trending {
         tags: ['trending', mediaType.toLowerCase(), 'anilist']
       });
 
-      console.log('[Trending] Successfully fetched and cached AniList trending:', mediaList.length, 'items');
+      
       return mediaList;
 
     } catch (error) {
@@ -9829,7 +9799,7 @@ class Trending {
       });
       
       if (staleData) {
-        console.log('[Trending] Returning stale cache data as fallback');
+        
         return staleData;
       }
       
@@ -9848,18 +9818,18 @@ class Trending {
     });
     
     if (cached) {
-      console.log('[Trending] Using cached Jikan trending data');
+      
       return cached;
     }
 
     const url = `https://api.jikan.moe/v4/top/${type}?filter=airing&limit=${limit}`;
     
-    console.log('[Trending] Fetching fresh Jikan data:', url);
+    
 
     try {
       const response = await fetch(url);
       
-      console.log('[Trending] Jikan response status:', response.status);
+      
       
       if (!response.ok) {
         const errorText = await response.text();
@@ -9869,7 +9839,7 @@ class Trending {
 
       const data = await response.json();
       
-      console.log('[Trending] Jikan response data:', data?.data?.length, 'items');
+      
       
       const unique = [];
       const seen = new Set();
@@ -9914,7 +9884,7 @@ class Trending {
         tags: ['trending', type, 'mal']
       });
 
-      console.log('[Trending] Successfully fetched and cached Jikan trending:', result.length, 'items');
+      
       return result;
 
     } catch (error) {
@@ -9928,7 +9898,7 @@ class Trending {
       });
       
       if (staleData) {
-        console.log('[Trending] Returning stale cache data as fallback');
+        
         return staleData;
       }
       
@@ -9938,7 +9908,7 @@ class Trending {
 
   // Unified method that works with any API source
   async fetchTrending(source, mediaType, limit = 20) {
-    console.log('[Trending] fetchTrending called:', { source, mediaType, limit });
+    
     
     switch (source) {
       case 'mal':
@@ -9950,7 +9920,7 @@ class Trending {
   }
 
   async renderTrendingBlock(el, config) {
-    console.log('[Trending] renderTrendingBlock called with config:', config);
+    
     
     el.empty();
     el.appendChild(this.plugin.render.createListSkeleton(10));
@@ -9960,7 +9930,7 @@ class Trending {
       const source = config.source || this.plugin.settings.defaultApiSource || 'anilist';
       const limit = config.limit || 20;
 
-      console.log('[Trending] Fetching trending for:', { type, source, limit });
+      
 
       // Use unified method with proper queue management
       const items = await this.plugin.requestQueue.add(() => 
@@ -9978,7 +9948,7 @@ class Trending {
         }
       });
 
-      console.log('[Trending] Rendering', items.length, 'trending items');
+      
 
       el.empty();
       this.plugin.render.renderSearchResults(el, items, {
@@ -9987,7 +9957,7 @@ class Trending {
         source: source
       });
 
-      console.log('[Trending] Successfully rendered trending block');
+      
 
     } catch (err) {
       console.error('[Trending] Error in renderTrendingBlock:', err);
@@ -10009,12 +9979,12 @@ class Trending {
       // Invalidate all trending cache
       this.plugin.cache.invalidateByTag('trending');
     }
-    console.log('[Trending] Cache invalidated for:', { source, mediaType });
+    
   }
 
   // Force refresh trending data
   async refreshTrending(source, mediaType, limit = 20) {
-    console.log('[Trending] Force refreshing trending data:', { source, mediaType });
+    
     
     // Clear existing cache
     this.invalidateTrendingCache(source, mediaType);
@@ -10220,13 +10190,13 @@ modal.open();
     
     if (updatedFormat === 'POINT_10') {
       new Notice('✅ Score format updated to 0-10 scale', 3000);
-      console.log('🎉 Score format successfully changed to POINT_10');
+      
     } else {
       throw new Error(`Score format not updated properly. Got: ${updatedFormat}`);
     }
     
   } catch (err) {
-    console.error('Failed to update score format:', err);
+    
     new Notice(`❌ Could not update score format: ${err.message}`, 5000);
   }
 }

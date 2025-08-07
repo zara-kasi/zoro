@@ -48,564 +48,217 @@ class ZoroError {
 
   constructor(plugin) {
     this.plugin = plugin;
-    this.metrics = { 
-      total: 0, 
-      perType: new Map(), 
-      perSeverity: new Map(),
-      perHour: new Map(),
-      patterns: new Map(),
-      recovery: { attempts: 0, success: 0 }
-    };
-    this.buffer = [];
-    this.maxBuffer = 100;
-    this.severities = { fatal: 0, error: 1, warn: 2, info: 3, debug: 4 };
-    this.rateLimiter = new Map();
-    this.correlationMap = new Map();
-    this.alertThresholds = { error: 10, warn: 25, fatal: 1 };
+    this.noticeRateLimit = new Map(); // Prevent notification spam
     this.recoveryStrategies = new Map();
-    this.startTime = Date.now();
-    
     this.initRecoveryStrategies();
-    this.startBackgroundTasks();
   }
 
-  static create(type, message, meta = {}, severity = 'error') {
-    return ZoroError.instance().build(type, message, meta, severity);
-  }
-
-  static async guard(fn, recovery = null, ctx = '') {
+  // Main entry point for creating errors with user notifications
+  static notify(message, severity = 'error', duration = null) {
     const instance = ZoroError.instance();
-    try { 
-      return await fn(); 
-    } catch (err) {
-      const error = instance.fromException(err, ctx);
-      
-      if (recovery) {
+    
+    if (!instance.isRateLimited(message)) {
+      const userMessage = instance.getUserMessage(message, severity);
+      const noticeDuration = duration || instance.getNoticeDuration(severity);
+      new Notice(userMessage, noticeDuration);
+    }
+    
+    // Log to console for debugging (developers can check if needed)
+    if (severity === 'error' || severity === 'fatal') {
+      console.error(`[Zoro] ${message}`);
+    }
+    
+    return new Error(message);
+  }
+
+  // Guard function with automatic recovery
+  static async guard(fn, recoveryStrategy = null) {
+    const instance = ZoroError.instance();
+    
+    try {
+      return await fn();
+    } catch (error) {
+      // Try recovery first (silent)
+      if (recoveryStrategy && instance.recoveryStrategies.has(recoveryStrategy)) {
         try {
-          const result = await instance.executeRecovery(recovery, error, fn);
+          const result = await instance.recoveryStrategies.get(recoveryStrategy)(error, fn);
           if (result !== null) return result;
-        } catch (recoveryErr) {
-          instance.build('RECOVERY_FAILED', recoveryErr.message, { original: err, ctx }, 'error');
+        } catch (recoveryError) {
+          // Recovery failed, fall through to show user error
         }
+      }
+      
+      // Show user-friendly error if recovery failed
+      const userMessage = instance.getUserMessage(error.message || String(error), 'error');
+      if (!instance.isRateLimited(error.message)) {
+        new Notice(userMessage, 6000);
       }
       
       throw error;
     }
   }
 
-  static notify(type, message, severity = 'warn', duration = null) {
-    const instance = ZoroError.instance();
-    const e = instance.build(type, message, {}, severity);
-    
-    if (!instance.isRateLimited(type)) {
-      const finalDuration = duration || instance.getNoticeDuration(severity);
-      new Notice(e.userMessage, finalDuration);
-    }
-    
-    return e;
-  }
-
-  static async withRetry(fn, options = {}) {
-    const { maxRetries = 3, backoff = 1000, condition = () => true } = options;
+  // Retry mechanism for network/temporary failures
+  static async withRetry(fn, maxRetries = 2) {
     const instance = ZoroError.instance();
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
       try {
         return await fn();
-      } catch (err) {
-        if (attempt === maxRetries || !condition(err)) {
-          instance.build('RETRY_EXHAUSTED', `Failed after ${attempt} attempts`, 
-            { originalError: err.message, attempts: attempt }, 'error');
-          throw err;
+      } catch (error) {
+        if (attempt === maxRetries) {
+          // Final attempt failed
+          const message = `Operation failed after ${maxRetries} attempts`;
+          ZoroError.notify(message, 'error');
+          throw error;
         }
         
-        instance.build('RETRY_ATTEMPT', `Attempt ${attempt} failed, retrying`, 
-          { error: err.message, nextAttemptIn: backoff * attempt }, 'warn');
-        
-        await instance.sleep(backoff * attempt);
+        // Silent retry with small delay
+        await instance.sleep(1000 * attempt);
       }
     }
   }
 
-  build(type, message, meta = {}, severity = 'error') {
-    const now = Date.now();
-    const correlationId = this.generateCorrelationId();
-    
-    const entry = {
-      id: correlationId,
-      type, 
-      message, 
-      meta: this.sanitizeMeta(meta), 
-      severity,
-      timestamp: now,
-      userMessage: this.toUserMessage(message, severity, type),
-      stack: this.captureStack(),
-      session: this.getSessionInfo(),
-      context: this.getContext(),
-      fingerprint: this.generateFingerprint(type, message)
-    };
-
-    this.record(entry);
-    this.correlate(entry);
-    this.persist(entry);
-    this.act(entry);
-    this.checkAlerts(entry);
-    
-    return this.createErrorObject(entry);
-  }
-
-  fromException(error, context = '') {
-    const type = error.type || error.name || 'UnknownError';
-    const msg = error.message || String(error);
-    const meta = { 
-      context, 
-      original: error,
-      stack: error.stack,
-      code: error.code,
-      status: error.status
-    };
-    
-    return this.build(type, msg, meta, this.classifyErrorSeverity(error));
-  }
-
-  record(entry) {
-    this.metrics.total++;
-    this.incrementMap(this.metrics.perType, entry.type);
-    this.incrementMap(this.metrics.perSeverity, entry.severity);
-    
-    const hour = Math.floor(entry.timestamp / (1000 * 60 * 60));
-    this.incrementMap(this.metrics.perHour, hour);
-    
-    this.updatePatterns(entry);
-    this.addToBuffer(entry);
-  }
-
-  async persist(entry) {
-    if (this.isProd() && entry.severity !== 'fatal') return;
-    
-    try {
-      const logData = {
-        ...entry,
-        version: this.plugin.manifest.version,
-        platform: this.getPlatform()
-      };
-      
-      const logFile = `${this.plugin.manifest.dir}/errors.jsonl`;
-      await this.plugin.app.vault.adapter.append(logFile, JSON.stringify(logData) + '\n');
-      
-      if (entry.severity === 'fatal') {
-        await this.createFatalReport(entry);
-      }
-    } catch {}
-  }
-
-  act(entry) {
-    const level = this.severities[entry.severity] || 1;
-    
-    if (level <= 1 || this.plugin.settings?.debugMode) {
-      console.error(`[Zoro-${entry.severity.toUpperCase()}] ${entry.type}: ${entry.message}`, {
-        meta: entry.meta,
-        context: entry.context,
-        id: entry.id
-      });
-    }
-    
-    if (entry.severity === 'fatal') {
-      this.handleFatalError(entry);
-    }
-  }
-
-  async executeRecovery(recovery, error, originalFn) {
-    this.metrics.recovery.attempts++;
-    
-    try {
-      let result;
-      
-      if (typeof recovery === 'function') {
-        result = await recovery(error);
-      } else if (typeof recovery === 'string' && this.recoveryStrategies.has(recovery)) {
-        result = await this.recoveryStrategies.get(recovery)(error, originalFn);
-      } else {
-        result = recovery;
-      }
-      
-      this.metrics.recovery.success++;
-      this.build('RECOVERY_SUCCESS', 'Automatic recovery succeeded', 
-        { strategy: typeof recovery, originalError: error.type }, 'info');
-      
-      return result;
-    } catch (err) {
-      throw err;
-    }
-  }
-
-  correlate(entry) {
-    const key = entry.fingerprint;
-    
-    if (!this.correlationMap.has(key)) {
-      this.correlationMap.set(key, []);
-    }
-    
-    const correlations = this.correlationMap.get(key);
-    correlations.push(entry.id);
-    
-    if (correlations.length > 10) {
-      correlations.shift();
-    }
-    
-    if (correlations.length > 3) {
-      const frequency = correlations.length;
-      const timeSpan = entry.timestamp - (this.buffer.find(e => e.id === correlations[0])?.timestamp || 0);
-      
-      if (timeSpan < 5 * 60 * 1000) {
-        this.build('ERROR_PATTERN', `Recurring error detected: ${entry.type}`, 
-          { frequency, timeSpanMs: timeSpan, pattern: key }, 'warn');
-      }
-    }
-  }
-
-  checkAlerts(entry) {
-    const threshold = this.alertThresholds[entry.severity];
-    if (!threshold) return;
-    
-    const recentCount = this.buffer.filter(e => 
-      e.severity === entry.severity && 
-      (entry.timestamp - e.timestamp) < 5 * 60 * 1000
-    ).length;
-    
-    if (recentCount >= threshold) {
-      this.build('ALERT_THRESHOLD', `${recentCount} ${entry.severity} errors in 5 minutes`, 
-        { severity: entry.severity, count: recentCount, threshold }, 'fatal');
-    }
-  }
-
+  // Initialize simple recovery strategies
   initRecoveryStrategies() {
-    this.recoveryStrategies.set('cache_fallback', async (error, originalFn) => {
-      if (error.type?.includes('NETWORK') || error.type?.includes('TIMEOUT')) {
-        return this.plugin.cache?.get(`fallback_${error.fingerprint}`) || null;
+    // Cache fallback for network issues
+    this.recoveryStrategies.set('cache', async (error, originalFn) => {
+      if (this.isNetworkError(error)) {
+        const cachedResult = this.plugin.cache?.getLastKnown?.();
+        if (cachedResult) {
+          ZoroError.notify('Using offline data', 'info', 3000);
+          return cachedResult;
+        }
       }
       return null;
     });
-    
-    this.recoveryStrategies.set('retry_once', async (error, originalFn) => {
-      await this.sleep(1000);
-      return await originalFn();
+
+    // Simple retry for temporary failures
+    this.recoveryStrategies.set('retry', async (error, originalFn) => {
+      if (this.isTemporaryError(error)) {
+        await this.sleep(1500);
+        return await originalFn();
+      }
+      return null;
     });
-    
-    this.recoveryStrategies.set('degrade_gracefully', async (error) => {
-      return { error: true, message: 'Service temporarily unavailable', degraded: true };
+
+    // Graceful degradation
+    this.recoveryStrategies.set('degrade', async (error) => {
+      return { error: true, message: 'Limited functionality available' };
     });
   }
 
-  startBackgroundTasks() {
-    setInterval(() => this.cleanupOldData(), 10 * 60 * 1000);
-    setInterval(() => this.analyzePatterns(), 30 * 60 * 1000);
-  }
-
-  cleanupOldData() {
-    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  // Convert technical errors to user-friendly messages
+  getUserMessage(message, severity) {
+    const lowerMessage = message.toLowerCase();
     
-    this.buffer = this.buffer.filter(e => e.timestamp > cutoff);
-    
-    for (const [key, times] of this.metrics.perHour.entries()) {
-      if (key * 60 * 60 * 1000 < cutoff) {
-        this.metrics.perHour.delete(key);
-      }
+    // Network issues
+    if (lowerMessage.includes('network') || lowerMessage.includes('fetch') || 
+        lowerMessage.includes('connection') || lowerMessage.includes('timeout')) {
+      return '🌐 Connection issue. Check your internet and try again.';
     }
     
-    for (const [key, correlations] of this.correlationMap.entries()) {
-      const validCorrelations = correlations.filter(id => 
-        this.buffer.some(e => e.id === id)
-      );
-      
-      if (validCorrelations.length === 0) {
-        this.correlationMap.delete(key);
-      } else {
-        this.correlationMap.set(key, validCorrelations);
-      }
-    }
-  }
-
-  analyzePatterns() {
-    const patterns = new Map();
-    const now = Date.now();
-    const window = 60 * 60 * 1000;
-    
-    const recentErrors = this.buffer.filter(e => now - e.timestamp < window);
-    
-    for (const error of recentErrors) {
-      const pattern = `${error.type}_${error.context?.component || 'unknown'}`;
-      this.incrementMap(patterns, pattern);
+    // Authentication issues
+    if (lowerMessage.includes('auth') || lowerMessage.includes('unauthorized') || 
+        lowerMessage.includes('forbidden')) {
+      return '🔑 Login required. Please check your credentials.';
     }
     
-    for (const [pattern, count] of patterns.entries()) {
-      if (count >= 5) {
-        this.build('PATTERN_DETECTED', `Error pattern analysis: ${pattern}`, 
-          { pattern, count, window: '1h' }, 'info');
-      }
-    }
-  }
-
-  async createFatalReport(entry) {
-    const report = {
-      timestamp: new Date(entry.timestamp).toISOString(),
-      error: entry,
-      system: {
-        plugin: this.plugin.manifest,
-        platform: this.getPlatform(),
-        settings: this.sanitizeSettings(),
-        uptime: Date.now() - this.startTime
-      },
-      context: {
-        recentErrors: this.buffer.slice(0, 10),
-        metrics: this.getMetrics(),
-        activeRequests: this.plugin.requestQueue?.getMetrics?.() || null
-      }
-    };
-    
-    try {
-      const reportFile = `${this.plugin.manifest.dir}/fatal-${Date.now()}.json`;
-      await this.plugin.app.vault.adapter.write(reportFile, JSON.stringify(report, null, 2));
-    } catch {}
-  }
-
-  handleFatalError(entry) {
-    setTimeout(() => {
-      new Notice('🧨 Fatal error occurred. Check console and restart Obsidian.', 10000);
-    }, 100);
-  }
-
-  generateCorrelationId() {
-    return `${Date.now()}-${Math.random().toString(36).substr(2, 8)}`;
-  }
-
-  generateFingerprint(type, message) {
-    const normalizedMessage = message.replace(/\d+/g, 'N').replace(/['"]/g, '');
-    return btoa(`${type}:${normalizedMessage}`).substr(0, 16);
-  }
-
-  captureStack() {
-    return new Error().stack?.split('\n').slice(3, 8).join('\n') || 'No stack available';
-  }
-
-  getSessionInfo() {
-    return {
-      startTime: this.startTime,
-      uptime: Date.now() - this.startTime,
-      errors: this.metrics.total
-    };
-  }
-
-  getContext() {
-    return {
-      component: this.getCurrentComponent(),
-      activeView: this.plugin.app?.workspace?.activeLeaf?.view?.getViewType?.() || null,
-      plugin: {
-        version: this.plugin.manifest.version,
-        enabled: true
-      }
-    };
-  }
-
-  getCurrentComponent() {
-    const stack = new Error().stack;
-    if (stack?.includes('Api.')) return 'api';
-    if (stack?.includes('Cache.')) return 'cache';
-    if (stack?.includes('Render.')) return 'render';
-    if (stack?.includes('RequestQueue.')) return 'queue';
-    return 'unknown';
-  }
-
-  classifyErrorSeverity(error) {
-    if (error.message?.includes('fatal') || error.name === 'FatalError') return 'fatal';
-    if (error.status >= 500) return 'error';
-    if (error.status >= 400) return 'warn';
-    if (error.name === 'TimeoutError') return 'warn';
-    return 'error';
-  }
-
-  sanitizeMeta(meta) {
-    if (!meta || typeof meta !== 'object') return meta;
-    
-    const sanitized = { ...meta };
-    const sensitiveKeys = ['accessToken', 'clientSecret', 'password', 'key', 'secret'];
-    
-    for (const key of sensitiveKeys) {
-      if (key in sanitized) {
-        sanitized[key] = '[REDACTED]';
-      }
+    // Rate limiting
+    if (lowerMessage.includes('rate') || lowerMessage.includes('too many')) {
+      return '🚦 Please wait a moment before trying again.';
     }
     
-    return sanitized;
-  }
-
-  sanitizeSettings() {
-    const settings = { ...this.plugin.settings };
-    const sensitive = ['accessToken', 'clientSecret', 'malAccessToken', 'malClientSecret'];
-    
-    for (const key of sensitive) {
-      if (settings[key]) {
-        settings[key] = settings[key] ? '[SET]' : '[UNSET]';
-      }
+    // Cache issues
+    if (lowerMessage.includes('cache')) {
+      return '💾 Data refresh needed. Please try again.';
     }
     
-    return settings;
-  }
-
-  toUserMessage(message, severity, type) {
-    const templates = {
-      NETWORK_ERROR: '🌐 Connection issue. Please check your internet.',
-      TIMEOUT: '⏱️ Request timed out. Please try again.',
-      AUTH_ERROR: '🔑 Authentication failed. Please re-login.',
-      RATE_LIMITED: '🚦 Too many requests. Please wait a moment.',
-      CACHE_ERROR: '💾 Cache issue detected.',
-      UNKNOWN_ERROR: '❓ An unexpected error occurred.'
-    };
+    // Server issues
+    if (lowerMessage.includes('server') || lowerMessage.includes('503') || 
+        lowerMessage.includes('502') || lowerMessage.includes('500')) {
+      return '🔧 Service temporarily unavailable. Please try again later.';
+    }
     
-    const template = templates[type];
-    if (template) return template;
-    
+    // Default messages based on severity
     const prefixes = {
-      fatal: '🧨',
-      error: '❌',
-      warn: '⚠️',
-      info: 'ℹ️',
-      debug: '🔍'
+      fatal: '🧨 Critical error occurred',
+      error: '❌ Something went wrong',
+      warn: '⚠️ Minor issue detected',
+      info: 'ℹ️ Information'
     };
     
-    return `${prefixes[severity] || '❌'} ${message}`;
+    return `${prefixes[severity] || prefixes.error}. Please try again.`;
   }
 
-  createErrorObject(entry) {
-    const error = new Error(entry.message);
-    error.type = entry.type;
-    error.severity = entry.severity;
-    error.id = entry.id;
-    error.timestamp = entry.timestamp;
-    error.userMessage = entry.userMessage;
-    error.fingerprint = entry.fingerprint;
-    error.meta = entry.meta;
-    return error;
-  }
-
-  isRateLimited(type) {
+  // Prevent notification spam
+  isRateLimited(message) {
     const now = Date.now();
-    const key = `notice_${type}`;
-    const lastNotice = this.rateLimiter.get(key) || 0;
+    const key = this.getMessageKey(message);
+    const lastShown = this.noticeRateLimit.get(key) || 0;
     
-    if (now - lastNotice < 5000) {
+    if (now - lastShown < 5000) { // 5 second cooldown
       return true;
     }
     
-    this.rateLimiter.set(key, now);
+    this.noticeRateLimit.set(key, now);
+    
+    // Cleanup old entries periodically
+    if (this.noticeRateLimit.size > 50) {
+      this.cleanupRateLimit();
+    }
+    
     return false;
   }
 
+  // Get notice duration based on severity
   getNoticeDuration(severity) {
-    const durations = { fatal: 15000, error: 8000, warn: 5000, info: 3000, debug: 2000 };
+    const durations = {
+      fatal: 10000,
+      error: 6000,
+      warn: 4000,
+      info: 3000
+    };
     return durations[severity] || 5000;
   }
 
-  incrementMap(map, key) {
-    map.set(key, (map.get(key) || 0) + 1);
+  // Helper methods
+  isNetworkError(error) {
+    const message = error.message?.toLowerCase() || '';
+    return message.includes('network') || message.includes('fetch') || 
+           message.includes('timeout') || message.includes('connection');
   }
 
-  addToBuffer(entry) {
-    this.buffer.unshift(entry);
-    if (this.buffer.length > this.maxBuffer) {
-      this.buffer.pop();
+  isTemporaryError(error) {
+    const message = error.message?.toLowerCase() || '';
+    return message.includes('temporary') || message.includes('retry') ||
+           message.includes('503') || message.includes('502');
+  }
+
+  getMessageKey(message) {
+    // Create a simple key for rate limiting (remove numbers and special chars)
+    return message.replace(/\d+/g, '').replace(/[^\w\s]/g, '').trim().toLowerCase();
+  }
+
+  cleanupRateLimit() {
+    const now = Date.now();
+    const cutoff = now - 60000; // 1 minute ago
+    
+    for (const [key, timestamp] of this.noticeRateLimit.entries()) {
+      if (timestamp < cutoff) {
+        this.noticeRateLimit.delete(key);
+      }
     }
-  }
-
-  updatePatterns(entry) {
-    const pattern = `${entry.type}_${entry.severity}`;
-    this.incrementMap(this.metrics.patterns, pattern);
-  }
-
-  getPlatform() {
-    return {
-      userAgent: navigator.userAgent,
-      platform: navigator.platform,
-      language: navigator.language,
-      obsidian: this.plugin.app?.appId || 'unknown'
-    };
-  }
-
-  isProd() {
-    return !this.plugin.settings?.debugMode;
   }
 
   sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
-  getMetrics() {
-    const now = Date.now();
-    const uptime = now - this.startTime;
-    const recentErrors = this.buffer.filter(e => now - e.timestamp < 60 * 60 * 1000).length;
-    
-    return {
-      total: this.metrics.total,
-      uptime: this.formatDuration(uptime),
-      recentHour: recentErrors,
-      byType: Object.fromEntries(this.metrics.perType),
-      bySeverity: Object.fromEntries(this.metrics.perSeverity),
-      patterns: Object.fromEntries(this.metrics.patterns),
-      recovery: this.metrics.recovery,
-      errorRate: uptime > 0 ? (this.metrics.total / (uptime / 1000 / 60)).toFixed(2) + '/min' : '0/min'
-    };
-  }
-
-  formatDuration(ms) {
-    const seconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const hours = Math.floor(minutes / 60);
-    const days = Math.floor(hours / 24);
-    
-    if (days > 0) return `${days}d ${hours % 24}h`;
-    if (hours > 0) return `${hours}h ${minutes % 60}m`;
-    if (minutes > 0) return `${minutes}m ${seconds % 60}s`;
-    return `${seconds}s`;
-  }
-
-  dump() {
-    return {
-      recent: this.buffer.slice(0, 20),
-      metrics: this.getMetrics(),
-      correlations: Object.fromEntries(this.correlationMap),
-      health: this.getHealthStatus()
-    };
-  }
-
-  getHealthStatus() {
-    const now = Date.now();
-    const recentErrors = this.buffer.filter(e => now - e.timestamp < 5 * 60 * 1000);
-    const fatalCount = recentErrors.filter(e => e.severity === 'fatal').length;
-    const errorCount = recentErrors.filter(e => e.severity === 'error').length;
-    
-    let status = 'healthy';
-    if (fatalCount > 0 || errorCount > 10) status = 'critical';
-    else if (errorCount > 5 || recentErrors.length > 15) status = 'degraded';
-    
-    return {
-      status,
-      recentErrors: recentErrors.length,
-      fatalErrors: fatalCount,
-      recoveryRate: this.metrics.recovery.attempts > 0 ? 
-        (this.metrics.recovery.success / this.metrics.recovery.attempts * 100).toFixed(1) + '%' : 'N/A'
-    };
-  }
-
-  async destroy() {
-    if (this.metrics.total > 0) {
-      await this.persist(this.build('SHUTDOWN', 'Error system shutting down', 
-        { totalErrors: this.metrics.total, uptime: Date.now() - this.startTime }, 'info'));
-    }
-    
-    this.buffer = [];
-    this.metrics = { total: 0, perType: new Map(), perSeverity: new Map() };
-    this.correlationMap.clear();
-    this.rateLimiter.clear();
+  // Cleanup when plugin unloads
+  destroy() {
+    this.noticeRateLimit.clear();
+    this.recoveryStrategies.clear();
   }
 }
 
@@ -1577,145 +1230,266 @@ class Cache {
   }
 }
 
+class AniListRequest {
+  constructor(config) {
+    this.config = config;
+    this.rateLimiter = {
+      requests: [],
+      windowMs: 60000,
+      maxRequests: 90,
+      remaining: 90
+    };
+    this.metrics = {
+      requests: 0,
+      errors: 0,
+      avgTime: 0
+    };
+  }
+
+  checkRateLimit() {
+    const now = Date.now();
+    this.rateLimiter.requests = this.rateLimiter.requests.filter(
+      time => now - time < this.rateLimiter.windowMs
+    );
+
+    const maxAllowed = Math.floor(this.rateLimiter.maxRequests * this.config.rateLimitBuffer);
+    
+    if (this.rateLimiter.requests.length >= maxAllowed) {
+      const oldestRequest = Math.min(...this.rateLimiter.requests);
+      const waitTime = this.rateLimiter.windowMs - (now - oldestRequest);
+      return { allowed: false, waitTime: Math.max(waitTime, 1000) };
+    }
+
+    this.rateLimiter.requests.push(now);
+    return { allowed: true, waitTime: 0 };
+  }
+
+  shouldRetry(error, attempt, maxAttempts) {
+    if (attempt >= maxAttempts) return false;
+    if (error.message.includes('timeout')) return true;
+    if (error.status >= 400 && error.status < 500) return false;
+    return true;
+  }
+
+  getRetryDelay(attempt) {
+    const baseDelay = 1000;
+    const maxDelay = 10000;
+    const exponentialDelay = baseDelay * Math.pow(2, attempt - 1);
+    const jitter = Math.random() * 1000;
+    return Math.min(exponentialDelay + jitter, maxDelay);
+  }
+
+  updateMetrics(processingTime, isError = false) {
+    this.metrics.requests++;
+    if (isError) {
+      this.metrics.errors++;
+    } else {
+      this.metrics.avgTime = (this.metrics.avgTime + processingTime) / 2;
+    }
+  }
+
+  getUtilization() {
+    return `${((this.rateLimiter.requests.length / this.rateLimiter.maxRequests) * 100).toFixed(1)}%`;
+  }
+}
+
+class MALRequest {
+  constructor(config, plugin) {
+    this.config = config;
+    this.plugin = plugin;
+    this.rateLimiter = {
+      requests: [],
+      windowMs: 60000,
+      maxRequests: 60,
+      remaining: 60
+    };
+    this.authState = {
+      lastAuthCheck: 0,
+      authCheckInterval: 300000,
+      consecutiveAuthFailures: 0,
+      lastRequest: 0
+    };
+    this.metrics = {
+      requests: 0,
+      errors: 0,
+      avgTime: 0,
+      authErrors: 0
+    };
+  }
+
+  checkRateLimit() {
+    const now = Date.now();
+    this.rateLimiter.requests = this.rateLimiter.requests.filter(
+      time => now - time < this.rateLimiter.windowMs
+    );
+
+    const maxAllowed = Math.floor(this.rateLimiter.maxRequests * this.config.malConfig.rateLimitBuffer);
+    
+    if (this.rateLimiter.requests.length >= maxAllowed) {
+      const oldestRequest = Math.min(...this.rateLimiter.requests);
+      const waitTime = this.rateLimiter.windowMs - (now - oldestRequest);
+      return { allowed: false, waitTime: Math.max(waitTime, 2000) };
+    }
+
+    this.rateLimiter.requests.push(now);
+    this.authState.lastRequest = now;
+    return { allowed: true, waitTime: 0 };
+  }
+
+  async validateAuth() {
+    const now = Date.now();
+    
+    if (now - this.authState.lastAuthCheck < this.authState.authCheckInterval) {
+      return { valid: true };
+    }
+
+    try {
+      if (this.plugin.malAuth && typeof this.plugin.malAuth.ensureValidToken === 'function') {
+        await this.plugin.malAuth.ensureValidToken();
+        this.authState.lastAuthCheck = now;
+        this.authState.consecutiveAuthFailures = 0;
+        return { valid: true };
+      }
+
+      if (!this.plugin.settings?.malAccessToken) {
+        return { 
+          valid: false, 
+          error: 'No MAL access token available' 
+        };
+      }
+
+      return { valid: true };
+    } catch (error) {
+      this.authState.consecutiveAuthFailures++;
+      this.metrics.authErrors++;
+      return { 
+        valid: false, 
+        error: error.message || 'MAL authentication failed' 
+      };
+    }
+  }
+
+  shouldRetry(error, attempt, maxAttempts) {
+    if (attempt >= maxAttempts) return false;
+    
+    if (error.message.includes('auth') || error.message.includes('401')) {
+      return attempt < this.config.malConfig.maxAuthRetries;
+    }
+    
+    if (error.status >= 400 && error.status < 500) return false;
+    if (error.message.includes('timeout')) return true;
+    return true;
+  }
+
+  getRetryDelay(attempt) {
+    const baseDelay = 2000;
+    const maxDelay = 15000;
+    
+    const timeSinceLastRequest = Date.now() - this.authState.lastRequest;
+    if (timeSinceLastRequest < 1000) {
+      return Math.max(baseDelay, 1500);
+    }
+    
+    if (this.authState.consecutiveAuthFailures > 0) {
+      return baseDelay * (1 + this.authState.consecutiveAuthFailures * 0.5);
+    }
+    
+    const exponentialDelay = baseDelay * Math.pow(2, attempt - 1);
+    const jitter = Math.random() * 1000;
+    return Math.min(exponentialDelay + jitter, maxDelay);
+  }
+
+  updateMetrics(processingTime, isError = false) {
+    this.metrics.requests++;
+    if (isError) {
+      this.metrics.errors++;
+    } else {
+      this.metrics.avgTime = (this.metrics.avgTime + processingTime) / 2;
+    }
+  }
+
+  getUtilization() {
+    return `${((this.rateLimiter.requests.length / this.rateLimiter.maxRequests) * 100).toFixed(1)}%`;
+  }
+
+  getAuthStatus() {
+    return this.authState.consecutiveAuthFailures === 0 ? 'healthy' : 'degraded';
+  }
+}
+
 class RequestQueue {
   constructor(plugin) {
     this.plugin = plugin;
     
-    // Multiple priority queues
     this.queues = {
-      high: [],      // Auth, critical user actions
-      normal: [],    // Regular API calls
-      low: [],       // Background refresh, preloading
-      batch: []      // Batch operations
+      high: [],
+      normal: [],
+      low: []
     };
     
-    // Enterprise configuration with MAL-aware settings
     this.config = {
       baseDelay: 700,
       maxDelay: 5000,
       minDelay: 100,
-      adaptiveDelayEnabled: true,
       maxConcurrent: 3,
       maxRetries: 3,
       timeoutMs: 30000,
-      rateLimitBuffer: 0.8, // Use 80% of rate limit
-      batchSize: 5,
-      batchDelay: 100,
-      // MAL-specific configuration
+      rateLimitBuffer: 0.8,
       malConfig: {
-        baseDelay: 1000,      // MAL is more conservative
-        maxConcurrent: 2,     // Lower concurrency for MAL
-        rateLimitBuffer: 0.7, // More conservative rate limiting
-        authRetryDelay: 2000, // Delay for auth retries
-        maxAuthRetries: 2     // Limited auth retries
+        baseDelay: 1000,
+        maxConcurrent: 2,
+        rateLimitBuffer: 0.7,
+        authRetryDelay: 2000,
+        maxAuthRetries: 2
       }
     };
     
-    // State management
     this.state = {
       isProcessing: false,
       activeRequests: new Map(),
       completedRequests: 0,
       failedRequests: 0,
-      totalProcessingTime: 0,
-      lastRequestTime: 0,
-      currentDelay: this.config.baseDelay,
-      concurrentCount: 0,
-      // MAL-specific state
-      malState: {
-        lastAuthCheck: 0,
-        authCheckInterval: 300000, // 5 minutes
-        consecutiveAuthFailures: 0,
-        lastMalRequest: 0
-      }
+      concurrentCount: 0
     };
     
-    // Enhanced rate limiting with service-specific limits
-    this.rateLimiter = {
-      // AniList limits
-      anilist: {
-        requests: [],
-        windowMs: 60000, // 1 minute window
-        maxRequests: 90, // AniList limit
-        resetTime: null,
-        remaining: 90
-      },
-      // MAL limits (more conservative)
-      mal: {
-        requests: [],
-        windowMs: 60000, // 1 minute window  
-        maxRequests: 60, // Conservative MAL limit
-        resetTime: null,
-        remaining: 60
-      }
+    this.services = {
+      anilist: new AniListRequest(this.config),
+      mal: new MALRequest(this.config, plugin)
     };
     
-    // Adaptive delay system with service awareness
-    this.adaptiveDelay = {
-      successStreak: 0,
-      errorStreak: 0,
-      lastAdjustment: Date.now(),
-      samples: [],
-      avgResponseTime: 0,
-      // Service-specific adaptive delays
-      serviceDelays: {
-        anilist: this.config.baseDelay,
-        mal: this.config.malConfig.baseDelay
-      }
-    };
-    
-    // Enhanced metrics with service breakdown
     this.metrics = {
       requestsQueued: 0,
       requestsProcessed: 0,
       requestsFailed: 0,
-      averageWaitTime: 0,
-      averageProcessingTime: 0,
       queuePeakSize: 0,
       rateLimitHits: 0,
-      timeouts: 0,
       retries: 0,
-      batchedRequests: 0,
-      startTime: Date.now(),
-      // Service-specific metrics
-      serviceMetrics: {
-        anilist: { requests: 0, errors: 0, avgTime: 0 },
-        mal: { requests: 0, errors: 0, avgTime: 0, authErrors: 0 }
-      }
+      startTime: Date.now()
     };
     
-    // Request tracking
     this.requestTracker = new Map();
-    this.batchTimer = null;
-    this.healthCheckInterval = null;
     
-    // UI state
     this.loaderState = {
       visible: false,
       requestCount: 0,
       lastUpdate: 0
     };
     
-    // Start background processes
     this.startBackgroundTasks();
   }
 
-  // =================== ENHANCED CORE OPERATIONS ===================
-  
   add(requestFn, options = {}) {
     const {
       priority = 'normal',
       timeout = this.config.timeoutMs,
       retries = this.config.maxRetries,
-      batchable = false,
       metadata = {},
-      service = 'anilist' // New: service identification
+      service = 'anilist'
     } = options;
     
     const requestId = this.generateRequestId();
     const queueTime = Date.now();
     
-    // MAL-specific adjustments
     const adjustedOptions = this.adjustOptionsForService(service, {
       timeout, retries, priority
     });
@@ -1729,44 +1503,33 @@ class RequestQueue {
         priority,
         timeout: adjustedOptions.timeout,
         retries: adjustedOptions.retries,
-        batchable,
-        metadata: { ...metadata, service }, // Ensure service is tracked
+        metadata: { ...metadata, service },
         queueTime,
         startTime: null,
         attempt: 0,
         maxAttempts: adjustedOptions.retries + 1,
-        service // Explicit service tracking
+        service
       };
       
-      // Add to appropriate queue
-      if (batchable && this.config.batchSize > 1) {
-        this.queues.batch.push(requestItem);
-        this.scheduleBatchProcessing();
-      } else {
-        this.queues[priority].push(requestItem);
-      }
-      
+      this.queues[priority].push(requestItem);
       this.metrics.requestsQueued++;
       this.updateQueueMetrics();
+      this.updateLoaderState();
       
-      // Start processing
       this.process();
       
-      // Track request for monitoring
       this.requestTracker.set(requestId, {
         queueTime,
         priority,
-        service,
-        metadata: this.sanitizeMetadata(metadata)
+        service
       });
     });
   }
   
-  // New: Service-specific option adjustments
   adjustOptionsForService(service, options) {
     if (service === 'mal') {
       return {
-        timeout: Math.max(options.timeout, 30000), // MAL needs more time
+        timeout: Math.max(options.timeout, 30000),
         retries: Math.min(options.retries, this.config.malConfig.maxAuthRetries),
         priority: options.priority
       };
@@ -1782,62 +1545,53 @@ class RequestQueue {
       return;
     }
     
-    // Service-aware concurrency check
-    const requestItem = this.peekNextRequest();
-    if (requestItem && !this.canProcessRequest(requestItem)) {
-      return;
-    }
-    
     this.state.isProcessing = true;
+    this.updateLoaderState();
     
     try {
-      // Get next request by priority
-      const actualRequestItem = this.getNextRequest();
-      if (!actualRequestItem) {
+      const requestItem = this.getNextRequest();
+      if (!requestItem) {
         this.state.isProcessing = false;
         return;
       }
       
-      // Show loader if needed
-      this.updateLoaderState();
-      
-      // Enhanced rate limiting check with service awareness
-      const rateLimitCheck = this.checkServiceRateLimit(actualRequestItem.service);
-      if (!rateLimitCheck.allowed) {
-        // Re-queue the request and wait
-        this.queues[actualRequestItem.priority].unshift(actualRequestItem);
+      if (!this.canProcessRequest(requestItem)) {
+        this.queues[requestItem.priority].unshift(requestItem);
         this.state.isProcessing = false;
+        return;
+      }
+      
+      const serviceHandler = this.services[requestItem.service];
+      const rateLimitCheck = serviceHandler.checkRateLimit();
+      
+      if (!rateLimitCheck.allowed) {
+        this.queues[requestItem.priority].unshift(requestItem);
+        this.state.isProcessing = false;
+        this.metrics.rateLimitHits++;
         
-        this.log('RATE_LIMITED', actualRequestItem.id, 
-          `${actualRequestItem.service} rate limited - waiting ${rateLimitCheck.waitTime}ms`);
         setTimeout(() => this.process(), rateLimitCheck.waitTime);
         return;
       }
       
-      // MAL-specific pre-request validation
-      if (actualRequestItem.service === 'mal') {
-        const authCheck = await this.validateMalAuth(actualRequestItem);
+      if (requestItem.service === 'mal') {
+        const authCheck = await serviceHandler.validateAuth();
         if (!authCheck.valid) {
-          this.handleMalAuthFailure(actualRequestItem, authCheck.error);
+          this.handleMalAuthFailure(requestItem, authCheck.error);
           return;
         }
       }
       
-      // Process the request
-      await this.executeRequest(actualRequestItem);
+      await this.executeRequest(requestItem, serviceHandler);
       
     } finally {
       this.state.isProcessing = false;
       
-      // Continue processing if there are more requests
       if (this.getTotalQueueSize() > 0) {
-        const delay = this.calculateServiceAwareDelay(requestItem?.service);
-        setTimeout(() => this.process(), delay);
+        setTimeout(() => this.process(), this.config.minDelay);
       }
     }
   }
   
-  // New: Service-aware concurrency management
   canProcessRequest(requestItem) {
     const service = requestItem.service || 'anilist';
     const currentServiceRequests = Array.from(this.state.activeRequests.values())
@@ -1851,18 +1605,7 @@ class RequestQueue {
            currentServiceRequests < maxConcurrent;
   }
   
-  // New: Peek at next request without removing it
-  peekNextRequest() {
-    const priorities = ['high', 'normal', 'low'];
-    for (const priority of priorities) {
-      if (this.queues[priority].length > 0) {
-        return this.queues[priority][0];
-      }
-    }
-    return null;
-  }
-  
-  async executeRequest(requestItem) {
+  async executeRequest(requestItem, serviceHandler) {
     const { requestFn, resolve, reject, id, timeout, service } = requestItem;
     
     this.state.concurrentCount++;
@@ -1872,42 +1615,27 @@ class RequestQueue {
     
     const waitTime = requestItem.startTime - requestItem.queueTime;
     
-    // Update service-specific state
-    if (service === 'mal') {
-      this.state.malState.lastMalRequest = Date.now();
-    }
-    
     try {
-      this.log('REQUEST_START', id, {
-        service,
-        attempt: requestItem.attempt,
-        waitTime: `${waitTime}ms`,
-        queueSize: this.getTotalQueueSize()
-      });
-      
-      // Execute with timeout
       const timeoutPromise = new Promise((_, timeoutReject) => {
         setTimeout(() => timeoutReject(new Error('Request timeout')), timeout);
       });
       
       const result = await Promise.race([requestFn(), timeoutPromise]);
       
-      // Success handling with service awareness
       const processingTime = Date.now() - requestItem.startTime;
-      this.handleRequestSuccess(requestItem, result, processingTime, waitTime);
+      this.handleRequestSuccess(requestItem, result, processingTime, waitTime, serviceHandler);
       resolve(result);
       
     } catch (error) {
       const processingTime = Date.now() - requestItem.startTime;
-      const shouldRetry = await this.handleRequestError(requestItem, error, processingTime, waitTime);
+      const shouldRetry = await this.handleRequestError(requestItem, error, processingTime, waitTime, serviceHandler);
       
       if (shouldRetry) {
-        // Service-specific retry delay
-        const retryDelay = this.calculateServiceRetryDelay(requestItem.attempt, service);
-        await this.sleep(retryDelay);
-        
-        // Re-queue for retry
-        this.queues[requestItem.priority].unshift(requestItem);
+        const retryDelay = serviceHandler.getRetryDelay(requestItem.attempt);
+        setTimeout(() => {
+          this.queues[requestItem.priority].unshift(requestItem);
+          this.process();
+        }, retryDelay);
         this.metrics.retries++;
       } else {
         reject(error);
@@ -1919,59 +1647,15 @@ class RequestQueue {
     }
   }
 
-  // =================== MAL-SPECIFIC ENHANCEMENTS ===================
-  
-  // New: MAL authentication validation
-  async validateMalAuth(requestItem) {
-    const now = Date.now();
-    
-    // Skip frequent auth checks
-    if (now - this.state.malState.lastAuthCheck < this.state.malState.authCheckInterval) {
-      return { valid: true };
-    }
-    
-    try {
-      // Check if we need token refresh
-      if (this.plugin.malAuth && typeof this.plugin.malAuth.ensureValidToken === 'function') {
-        await this.plugin.malAuth.ensureValidToken();
-        this.state.malState.lastAuthCheck = now;
-        this.state.malState.consecutiveAuthFailures = 0;
-        return { valid: true };
-      }
-      
-      // Fallback check
-      if (!this.plugin.settings?.malAccessToken) {
-        return { 
-          valid: false, 
-          error: 'No MAL access token available' 
-        };
-      }
-      
-      return { valid: true };
-      
-    } catch (error) {
-      this.state.malState.consecutiveAuthFailures++;
-      this.metrics.serviceMetrics.mal.authErrors++;
-      
-      return { 
-        valid: false, 
-        error: error.message || 'MAL authentication failed' 
-      };
-    }
-  }
-  
-  // New: Handle MAL authentication failures
   handleMalAuthFailure(requestItem, errorMessage) {
-    this.log('MAL_AUTH_FAILURE', requestItem.id, errorMessage);
+    const malService = this.services.mal;
     
-    // If too many consecutive auth failures, reject immediately
-    if (this.state.malState.consecutiveAuthFailures >= this.config.malConfig.maxAuthRetries) {
+    if (malService.authState.consecutiveAuthFailures >= this.config.malConfig.maxAuthRetries) {
       requestItem.reject(new Error(`MAL authentication persistently failing: ${errorMessage}`));
       this.state.isProcessing = false;
       return;
     }
     
-    // Re-queue with auth retry delay
     setTimeout(() => {
       this.queues[requestItem.priority].unshift(requestItem);
       this.state.isProcessing = false;
@@ -1979,243 +1663,25 @@ class RequestQueue {
     }, this.config.malConfig.authRetryDelay);
   }
 
-  // =================== ENHANCED RATE LIMITING ===================
-  
-  // New: Service-aware rate limiting
-  checkServiceRateLimit(service = 'anilist') {
-    const limiter = this.rateLimiter[service] || this.rateLimiter.anilist;
-    const now = Date.now();
-    
-    // Clean old requests
-    limiter.requests = limiter.requests.filter(
-      time => now - time < limiter.windowMs
-    );
-    
-    // Get service-specific buffer
-    const buffer = service === 'mal' 
-      ? this.config.malConfig.rateLimitBuffer 
-      : this.config.rateLimitBuffer;
-    
-    // Check if we can make a request
-    const maxAllowed = Math.floor(limiter.maxRequests * buffer);
-    
-    if (limiter.requests.length >= maxAllowed) {
-      const oldestRequest = Math.min(...limiter.requests);
-      const waitTime = limiter.windowMs - (now - oldestRequest);
-      
-      this.metrics.rateLimitHits++;
-      return { 
-        allowed: false, 
-        waitTime: Math.max(waitTime, service === 'mal' ? 2000 : 1000),
-        service 
-      };
-    }
-    
-    // Record the request
-    limiter.requests.push(now);
-    return { allowed: true, waitTime: 0, service };
-  }
-  
-  // Enhanced rate limit info update with service awareness
-  updateRateLimitInfo(headers, service = 'anilist') {
-    const limiter = this.rateLimiter[service];
-    if (!limiter) return;
-    
-    if (headers && headers['x-ratelimit-remaining']) {
-      limiter.remaining = parseInt(headers['x-ratelimit-remaining']);
-    }
-    if (headers && headers['x-ratelimit-reset']) {
-      limiter.resetTime = new Date(headers['x-ratelimit-reset']);
-    }
-  }
-
-  // =================== ENHANCED ADAPTIVE DELAY ===================
-  
-  // New: Service-aware delay calculation
-  calculateServiceAwareDelay(service = 'anilist') {
-    if (!this.config.adaptiveDelayEnabled) {
-      return service === 'mal' 
-        ? this.config.malConfig.baseDelay 
-        : this.config.baseDelay;
-    }
-    
-    const serviceDelay = this.adaptiveDelay.serviceDelays[service] || this.config.baseDelay;
-    let delay = serviceDelay;
-    
-    // Service-specific adjustments
-    if (service === 'mal') {
-      // MAL is more sensitive to rapid requests
-      const timeSinceLastMal = Date.now() - this.state.malState.lastMalRequest;
-      if (timeSinceLastMal < 1000) {
-        delay = Math.max(delay, 1500);
-      }
-      
-      // Account for auth failures
-      if (this.state.malState.consecutiveAuthFailures > 0) {
-        delay *= (1 + this.state.malState.consecutiveAuthFailures * 0.5);
-      }
-    }
-    
-    // Apply standard adaptive logic
-    const limiter = this.rateLimiter[service] || this.rateLimiter.anilist;
-    const rateLimitUtilization = limiter.requests.length / limiter.maxRequests;
-    
-    if (rateLimitUtilization > 0.8) {
-      delay = Math.min(delay * 1.5, this.config.maxDelay);
-    } else if (rateLimitUtilization < 0.3) {
-      delay = Math.max(delay * 0.8, this.config.minDelay);
-    }
-    
-    // Update service delay
-    this.adaptiveDelay.serviceDelays[service] = delay;
-    
-    return Math.floor(delay);
-  }
-  
-  // New: Service-specific retry delay
-  calculateServiceRetryDelay(attempt, service = 'anilist') {
-    const baseDelay = service === 'mal' ? 2000 : 1000;
-    const maxDelay = service === 'mal' ? 15000 : 10000;
-    const exponentialDelay = baseDelay * Math.pow(2, attempt - 1);
-    const jitter = Math.random() * 1000;
-    
-    return Math.min(exponentialDelay + jitter, maxDelay);
-  }
-
-  // =================== ENHANCED ERROR HANDLING ===================
-  
-  handleRequestSuccess(requestItem, result, processingTime, waitTime) {
-    const { service = 'anilist' } = requestItem;
-    
+  handleRequestSuccess(requestItem, result, processingTime, waitTime, serviceHandler) {
     this.state.completedRequests++;
-    this.state.totalProcessingTime += processingTime;
-    this.updateAdaptiveDelay(true, processingTime, service);
-    
-    // Update service-specific metrics
-    const serviceMetric = this.metrics.serviceMetrics[service];
-    if (serviceMetric) {
-      serviceMetric.requests++;
-      serviceMetric.avgTime = (serviceMetric.avgTime + processingTime) / 2;
-    }
-    
+    serviceHandler.updateMetrics(processingTime);
     this.metrics.requestsProcessed++;
-    this.updateMetrics(waitTime, processingTime);
-    
-    this.log('REQUEST_SUCCESS', requestItem.id, {
-      service,
-      attempt: requestItem.attempt,
-      processingTime: `${processingTime}ms`,
-      waitTime: `${waitTime}ms`
-    });
   }
   
-  async handleRequestError(requestItem, error, processingTime, waitTime) {
-    const { service = 'anilist' } = requestItem;
-    
+  async handleRequestError(requestItem, error, processingTime, waitTime, serviceHandler) {
     this.state.failedRequests++;
-    this.updateAdaptiveDelay(false, processingTime, service);
+    serviceHandler.updateMetrics(processingTime, true);
     
-    // Update service-specific error metrics
-    const serviceMetric = this.metrics.serviceMetrics[service];
-    if (serviceMetric) {
-      serviceMetric.errors++;
-    }
+    const shouldRetry = serviceHandler.shouldRetry(error, requestItem.attempt, requestItem.maxAttempts);
     
-    // Service-specific error handling
-    const shouldRetry = this.shouldRetryRequest(requestItem, error);
-    
-    if (shouldRetry) {
-      this.log('REQUEST_RETRY', requestItem.id, {
-        service,
-        attempt: requestItem.attempt,
-        maxAttempts: requestItem.maxAttempts,
-        error: error.message,
-        nextRetryIn: `${this.calculateServiceRetryDelay(requestItem.attempt, service)}ms`
-      });
-      
-      return true;
-    } else {
+    if (!shouldRetry) {
       this.metrics.requestsFailed++;
-      this.log('REQUEST_FAILED', requestItem.id, {
-        service,
-        attempt: requestItem.attempt,
-        error: error.message,
-        processingTime: `${processingTime}ms`,
-        waitTime: `${waitTime}ms`
-      });
-      return false;
-    }
-  }
-  
-  shouldRetryRequest(requestItem, error) {
-    const { service = 'anilist' } = requestItem;
-    
-    if (requestItem.attempt >= requestItem.maxAttempts) {
-      return false;
     }
     
-    // MAL-specific retry logic
-    if (service === 'mal') {
-      // Don't retry MAL auth errors beyond limit
-      if (error.message.includes('auth') || error.message.includes('401')) {
-        return requestItem.attempt < this.config.malConfig.maxAuthRetries;
-      }
-      
-      // MAL is stricter about retries
-      if (error.status >= 400 && error.status < 500) {
-        return false;
-      }
-    }
-    
-    // Standard retry logic
-    if (error.message.includes('timeout')) {
-      this.metrics.timeouts++;
-      return true;
-    }
-    
-    if (error.status >= 400 && error.status < 500) {
-      return false;
-    }
-    
-    return true;
-  }
-  
-  // Enhanced adaptive delay update with service awareness
-  updateAdaptiveDelay(success, responseTime, service = 'anilist') {
-    if (success) {
-      this.adaptiveDelay.successStreak++;
-      this.adaptiveDelay.errorStreak = 0;
-    } else {
-      this.adaptiveDelay.errorStreak++;
-      this.adaptiveDelay.successStreak = 0;
-    }
-    
-    // Update response time average
-    this.adaptiveDelay.samples.push({ time: responseTime, service });
-    if (this.adaptiveDelay.samples.length > 100) {
-      this.adaptiveDelay.samples = this.adaptiveDelay.samples.slice(-50);
-    }
-    
-    // Calculate service-specific average response times
-    const serviceSamples = this.adaptiveDelay.samples.filter(s => s.service === service);
-    if (serviceSamples.length > 0) {
-      const serviceAvg = serviceSamples.reduce((a, b) => a + b.time, 0) / serviceSamples.length;
-      
-      // Adjust service delay based on performance
-      if (serviceAvg > 3000 && service === 'mal') {
-        this.adaptiveDelay.serviceDelays[service] = Math.min(
-          this.adaptiveDelay.serviceDelays[service] * 1.2,
-          this.config.maxDelay
-        );
-      }
-    }
-    
-    this.adaptiveDelay.avgResponseTime = 
-      this.adaptiveDelay.samples.reduce((a, b) => a + b.time, 0) / this.adaptiveDelay.samples.length;
+    return shouldRetry;
   }
 
-  // =================== ENHANCED METRICS ===================
-  
   getMetrics() {
     const now = Date.now();
     const uptime = now - this.metrics.startTime;
@@ -2233,23 +1699,20 @@ class RequestQueue {
         retries: this.metrics.retries
       },
       performance: {
-        successRate: `${(successRate * 100).toFixed(2)}%`,
-        averageWaitTime: `${this.metrics.averageWaitTime.toFixed(0)}ms`,
-        averageProcessingTime: `${this.metrics.averageProcessingTime.toFixed(0)}ms`,
-        currentDelay: `${this.state.currentDelay}ms`
+        successRate: `${(successRate * 100).toFixed(2)}%`
       },
       rateLimit: {
         anilist: {
-          requests: this.rateLimiter.anilist.requests.length,
-          maxRequests: this.rateLimiter.anilist.maxRequests,
-          remaining: this.rateLimiter.anilist.remaining,
-          utilization: `${((this.rateLimiter.anilist.requests.length / this.rateLimiter.anilist.maxRequests) * 100).toFixed(1)}%`
+          requests: this.services.anilist.rateLimiter.requests.length,
+          maxRequests: this.services.anilist.rateLimiter.maxRequests,
+          remaining: this.services.anilist.rateLimiter.remaining,
+          utilization: this.services.anilist.getUtilization()
         },
         mal: {
-          requests: this.rateLimiter.mal.requests.length,
-          maxRequests: this.rateLimiter.mal.maxRequests,
-          remaining: this.rateLimiter.mal.remaining,
-          utilization: `${((this.rateLimiter.mal.requests.length / this.rateLimiter.mal.maxRequests) * 100).toFixed(1)}%`
+          requests: this.services.mal.rateLimiter.requests.length,
+          maxRequests: this.services.mal.rateLimiter.maxRequests,
+          remaining: this.services.mal.rateLimiter.remaining,
+          utilization: this.services.mal.getUtilization()
         },
         hits: this.metrics.rateLimitHits
       },
@@ -2257,27 +1720,19 @@ class RequestQueue {
         active: this.state.concurrentCount,
         max: this.config.maxConcurrent
       },
-      adaptive: {
-        successStreak: this.adaptiveDelay.successStreak,
-        errorStreak: this.adaptiveDelay.errorStreak,
-        avgResponseTime: `${this.adaptiveDelay.avgResponseTime.toFixed(0)}ms`,
-        serviceDelays: {
-          anilist: `${this.adaptiveDelay.serviceDelays.anilist.toFixed(0)}ms`,
-          mal: `${this.adaptiveDelay.serviceDelays.mal.toFixed(0)}ms`
-        }
+      services: {
+        anilist: this.services.anilist.metrics,
+        mal: this.services.mal.metrics
       },
-      services: this.metrics.serviceMetrics,
       mal: {
-        lastAuthCheck: new Date(this.state.malState.lastAuthCheck).toISOString(),
-        authFailures: this.state.malState.consecutiveAuthFailures,
-        lastRequest: this.state.malState.lastMalRequest ? 
-          new Date(this.state.malState.lastMalRequest).toISOString() : 'never'
+        lastAuthCheck: new Date(this.services.mal.authState.lastAuthCheck).toISOString(),
+        authFailures: this.services.mal.authState.consecutiveAuthFailures,
+        lastRequest: this.services.mal.authState.lastRequest ? 
+          new Date(this.services.mal.authState.lastRequest).toISOString() : 'never'
       }
     };
   }
 
-  // =================== UTILITY METHODS (keeping existing ones) ===================
-  
   getNextRequest() {
     const priorities = ['high', 'normal', 'low'];
     for (const priority of priorities) {
@@ -2338,31 +1793,20 @@ class RequestQueue {
     }
   }
   
-  updateMetrics(waitTime, processingTime) {
-    this.metrics.averageWaitTime = (this.metrics.averageWaitTime + waitTime) / 2;
-    this.metrics.averageProcessingTime = (this.metrics.averageProcessingTime + processingTime) / 2;
-    
-    const currentQueueSize = this.getTotalQueueSize();
-    if (currentQueueSize > this.metrics.queuePeakSize) {
-      this.metrics.queuePeakSize = currentQueueSize;
-    }
-  }
-  
   updateQueueMetrics() {
     const totalQueued = this.getTotalQueueSize();
     this.metrics.queuePeakSize = Math.max(this.metrics.queuePeakSize, totalQueued);
   }
   
   getHealthStatus() {
-    const metrics = this.getMetrics();
     const queueSize = this.getTotalQueueSize();
     const errorRate = this.metrics.requestsFailed / (this.metrics.requestsProcessed + this.metrics.requestsFailed);
     
     let status = 'healthy';
-    if (queueSize > 50 || errorRate > 0.1 || this.state.malState.consecutiveAuthFailures > 1) {
+    if (queueSize > 50 || errorRate > 0.1 || this.services.mal.authState.consecutiveAuthFailures > 1) {
       status = 'degraded';
     }
-    if (queueSize > 100 || errorRate > 0.25 || this.state.malState.consecutiveAuthFailures >= this.config.malConfig.maxAuthRetries) {
+    if (queueSize > 100 || errorRate > 0.25 || this.services.mal.authState.consecutiveAuthFailures >= this.config.malConfig.maxAuthRetries) {
       status = 'unhealthy';
     }
     
@@ -2372,127 +1816,35 @@ class RequestQueue {
       errorRate: `${(errorRate * 100).toFixed(2)}%`,
       activeRequests: this.state.concurrentCount,
       rateLimitUtilization: {
-        anilist: metrics.rateLimit.anilist.utilization,
-        mal: metrics.rateLimit.mal.utilization
+        anilist: this.services.anilist.getUtilization(),
+        mal: this.services.mal.getUtilization()
       },
-      malAuthStatus: this.state.malState.consecutiveAuthFailures === 0 ? 'healthy' : 'degraded'
+      malAuthStatus: this.services.mal.getAuthStatus()
     };
   }
   
   startBackgroundTasks() {
-    this.healthCheckInterval = setInterval(() => {
-      this.performHealthCheck();
-    }, 30000);
-    
     setInterval(() => {
       this.cleanup();
     }, 5 * 60 * 1000);
   }
   
-  performHealthCheck() {
-    const health = this.getHealthStatus();
-    
-    if (health.status === 'unhealthy') {
-      this.log('HEALTH_WARNING', 'system', 
-        `Queue unhealthy: ${health.queueSize} items, ${health.errorRate} error rate, MAL auth: ${health.malAuthStatus}`);
-      
-      if (this.getTotalQueueSize() > 200) {
-        this.clearLowPriorityQueue();
-      }
-    }
-  }
-  
   cleanup() {
-    // Clear old adaptive delay samples
-    if (this.adaptiveDelay.samples.length > 100) {
-      this.adaptiveDelay.samples = this.adaptiveDelay.samples.slice(-50);
-    }
-    
-    // Clear old rate limit tracking for both services
     const now = Date.now();
-    Object.keys(this.rateLimiter).forEach(service => {
-      this.rateLimiter[service].requests = this.rateLimiter[service].requests.filter(
-        time => now - time < this.rateLimiter[service].windowMs * 2
+    
+    Object.values(this.services).forEach(service => {
+      service.rateLimiter.requests = service.rateLimiter.requests.filter(
+        time => now - time < service.rateLimiter.windowMs * 2
       );
     });
     
-    // Reset MAL auth check interval if too old
-    if (now - this.state.malState.lastAuthCheck > this.state.malState.authCheckInterval * 2) {
-      this.state.malState.consecutiveAuthFailures = 0;
+    if (now - this.services.mal.authState.lastAuthCheck > this.services.mal.authState.authCheckInterval * 2) {
+      this.services.mal.authState.consecutiveAuthFailures = 0;
     }
   }
-  
-  // =================== BATCH PROCESSING (keeping existing) ===================
-  
-  scheduleBatchProcessing() {
-    if (this.batchTimer) return;
-    
-    this.batchTimer = setTimeout(() => {
-      this.processBatch();
-      this.batchTimer = null;
-    }, this.config.batchDelay);
-  }
-  
-  async processBatch() {
-    const batchItems = this.queues.batch.splice(0, this.config.batchSize);
-    if (batchItems.length === 0) return;
-    
-    this.log('BATCH_START', 'batch', `Processing ${batchItems.length} requests`);
-    
-    try {
-      const batches = this.groupBatchableRequests(batchItems);
-      
-      for (const [batchType, requests] of batches.entries()) {
-        await this.executeBatch(batchType, requests);
-      }
-      
-      this.metrics.batchedRequests += batchItems.length;
-      
-    } catch (error) {
-      batchItems.forEach(item => item.reject(error));
-      this.log('BATCH_ERROR', 'batch', error.message);
-    }
-  }
-  
-  groupBatchableRequests(items) {
-    const batches = new Map();
-    
-    items.forEach(item => {
-      const batchType = item.metadata.batchType || 'default';
-      if (!batches.has(batchType)) {
-        batches.set(batchType, []);
-      }
-      batches.get(batchType).push(item);
-    });
-    
-    return batches;
-  }
-  
-  async executeBatch(batchType, requests) {
-    // Execute individually with service-aware delays
-    for (const request of requests) {
-      await this.executeRequest(request);
-      const delay = request.service === 'mal' ? this.config.malConfig.baseDelay : this.config.minDelay;
-      await this.sleep(delay);
-    }
-  }
-  
-  // =================== UTILITY METHODS ===================
   
   generateRequestId() {
     return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-  }
-  
-  sanitizeMetadata(metadata) {
-    const sanitized = { ...metadata };
-    delete sanitized.accessToken;
-    delete sanitized.clientSecret;
-    delete sanitized.malAccessToken;
-    return sanitized;
-  }
-  
-  sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
   }
   
   formatDuration(ms) {
@@ -2505,33 +1857,19 @@ class RequestQueue {
     return `${seconds}s`;
   }
   
-  log(level, requestId, data = '') {
-    if (!this.plugin.settings?.debugMode && level !== 'ERROR') return;
-    
-    const timestamp = new Date().toISOString();
-    const logData = typeof data === 'object' ? JSON.stringify(data, null, 2) : data;
-    
-    console.log(`[${timestamp}] [Zoro-Queue] [${level}] [${requestId}] ${logData}`);
-  }
-  
-  // =================== QUEUE MANAGEMENT ===================
-  
   pause() {
     this.state.isProcessing = true;
-    this.log('QUEUE_PAUSED', 'system', 'Queue processing paused');
   }
   
   resume() {
     this.state.isProcessing = false;
     this.process();
-    this.log('QUEUE_RESUMED', 'system', 'Queue processing resumed');
   }
   
   clear(priority = null) {
     if (priority) {
       const cleared = this.queues[priority].length;
       this.queues[priority] = [];
-      this.log('QUEUE_CLEARED', 'system', `Cleared ${cleared} ${priority} priority requests`);
       return cleared;
     } else {
       let total = 0;
@@ -2539,17 +1877,10 @@ class RequestQueue {
         total += this.queues[p].length;
         this.queues[p] = [];
       });
-      this.log('QUEUE_CLEARED', 'system', `Cleared all ${total} requests`);
       return total;
     }
   }
   
-  clearLowPriorityQueue() {
-    const cleared = this.clear('low');
-    this.log('AUTO_RECOVERY', 'system', `Cleared ${cleared} low-priority requests for recovery`);
-  }
-  
-  // New: Clear MAL-specific requests (useful for auth issues)
   clearMalRequests() {
     let cleared = 0;
     Object.keys(this.queues).forEach(priority => {
@@ -2557,31 +1888,17 @@ class RequestQueue {
       this.queues[priority] = this.queues[priority].filter(req => req.service !== 'mal');
       cleared += malRequests.length;
       
-      // Reject cleared MAL requests
       malRequests.forEach(req => {
         req.reject(new Error('MAL requests cleared due to authentication issues'));
       });
     });
     
-    this.log('MAL_QUEUE_CLEARED', 'system', `Cleared ${cleared} MAL requests`);
     return cleared;
   }
   
-  // =================== SHUTDOWN ===================
-  
   async destroy() {
-    if (this.healthCheckInterval) {
-      clearInterval(this.healthCheckInterval);
-    }
-    
-    if (this.batchTimer) {
-      clearTimeout(this.batchTimer);
-    }
-    
     const activeRequests = Array.from(this.state.activeRequests.values());
     if (activeRequests.length > 0) {
-      this.log('SHUTDOWN', 'system', `Waiting for ${activeRequests.length} active requests`);
-      
       await Promise.allSettled(
         activeRequests.map(req => 
           new Promise(resolve => {
@@ -2596,8 +1913,6 @@ class RequestQueue {
     
     this.clear();
     this.hideGlobalLoader();
-    
-    this.log('DESTROYED', 'system', 'RequestQueue destroyed');
   }
 }
 
@@ -4258,16 +3573,6 @@ class MalApi {
     this.metrics = { requests: 0, cached: 0, errors: 0 };
   }
   
-  debugLogData(stage, data, extra = {}) {
-  if (this.plugin.settings.debugMode) {
-    console.group(`[MAL-DEBUG] ${stage}`);
-    console.log('Data:', data);
-    if (Object.keys(extra).length > 0) {
-      console.log('Extra info:', extra);
-    }
-    console.groupEnd();
-  }
-}
 
   async fetchMALData(config) {
     return await ZoroError.guard(
@@ -4336,16 +3641,10 @@ class MalApi {
   }
 
   transformListEntry(malEntry, config = {}) {
-    this.debugLogData('transformListEntry Input', malEntry, { config });
     const media = malEntry.node || malEntry;
     const listStatus = malEntry.my_list_status;
     const mediaType = media?.media_type || 'tv';
     
-    this.debugLogData('transformListEntry Extracted', {
-    media: { id: media?.id, title: media?.title },
-    listStatus: listStatus,
-    hasListStatus: !!listStatus
-  });
     
     console.log('[MAL-DEBUG] Transform entry:', {
       mediaId: media?.id,
@@ -4429,7 +3728,6 @@ class MalApi {
     }
     
     console.log('[MAL-DEBUG] Built params:', params);
-    this.debugLogData('buildQueryParams', params, { config });
     return params;
   }
 
@@ -4463,15 +3761,6 @@ class MalApi {
         dataCount: response.json.data?.length || 0,
         firstEntryHasListStatus: !!response.json.data?.[0]?.my_list_status
       });
-      
-      this.debugLogData('makeRequest Raw Response', {
-    hasJson: !!response?.json,
-    hasData: !!response?.json?.data,
-    dataLength: response?.json?.data?.length || 0,
-    sampleEntry: response?.json?.data?.[0] || null,
-    fullResponse: response?.json  // This is key - we need to see the full structure
-  });
-
 
       return response.json;
     } catch (error) {

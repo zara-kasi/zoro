@@ -3811,12 +3811,54 @@ class MalApi {
   }
 
   async updateMediaListEntry(mediaId, updates) {
-    return await ZoroError.guard(
-      async () => await this.executeUpdate(mediaId, updates),
+  console.log('[MAL-EDIT-UPDATE] Entry point', { 
+    mediaId, 
+    mediaIdType: typeof mediaId, 
+    updates, 
+    updatesKeys: Object.keys(updates || {}),
+    hasZoroError: !!ZoroError,
+    hasExecuteUpdate: typeof this.executeUpdate
+  });
+  
+  try {
+    console.log('[MAL-EDIT-UPDATE] Before ZoroError.guard call');
+    
+    const result = await ZoroError.guard(
+      async () => {
+        console.log('[MAL-EDIT-UPDATE] Inside guard function, calling executeUpdate');
+        return await this.executeUpdate(mediaId, updates);
+      },
       'retry_once',
       'MalApi.updateMediaListEntry'
     );
+    
+    console.log('[MAL-EDIT-UPDATE] ZoroError.guard completed successfully', { 
+      result, 
+      resultType: typeof result,
+      resultKeys: result ? Object.keys(result) : null
+    });
+    
+    return result;
+  } catch (error) {
+    console.error('[MAL-EDIT-UPDATE] Error caught in updateMediaListEntry', {
+      errorMessage: error?.message,
+      errorType: error?.constructor?.name,
+      errorStack: error?.stack,
+      errorProperties: Object.keys(error || {}),
+      zoroErrorType: error?.type,
+      zoroErrorCode: error?.code,
+      originalError: error?.originalError,
+      mediaId,
+      updates,
+      hasExecuteUpdate: typeof this.executeUpdate === 'function',
+      thisContext: !!this,
+      pluginExists: !!this.plugin
+    });
+    
+    console.error('[MAL-EDIT-UPDATE] Full error object:', error);
+    throw error;
   }
+}
 
   async executeUpdate(mediaId, updates) {
     if (!this.isValidMediaId(mediaId)) {

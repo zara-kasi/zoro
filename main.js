@@ -1371,6 +1371,123 @@ class Cache {
       this.state.loading = false;
     }
   }
+  
+  async clearAll() {
+  console.log('[Cache] Starting complete cache clear...');
+  
+  // Stop all timers to prevent interference
+  this.stopAutoPrune();
+  this.stopIncrementalSave(); 
+  this.stopBackgroundRefresh();
+  
+  if (this.saveDebounceTimer) {
+    clearTimeout(this.saveDebounceTimer);
+    this.saveDebounceTimer = null;
+  }
+  
+  // Clear all in-memory data
+  let totalEntries = 0;
+  Object.values(this.stores).forEach(store => {
+    totalEntries += store.size;
+    store.clear();
+  });
+  
+  // Clear all indexes
+  Object.values(this.indexes).forEach(index => index.clear());
+  
+  // Clear all tracking data
+  this.accessLog.clear();
+  this.refreshCallbacks.clear();
+  this.loadQueue.clear();
+  this.saveQueue.clear();
+  this.persistenceQueue.clear();
+  
+  // Reset stats completely
+  this.stats = { 
+    hits: 0, 
+    misses: 0, 
+    sets: 0, 
+    deletes: 0, 
+    evictions: 0, 
+    compressions: 0 
+  };
+  
+  // Reset state
+  this.state = { 
+    loading: false, 
+    saving: false, 
+    lastSaved: null, 
+    lastLoaded: null 
+  };
+  
+  // Reset timestamps
+  this.lastPersistTime = 0;
+  this.criticalSaveMode = false;
+  
+  // Force delete cache file from disk
+  if (this.obsidianPlugin?.app?.vault?.adapter) {
+    try {
+      const adapter = this.obsidianPlugin.app.vault.adapter;
+      const pluginDir = `${this.obsidianPlugin.manifest.dir}`;
+      const cachePath = `${pluginDir}/cache.json`;
+      const tempPath = `${pluginDir}/cache.tmp`;
+      
+      // Try to delete both cache files
+      try {
+        await adapter.remove(cachePath);
+        console.log('[Cache] Deleted cache.json from disk');
+      } catch (error) {
+        if (!error.message.includes('ENOENT') && !error.message.includes('not exist')) {
+          console.warn('[Cache] Could not delete cache.json:', error.message);
+        }
+      }
+      
+      try {
+        await adapter.remove(tempPath);
+        console.log('[Cache] Deleted cache.tmp from disk');
+      } catch (error) {
+        if (!error.message.includes('ENOENT') && !error.message.includes('not exist')) {
+          console.warn('[Cache] Could not delete cache.tmp:', error.message);
+        }
+      }
+      
+    } catch (error) {
+      console.error('[Cache] Error during disk cleanup:', error);
+    }
+  }
+  
+  // Write empty cache file to ensure clean state
+  try {
+    const emptyPayload = {
+      version: this.version,
+      timestamp: Date.now(),
+      stats: { ...this.stats },
+      data: {},
+      indexes: { byUser: [], byMedia: [], byTag: [] },
+      accessLog: []
+    };
+    
+    if (this.obsidianPlugin?.app?.vault?.adapter) {
+      const adapter = this.obsidianPlugin.app.vault.adapter;
+      const pluginDir = `${this.obsidianPlugin.manifest.dir}`;
+      const cachePath = `${pluginDir}/cache.json`;
+      
+      await adapter.write(cachePath, JSON.stringify(emptyPayload, null, 2));
+      console.log('[Cache] Wrote empty cache file');
+    }
+  } catch (error) {
+    console.warn('[Cache] Could not write empty cache file:', error.message);
+  }
+  
+  // Restart essential services
+  this.startIncrementalSave(30000);
+  this.startAutoPrune(300000);
+  
+  console.log(`[Cache] Complete cache clear finished - ${totalEntries} entries removed`);
+  this.log('CLEAR_ALL_COMPLETE', 'system', '', `${totalEntries} entries + disk cleanup`);
+  
+  return totalEntries;
+}
 
   compareVersions(a, b) {
     const partsA = a.split('.').map(Number);
@@ -4112,10 +4229,19 @@ class MalApi {
     this.baseUrl = 'https://api.myanimelist.net/v2';
     this.tokenUrl = 'https://myanimelist.net/v1/oauth2/token';
     
+    // FIXED: Corrected field syntax based on MAL API v2 specification
+    // MAL API v2 uses curly braces {} for nested fields, not parentheses
     this.fieldSets = {
+      compact: 'id,title,main_picture,my_list_status{status,score,num_episodes_watched,num_chapters_read}',
+      card: 'id,title,main_picture,media_type,status,genres,num_episodes,num_chapters,mean,start_date,end_date,my_list_status{status,score,num_episodes_watched,num_chapters_read,num_volumes_read,is_rewatching,is_rereading,updated_at}',
+      full: 'id,title,main_picture,alternative_titles,start_date,end_date,synopsis,mean,rank,popularity,num_list_users,num_scoring_users,nsfw,created_at,updated_at,media_type,status,genres,my_list_status{status,score,num_episodes_watched,num_chapters_read,num_volumes_read,is_rewatching,is_rereading,updated_at},num_episodes,num_chapters,start_season,broadcast,source,average_episode_duration,rating,pictures,background,related_anime,related_manga,recommendations,studios,statistics'
+    };
+
+    // Search-specific field sets (no user data)
+    this.searchFieldSets = {
       compact: 'id,title,main_picture',
       card: 'id,title,main_picture,media_type,status,genres,num_episodes,num_chapters,mean,start_date,end_date',
-      full: 'id,title,main_picture,alternative_titles,start_date,end_date,synopsis,mean,rank,popularity,num_list_users,num_scoring_users,nsfw,created_at,updated_at,media_type,status,genres,my_list_status,num_episodes,num_chapters,start_season,broadcast,source,average_episode_duration,rating,pictures,background,related_anime,related_manga,recommendations,studios,statistics'
+      full: 'id,title,main_picture,alternative_titles,start_date,end_date,synopsis,mean,rank,popularity,num_list_users,num_scoring_users,nsfw,created_at,updated_at,media_type,status,genres,num_episodes,num_chapters,start_season,broadcast,source,average_episode_duration,rating,pictures,background,related_anime,related_manga,recommendations,studios,statistics'
     };
 
     this.malToAniListStatus = {
@@ -4131,6 +4257,17 @@ class MalApi {
 
     this.metrics = { requests: 0, cached: 0, errors: 0 };
   }
+  
+  debugLogData(stage, data, extra = {}) {
+  if (this.plugin.settings.debugMode) {
+    console.group(`[MAL-DEBUG] ${stage}`);
+    console.log('Data:', data);
+    if (Object.keys(extra).length > 0) {
+      console.log('Extra info:', extra);
+    }
+    console.groupEnd();
+  }
+}
 
   async fetchMALData(config) {
     return await ZoroError.guard(
@@ -4158,6 +4295,8 @@ class MalApi {
     }
     
     const requestParams = this.buildRequestParams(normalizedConfig);
+    console.log('[MAL-DEBUG] Request URL:', requestParams.url);
+    
     const rawResponse = await this.makeRequest(requestParams);
     const transformedData = this.transformResponse(rawResponse, normalizedConfig);
     
@@ -4166,12 +4305,23 @@ class MalApi {
   }
 
   transformResponse(data, config) {
+    console.log('[MAL-DEBUG] Raw response data:', {
+      type: config.type,
+      hasData: !!data?.data,
+      dataLength: data?.data?.length,
+      firstEntry: data?.data?.[0]
+    });
+
     switch (config.type) {
       case 'search':
         return { Page: { media: data.data?.map(item => this.transformMedia(item)) || [] } };
       case 'single':
-        const targetMedia = data.data?.find(item => item.node.id === parseInt(config.mediaId));
-        return { MediaList: targetMedia ? this.transformListEntry(targetMedia, config) : null };
+        if (!data.data || data.data.length === 0) {
+          return { MediaList: null };
+        }
+        
+        const singleEntry = data.data.find(item => item.node.id === parseInt(config.mediaId)) || data.data[0];
+        return { MediaList: singleEntry ? this.transformListEntry(singleEntry, config) : null };
       case 'stats':
         return { User: this.transformUser(data) };
       default:
@@ -4186,9 +4336,24 @@ class MalApi {
   }
 
   transformListEntry(malEntry, config = {}) {
-    const media = malEntry.node;
+    this.debugLogData('transformListEntry Input', malEntry, { config });
+    const media = malEntry.node || malEntry;
     const listStatus = malEntry.my_list_status;
     const mediaType = media?.media_type || 'tv';
+    
+    this.debugLogData('transformListEntry Extracted', {
+    media: { id: media?.id, title: media?.title },
+    listStatus: listStatus,
+    hasListStatus: !!listStatus
+  });
+    
+    console.log('[MAL-DEBUG] Transform entry:', {
+      mediaId: media?.id,
+      mediaTitle: media?.title,
+      hasListStatus: !!listStatus,
+      listStatus: listStatus,
+      mediaType: mediaType
+    });
     
     let status = null;
     let score = 0;
@@ -4198,15 +4363,26 @@ class MalApi {
     if (listStatus) {
       status = this.mapMALStatusToAniList(listStatus.status, mediaType);
       score = listStatus.score || 0;
-      progress = mediaType === 'manga' || mediaType === 'novel' || mediaType === 'manhwa'
-        ? (listStatus.num_chapters_read || 0)
-        : (listStatus.num_episodes_watched || 0);
+      
+      // Proper progress field selection based on media type
+      if (mediaType === 'manga' || mediaType === 'novel' || mediaType === 'manhwa') {
+        progress = listStatus.num_chapters_read || 0;
+      } else {
+        progress = listStatus.num_episodes_watched || 0;
+      }
+      
       entryId = listStatus.id || null;
+      
+      console.log('[MAL-DEBUG] Extracted list data:', {
+        status, score, progress, entryId
+      });
     } else if (config.listType) {
       status = config.listType;
       score = 0;
       progress = 0;
       entryId = null;
+      
+      console.log('[MAL-DEBUG] Using default list type:', status);
     }
 
     return {
@@ -4218,31 +4394,42 @@ class MalApi {
     };
   }
 
+  // FIXED: Improved buildQueryParams with better field handling
   buildQueryParams(config) {
     const params = {};
     
     switch (config.type) {
       case 'single':
       case 'list':
-        const baseFields = this.getFieldsForLayout(config.layout);
-        const listStatusFields = 'my_list_status{status,score,num_episodes_watched,num_chapters_read,num_volumes_read,is_rewatching,is_rereading,updated_at}';
-        params.fields = `${baseFields.replace(/,?my_list_status[^,]*/, '')},${listStatusFields}`;
-        params.limit = 1000;
+        // Use list field sets that include my_list_status
+        params.fields = this.getFieldsForLayout(config.layout || 'card', false);
+        params.limit = config.limit || 1000;
         
-        if (config.listType) {
-          params.status = this.mapAniListStatusToMAL(config.listType, config.mediaType?.toLowerCase());
+        // Status filtering - only add if specific status requested
+        if (config.listType && config.listType !== 'ALL') {
+          const malStatus = this.mapAniListStatusToMAL(config.listType, config.mediaType?.toLowerCase());
+          if (malStatus) {
+            params.status = malStatus;
+          }
         }
         params.sort = 'list_score';
         break;
         
       case 'search':
         params.q = (config.search || config.query || '').trim();
-        params.limit = config.perPage || 5;
-        params.offset = ((config.page || 1) - 1) * (config.perPage || 5);
-        params.fields = this.getFieldsForLayout(config.layout);
+        params.limit = config.perPage || 25;
+        params.offset = ((config.page || 1) - 1) * (config.perPage || 25);
+        // Use search field sets (no user data)
+        params.fields = this.getFieldsForLayout(config.layout || 'card', true);
+        break;
+        
+      case 'stats':
+        // No additional params needed for user stats
         break;
     }
     
+    console.log('[MAL-DEBUG] Built params:', params);
+    this.debugLogData('buildQueryParams', params, { config });
     return params;
   }
 
@@ -4271,6 +4458,21 @@ class MalApi {
         throw ZoroError.create('MAL_API_ERROR', response.json.message || 'MAL API error', { error: response.json }, 'error');
       }
 
+      console.log('[MAL-DEBUG] Response sample:', {
+        hasData: !!response.json.data,
+        dataCount: response.json.data?.length || 0,
+        firstEntryHasListStatus: !!response.json.data?.[0]?.my_list_status
+      });
+      
+      this.debugLogData('makeRequest Raw Response', {
+    hasJson: !!response?.json,
+    hasData: !!response?.json?.data,
+    dataLength: response?.json?.data?.length || 0,
+    sampleEntry: response?.json?.data?.[0] || null,
+    fullResponse: response?.json  // This is key - we need to see the full structure
+  });
+
+
       return response.json;
     } catch (error) {
       this.metrics.errors++;
@@ -4288,120 +4490,124 @@ class MalApi {
   }
 
   async executeUpdate(mediaId, updates) {
-  if (!this.isValidMediaId(mediaId)) {
-    throw ZoroError.create('INVALID_MEDIA_ID', `Invalid media ID: ${mediaId}`, { mediaId }, 'error');
-  }
-
-  await this.ensureValidToken();
-  const mediaType = await this.getMediaType(mediaId);
-  const endpoint = mediaType === 'anime' ? 'anime' : 'manga';
-  const body = new URLSearchParams();
-  
-  if (updates.status !== undefined && updates.status !== null) {
-    const malStatus = this.mapAniListStatusToMAL(updates.status, mediaType);
-    if (malStatus) {
-      body.append('status', malStatus);
+    if (!this.isValidMediaId(mediaId)) {
+      throw ZoroError.create('INVALID_MEDIA_ID', `Invalid media ID: ${mediaId}`, { mediaId }, 'error');
     }
-  }
-  
-  if (updates.score !== undefined && updates.score !== null) {
-    const score = Math.max(0, Math.min(10, Math.round(updates.score)));
-    body.append('score', score.toString());
-  }
-  
-  if (updates.progress !== undefined && updates.progress !== null) {
-    const progress = Math.max(0, parseInt(updates.progress) || 0);
-    const progressField = mediaType === 'anime' ? 'num_episodes_watched' : 'num_chapters_read';
-    body.append(progressField, progress.toString());
-  }
 
-  if (body.toString().length === 0) {
-    throw ZoroError.create('NO_UPDATES', 'No valid updates provided', { updates }, 'error');
-  }
-
-  const requestFn = async () => {
-    const response = await requestUrl({
-      url: `${this.baseUrl}/${endpoint}/${mediaId}/my_list_status`,
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${this.plugin.settings.malAccessToken}`,
-        'User-Agent': 'Obsidian-Zoro-Plugin'
-      },
-      body: body.toString()
-    });
+    await this.ensureValidToken();
+    const mediaType = await this.getMediaType(mediaId);
+    const endpoint = mediaType === 'anime' ? 'anime' : 'manga';
+    const body = new URLSearchParams();
     
-    if (response.status >= 400) {
-      throw new Error(`HTTP ${response.status}: ${response.text || 'Unknown error'}`);
+    if (updates.status !== undefined && updates.status !== null) {
+      const malStatus = this.mapAniListStatusToMAL(updates.status, mediaType);
+      if (malStatus) {
+        body.append('status', malStatus);
+      }
     }
     
-    return response;
-  };
+    if (updates.score !== undefined && updates.score !== null) {
+      const score = Math.max(0, Math.min(10, Math.round(updates.score)));
+      body.append('score', score.toString());
+    }
+    
+    if (updates.progress !== undefined && updates.progress !== null) {
+      const progress = Math.max(0, parseInt(updates.progress) || 0);
+      const progressField = mediaType === 'anime' ? 'num_episodes_watched' : 'num_chapters_read';
+      body.append(progressField, progress.toString());
+    }
 
-  const response = await this.requestQueue.add(requestFn, { priority: 'high' });
-  
-  if (!response?.json && response.status !== 200) {
-    throw ZoroError.create('EMPTY_UPDATE_RESPONSE', 'Invalid response from MAL update', { 
-      mediaId, 
-      status: response.status,
-      body: body.toString()
-    }, 'error');
+    if (body.toString().length === 0) {
+      throw ZoroError.create('NO_UPDATES', 'No valid updates provided', { updates }, 'error');
+    }
+
+    const requestFn = async () => {
+      const response = await requestUrl({
+        url: `${this.baseUrl}/${endpoint}/${mediaId}/my_list_status`,
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${this.plugin.settings.malAccessToken}`,
+          'User-Agent': 'Obsidian-Zoro-Plugin'
+        },
+        body: body.toString()
+      });
+      
+      if (response.status >= 400) {
+        throw new Error(`HTTP ${response.status}: ${response.text || 'Unknown error'}`);
+      }
+      
+      return response;
+    };
+
+    const response = await this.requestQueue.add(requestFn, { priority: 'high' });
+    
+    if (!response?.json && response.status !== 200) {
+      throw ZoroError.create('EMPTY_UPDATE_RESPONSE', 'Invalid response from MAL update', { 
+        mediaId, 
+        status: response.status,
+        body: body.toString()
+      }, 'error');
+    }
+
+    let responseData = response.json || {};
+    
+    if (responseData.error) {
+      throw ZoroError.create('MAL_UPDATE_ERROR', responseData.message || 'MAL update failed', { 
+        error: responseData,
+        requestBody: body.toString(),
+        mediaId 
+      }, 'error');
+    }
+
+    this.cache.invalidateByMedia(mediaId);
+    this.cache.invalidateScope('userData');
+    
+    return {
+      id: responseData.id || null,
+      status: responseData.status ? this.mapMALStatusToAniList(responseData.status, mediaType) : updates.status,
+      score: responseData.score !== undefined ? responseData.score : (updates.score || 0),
+      progress: mediaType === 'anime' 
+        ? (responseData.num_episodes_watched !== undefined ? responseData.num_episodes_watched : (updates.progress || 0))
+        : (responseData.num_chapters_read !== undefined ? responseData.num_chapters_read : (updates.progress || 0))
+    };
   }
 
-  let responseData = response.json || {};
-  
-  if (responseData.error) {
-    throw ZoroError.create('MAL_UPDATE_ERROR', responseData.message || 'MAL update failed', { 
-      error: responseData,
-      requestBody: body.toString(),
-      mediaId 
-    }, 'error');
+  mapAniListStatusToMAL(aniListStatus, mediaType = 'anime') {
+    if (!aniListStatus) return null;
+    
+    // FIXED: More precise media type detection
+    const isAnime = mediaType === 'anime' || mediaType === 'tv' || mediaType === 'movie' || 
+                   mediaType === 'special' || mediaType === 'ova' || mediaType === 'ona';
+    
+    const statusMap = {
+      'CURRENT': isAnime ? 'watching' : 'reading',
+      'COMPLETED': 'completed',
+      'PAUSED': 'on_hold',
+      'DROPPED': 'dropped',
+      'PLANNING': isAnime ? 'plan_to_watch' : 'plan_to_read',
+      'REPEATING': isAnime ? 'watching' : 'reading'
+    };
+    
+    return statusMap[aniListStatus] || null;
   }
 
-  this.cache.invalidateByMedia(mediaId);
-  this.cache.invalidateScope('userData');
-  
-  return {
-    id: responseData.id || null,
-    status: responseData.status ? this.mapMALStatusToAniList(responseData.status, mediaType) : updates.status,
-    score: responseData.score !== undefined ? responseData.score : (updates.score || 0),
-    progress: mediaType === 'anime' 
-      ? (responseData.num_episodes_watched !== undefined ? responseData.num_episodes_watched : (updates.progress || 0))
-      : (responseData.num_chapters_read !== undefined ? responseData.num_chapters_read : (updates.progress || 0))
-  };
-}
-
- mapAniListStatusToMAL(aniListStatus, mediaType = 'anime') {
-  if (!aniListStatus) return null;
-  
-  const statusMap = {
-    'CURRENT': mediaType === 'anime' ? 'watching' : 'reading',
-    'COMPLETED': 'completed',
-    'PAUSED': 'on_hold',
-    'DROPPED': 'dropped',
-    'PLANNING': mediaType === 'anime' ? 'plan_to_watch' : 'plan_to_read',
-    'REPEATING': mediaType === 'anime' ? 'watching' : 'reading'
-  };
-  
-  return statusMap[aniListStatus] || null;
-}
-
-mapMALStatusToAniList(malStatus, mediaType = 'anime') {
-  if (!malStatus) return null;
-  
-  const statusMap = {
-    'watching': 'CURRENT',
-    'reading': 'CURRENT', 
-    'completed': 'COMPLETED',
-    'on_hold': 'PAUSED',
-    'dropped': 'DROPPED',
-    'plan_to_watch': 'PLANNING',
-    'plan_to_read': 'PLANNING'
-  };
-  
-  return statusMap[malStatus.toLowerCase()] || null;
-}
+  mapMALStatusToAniList(malStatus, mediaType = 'anime') {
+    if (!malStatus) return null;
+    
+    const statusMap = {
+      'watching': 'CURRENT',
+      'reading': 'CURRENT', 
+      'completed': 'COMPLETED',
+      'on_hold': 'PAUSED',
+      'dropped': 'DROPPED',
+      'plan_to_watch': 'PLANNING',
+      'plan_to_read': 'PLANNING'
+    };
+    
+    return statusMap[malStatus.toLowerCase()] || null;
+  }
 
   transformMedia(malMedia) {
     const media = malMedia.node || malMedia;
@@ -4501,6 +4707,7 @@ mapMALStatusToAniList(malStatus, mediaType = 'anime') {
         return `${this.baseUrl}/users/@me`;
       case 'single':
       case 'list':
+        // FIXED: Use correct endpoint format
         const mediaType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
         return `${this.baseUrl}/users/@me/${mediaType}list`;
       case 'search':
@@ -4519,7 +4726,10 @@ mapMALStatusToAniList(malStatus, mediaType = 'anime') {
   }
 
   getAuthHeaders() {
-    const headers = { 'Accept': 'application/json' };
+    const headers = { 
+      'Accept': 'application/json',
+      'User-Agent': 'Obsidian-Zoro-Plugin'
+    };
     if (this.plugin.settings.malAccessToken) {
       headers['Authorization'] = `Bearer ${this.plugin.settings.malAccessToken}`;
     }
@@ -4550,8 +4760,9 @@ mapMALStatusToAniList(malStatus, mediaType = 'anime') {
     return `${baseUrl}?${queryString}`;
   }
 
-  getFieldsForLayout(layout = 'card') {
-    return this.fieldSets[layout] || this.fieldSets.card;
+  getFieldsForLayout(layout = 'card', isSearch = false) {
+    const fieldSet = isSearch ? this.searchFieldSets : this.fieldSets;
+    return fieldSet[layout] || fieldSet.card;
   }
 
   isValidMediaId(mediaId) {
@@ -4662,7 +4873,7 @@ mapMALStatusToAniList(malStatus, mediaType = 'anime') {
         await this.ensureValidToken();
         
         const requestParams = {
-          url: `${this.baseUrl}/anime/season/${year}/${season}?fields=${this.getFieldsForLayout('card')}`,
+          url: `${this.baseUrl}/anime/season/${year}/${season}?fields=${this.getFieldsForLayout('card', true)}`,
           headers: this.getAuthHeaders(),
           priority: 'low'
         };
@@ -12815,19 +13026,18 @@ class ZoroSettingTab extends PluginSettingTab {
       });
 
     new Setting(Cache)
-      .setName('🧹 Clear Cache')
-      .setDesc('Delete all cached data (user, media, search results).')
-      .addButton(btn => btn
-        .setButtonText('Clear Cache')
-        .setWarning()
-        .onClick(async () => {
-          if (confirm('⚠️ This will delete ALL cached data. Continue?')) {
-            const cleared = this.plugin.cache.clear();
-            new Notice(`✅ Cache cleared (${cleared} entries)`, 3000);
-          }
-        })
-      );
-
+  .setName('🧹 Clear Cache')
+  .setDesc('Delete all cached data (user, media, search results).')
+  .addButton(btn => btn
+    .setButtonText('Clear All Cache')
+    .setWarning()
+    .onClick(async () => {
+      const cleared = await this.plugin.cache.clearAll();
+      new Notice(`✅ Cache cleared (${cleared} entries)`, 3000);
+    })
+  );
+      
+      
     const malAuthSetting = new Setting(Exp)
       .setName('🗾 MyAnimeList')
       .setDesc('Lets you edit and view your MAL entries.');

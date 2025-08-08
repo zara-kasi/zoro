@@ -789,7 +789,6 @@ class Cache {
       }
     }, 0);
   }
-
   schedulePersistence(immediate = false) {
     if (immediate) {
       this.criticalSaveMode = true;
@@ -1416,7 +1415,6 @@ class MALRequest {
     return this.authState.consecutiveAuthFailures === 0 ? 'healthy' : 'degraded';
   }
 }
-
 class RequestQueue {
   constructor(plugin) {
     this.plugin = plugin;
@@ -1976,7 +1974,6 @@ class RequestQueue {
     this.hideGlobalLoader();
   }
 }
-
 class AnilistApi {
   constructor(plugin) {
     this.plugin = plugin;
@@ -2771,7 +2768,6 @@ class AnilistApi {
     };
     return typeMap[config.type] || 'userData';
   }
-
   getCacheTTL(config) {
     // Return null to use your cache's built-in TTL system
     // Your cache already has perfect TTL mapping:
@@ -3390,7 +3386,6 @@ async getUserEntryForMedia(mediaId, mediaType) {
     return null;
   }
 }
-
   getAniListUrl(mediaId, mediaType = 'ANIME') {
     try {
       this.validateMediaId(mediaId);
@@ -3859,7 +3854,6 @@ class MalApi {
     throw error;
   }
 }
-
   async executeUpdate(mediaId, updates) {
     if (!this.isValidMediaId(mediaId)) {
       throw ZoroError.create('INVALID_MEDIA_ID', `Invalid media ID: ${mediaId}`, { mediaId }, 'error');
@@ -4287,7 +4281,6 @@ class MalApi {
     return { ...this.metrics };
   }
 }
-
 class SimklApi {
   constructor(plugin) {
     this.plugin = plugin;
@@ -4715,7 +4708,6 @@ class SimklApi {
       };
   }
 }
-
   transformSearchResponse(data) {
     const mediaList = Array.isArray(data) ? data : [];
     
@@ -5457,7 +5449,6 @@ class ZoroPlugin extends Plugin {
     }
   }
 });
-
   }
 
   validateSettings(settings) {
@@ -6188,9 +6179,6 @@ parseInlineLink(href) {
     }
   }
 }
-
-
-
 class Render {
   constructor(plugin) {
     this.plugin = plugin;
@@ -6406,8 +6394,21 @@ class CardRenderer {
   createMediaCard(data, config, options = {}) {
     const isSearch = options.isSearch || false;
     const isCompact = config.layout === 'compact';
-    const entry = isSearch ? null : data;
     const media = isSearch ? data : data.media;
+    // For search/trending items, synthesize a lightweight entry carrying metadata for proper source/mediaType detection
+    const entry = isSearch
+      ? {
+          media,
+          _zoroMeta: data?._zoroMeta || {
+            source:
+              this.apiHelper.validateAndReturnSource(config?.source) ||
+              data?._zoroMeta?.source ||
+              this.apiHelper.detectFromDataStructure({ media }) ||
+              this.apiHelper.getFallbackSource(),
+            mediaType: config?.mediaType || (media?.episodes ? 'ANIME' : 'MANGA')
+          }
+        }
+      : data;
     const source = this.apiHelper.detectSource(entry, config);
     const mediaType = this.apiHelper.detectMediaType(entry, config, media);
     
@@ -6987,7 +6988,6 @@ class MediaListRenderer {
     }
   }
 }
-
 class TableRenderer {
   constructor(parentRenderer) {
     this.parent = parentRenderer;
@@ -7771,7 +7771,6 @@ class APISourceHelper {
            (media?.episodes ? 'ANIME' : 'MANGA');
   }
 }
-
 class FormatterHelper {
   formatScore(score, scoreFormat = 'POINT_10') {
     switch (scoreFormat) {
@@ -8450,7 +8449,6 @@ class RenderEditModal {
     );
   }
 }
-
 class AniListEditModal {
   constructor(plugin) {
     this.plugin = plugin;
@@ -9245,7 +9243,6 @@ class DetailPanelSource {
     return await this.fetchDetailedData(mediaId);
   }
 }
-
 class RenderDetailPanel {
   constructor(plugin) {
     this.plugin = plugin;
@@ -9718,7 +9715,6 @@ class OpenDetailPanel {
     }
   }
 }
-
 class Trending {
   constructor(plugin) { 
     this.plugin = plugin; 
@@ -11146,8 +11142,6 @@ static THEME_REPO_URL = 'https://api.github.com/repos/zara-kasi/zoro/contents/Th
     return [];
   }
 }
-
-
    async downloadTheme(name) {
   const rawUrl = `https://raw.githubusercontent.com/zara-kasi/zoro/main/Theme/${encodeURIComponent(name)}.css`;
   const localPath = `${this.plugin.manifest.dir}/themes/${name}.css`;
@@ -11944,9 +11938,6 @@ getSimklUrl(apiType, simklId, title) {
   
   return `${baseUrl}/${urlType}/${simklId}`;
 }
-
-
-
   dateToString(dateObj) {
     if (!dateObj || !dateObj.year) return '';
     return `${dateObj.year}-${String(dateObj.month || 0).padStart(2, '0')}-${String(dateObj.day || 0).padStart(2, '0')}`;
@@ -12621,4 +12612,3 @@ class ZoroSettingTab extends PluginSettingTab {
 module.exports = {
   default: ZoroPlugin,
 };
-

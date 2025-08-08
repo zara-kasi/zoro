@@ -1,47 +1,29 @@
 # 🔐 MyAnimeList (MAL) Authentication Guide for Zoro Plugin
 
----
-
-### 📌 **What You Need:**
-
-1. **A MyAnimeList (MAL) account** - If you don’t have one, sign up [here](https://myanimelist.net/).
-2. **Client ID and Client Secret from MAL** - You’ll get these when creating a MAL app.
-3. **A couple of minutes of your time** - The steps are quick and easy!
+To log in, you’ll need to create your own **Client ID** and **Client Secret** from MyAnimeList (MAL). It’s quick and easy—just follow these steps.
 
 ---
 
-### 🚀 **Step-by-Step Guide**
+## 📌 Step-by-Step Instructions
 
-#### 1️⃣ **Create Your MAL App**
+1. **Go to the MAL API Page**
+   👉 [https://myanimelist.net/apiconfig](https://myanimelist.net/apiconfig)
 
-* Go to the [MAL API](https://myanimelist.net/apiconfig) (this is where you get your keys).
-* Click on **"Create App"**.
+2. **Click "Create App"**.
 
-  * This will open a form where you need to enter some details.
+3. **Fill in the form with these details:**
 
----
+   | Field            | Value                                                              |
+   | ---------------- | ------------------------------------------------------------------ |
+   | **App Name**     | `Zoro`                                                             |
+   | **App Type**     | `Web`                                                              |
+   | **Redirect URI** | `http://localhost:8080/callback` (Make sure to copy this exactly!) |
+   | **Description**  | `Obsidian plugin for managing anime and manga lists`               |
+   | **Company Name** | `Zoro`                                                             |
 
-#### 2️⃣ **Fill in the Form**
+   > ⚠️ **Important**: Ensure the **Redirect URI** is exactly `http://localhost:8080/callback` to make the authentication work.
 
-You just need to fill out three fields. Here’s what to put in:
-
-| Field            | Value                                               |
-| ---------------- | --------------------------------------------------- |
-| **App Name**     | `Zoro` (This is the name of your plugin)            |
-| **App Type**     | `Web`                                               |
-| **Redirect URI** | `http://localhost:8080/callback` (Copy it exactly!) |
-| **Description**  | `Obsidian plugin for managing anime and manga lists`    |
-| **Company Name** | `Zoro`                                              |
-> ⚠️ **Important:** Make sure the **Redirect URI** is exactly: `http://localhost:8080/callback`. This is super important for the plugin to work correctly!
-
----
-
-#### 3️⃣ **Get Your Keys**
-
-* Once you save the app, you'll see your **Client ID** and **Client Secret**.
-
-  * **Client ID**: This starts with `mal_client_...`.
-  * **Client Secret**: Keep this safe! It’s private.
+4. **Click Save** to create your app.
 
 ---
 
@@ -53,49 +35,38 @@ If you're not sure how to follow the steps, here's a quick video guide:
 
 ---
 
-### 🔐 **Linking MAL with Zoro**
+## 🔐 How to Authenticate with MAL
 
-#### 4️⃣ **Plugin Setup in Obsidian**
+1. **Create an app on MAL** and copy your:
 
-1. Open **Obsidian** and go to **Settings** → **Zoro**.
-2. **Enter Client ID**: Click "Enter MAL Client ID" and paste your Client ID there.
-3. **Enter Client Secret**: Click "Enter MAL Client Secret" and paste your Client Secret.
-4. Click on **"Authenticate"** – this will open the MAL login page.
+   * **Client ID**
+   * **Client Secret**
 
----
+2. **Open the Zoro plugin settings** in Obsidian.
 
-#### 5️⃣ **Authorize Zoro in MAL**
+3. **Click the "Enter Client ID"** button.
+   → Paste your **Client ID** and confirm.
 
-1. **MAL Login**: Sign in with your MAL account.
-2. **Permission Screen**: When prompted, click **"Allow"**.
-3. **Redirect Page**: After that, you’ll be redirected to a URL that looks like `http://localhost:8080/callback?code=ABC123`.
+4. The button will now change to **"Enter Client Secret"**.
+   → Paste your **Client Secret** and confirm.
 
-* **Copy** the entire URL.
+5. The button will now say **"Authenticate"**.
+   → Click it.
 
----
+6. You will be redirected to **MAL**.
+   → Log in (if needed) and **authorize** the app.
 
-#### 6️⃣ **Final Step**
+7. **MAL will show you a URL** that looks like `http://localhost:8080/callback?code=ABC123`.
+   → **Copy the entire URL**.
 
-* Paste the **full URL** you copied into the plugin’s prompt in Obsidian.
-* That’s it! **Done**. ✅
+8. Go back to **Obsidian**.
+   → Paste the full URL into the plugin’s prompt.
 
----
-
-### ✅ **Success Checklist**
-
-* Your **Client ID** and **Client Secret** should be saved in the plugin.
-* A **Sign Out** button will appear in the settings.
-* Your **MAL username** should show in the plugin’s stats.
-* You can now **edit your MAL entries** directly in Obsidian without issues!
+9. Wait a moment.
+   → You’ll see a ✅ **"Authenticated"** notification once the connection is successful.
 
 ---
 
-### 🎉 **You're All Set!**
-
-You can now:
-
-* **Track anime and manga** from MAL inside Obsidian.
-* **Edit your progress** directly within Obsidian.
-* **Sync updates** between Zoro and MAL seamlessly!
+✅ That’s it! Your **MAL** account is now securely connected to **Zoro**.
 
 ---

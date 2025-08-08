@@ -9,7 +9,7 @@ To login , you'll need to create your own **Client ID** and **Client Secret** fr
 1. **Go to the AniList Developer Page**  
    👉 [https://anilist.co/settings/developer](https://anilist.co/settings/developer)
 
-2. **Click “Create New App”** at the top.
+2. **Click “Create New Client”** at the top.
 
 3. **Fill in only these two fields:**
 

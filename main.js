@@ -3802,7 +3802,8 @@ class MalApi {
         break;
         
       case 'stats':
-        // No additional params needed for user stats
+        // Request anime and manga statistics for the authenticated user
+        params.fields = 'anime_statistics,manga_statistics';
         break;
     }
     
@@ -4065,6 +4066,48 @@ class MalApi {
   }
 
   transformUser(malUser) {
+    const animeStatsRaw = malUser.anime_statistics || {};
+    const mangaStatsRaw = malUser.manga_statistics || {};
+
+    const toMinutes = (days) => {
+      const num = typeof days === 'number' ? days : parseFloat(days);
+      return isNaN(num) ? 0 : Math.round(num * 24 * 60);
+    };
+
+    const animeStats = {
+      count: animeStatsRaw.num_items || animeStatsRaw.total_entries || 0,
+      meanScore: animeStatsRaw.mean_score ? Math.round(animeStatsRaw.mean_score * 10) : 0, // scale 0-10 -> 0-100
+      standardDeviation: 0,
+      episodesWatched: animeStatsRaw.num_episodes_watched || 0,
+      minutesWatched: animeStatsRaw.num_days_watched != null
+        ? toMinutes(animeStatsRaw.num_days_watched)
+        : toMinutes(animeStatsRaw.num_days),
+      // Build status distribution in AniList-style statuses
+      statuses: [
+        { status: 'CURRENT', count: animeStatsRaw.num_watching || 0 },
+        { status: 'COMPLETED', count: animeStatsRaw.num_completed || 0 },
+        { status: 'PAUSED', count: animeStatsRaw.num_on_hold || 0 },
+        { status: 'DROPPED', count: animeStatsRaw.num_dropped || 0 },
+        { status: 'PLANNING', count: animeStatsRaw.num_plan_to_watch || 0 }
+      ].filter(s => s.count > 0)
+    };
+
+    const mangaStats = {
+      count: mangaStatsRaw.num_items || mangaStatsRaw.total_entries || 0,
+      meanScore: mangaStatsRaw.mean_score ? Math.round(mangaStatsRaw.mean_score * 10) : 0, // scale 0-10 -> 0-100
+      standardDeviation: 0,
+      chaptersRead: mangaStatsRaw.num_chapters_read || 0,
+      volumesRead: mangaStatsRaw.num_volumes_read || 0,
+      // minutesWatched not applicable for manga; keep fields that UI may reference
+      statuses: [
+        { status: 'CURRENT', count: mangaStatsRaw.num_reading || 0 },
+        { status: 'COMPLETED', count: mangaStatsRaw.num_completed || 0 },
+        { status: 'PAUSED', count: mangaStatsRaw.num_on_hold || 0 },
+        { status: 'DROPPED', count: mangaStatsRaw.num_dropped || 0 },
+        { status: 'PLANNING', count: mangaStatsRaw.num_plan_to_read || 0 }
+      ].filter(s => s.count > 0)
+    };
+
     return {
       id: malUser.id || null,
       name: malUser.name || 'Unknown User',
@@ -4073,8 +4116,8 @@ class MalApi {
         medium: malUser.picture || null
       },
       statistics: {
-        anime: { count: 0, meanScore: 0, standardDeviation: 0, episodesWatched: 0, minutesWatched: 0 },
-        manga: { count: 0, meanScore: 0, standardDeviation: 0, chaptersRead: 0, volumesRead: 0 }
+        anime: animeStats,
+        manga: mangaStats
       }
     };
   }

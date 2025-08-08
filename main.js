@@ -8310,9 +8310,8 @@ class Edit {
     };
   }
 
-  
- createEditModal(entry, onSave, onCancel, source = 'anilist') {
-  // Use metadata source if available, otherwise use provided source
+  createEditModal(entry, onSave, onCancel, source = 'anilist') {
+
   const actualSource = entry._zoroMeta?.source || source;
   const provider = this.providers[actualSource];
   
@@ -8322,7 +8321,7 @@ class Edit {
   const title = this.renderer.createTitle(entry);
   const closeBtn = this.renderer.createCloseButton(() => this.support.closeModal(modal.container, onCancel));
   const favoriteBtn = this.renderer.createFavoriteButton(entry, actualSource, (entry, btn, src) => this.toggleFavorite(entry, btn, src));
-  const formFields = this.renderer.createFormFields(entry);
+  const formFields = this.renderer.createFormFields(entry, actualSource); // Pass actualSource here
   const quickButtons = this.renderer.createQuickProgressButtons(entry, formFields.progress.input, formFields.status.input);
   const actionButtons = this.renderer.createActionButtons(entry, () => this.handleRemove(entry, modal.container, actualSource), this.config, actualSource);
   
@@ -8480,8 +8479,8 @@ class RenderEditModal {
     return favBtn;
   }
   
-  createFormFields(entry) {
-    const statusField = this.createStatusField(entry);
+  createFormFields(entry, source = 'anilist') {
+    const statusField = this.createStatusField(entry, source);
     const scoreField = this.createScoreField(entry);
     const progressField = this.createProgressField(entry);
     
@@ -8555,15 +8554,22 @@ class RenderEditModal {
     return input;
   }
   
-  createStatusField(entry) {
+  createStatusField(entry, source = 'anilist') {
     const config = this.config.fields.status;
+    
+    // Filter out REPEATING status for MAL since it doesn't support it
+    let availableStatuses = this.config.statuses;
+    if (source === 'mal') {
+      availableStatuses = this.config.statuses.filter(status => status.value !== 'REPEATING');
+    }
+    
     return this.createFormField({
       type: 'select',
       label: config.label,
       emoji: config.emoji,
       id: config.id,
       value: entry.status,
-      options: { items: this.config.statuses }
+      options: { items: availableStatuses }
     });
   }
 
@@ -8646,8 +8652,9 @@ class RenderEditModal {
     });
     
     if (source === 'mal') {
-  removeBtn.style.display = 'none';
-}
+      removeBtn.style.display = 'none';
+    }
+    
     const saveBtn = this.createActionButton({
       label: config.buttons.save.label,
       className: config.buttons.save.class,

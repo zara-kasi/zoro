@@ -6314,6 +6314,10 @@ async handleTrendingOperation(api, config) {
     if (!config.listType && config.type === 'list') {
       config.listType = 'CURRENT';
     }
+    
+    if (config.source === 'mal' && config.listType === 'REPEATING') {
+    throw new Error('MyAnimeList does not support "Repeating" status. Switch to AniList or remove this block');
+  }
 
     return config;
   }
@@ -6407,6 +6411,7 @@ parseInlineLink(href) {
     }
   }
 }
+
 class Render {
   constructor(plugin) {
     this.plugin = plugin;

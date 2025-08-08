@@ -4072,38 +4072,42 @@ class MalApi {
 
   transformUser(malUser) {
     const animeStats = malUser?.anime_statistics || {};
-const mangaStats = malUser?.manga_statistics || {};
+    const mangaStats = malUser?.manga_statistics || {};
 
-const countAnime = animeStats.num_items || 0;
-const countManga = mangaStats.num_items || 0;
+    const countAnime = animeStats.num_items || 0;
+    const countManga = mangaStats.num_items || 0;
 
-const minutesWatched = typeof animeStats.num_days_watched === 'number'
-  ? Math.round(animeStats.num_days_watched * 24 * 60)
-  : 0;
+    const minutesWatched = typeof animeStats.num_days_watched === 'number'
+      ? Math.round(animeStats.num_days_watched * 24 * 60)
+      : 0;
     return {
       id: malUser?.id || null,
-name: malUser?.name || 'Unknown User',
+      name: malUser?.name || 'Unknown User',
       avatar: {
         large: malUser?.picture || null,
-medium: malUser?.picture || null
-},
-mediaListOptions: {
-  scoreFormat: 'POINT_10'
+        medium: malUser?.picture || null
+      },
+      mediaListOptions: {
+        scoreFormat: 'POINT_10'
       },
       statistics: {
         anime: {
-  count: countAnime,
-  meanScore: animeStats.mean_score || 0,
-  standardDeviation: 0,
-  episodesWatched: animeStats.num_episodes || 0,
-  minutesWatched: minutesWatched
-},
-manga: {
-  count: countManga,
-  meanScore: mangaStats.mean_score || 0,
-  standardDeviation: 0,
-  chaptersRead: mangaStats.num_chapters || 0,
-  volumesRead: mangaStats.num_volumes || 0
+          count: countAnime,
+          meanScore: animeStats.mean_score ? Math.round(animeStats.mean_score * 10) : 0,
+          standardDeviation: 0,
+          episodesWatched: animeStats.num_episodes || 0,
+          minutesWatched: minutesWatched
+        },
+        manga: {
+          count: countManga,
+          meanScore: mangaStats.mean_score ? Math.round(mangaStats.mean_score * 10) : 0,
+          standardDeviation: 0,
+          chaptersRead: mangaStats.num_chapters || 0,
+          volumesRead: mangaStats.num_volumes || 0
+        }
+      }
+    };
+  }
 }
       }
     };
@@ -4799,7 +4803,6 @@ class SimklApi {
     };
 }
 }
-
   transformSearchResponse(data) {
     const mediaList = Array.isArray(data) ? data : [];
     
@@ -5872,8 +5875,78 @@ injectMetadata(data, config) {
  async handleStatsOperation(api, config) {
   if (config.source === 'mal') {
     const response = await api.fetchMALData({ ...config, type: 'stats' });
-    const data = response?.User || response;
-    return this.injectMetadata(data, config);
+    const user = (response?.User || response) || {};
+
+    try {
+      const [animeResp, mangaResp] = await Promise.all([
+        api.fetchMALData({ type: 'list', mediaType: 'ANIME', layout: 'card', limit: 1000 }),
+        api.fetchMALData({ type: 'list', mediaType: 'MANGA', layout: 'card', limit: 1000 })
+      ]);
+
+      const extractEntries = (resp) =>
+        resp?.MediaListCollection?.lists?.flatMap(l => l.entries) || [];
+
+      const animeEntries = extractEntries(animeResp);
+      const mangaEntries = extractEntries(mangaResp);
+
+      const buildDistributions = (entries) => {
+        const statusCounts = new Map();
+        const scoreCounts = new Map();
+        const formatCounts = new Map();
+        const yearCounts = new Map();
+        const genreCounts = new Map();
+
+        for (const e of entries) {
+          if (e.status) {
+            statusCounts.set(e.status, (statusCounts.get(e.status) || 0) + 1);
+          }
+          const s = typeof e.score === 'number' ? e.score : 0;
+          if (s > 0) {
+            const scaled = Math.round(s * 10);
+            scoreCounts.set(scaled, (scoreCounts.get(scaled) || 0) + 1);
+          }
+          const fmt = e.media?.format;
+          if (fmt) {
+            formatCounts.set(fmt, (formatCounts.get(fmt) || 0) + 1);
+          }
+          const y = e.media?.startDate?.year || e.media?.endDate?.year;
+          if (y) {
+            yearCounts.set(y, (yearCounts.get(y) || 0) + 1);
+          }
+          const genres = e.media?.genres || [];
+          for (const g of genres) {
+            if (!g) continue;
+            genreCounts.set(g, (genreCounts.get(g) || 0) + 1);
+          }
+        }
+
+        const toArray = (map, keyField) => Array.from(map.entries())
+          .map(([key, count]) => ({ [keyField]: key, count }))
+          .sort((a, b) => b.count - a.count);
+
+        const statusArray = toArray(statusCounts, 'status');
+        const scoreArray = toArray(scoreCounts, 'score');
+        const formatArray = toArray(formatCounts, 'format');
+        const yearArray = toArray(yearCounts, 'releaseYear');
+        const genreArray = toArray(genreCounts, 'genre');
+
+        return { statuses: statusArray, scores: scoreArray, formats: formatArray, releaseYears: yearArray, genres: genreArray };
+      };
+
+      user.statistics = user.statistics || {};
+      const animeStats = user.statistics.anime || {};
+      const mangaStats = user.statistics.manga || {};
+
+      const animeDist = buildDistributions(animeEntries);
+      const mangaDist = buildDistributions(mangaEntries);
+
+      user.statistics.anime = { ...animeStats, ...animeDist };
+      user.statistics.manga = { ...mangaStats, ...mangaDist };
+    } catch (err) {
+      console.warn('[Zoro] MAL distributions build failed:', err?.message || err);
+    }
+
+    return this.injectMetadata(user, config);
   } else if (config.source === 'simkl') {
     const response = await api.fetchSimklData({ ...config, type: 'stats' });
     const data = response?.User || response;
@@ -5943,7 +6016,7 @@ async handleTrendingOperation(api, config) {
     try {
       switch (type) {
         case 'stats':
-          this.plugin.render.renderUserStats(el, data);
+          this.plugin.render.renderUserStats(el, data, { mediaType: config.mediaType || 'ANIME' });
           break;
 
         case 'search':

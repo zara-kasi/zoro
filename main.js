@@ -6,6 +6,7 @@ const getDefaultGridColumns = () => {
 
 const DEFAULT_SETTINGS = {
   defaultApiSource: 'anilist',
+  defaultApiUserOverride: false,
   defaultUsername: '',
   defaultLayout: 'card',
   showCoverImages: true,
@@ -4935,7 +4936,6 @@ class SimklApi {
     };
 }
 }
-
   transformSearchResponse(data) {
     const mediaList = Array.isArray(data) ? data : [];
     
@@ -5630,6 +5630,30 @@ class ZoroPlugin extends Plugin {
   }
 }
 
+  async updateDefaultApiSourceBasedOnAuth() {
+    try {
+      if (this.settings.defaultApiUserOverride) return;
+      const authenticated = [];
+      if (this.settings.accessToken) authenticated.push('anilist');
+      if (this.settings.malAccessToken) authenticated.push('mal');
+      if (this.settings.simklAccessToken) authenticated.push('simkl');
+
+      let newDefault = this.settings.defaultApiSource;
+      if (authenticated.length === 1) {
+        newDefault = authenticated[0];
+      } else {
+        newDefault = 'anilist';
+      }
+
+      if (newDefault !== this.settings.defaultApiSource) {
+        this.settings.defaultApiSource = newDefault;
+        await this.saveSettings();
+      }
+    } catch (e) {
+      console.warn('[Zoro] Failed to update default API source automatically:', e);
+    }
+  }
+
 
   async onload() {
     this.render = new Render(this);
@@ -5682,6 +5706,7 @@ class ZoroPlugin extends Plugin {
   validateSettings(settings) {
     return {
       defaultApiSource: ['anilist', 'mal', 'simkl'].includes(settings?.defaultApiSource) ? settings.defaultApiSource : 'anilist',
+      defaultApiUserOverride: typeof settings?.defaultApiUserOverride === 'boolean' ? settings.defaultApiUserOverride : false,
       defaultUsername: typeof settings?.defaultUsername === 'string' ? settings.defaultUsername : '',
       defaultLayout: ['card', 'table'].includes(settings?.defaultLayout) ? settings.defaultLayout : 'card',
       showCoverImages: typeof settings?.showCoverImages === 'boolean' ? settings.showCoverImages : true,
@@ -5736,6 +5761,9 @@ class ZoroPlugin extends Plugin {
       const secret = await this.promptForSecret("Paste your client secret:");
       this.settings.clientSecret = secret.trim();
       await this.saveData(this.settings);
+    }
+    if (typeof this.updateDefaultApiSourceBasedOnAuth === 'function') {
+      await this.updateDefaultApiSourceBasedOnAuth();
     }
   }
 
@@ -6411,7 +6439,6 @@ parseInlineLink(href) {
     }
   }
 }
-
 class Render {
   constructor(plugin) {
     this.plugin = plugin;
@@ -7080,6 +7107,12 @@ class SearchRenderer {
     }
 
     const grid = el.createDiv({ cls: 'zoro-cards-grid' });
+    try {
+      const cols = Number(this.plugin.settings.gridColumns) || 2;
+      grid.style.setProperty('--zoro-grid-columns', String(cols));
+      grid.style.setProperty('--grid-cols', String(cols));
+      grid.style.setProperty('--zoro-grid-gap', 'var(--size-4-4)');
+    } catch {}
     const fragment = document.createDocumentFragment();
     
     media.forEach(item => {
@@ -7107,6 +7140,12 @@ class MediaListRenderer {
     }
 
     const grid = el.createDiv({ cls: 'zoro-cards-grid' });
+    try {
+      const cols = Number(this.plugin.settings.gridColumns) || 2;
+      grid.style.setProperty('--zoro-grid-columns', String(cols));
+      grid.style.setProperty('--grid-cols', String(cols));
+      grid.style.setProperty('--zoro-grid-gap', 'var(--size-4-4)');
+    } catch {}
     const fragment = document.createDocumentFragment();
     
     entries.forEach(entry => {
@@ -7121,6 +7160,12 @@ class MediaListRenderer {
     el.className = 'zoro-container';
     
     const grid = el.createDiv({ cls: 'zoro-cards-grid' });
+    try {
+      const cols = Number(this.plugin.settings.gridColumns) || 2;
+      grid.style.setProperty('--zoro-grid-columns', String(cols));
+      grid.style.setProperty('--grid-cols', String(cols));
+      grid.style.setProperty('--zoro-grid-gap', 'var(--size-4-4)');
+    } catch {}
     let index = 0;
     
     const renderChunk = () => {
@@ -10346,6 +10391,9 @@ modal.open();
    this.plugin.cache.invalidateByUser(this.plugin.settings.authUsername);
  }
     this.plugin.cache.clear();
+    if (typeof this.plugin.updateDefaultApiSourceBasedOnAuth === 'function') {
+      await this.plugin.updateDefaultApiSourceBasedOnAuth();
+    }
     new Notice('✅ Logged out & cleared credentials.', 3000);
   }
 
@@ -10386,6 +10434,9 @@ modal.open();
       this.plugin.cache.invalidateByUser(await this.getAuthenticatedUsername());
 
       await this.forceScoreFormat();
+      if (typeof this.plugin.updateDefaultApiSourceBasedOnAuth === 'function') {
+        await this.plugin.updateDefaultApiSourceBasedOnAuth();
+      }
       new Notice('✅ Authenticated successfully!', 4000);
     } catch (err) {
       new Notice(`❌ Auth failed: ${err.message}`, 5000);
@@ -10747,6 +10798,9 @@ return;
         console.log('[MAL-AUTH] Failed to fetch user info but auth succeeded', userError);
         new Notice('✅ Authentication successful! 🎉', 4000);
       }
+      if (typeof this.plugin.updateDefaultApiSourceBasedOnAuth === 'function') {
+        await this.plugin.updateDefaultApiSourceBasedOnAuth();
+      }
 
     } catch (err) {
       new Notice(`❌ MAL Auth failed: ${err.message}`, 5000);
@@ -11018,6 +11072,9 @@ class SimklAuthentication {
           } catch (userError) {
             console.log('[SIMKL-AUTH] Failed to fetch user info but auth succeeded', userError);
             new Notice('✅ Authentication successful! 🎉', 4000);
+          }
+          if (typeof this.plugin.updateDefaultApiSourceBasedOnAuth === 'function') {
+            await this.plugin.updateDefaultApiSourceBasedOnAuth();
           }
           
           return;
@@ -12410,6 +12467,7 @@ class ZoroSettingTab extends PluginSettingTab {
         .onChange(async (value) => {
           this.plugin.settings.gridColumns = value;
           await this.plugin.saveSettings();
+          this.updateGridColumns(value);
         }));
         
         new Setting(More)
@@ -12647,6 +12705,7 @@ class ZoroSettingTab extends PluginSettingTab {
         .setValue(this.plugin.settings.defaultApiSource)
         .onChange(async (value) => {
           this.plugin.settings.defaultApiSource = value;
+          this.plugin.settings.defaultApiUserOverride = true;
           await this.plugin.saveSettings();
         }));
   
@@ -12834,6 +12893,16 @@ class ZoroSettingTab extends PluginSettingTab {
         this.updateSimklAuthButton();
       }
     }
+  }
+
+  updateGridColumns(value) {
+    const gridElements = document.querySelectorAll('.zoro-cards-grid');
+    gridElements.forEach(grid => {
+      try {
+        grid.style.setProperty('--zoro-grid-columns', String(value));
+        grid.style.setProperty('--grid-cols', String(value));
+      } catch {}
+    });
   }
 }
 

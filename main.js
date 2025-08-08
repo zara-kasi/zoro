@@ -1227,6 +1227,46 @@ class Cache {
     
     this.log('DESTROY', 'system', '', 'Cache destroyed and saved');
   }
+
+  // Clears a cache scope either globally or for a specific API source
+  invalidateScope(scope, options = {}) {
+    const { source = null } = options;
+    let cleared = 0;
+
+    if (source) {
+      const composite = `${source}:${scope}`;
+      const store = this.stores[composite];
+      if (store) {
+        cleared = store.size;
+        store.clear();
+      }
+      // Also clear generic scope if present
+      if (this.stores[scope]) {
+        cleared += this.stores[scope].size;
+        this.stores[scope].clear();
+      }
+      this.schedulePersistence();
+      return cleared;
+    }
+
+    // No source specified: clear generic scope and all per-source scopes
+    if (this.stores[scope]) {
+      cleared += this.stores[scope].size;
+      this.stores[scope].clear();
+    }
+
+    this.apiSources.forEach(api => {
+      const composite = `${api}:${scope}`;
+      const store = this.stores[composite];
+      if (store) {
+        cleared += store.size;
+        store.clear();
+      }
+    });
+
+    this.schedulePersistence();
+    return cleared;
+  }
 }
 
 class AniListRequest {

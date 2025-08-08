@@ -21,7 +21,7 @@
 
 ---
 
-#### 2️⃣ **Fill in the Form (Only 3 Fields)**
+#### 2️⃣ **Fill in the Form**
 
 You just need to fill out three fields. Here’s what to put in:
 
@@ -31,7 +31,7 @@ You just need to fill out three fields. Here’s what to put in:
 | **App Type**     | `Web`                                               |
 | **Redirect URI** | `http://localhost:8080/callback` (Copy it exactly!) |
 | **Description**  | `Obsidian plugin for managing anime and manga lists`    |
-
+| **Company Name** | `Zoro`                                              |
 > ⚠️ **Important:** Make sure the **Redirect URI** is exactly: `http://localhost:8080/callback`. This is super important for the plugin to work correctly!
 
 ---

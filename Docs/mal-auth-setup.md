@@ -45,6 +45,14 @@ You just need to fill out three fields. Here’s what to put in:
 
 ---
 
+### 🎥 Watch the Video Guide
+
+If you're not sure how to follow the steps, here's a quick video guide:
+
+[![Watch the YouTube Short](https://img.youtube.com/vi/dg-vHw4mM6M/0.jpg)](https://youtu.be/dg-vHw4mM6M)
+
+---
+
 ### 🔐 **Linking MAL with Zoro**
 
 #### 4️⃣ **Plugin Setup in Obsidian**

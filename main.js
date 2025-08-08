@@ -3802,7 +3802,14 @@ class MalApi {
         break;
         
       case 'stats':
-        // No additional params needed for user stats
+        // Request required user statistics fields from MAL API
+        params.fields = [
+          'id',
+          'name',
+          'picture',
+          'anime_statistics',
+          'manga_statistics'
+        ].join(',');
         break;
     }
     
@@ -4065,16 +4072,44 @@ class MalApi {
   }
 
   transformUser(malUser) {
+    const animeStats = malUser?.anime_statistics || {};
+    const mangaStats = malUser?.manga_statistics || {};
+
+    const countAnime = animeStats.num_items || 0;
+    const countManga = mangaStats.num_items || 0;
+
+    const minutesWatched = typeof animeStats.num_days_watched === 'number'
+      ? Math.round(animeStats.num_days_watched * 24 * 60)
+      : 0;
+
     return {
-      id: malUser.id || null,
-      name: malUser.name || 'Unknown User',
+      id: malUser?.id || null,
+      name: malUser?.name || 'Unknown User',
       avatar: {
-        large: malUser.picture || null,
-        medium: malUser.picture || null
+        large: malUser?.picture || null,
+        medium: malUser?.picture || null
+      },
+      mediaListOptions: {
+        // MAL uses 10-point integer scoring
+        scoreFormat: 'POINT_10'
       },
       statistics: {
-        anime: { count: 0, meanScore: 0, standardDeviation: 0, episodesWatched: 0, minutesWatched: 0 },
-        manga: { count: 0, meanScore: 0, standardDeviation: 0, chaptersRead: 0, volumesRead: 0 }
+        anime: {
+          count: countAnime,
+          meanScore: animeStats.mean_score || 0,
+          standardDeviation: 0,
+          episodesWatched: animeStats.num_episodes || 0,
+          minutesWatched: minutesWatched,
+          statuses: []
+        },
+        manga: {
+          count: countManga,
+          meanScore: mangaStats.mean_score || 0,
+          standardDeviation: 0,
+          chaptersRead: mangaStats.num_chapters || 0,
+          volumesRead: mangaStats.num_volumes || 0,
+          statuses: []
+        }
       }
     };
   }
@@ -4340,6 +4375,49 @@ class MalApi {
 
   getMetrics() {
     return { ...this.metrics };
+  }
+
+  async enrichUserStatsWithBreakdowns(user) {
+    // We are inside MalApi, so always enrich for MAL
+    const [animeStatuses, mangaStatuses] = await Promise.all([
+      this.fetchStatusBreakdown('ANIME'),
+      this.fetchStatusBreakdown('MANGA')
+    ]);
+    
+    if (Array.isArray(animeStatuses) && user.statistics?.anime) {
+      user.statistics.anime.statuses = animeStatuses;
+    }
+    if (Array.isArray(mangaStatuses) && user.statistics?.manga) {
+      user.statistics.manga.statuses = mangaStatuses;
+    }
+    return user;
+  }
+
+  async fetchStatusBreakdown(mediaType = 'ANIME') {
+    const listType = mediaType === 'ANIME' ? 'anime' : 'manga';
+    const url = `${this.baseUrl}/users/@me/${listType}list`;
+    const params = {
+      fields: 'list_status',
+      limit: 1000,
+      nsfw: 'true'
+    };
+    const requestParams = {
+      url: this.buildFullUrl(url, params),
+      headers: this.getAuthHeaders(),
+      priority: 'low'
+    };
+    const response = await this.makeRequest(requestParams);
+    const items = Array.isArray(response?.data) ? response.data : [];
+    const counts = new Map();
+    for (const item of items) {
+      const malStatus = item?.list_status?.status;
+      if (!malStatus) continue;
+      const mapped = this.mapMALStatusToAniList(malStatus, listType);
+      if (!mapped) continue;
+      counts.set(mapped, (counts.get(mapped) || 0) + 1);
+    }
+    // Convert to array of { status, count }
+    return Array.from(counts.entries()).map(([status, count]) => ({ status, count }));
   }
 }
 class SimklApi {
@@ -4747,26 +4825,27 @@ class SimklApi {
   // =================== DATA TRANSFORMATION ===================
 
   transformResponse(data, config) {
-  switch (config.type) {
-    case 'search':
-      return { Page: { media: data.data?.map(item => this.transformMedia(item)) || [] } };
-    case 'single':
-      const targetMedia = data.data?.find(item => item.node.id === parseInt(config.mediaId));
-      return { MediaList: targetMedia ? this.transformListEntry(targetMedia) : null };
-    case 'stats':
-      return { User: this.transformUser(data) };
-    default:
-      return {
-        MediaListCollection: {
-          lists: [{ 
-            entries: data.data?.map(item => {
-              // Debug log the actual item structure
-              console.log('Raw MAL item before transform:', JSON.stringify(item, null, 2));
-              return this.transformListEntry(item);
-            }) || [] 
-          }]
-        }
-      };
+    switch (config.type) {
+      case 'search':
+        return { Page: { media: data.data?.map(item => this.transformMedia(item)) || [] } };
+      case 'single':
+        const targetMedia = data.data?.find(item => item.node.id === parseInt(config.mediaId));
+        return { MediaList: targetMedia ? this.transformListEntry(targetMedia) : null };
+      case 'stats':
+        return { User: this.transformUser(data) };
+      default:
+        return {
+          MediaListCollection: {
+            lists: [{ 
+              entries: data.data?.map(item => {
+                // Debug log the actual item structure
+                console.log('Raw MAL item before transform:', JSON.stringify(item, null, 2));
+                return this.transformListEntry(item);
+              }) || [] 
+            }]
+          }
+        };
+    }
   }
 }
   transformSearchResponse(data) {
@@ -7208,7 +7287,11 @@ class StatsRenderer {
     // Make the user name clickable
     userName.style.cursor = 'pointer';
     userName.addEventListener('click', () => {
-      window.open(`https://anilist.co/user/${user.name}`, '_blank');
+      const source = user?._zoroMeta?.source || 'anilist';
+      const url = source === 'mal'
+        ? `https://myanimelist.net/profile/${encodeURIComponent(user.name)}`
+        : `https://anilist.co/user/${encodeURIComponent(user.name)}`;
+      window.open(url, '_blank');
     });
 
     userName.addEventListener('mouseenter', () => {

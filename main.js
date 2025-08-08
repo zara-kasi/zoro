@@ -8149,7 +8149,7 @@ class Edit {
   const favoriteBtn = this.renderer.createFavoriteButton(entry, actualSource, (entry, btn, src) => this.toggleFavorite(entry, btn, src));
   const formFields = this.renderer.createFormFields(entry);
   const quickButtons = this.renderer.createQuickProgressButtons(entry, formFields.progress.input, formFields.status.input);
-  const actionButtons = this.renderer.createActionButtons(entry, () => this.handleRemove(entry, modal.container, actualSource), this.config);
+  const actionButtons = this.renderer.createActionButtons(entry, () => this.handleRemove(entry, modal.container, actualSource), this.config, actualSource);
   
   this.support.setupModalInteractions(modal, overlay, onCancel);
   this.support.setupFormSubmission(form, () => this.handleSave(entry, onSave, actionButtons.save, formFields, modal, actualSource));
@@ -8460,7 +8460,7 @@ class RenderEditModal {
     return button;
   }
 
-  createActionButtons(entry, onRemove, config) {
+  createActionButtons(entry, onRemove, config, source = 'anilist') {
     const container = document.createElement('div');
     container.className = 'zoro-modal-buttons';
     
@@ -8470,6 +8470,9 @@ class RenderEditModal {
       onClick: onRemove
     });
     
+    if (source === 'mal') {
+  removeBtn.style.display = 'none';
+}
     const saveBtn = this.createActionButton({
       label: config.buttons.save.label,
       className: config.buttons.save.class,
@@ -8650,7 +8653,6 @@ class AniListEditModal {
     return ['favorites', 'remove', 'update'].includes(feature);
   }
 }
-
 class MALEditModal {
   constructor(plugin) {
     this.plugin = plugin;
@@ -8762,7 +8764,6 @@ class MALEditModal {
     return 'anime';
   }
 }
-
 class SupportEditModal {
   constructor(plugin, renderer) {
     this.plugin = plugin;

@@ -3775,11 +3775,12 @@ class MalApi {
       status: status,
       score: score,
       progress: progress,
+      chaptersRead: listStatus?.num_chapters_read ?? null,
+volumesRead: listStatus?.num_volumes_read ?? null,
       media: this.transformMedia(malEntry)
     };
   }
 
-  // FIXED: Improved buildQueryParams with better field handling
   buildQueryParams(config) {
     const params = {};
     
@@ -4395,6 +4396,39 @@ manga: {
     if (user?.statistics?.manga) {
       Object.assign(user.statistics.manga, mangaAgg);
     }
+    
+    const applyFallbacks = (entries, statsObj, type) => {
+  if (!statsObj) return;
+
+  if (!statsObj.count || statsObj.count === 0) {
+    statsObj.count = Array.isArray(entries) ? entries.length : 0;
+  }
+
+  if ((!statsObj.meanScore || statsObj.meanScore === 0) && Array.isArray(entries) && entries.length) {
+    const rated = entries.filter(e => typeof e.score === 'number' && e.score > 0);
+    if (rated.length) {
+      const avg10 = rated.reduce((sum, e) => sum + e.score, 0) / rated.length;
+      statsObj.meanScore = Math.round(avg10 * 10);
+    }
+  }
+
+  if (type === 'manga') {
+    if (!statsObj.chaptersRead || statsObj.chaptersRead === 0) {
+      statsObj.chaptersRead = entries.reduce((s, e) => s + (e.chaptersRead || 0), 0);
+    }
+    if (!statsObj.volumesRead || statsObj.volumesRead === 0) {
+      statsObj.volumesRead = entries.reduce((s, e) => s + (e.volumesRead || 0), 0);
+    }
+  } else if (type === 'anime') {
+    if (!statsObj.episodesWatched || statsObj.episodesWatched === 0) {
+      statsObj.episodesWatched = entries.reduce((s, e) => s + (e.progress || 0), 0);
+    }
+  }
+};
+
+applyFallbacks(animeEntries, user?.statistics?.anime, 'anime');
+applyFallbacks(mangaEntries, user?.statistics?.manga, 'manga');
+    
   } catch (e) {
   }
 }
@@ -7682,7 +7716,12 @@ if (showManga && mangaStats && mangaStats.count > 0) {
       const barContainer = chart.createDiv({ cls: 'zoro-score-bar-container' });
       
       const label = barContainer.createDiv({ cls: 'zoro-score-label' });
-      label.textContent = this.formatter.formatScore(scoreData.score, listOptions?.scoreFormat);
+      const scoreFormat = listOptions?.scoreFormat || 'POINT_10';
+let scoreValue = scoreData.score;
+if (scoreFormat === 'POINT_10' && typeof scoreValue === 'number' && scoreValue <= 10) {
+  scoreValue = scoreValue * 10;
+}
+label.textContent = this.formatter.formatScore(scoreValue, scoreFormat);
       
       const bar = barContainer.createDiv({ cls: 'zoro-score-bar' });
       const percentage = (scoreData.count / maxCount) * 100;

@@ -12216,68 +12216,70 @@ class Sample {
     }
 
     async createSampleFolders() {
-      new Notice('Creating…', 3000);
+        new Notice('Creating…', 3000);
         const vault = this.plugin.app.vault;
+        const parentFolder = 'Zoro';
+        
         const folders = [
             {
-                name: 'Anime Dashboard',
-                files: ['Watching.md', 'Planning.md', 'Repeating.md', 'On Hold.md', 'Completed.md', 'Dropped.md',
+                name: 'Anime',
+                files: ['Watching.md', 'Planning.md', 'Re-watching .md', 'On Hold.md', 'Completed.md', 'Dropped.md',
                 'Trending.md','Stats.md'],
                 firstFile: 'Watching.md'
             },
             {
-                name: 'Manga Dashboard', 
-                files: ['Reading.md', 'Planning.md', 'Repeating.md', 'On Hold.md', 'Completed.md', 'Dropped.md', 'Stats.md'],
+                name: 'Manga', 
+                files: ['Reading.md', 'Planning.md', 'Re-reading.md', 'On Hold.md', 'Completed.md', 'Dropped.md', 'Stats.md'],
                 firstFile: 'Reading.md'
             }
         ];
 
+        if (!vault.getAbstractFileByPath(parentFolder)) {
+            await vault.createFolder(parentFolder);
+        }
+
         for (const folder of folders) {
-            // Check if folder already exists
-            if (vault.getAbstractFileByPath(folder.name)) {
-                new Notice('⏭️ ' + folder.name + ' already exists');
+            const folderPath = parentFolder + '/' + folder.name;
+            
+            if (vault.getAbstractFileByPath(folderPath)) {
+                new Notice('⏭️ ' + folder.name + ' already exists in ' + parentFolder);
                 continue;
             }
 
             const baseUrl = 'https://raw.githubusercontent.com/zara-kasi/zoro/main/Template/' + 
                            encodeURIComponent(folder.name) + '/';
 
-            // Create the main folder
-            await vault.createFolder(folder.name);
+            await vault.createFolder(folderPath);
             let successfulFiles = 0;
 
-            // Download and create each template file
             for (const templateFile of folder.files) {
                 try {
                     const fileUrl = baseUrl + encodeURIComponent(templateFile);
                     const response = await fetch(fileUrl);
                     
                     if (!response.ok) {
-                        continue; // Skip this file if download fails
+                        continue;
                     }
 
                     const content = await response.text();
-                    const filePath = folder.name + '/' + templateFile;
+                    const filePath = folderPath + '/' + templateFile;
                     
                     await vault.create(filePath, content);
                     successfulFiles++;
                     
                 } catch (error) {
-                    // Silently continue with next file if this one fails
                     continue;
                 }
             }
 
-            new Notice('✅ ' + folder.name + ' (' + successfulFiles + ' files)');
+            new Notice('✅ ' + folder.name + ' in ' + parentFolder + ' (' + successfulFiles + ' files)');
 
-            // Open the first file if any files were created successfully
             if (successfulFiles > 0) {
-                this.plugin.app.workspace.openLinkText(folder.firstFile, folder.name, false);
+                this.plugin.app.workspace.openLinkText(folder.firstFile, folderPath, false);
             }
         }
     }
 }
-
 
 class ZoroSettingTab extends PluginSettingTab {
   constructor(app, plugin) {
@@ -12303,7 +12305,7 @@ class ZoroSettingTab extends PluginSettingTab {
       return body;
     };
 
-    const Account = section('👤 Account', true);
+    const Account = section('👤 Account');
     const Setup = section('🧭 Setup');
     const Display = section('📺 Display');
     const Theme = section('🌌 Theme');
@@ -12336,15 +12338,33 @@ class ZoroSettingTab extends PluginSettingTab {
       });
     });
     
+    const malAuthSetting = new Setting(Account)
+      .setName('🗾 MyAnimeList')
+      .setDesc('Lets you edit and view your MAL entries.');
+
+    malAuthSetting.addButton(btn => {
+      this.malAuthButton = btn;
+      this.updateMALAuthButton();
+      btn.onClick(async () => {
+        await this.handleMALAuthButtonClick();
+      });
+    });
+    
     new Setting(Setup)
       .setName('🗝️ Authentication ?')
-      .setDesc('Takes less than a minute—no typing, just copy and paste.')
+      .setDesc('Guide: Takes less than a minute—no typing, just copy and paste.')
       .addButton(button => button
-        .setButtonText('Guide')
+        .setButtonText('AniList')
         .onClick(() => {
           window.open('https://github.com/zara-kasi/zoro/blob/main/Docs/anilist-auth-setup.md', '_blank');
         }));
-
+        new Setting(Setup)
+        .addButton(button => button
+        .setButtonText('MAL')
+        .onClick(() => {
+          window.open('https://github.com/zara-kasi/zoro/blob/8d432f1b3d648e1f9ddc1698676f21483472a427/Docs/mal-auth-setup.md', '_blank');
+        }));
+        
     new Setting(Setup)
       .setName('⚡ Sample Folders')
       .setDesc('(Recommended)')
@@ -12353,6 +12373,18 @@ class ZoroSettingTab extends PluginSettingTab {
           .setButtonText('Create')
           .onClick(async () => {
             await this.plugin.sample.createSampleFolders();
+          })
+      );
+      
+      new Setting(Setup)
+      .setName('️📚 Data Migration')
+      .setDesc('Instructions to export from MAL and import into AniList (and vice versa).')
+      .addButton(button =>
+        button
+          .setClass('mod-cta')
+          .setButtonText('Open')
+          .onClick(() => {
+            window.open('https://github.com/zara-kasi/zoro/blob/62ce085c71b45c29c0dc61a061c8dedc1d7a7189/Docs/data.md', '_blank');
           })
       );
 
@@ -12377,6 +12409,26 @@ class ZoroSettingTab extends PluginSettingTab {
         .setDynamicTooltip()
         .onChange(async (value) => {
           this.plugin.settings.gridColumns = value;
+          await this.plugin.saveSettings();
+        }));
+        
+        new Setting(More)
+      .setName('⏳ Loading Icon')
+      .setDesc('Show loading animation during API requests')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.showLoadingIcon)
+        .onChange(async (value) => {
+          this.plugin.settings.showLoadingIcon = value;
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(More)
+      .setName('🔗 Plain Titles')
+      .setDesc('Show titles as plain text instead of clickable links.')
+      .addToggle(toggle => toggle
+        .setValue(this.plugin.settings.hideUrlsInTitles)
+        .onChange(async (value) => {
+          this.plugin.settings.hideUrlsInTitles = value;
           await this.plugin.saveSettings();
         }));
 
@@ -12417,26 +12469,6 @@ class ZoroSettingTab extends PluginSettingTab {
         .setValue(this.plugin.settings.showGenres)
         .onChange(async (value) => {
           this.plugin.settings.showGenres = value;
-          await this.plugin.saveSettings();
-        }));
-
-    new Setting(More)
-      .setName('Loading Icon')
-      .setDesc('Show loading animation during API requests')
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.showLoadingIcon)
-        .onChange(async (value) => {
-          this.plugin.settings.showLoadingIcon = value;
-          await this.plugin.saveSettings();
-        }));
-
-    new Setting(More)
-      .setName('🔗 Plain Titles')
-      .setDesc('Show titles as plain text instead of clickable links.')
-      .addToggle(toggle => toggle
-        .setValue(this.plugin.settings.hideUrlsInTitles)
-        .onChange(async (value) => {
-          this.plugin.settings.hideUrlsInTitles = value;
           await this.plugin.saveSettings();
         }));
         
@@ -12504,19 +12536,6 @@ class ZoroSettingTab extends PluginSettingTab {
           }
         })
       );
-
-  
-    new Setting(Data)
-      .setName('️📚 Data Migration')
-      .setDesc('Instructions to export from MAL and import into AniList (and vice versa).')
-      .addButton(button =>
-        button
-          .setClass('mod-cta')
-          .setButtonText('Open')
-          .onClick(() => {
-            window.open('https://github.com/zara-kasi/zoro/blob/62ce085c71b45c29c0dc61a061c8dedc1d7a7189/Docs/data.md', '_blank');
-          })
-      );
   
     new Setting(Theme)
       .setName('🎨 Apply')
@@ -12577,6 +12596,21 @@ class ZoroSettingTab extends PluginSettingTab {
           dropdown.setValue('');
         });
       });
+      
+      new Setting(Cache)
+      .setName('📊 Cache Stats')
+      .setDesc('Show live cache usage and hit-rate in a pop-up.')
+      .addButton(btn => btn
+        .setButtonText('Show Stats')
+        .onClick(() => {
+          const s = this.plugin.cache.getStats();
+          new Notice(
+            `Cache: ${s.hitRate} | ${s.cacheSize} entries | Hits ${s.hits} | Misses ${s.misses}`,
+            8000
+          );
+          console.table(s);
+        })
+      );
 
     new Setting(Cache)
   .setName('🧹 Clear Cache')
@@ -12590,18 +12624,6 @@ class ZoroSettingTab extends PluginSettingTab {
     })
   );
       
-      
-    const malAuthSetting = new Setting(Exp)
-      .setName('🗾 MyAnimeList')
-      .setDesc('Lets you edit and view your MAL entries.');
-
-    malAuthSetting.addButton(btn => {
-      this.malAuthButton = btn;
-      this.updateMALAuthButton();
-      btn.onClick(async () => {
-        await this.handleMALAuthButtonClick();
-      });
-    });
 
     const simklAuthSetting = new Setting(Exp)
       .setName('🎬 SIMKL')
@@ -12627,44 +12649,6 @@ class ZoroSettingTab extends PluginSettingTab {
           this.plugin.settings.defaultApiSource = value;
           await this.plugin.saveSettings();
         }));
-
-    new Setting(Exp)
-      .setName('Dump metrics & health')
-      .setDesc('Open Dev-Tools console first, then click.')
-      .addButton(btn =>
-        btn
-          .setButtonText('Show')
-          .onClick(() => {
-            const api = this.plugin.api;
-            // 1. console table
-            console.table(api.metrics);
-            // 2. full health object
-            console.log('Health:', api.getHealthStatus());
-            // 3. quick notice
-            const h = api.getHealthStatus();
-            new Notice(
-              `Status: ${h.status}\n` +
-              `Requests: ${h.requests.total} (${h.latency.avg} ms avg)\n` +
-              `Errors: ${h.requests.failed}`,
-              8000
-            );
-          })
-      );
-  
-  new Setting(Exp)
-      .setName('📊 Cache Stats')
-      .setDesc('Show live cache usage and hit-rate in a pop-up.')
-      .addButton(btn => btn
-        .setButtonText('Show Stats')
-        .onClick(() => {
-          const s = this.plugin.cache.getStats();
-          new Notice(
-            `Cache: ${s.hitRate} | ${s.cacheSize} entries | Hits ${s.hits} | Misses ${s.misses}`,
-            8000
-          );
-          console.table(s);
-        })
-      );
   
     new Setting(Exp)
       .setName('Debug Mode')

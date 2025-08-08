@@ -1,3 +1,0 @@
-```zoro
-type: stats
-```

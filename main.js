@@ -8280,12 +8280,12 @@ class Edit {
     this.saving = false;
     this.config = {
       statuses: [
-        { value: 'CURRENT', label: 'Watching/Reading', emoji: '📺' },
-        { value: 'PLANNING', label: 'Plan to Watch/Read', emoji: '📋' },
+        { value: 'CURRENT', label: 'Current', emoji: '📺' },
+        { value: 'PLANNING', label: 'Planning', emoji: '📋' },
         { value: 'COMPLETED', label: 'Completed', emoji: '✅' },
         { value: 'DROPPED', label: 'Dropped', emoji: '❌' },
-        { value: 'PAUSED', label: 'Paused', emoji: '⏸️' },
-        { value: 'REPEATING', label: 'Rewatching/Rereading', emoji: '🔄' }
+        { value: 'PAUSED', label: 'On hold', emoji: '⏸️' },
+        { value: 'REPEATING', label: 'Repeating', emoji: '🔄' }
       ],
       fields: {
         status: { label: 'Status', emoji: '🧿', id: 'zoro-status' },

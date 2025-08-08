@@ -14,7 +14,7 @@
 
 #### 1️⃣ **Create Your MAL App**
 
-* Go to the [MAL Developer Console](https://myanimelist.net/apiconfig) (this is where you get your keys).
+* Go to the [MAL API](https://myanimelist.net/apiconfig) (this is where you get your keys).
 * Click on **"Create App"**.
 
   * This will open a form where you need to enter some details.
@@ -30,7 +30,7 @@ You just need to fill out three fields. Here’s what to put in:
 | **App Name**     | `Zoro` (This is the name of your plugin)            |
 | **App Type**     | `Web`                                               |
 | **Redirect URI** | `http://localhost:8080/callback` (Copy it exactly!) |
-| **Description**  | `Obsidian plugin for managing anime/manga lists`    |
+| **Description**  | `Obsidian plugin for managing anime and manga lists`    |
 
 > ⚠️ **Important:** Make sure the **Redirect URI** is exactly: `http://localhost:8080/callback`. This is super important for the plugin to work correctly!
 

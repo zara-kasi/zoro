@@ -6610,7 +6610,6 @@ class Render {
     return this.statsRenderer.generateInsights(stats, type, user);
   }
 }
-
 class CardRenderer {
   constructor(parentRenderer) {
     this.parent = parentRenderer;
@@ -7019,7 +7018,6 @@ class CardRenderer {
     }
   }
 }
-
 class SearchRenderer {
   constructor(parentRenderer) {
     this.parent = parentRenderer;
@@ -7287,7 +7285,6 @@ class TableRenderer {
     tbody.appendChild(fragment);
   }
 }
-
 class StatsRenderer {
   constructor(parentRenderer) {
     this.parent = parentRenderer;
@@ -7703,35 +7700,36 @@ if (showManga && mangaStats && mangaStats.count > 0) {
   }
 
   renderScoreDistribution(container, scores, listOptions) {
-    const chartContainer = container.createDiv({ cls: 'zoro-breakdown-chart' });
-    chartContainer.createEl('h4', { 
-      text: 'Score Distribution',
-      cls: 'zoro-breakdown-title'
-    });
+  const chartContainer = container.createDiv({ cls: 'zoro-breakdown-chart' });
+  chartContainer.createEl('h4', { 
+    text: 'Score Distribution',
+    cls: 'zoro-breakdown-title'
+  });
 
-    const chart = chartContainer.createDiv({ cls: 'zoro-score-chart' });
-    const maxCount = Math.max(...scores.map(s => s.count));
+  const chart = chartContainer.createDiv({ cls: 'zoro-score-chart' });
+  const maxCount = Math.max(...scores.map(s => s.count));
 
-    scores.forEach((scoreData, index) => {
-      const barContainer = chart.createDiv({ cls: 'zoro-score-bar-container' });
-      
-      const label = barContainer.createDiv({ cls: 'zoro-score-label' });
-      const scoreFormat = listOptions?.scoreFormat || 'POINT_10';
-let scoreValue = scoreData.score;
-if (scoreFormat === 'POINT_10' && typeof scoreValue === 'number' && scoreValue <= 10) {
-  scoreValue = scoreValue * 10;
+  scores.forEach((scoreData, index) => {
+    const barContainer = chart.createDiv({ cls: 'zoro-score-bar-container' });
+    
+    const label = barContainer.createDiv({ cls: 'zoro-score-label' });
+    const scoreFormat = listOptions?.scoreFormat || 'POINT_10';
+    let scoreValue = scoreData.score;
+    if (scoreFormat === 'POINT_10' && typeof scoreValue === 'number' && scoreValue <= 10) {
+      scoreValue = scoreValue * 10;
+    }
+    label.textContent = this.formatter.formatScore(scoreValue, scoreFormat);
+    
+    const bar = barContainer.createDiv({ cls: 'zoro-score-bar' });
+    const percentage = (scoreData.count / maxCount) * 100;
+    // Fix: Set --bar-height instead of --bar-width for vertical bars
+    bar.style.setProperty('--bar-height', `${percentage}%`);
+    bar.style.animationDelay = `${index * 0.1}s`;
+    
+    const value = barContainer.createDiv({ cls: 'zoro-score-value' });
+    value.textContent = scoreData.count;
+  });
 }
-label.textContent = this.formatter.formatScore(scoreValue, scoreFormat);
-      
-      const bar = barContainer.createDiv({ cls: 'zoro-score-bar' });
-      const percentage = (scoreData.count / maxCount) * 100;
-      bar.style.setProperty('--bar-width', `${percentage}%`);
-      bar.style.animationDelay = `${index * 0.1}s`;
-      
-      const value = barContainer.createDiv({ cls: 'zoro-score-value' });
-      value.textContent = scoreData.count;
-    });
-  }
 
   renderYearlyActivity(container, yearData) {
     const chartContainer = container.createDiv({ cls: 'zoro-breakdown-chart' });
@@ -8080,7 +8078,6 @@ class FormatterHelper {
     return format ? format.substring(0, 2).toUpperCase() : '';
   }
 }
-
 class DOMHelper {
   static createLoadingSpinner() {
     return `

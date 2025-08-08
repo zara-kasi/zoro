@@ -2774,7 +2774,6 @@ class AnilistApi {
     // userData: 30min, mediaData: 10min, searchResults: 2min, etc.
     return null;
   }
-
   async invalidateRelatedCache(mediaId, updates) {
     // Use your cache's excellent invalidation system
     this.cache.invalidateByMedia(mediaId);
@@ -3884,7 +3883,7 @@ class MalApi {
     
     if (updates.progress !== undefined && updates.progress !== null) {
       const progress = Math.max(0, parseInt(updates.progress) || 0);
-      const progressField = mediaType === 'anime' ? 'num_episodes_watched' : 'num_chapters_read';
+      const progressField = mediaType === 'anime' ? 'num_watched_episodes' : 'num_chapters_read';
       body.append(progressField, progress.toString());
     }
 
@@ -3893,23 +3892,42 @@ class MalApi {
     }
 
     const requestFn = async () => {
-      const response = await requestUrl({
-        url: `${this.baseUrl}/${endpoint}/${mediaId}/list_status`,
-        method: 'PUT',
-        headers: {
+      const makeRequest = async (method) => {
+        const headers = {
           'Content-Type': 'application/x-www-form-urlencoded',
           'Accept': 'application/json',
           'Authorization': `Bearer ${this.plugin.settings.malAccessToken}`,
           'User-Agent': 'Obsidian-Zoro-Plugin'
-        },
-        body: body.toString()
-      });
-      
-      if (response.status >= 400) {
-        throw new Error(`HTTP ${response.status}: ${response.text || 'Unknown error'}`);
+        };
+        if (this.plugin?.settings?.malClientId) {
+          headers['X-MAL-CLIENT-ID'] = this.plugin.settings.malClientId;
+        }
+        return await requestUrl({
+          url: `${this.baseUrl}/${endpoint}/${mediaId}/my_list_status`,
+          method,
+          headers,
+          body: body.toString()
+        });
+      };
+
+      // Try PATCH first, then fall back to PUT if method not allowed
+      try {
+        const response = await makeRequest('PATCH');
+        if (response.status >= 400) {
+          if (response.status === 405) throw Object.assign(new Error('METHOD_NOT_ALLOWED'), { status: response.status });
+          throw new Error(`HTTP ${response.status}: ${response.text || 'Unknown error'}`);
+        }
+        return response;
+      } catch (err) {
+        if (err && (err.status === 405 || /405/.test(err.message || ''))) {
+          const response = await makeRequest('PUT');
+          if (response.status >= 400) {
+            throw new Error(`HTTP ${response.status}: ${response.text || 'Unknown error'}`);
+          }
+          return response;
+        }
+        throw err;
       }
-      
-      return response;
     };
 
     const response = await this.requestQueue.add(requestFn, { priority: 'high' });
@@ -4103,6 +4121,9 @@ class MalApi {
     };
     if (this.plugin.settings.malAccessToken) {
       headers['Authorization'] = `Bearer ${this.plugin.settings.malAccessToken}`;
+    }
+    if (this.plugin.settings.malClientId) {
+      headers['X-MAL-CLIENT-ID'] = this.plugin.settings.malClientId;
     }
     return headers;
   }
@@ -6858,7 +6879,6 @@ class SearchRenderer {
     grid.appendChild(fragment);
   }
 }
-
 class MediaListRenderer {
   constructor(parentRenderer) {
     this.parent = parentRenderer;
@@ -7597,7 +7617,6 @@ class StatsRenderer {
     return insights.slice(0, 4); // Limit to 4 insights
   }
 }
-
 class APISourceHelper {
   constructor(plugin) {
     this.plugin = plugin;
@@ -8187,7 +8206,6 @@ class Edit {
     this.support.closeModal(modalElement, onCancel);
   }
 }
-
 class RenderEditModal {
   constructor(config) {
     this.config = config;
@@ -8860,7 +8878,6 @@ class MoreDetailsPanel {
     return this.openDetailPanel.currentPanel;
   }
 }
-
 class DetailPanelSource {
   constructor(plugin) {
     this.plugin = plugin;
@@ -9658,7 +9675,6 @@ class RenderDetailPanel {
     });
   }
 }
-
 class OpenDetailPanel {
   constructor(plugin) {
     this.plugin = plugin;

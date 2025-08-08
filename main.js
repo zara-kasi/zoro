@@ -3697,6 +3697,13 @@ class MalApi {
     const requestParams = this.buildRequestParams(normalizedConfig);
     
     const rawResponse = await this.makeRequest(requestParams);
+    if (normalizedConfig.type === 'stats') {
+  const user = this.transformUser(rawResponse);
+  await this.attachMALDistributions(user);
+  const enriched = { User: user };
+  this.cache.set(cacheKey, enriched, { scope: cacheScope });
+  return enriched;
+}
     const transformedData = this.transformResponse(rawResponse, normalizedConfig);
     
     this.cache.set(cacheKey, transformedData, { scope: cacheScope });
@@ -4093,14 +4100,14 @@ mediaListOptions: {
       statistics: {
         anime: {
   count: countAnime,
-  meanScore: animeStats.mean_score || 0,
+  meanScore: typeof animeStats.mean_score === 'number' ? Math.round(animeStats.mean_score * 10) : 0,
   standardDeviation: 0,
   episodesWatched: animeStats.num_episodes || 0,
   minutesWatched: minutesWatched
 },
 manga: {
   count: countManga,
-  meanScore: mangaStats.mean_score || 0,
+  meanScore: typeof mangaStats.mean_score === 'number' ? Math.round(mangaStats.mean_score * 10) : 0,
   standardDeviation: 0,
   chaptersRead: mangaStats.num_chapters || 0,
   volumesRead: mangaStats.num_volumes || 0
@@ -4371,6 +4378,101 @@ manga: {
   getMetrics() {
     return { ...this.metrics };
   }
+  
+  async attachMALDistributions(user) {
+  try {
+    const [animeEntries, mangaEntries] = await Promise.all([
+      this.fetchUserListEntries('ANIME'),
+      this.fetchUserListEntries('MANGA')
+    ]);
+
+    const animeAgg = this.aggregateDistributionsFromEntries(animeEntries, 'anime');
+    const mangaAgg = this.aggregateDistributionsFromEntries(mangaEntries, 'manga');
+
+    if (user?.statistics?.anime) {
+      Object.assign(user.statistics.anime, animeAgg);
+    }
+    if (user?.statistics?.manga) {
+      Object.assign(user.statistics.manga, mangaAgg);
+    }
+  } catch (e) {
+  }
+}
+
+async fetchUserListEntries(mediaType) {
+  const listConfig = { type: 'list', mediaType, layout: 'card', limit: 1000 };
+  const requestParams = this.buildRequestParams(listConfig);
+  const raw = await this.makeRequest(requestParams);
+  const transformed = this.transformResponse(raw, listConfig);
+  const entries = transformed?.MediaListCollection?.lists?.[0]?.entries || [];
+  return entries;
+}
+
+aggregateDistributionsFromEntries(entries, typeLower) {
+  const result = {
+    statuses: [],
+    scores: [],
+    formats: [],
+    releaseYears: [],
+    genres: []
+  };
+
+  if (!Array.isArray(entries) || entries.length === 0) return result;
+
+  const statusCounts = new Map();
+  const scoreCounts = new Map();
+  const formatCounts = new Map();
+  const yearCounts = new Map();
+  const genreSet = new Set();
+
+  for (const entry of entries) {
+    const status = entry?.status;
+    if (status) {
+      statusCounts.set(status, (statusCounts.get(status) || 0) + 1);
+    }
+
+    const rawScore = entry?.score;
+    if (typeof rawScore === 'number' && rawScore > 0) {
+      const scaled = Math.round(rawScore * 10);
+      scoreCounts.set(scaled, (scoreCounts.get(scaled) || 0) + 1);
+    }
+
+    const format = entry?.media?.format;
+    if (format) {
+      formatCounts.set(format, (formatCounts.get(format) || 0) + 1);
+    }
+
+    const year = entry?.media?.startDate?.year;
+    if (typeof year === 'number' && year > 0) {
+      yearCounts.set(year, (yearCounts.get(year) || 0) + 1);
+    }
+
+    const genres = entry?.media?.genres || [];
+    for (const g of genres) {
+      if (typeof g === 'string' && g.trim()) genreSet.add(g);
+    }
+  }
+
+  result.statuses = Array.from(statusCounts.entries())
+    .map(([status, count]) => ({ status, count }))
+    .sort((a, b) => b.count - a.count);
+
+  result.scores = Array.from(scoreCounts.entries())
+    .map(([score, count]) => ({ score, count }))
+    .sort((a, b) => a.score - b.score);
+
+  result.formats = Array.from(formatCounts.entries())
+    .map(([format, count]) => ({ format, count }))
+    .sort((a, b) => b.count - a.count);
+
+  result.releaseYears = Array.from(yearCounts.entries())
+    .map(([releaseYear, count]) => ({ releaseYear, count }))
+    .sort((a, b) => b.releaseYear - a.releaseYear);
+
+  result.genres = Array.from(genreSet);
+
+  return result;
+}
 }
 class SimklApi {
   constructor(plugin) {
@@ -5943,7 +6045,7 @@ async handleTrendingOperation(api, config) {
     try {
       switch (type) {
         case 'stats':
-          this.plugin.render.renderUserStats(el, data);
+          this.plugin.render.renderUserStats(el, data, { mediaType: config.mediaType || 'ANIME', layout: config.layout || 'enhanced' });
           break;
 
         case 'search':
@@ -7181,7 +7283,7 @@ class StatsRenderer {
     this.renderHeader(fragment, user);
 
     // Main overview cards
-    this.renderOverview(fragment, user, { showComparisons });
+    this.renderOverview(fragment, user, { showComparisons, mediaType });
 
     // Detailed breakdowns based on layout
     if (layout !== 'minimal') {
@@ -7256,25 +7358,27 @@ window.open(url, '_blank');
   }
 
   renderOverview(fragment, user, options) {
-    const { showComparisons } = options;
+    const { showComparisons, mediaType = 'ANIME' } = options;
     const overview = fragment.createDiv({ cls: 'zoro-stats-overview' });
     
     const statsGrid = overview.createDiv({ cls: 'zoro-stats-grid' });
 
     // Anime stats
     const animeStats = user.statistics.anime;
-    if (animeStats && animeStats.count > 0) {
-      this.renderMediaTypeCard(statsGrid, 'anime', animeStats, user.mediaListOptions);
-    }
 
     // Manga stats  
     const mangaStats = user.statistics.manga;
-    if (mangaStats && mangaStats.count > 0) {
+    const showAnime = String(mediaType).toUpperCase() === 'ANIME';
+const showManga = String(mediaType).toUpperCase() === 'MANGA';
+
+if (showAnime && animeStats && animeStats.count > 0) {
+  this.renderMediaTypeCard(statsGrid, 'anime', animeStats, user.mediaListOptions);
+}
+if (showManga && mangaStats && mangaStats.count > 0) {
       this.renderMediaTypeCard(statsGrid, 'manga', mangaStats, user.mediaListOptions);
     }
 
-    // Combined insights card
-    if (animeStats?.count > 0 && mangaStats?.count > 0 && showComparisons) {
+     if (showAnime && showManga && animeStats?.count > 0 && mangaStats?.count > 0 && showComparisons) {
       this.renderComparisonCard(statsGrid, animeStats, mangaStats);
     }
   }

@@ -4931,7 +4931,6 @@ class SimklApi {
       const cached = this.cache.get(cacheKey, { scope: cacheScope });
       if (cached) {
         this.metrics.cached++;
-        console.log(`[Simkl] Cache hit for ${normalizedConfig.type}`);
         return cached;
       }
     }
@@ -5053,7 +5052,7 @@ class SimklApi {
       });
 
       if (!response?.json) {
-        console.error('[Simkl] Empty response:', response?.status);
+        
         throw new Error('Empty response from Simkl');
       }
 
@@ -5199,95 +5198,129 @@ if (Array.isArray(raw[mediaType])) {
   }
 
   // =================== MEDIA TRANSFORMATION (Fixed structure) ===================
-
   transformMedia(simklMedia) {
-    if (!simklMedia) return null;
-    
-    // Handle both search results and show objects
-    const media = simklMedia.show || simklMedia;
-    const ids = media.ids || {};
-    const poster = media.poster || media.image || media.cover || media.images?.poster || media.images?.poster_small || null;
-
-let posterUrl = null;
-if (poster) {
-  if (typeof poster === 'object') {
-    posterUrl = poster.full || poster.large || poster.medium || poster.url || poster.path || Object.values(poster).find(v => typeof v === 'string');
-  } else if (typeof poster === 'string') {
-    posterUrl = poster.trim();
-  }
+  if (!simklMedia) return null;
   
-  if (posterUrl) {
-  if (posterUrl.startsWith('//')) {
-    posterUrl = 'https:' + posterUrl;
-  } else if (posterUrl.startsWith('/')) {
-    posterUrl = 'https://simkl.in' + posterUrl;
-  } else if (!posterUrl.match(/^https?:\/\//i)) {
-    // Handle cases like "98/981384089beb5b5" - these are poster paths
-    posterUrl = `https://simkl.in/posters/${posterUrl}_m.jpg`;
-  }
-}
-}
+  const media = simklMedia.show || simklMedia;
+  const ids = media.ids || {};
+  const poster = media.poster || media.image || media.cover || media.images?.poster || media.images?.poster_small || null;
 
-if (!posterUrl && ids && ids.simkl) {
-  posterUrl = `https://simkl.in/posters/${ids.simkl}_m.jpg`;
-}
-
-const posterUrlFinal = posterUrl || null;
-console.log(`[Simkl] poster raw="${poster}" normalized="${posterUrlFinal}" id=${ids.simkl || media.id}`);
+  let posterUrl = null;
+  if (poster) {
+    if (typeof poster === 'object') {
+      posterUrl = poster.full || poster.large || poster.medium || poster.url || poster.path || Object.values(poster).find(v => typeof v === 'string');
+    } else if (typeof poster === 'string') {
+      posterUrl = poster.trim();
+    }
     
-    return {
-      id: ids.simkl || ids.id || media.id,
-      title: {
-        romaji: media.title || 'Unknown Title',
-        english: media.title || 'Unknown Title',
-        native: media.title || 'Unknown Title'
-      },
-      coverImage: {
-  large: posterUrlFinal,
-  medium: posterUrlFinal,
-  _raw: poster,
-  _normalized: posterUrlFinal
-},
-      format: this.mapSimklFormat((media.type || media.kind || 'tv')),
-averageScore: media.rating ? Math.round((media.rating > 10 ? media.rating : media.rating * 10)) : null,
-      status: media.status ? media.status.toUpperCase() : null,
-      genres: media.genres || [],
-      episodes: media.total_episodes || media.episodes || (media.type === 'movie' ? 1 : null),
-chapters: null,
-      isFavourite: false,
-      startDate: this.parseDate(media.first_aired),
-      endDate: this.parseDate(media.last_aired)
-    };
+    if (posterUrl) {
+      if (posterUrl.startsWith('//')) {
+        posterUrl = 'https:' + posterUrl;
+      } else if (posterUrl.startsWith('/')) {
+        posterUrl = 'https://simkl.in' + posterUrl;
+      } else if (!posterUrl.match(/^https?:\/\//i)) {
+        posterUrl = `https://simkl.in/posters/${posterUrl}_m.jpg`;
+      }
+    }
   }
 
-  transformListEntry(simklEntry, mediaTypeHint) {
-    if (!simklEntry) return null;
-    
-    const show = simklEntry.show || simklEntry;
-    const statusRaw = simklEntry.status || simklEntry._status || show.status || null;
-
-let progress = 0;
-if (typeof simklEntry.watched_episodes === 'number') {
-  progress = simklEntry.watched_episodes;
-} else if (typeof simklEntry.episodes_watched === 'number') {
-  progress = simklEntry.episodes_watched;
-} else if ((show.type || mediaTypeHint) && String(show.type || mediaTypeHint).toLowerCase().includes('movie')) {
-  progress = (String(statusRaw).toLowerCase() === 'completed') ? 1 : 0;
-} else if (typeof simklEntry.seasons_watched === 'number' && (show.total_episodes || show.episodes)) {
-  const totalSeasons = show.seasons || 1;
-  const totalEpisodes = show.total_episodes || show.episodes || 0;
-  const perSeason = totalSeasons > 0 ? (totalEpisodes / totalSeasons) : 0;
-  progress = Math.floor(simklEntry.seasons_watched * perSeason);
-}
-    
-    return {
-      id: null, 
-      status: this.mapSimklStatusToAniList(statusRaw),
-score: simklEntry.rating || show.rating || 0,
-progress: progress || 0,
-      media: this.transformMedia({ show })
-    };
+  if (!posterUrl && ids && ids.simkl) {
+    posterUrl = `https://simkl.in/posters/${ids.simkl}_m.jpg`;
   }
+
+  const posterUrlFinal = posterUrl || null;
+
+  const episodes = (() => {
+    const candidates = [
+      media.total_episodes_count,
+      media.total_episodes,
+      media.episodes
+    ];
+    for (const cand of candidates) {
+      if (cand !== undefined && cand !== null && cand !== '') {
+        const n = Number(cand);
+        if (!isNaN(n)) return n;
+      }
+    }
+    return (String(media.type || '').toLowerCase() === 'movie') ? 1 : null;
+  })();
+  
+  return {
+    id: ids.simkl || ids.id || media.id,
+    title: {
+      romaji: media.title || 'Unknown Title',
+      english: media.title || 'Unknown Title',
+      native: media.title || 'Unknown Title'
+    },
+    coverImage: {
+      large: posterUrlFinal,
+      medium: posterUrlFinal,
+      _raw: poster,
+      _normalized: posterUrlFinal
+    },
+    format: this.mapSimklFormat((media.type || media.kind || 'tv')),
+    averageScore: media.rating ? Math.round((media.rating > 10 ? media.rating : media.rating * 10)) : null,
+    status: media.status ? media.status.toUpperCase() : null,
+    genres: media.genres || [],
+    episodes: episodes,
+    chapters: null,
+    isFavourite: false,
+    startDate: this.parseDate(media.first_aired),
+    endDate: this.parseDate(media.last_aired)
+  };
+}
+
+transformListEntry(simklEntry, mediaTypeHint) {
+  if (!simklEntry) return null;
+  
+  const show = simklEntry.show || simklEntry;
+  const statusRaw = simklEntry.status || simklEntry._status || show.status || null;
+
+  let progress = 0;
+  const watchedCandidates = [
+    simklEntry.watched_episodes_count,
+    simklEntry.watched_episodes,
+    simklEntry.episodes_watched,
+    show.watched_episodes_count,
+    show.watched_episodes
+  ];
+  
+  for (const w of watchedCandidates) {
+    if (w !== undefined && w !== null && w !== '') {
+      const n = Number(w);
+      if (!isNaN(n)) { 
+        progress = n; 
+        break; 
+      }
+    }
+  }
+
+  if ((!progress || progress === 0) && ((show.type || mediaTypeHint) && String(show.type || mediaTypeHint).toLowerCase().includes('movie'))) {
+    progress = (String(statusRaw).toLowerCase() === 'completed') ? 1 : (progress || 0);
+  }
+
+  if ((!progress || progress === 0) && typeof simklEntry.seasons_watched === 'number') {
+    const totalEpisodes = (simklEntry.total_episodes_count ?? show.total_episodes_count ?? show.total_episodes ?? show.episodes) || 0;
+    const totalSeasons = show.seasons || 1;
+    if (totalEpisodes && totalSeasons) {
+      const perSeason = totalEpisodes / totalSeasons;
+      progress = Math.floor(simklEntry.seasons_watched * perSeason);
+    }
+  }
+
+  const mergedShow = Object.assign({}, show, {
+    total_episodes_count: simklEntry.total_episodes_count ?? show.total_episodes_count ?? show.total_episodes,
+    total_episodes: simklEntry.total_episodes_count ?? show.total_episodes
+  });
+  
+  return {
+    id: null, 
+    status: this.mapSimklStatusToAniList(statusRaw),
+    score: simklEntry.user_rating ?? simklEntry.rating ?? show.rating ?? 0,
+    progress: progress || 0,
+    media: this.transformMedia(mergedShow)
+  };
+}
 
   // =================== UPDATE METHODS (Following MAL pattern) ===================
 
@@ -12320,18 +12353,26 @@ mapSimklStatus(simklStatus) {
 }
 
 getSimklProgress(item) {
-  if (item.watched_episodes) return item.watched_episodes;
-  
-  if (item.seasons_watched && item.total_episodes) {
-    const episodesPerSeason = item.total_episodes / (item.seasons || 1);
-    return Math.floor(item.seasons_watched * episodesPerSeason);
+  if (!item) return 0;
+
+  const watched = (item.watched_episodes_count ?? item.watched_episodes ?? item.episodes_watched ?? item.progress);
+  if (watched !== undefined && watched !== null && watched !== '') {
+    const n = Number(watched);
+    if (!isNaN(n)) return n;
   }
-  
-  if (item._type === 'MOVIE') {
-    return item._status === 'completed' ? 1 : 0;
+
+  const total = (item.total_episodes_count ?? item.total_episodes ?? item.episodes);
+  if (item.seasons_watched && total) {
+    const episodesPerSeason = Number(total) / (item.seasons || 1);
+    return Math.floor(Number(item.seasons_watched) * episodesPerSeason);
   }
-  
-  return item.seasons_watched || 0;
+
+  const t = String(item._type || item.type || '').toLowerCase();
+  if (t === 'movie' || item.media_type === 'movie') {
+    return (String(item._status || item.status || '').toLowerCase() === 'completed') ? 1 : 0;
+  }
+
+  return Number(item.seasons_watched) || 0;
 }
 
 getSimklUrl(apiType, simklId, title) {

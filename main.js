@@ -5207,7 +5207,33 @@ if (Array.isArray(raw[mediaType])) {
     const media = simklMedia.show || simklMedia;
     const ids = media.ids || {};
     const poster = media.poster || media.image || media.cover || media.images?.poster || media.images?.poster_small || null;
-const posterUrl = poster || (ids.simkl ? `https://simkl.in/posters/${ids.simkl}_m.jpg` : null);
+
+let posterUrl = null;
+if (poster) {
+  if (typeof poster === 'object') {
+    posterUrl = poster.full || poster.large || poster.medium || poster.url || poster.path || Object.values(poster).find(v => typeof v === 'string');
+  } else if (typeof poster === 'string') {
+    posterUrl = poster.trim();
+  }
+  
+  if (posterUrl) {
+  if (posterUrl.startsWith('//')) {
+    posterUrl = 'https:' + posterUrl;
+  } else if (posterUrl.startsWith('/')) {
+    posterUrl = 'https://simkl.in' + posterUrl;
+  } else if (!posterUrl.match(/^https?:\/\//i)) {
+    // Handle cases like "98/981384089beb5b5" - these are poster paths
+    posterUrl = `https://simkl.in/posters/${posterUrl}_m.jpg`;
+  }
+}
+}
+
+if (!posterUrl && ids && ids.simkl) {
+  posterUrl = `https://simkl.in/posters/${ids.simkl}_m.jpg`;
+}
+
+const posterUrlFinal = posterUrl || null;
+console.log(`[Simkl] poster raw="${poster}" normalized="${posterUrlFinal}" id=${ids.simkl || media.id}`);
     
     return {
       id: ids.simkl || ids.id || media.id,
@@ -5217,9 +5243,11 @@ const posterUrl = poster || (ids.simkl ? `https://simkl.in/posters/${ids.simkl}_
         native: media.title || 'Unknown Title'
       },
       coverImage: {
-        large: posterUrl || null,
-medium: posterUrl || null
-      },
+  large: posterUrlFinal,
+  medium: posterUrlFinal,
+  _raw: poster,
+  _normalized: posterUrlFinal
+},
       format: this.mapSimklFormat((media.type || media.kind || 'tv')),
 averageScore: media.rating ? Math.round((media.rating > 10 ? media.rating : media.rating * 10)) : null,
       status: media.status ? media.status.toUpperCase() : null,
@@ -6739,6 +6767,7 @@ class CardRenderer {
     img.alt = media.title.english || media.title.romaji;
     img.className = 'media-cover pressable-cover';
     img.loading = 'lazy';
+
     
     let pressTimer = null;
     let isPressed = false;

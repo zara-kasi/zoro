@@ -2253,7 +2253,6 @@ class RequestQueue {
     this.state.isProcessing = false;
     this.process();
   }
-  
   clear(priority = null) {
     if (priority) {
       const cleared = this.queues[priority].length;
@@ -3021,7 +3020,6 @@ class AnilistApi {
   sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
-
   // =================== MONITORING & METRICS ===================
 
   recordMetrics(operation, type, duration, errorType = null) {
@@ -5626,7 +5624,6 @@ class SimklApi {
     console.log(`[Simkl] Debug mode ${enabled ? 'enabled' : 'disabled'}`);
   }
 }
-
 class ZoroPlugin extends Plugin {
   constructor(app, manifest) {
     super(app, manifest);
@@ -6405,8 +6402,6 @@ async handleTrendingOperation(api, config) {
         return false;
     }
   }
-
-
 parseInlineLink(href) {
   try {
     const [base, hash] = href.replace('zoro:', '').split('#');
@@ -8398,9 +8393,11 @@ class Edit {
     this.support = new SupportEditModal(plugin, this.renderer);
     this.anilistProvider = new AniListEditModal(plugin);
     this.malProvider = new MALEditModal(plugin);
+    this.simklProvider = new SimklEditModal(plugin);
     this.providers = {
       'anilist': this.anilistProvider,
-      'mal': this.malProvider
+      'mal': this.malProvider,
+      'simkl': this.simklProvider
     };
   }
 
@@ -9040,6 +9037,52 @@ class MALEditModal {
     return 'anime';
   }
 }
+
+class SimklEditModal {
+  constructor(plugin) {
+    this.plugin = plugin;
+  }
+
+  async initializeFavoriteButton(entry, favBtn) {
+    // Favorites are not supported for Simkl via API currently
+    favBtn.style.display = 'none';
+  }
+
+  async toggleFavorite(entry, favBtn) {
+    // No-op for Simkl
+    return;
+  }
+
+  async updateEntry(entry, updates, onSave) {
+    const mediaId = entry.media?.id || entry.mediaId;
+    if (!mediaId) throw new Error('Media ID not found');
+
+    await this.plugin.simklApi.updateMediaListEntry(mediaId, updates);
+    await onSave(updates);
+    Object.assign(entry, updates);
+    return entry;
+  }
+
+  async removeEntry(entry) {
+    const mediaId = entry.media?.id || entry.mediaId;
+    if (!mediaId) throw new Error('Media ID not found');
+
+    await this.plugin.simklApi.removeMediaListEntry(mediaId);
+  }
+
+  invalidateCache(entry) {
+    if (entry.media?.id) {
+      this.plugin.cache.invalidateByMedia(entry.media.id);
+    }
+    this.plugin.cache.invalidateScope?.('userData');
+  }
+
+  supportsFeature(feature) {
+    // Simkl supports update and remove via list endpoints
+    return ['update', 'remove'].includes(feature);
+  }
+}
+
 class SupportEditModal {
   constructor(plugin, renderer) {
     this.plugin = plugin;

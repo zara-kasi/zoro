@@ -13,6 +13,7 @@
 - [Quick Start](#-quick-start)
 - [Features](#-features)
 - [Installation](#-installation)
+- [Guides](#-guides)
 - [Supported Platforms](#-supported-platforms)
 - [Usage Guide](#-usage-guide)
 - [Layout Options](#-layout-options)
@@ -84,6 +85,22 @@
 2. Extract to `.obsidian/plugins/zoro/`
 3. Restart Obsidian
 4. Enable in Community Plugins settings
+
+---
+
+## 📚 Guides
+
+**AniList Authentication**  
+Setup OAuth authentication with AniList  
+[→ View Guide](https://github.com/zara-kasi/zoro/blob/main/Docs/anilist-auth-setup.md)
+
+**MAL Authentication**  
+Connect your MyAnimeList account  
+[→ View Guide](https://github.com/zara-kasi/zoro/blob/main/Docs/mal-auth-setup.md)
+
+**Export & Migration**  
+Export and migrate data between platforms  
+[→ View Guide](https://github.com/zara-kasi/zoro/blob/main/Docs/export-doc.md)
 
 ---
 

@@ -10,8 +10,8 @@
 ---
 
 ## 📋 Table of Contents
-- [Quick Start](#quick-start)
-- [Features](#features)
+- [Quick Start](#-quick-start)
+- [Features](#-features)
 - [Installation](#installation)
 - [Supported Platforms](#supported-platforms)
 - [Usage Guide](#usage-guide)
@@ -19,7 +19,7 @@
 - [Inline Links](#inline-links)
 - [Configuration](#configuration)
 - [Advanced Features](#advanced-features)
-- [API Support](#api-support)
+- [API Support](#-api-support)
 - [Contributing](#contributing)
 - [License](#license)
 

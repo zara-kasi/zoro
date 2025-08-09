@@ -12889,6 +12889,17 @@ class ZoroSettingTab extends PluginSettingTab {
     });
     
     new Setting(Setup)
+      .setName('⚡ Sample Folders')
+      .setDesc('(Recommended)')
+      .addButton(button =>
+        button
+          .setButtonText('Create')
+          .onClick(async () => {
+            await this.plugin.sample.createSampleFolders();
+          })
+      );
+    
+    new Setting(Setup)
       .setName('🗝️ Authentication ?')
       .setDesc('Guide: Takes less than a minute—no typing, just copy and paste.')
       .addButton(button => button
@@ -12903,16 +12914,6 @@ class ZoroSettingTab extends PluginSettingTab {
           window.open('https://github.com/zara-kasi/zoro/blob/8d432f1b3d648e1f9ddc1698676f21483472a427/Docs/mal-auth-setup.md', '_blank');
         }));
         
-    new Setting(Setup)
-      .setName('⚡ Sample Folders')
-      .setDesc('(Recommended)')
-      .addButton(button =>
-        button
-          .setButtonText('Create')
-          .onClick(async () => {
-            await this.plugin.sample.createSampleFolders();
-          })
-      );
       
       new Setting(Setup)
       .setName('️📚 Data Migration')

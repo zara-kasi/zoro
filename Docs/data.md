@@ -1,4 +1,4 @@
-# 📦 How to Migrate Your Anime List
+# 📦 How to Migrate Your Anime & Manga List
 
 Want to move your anime/manga list between MyAnimeList (MAL) and AniList? Here's a quick guide.
 

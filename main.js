@@ -11910,11 +11910,20 @@ class Export {
     this.plugin = plugin;
   }
 
+  async ensureZoroFolder() {
+    const folderPath = 'Zoro/Export';
+    const folder = this.plugin.app.vault.getAbstractFileByPath(folderPath);
+    if (!folder) {
+      await this.plugin.app.vault.createFolder(folderPath);
+    }
+    return folderPath;
+  }
+
   async exportUnifiedListsToCSV() {
     let username = this.plugin.settings.authUsername;
     if (!username) username = this.plugin.settings.defaultUsername;
     if (!username) {
-      new Notice('Set a default username in settings first.', 4000);
+      new Notice('Set a default username in settings first.', 3000);
       return;
     }
 
@@ -11941,7 +11950,7 @@ class Export {
       }
     `;
 
-    new Notice(`${useAuth ? '📥 Full' : '📥 Public'} export started…`, 4000);
+    new Notice(`${useAuth ? '📥 Full' : '📥 Public'} export started…`, 3000);
     const progress = this.createProgressNotice('📊 Exporting… 0 %');
     const fetchType = async type => {
       const headers = { 'Content-Type': 'application/json' };
@@ -11969,34 +11978,32 @@ class Export {
     const [animeLists, mangaLists] = await Promise.all([fetchType('ANIME'), fetchType('MANGA')]);
     
     if (!animeLists.flatMap(l => l.entries).length && !mangaLists.flatMap(l => l.entries).length) {
-      new Notice('No lists found (private or empty).', 4000);
+      new Notice('No lists found (private or empty).', 3000);
       return;
     }
 
     this.updateProgressNotice(progress, '📊 Generating standard export files...');
 
-    // 1. Create original unified CSV
-    await this.createAniListUnifiedCSV([...animeLists, ...mangaLists], username, useAuth);
+    const folderPath = await this.ensureZoroFolder();
 
-    // 2. Create MAL-compatible XML for anime
+    await this.createAniListUnifiedCSV([...animeLists, ...mangaLists], folderPath);
+
     if (animeLists.flatMap(l => l.entries).length > 0) {
-      await this.createAniListAnimeXML(animeLists, username, useAuth);
+      await this.createAniListAnimeXML(animeLists, folderPath);
     }
 
-    // 3. Create MAL-compatible XML for manga
     if (mangaLists.flatMap(l => l.entries).length > 0) {
-      await this.createAniListMangaXML(mangaLists, username, useAuth);
+      await this.createAniListMangaXML(mangaLists, folderPath);
     }
 
     const totalItems = [...animeLists, ...mangaLists].flatMap(l => l.entries).length;
     const fileCount = 1 + (animeLists.flatMap(l => l.entries).length > 0 ? 1 : 0) + (mangaLists.flatMap(l => l.entries).length > 0 ? 1 : 0);
     
     this.finishProgressNotice(progress, `✅ Exported ${totalItems} items in ${fileCount} files`);
-    new Notice(`✅ AniList export complete! Created ${fileCount} files`, 5000);
+    new Notice(`✅ AniList export complete! Created ${fileCount} files`, 3000);
   }
 
-  // Create original unified CSV for AniList
-  async createAniListUnifiedCSV(lists, username, useAuth) {
+  async createAniListUnifiedCSV(lists, folderPath) {
     const rows = [];
     const headers = [
       'ListName', 'Status', 'Progress', 'Score', 'Repeat',
@@ -12026,20 +12033,18 @@ class Export {
     }
 
     const csv = rows.join('\n');
-    const suffix = useAuth ? '' : '_PUBLIC';
-    const fileName = `AniList_${username}${suffix}_${new Date().toISOString().slice(0, 10)}.csv`;
+    const fileName = `${folderPath}/Zoro_AniList_Unified.csv`;
     await this.plugin.app.vault.create(fileName, csv);
     console.log('[AniList Export] Unified CSV created successfully');
     await this.plugin.app.workspace.openLinkText(fileName, '', false);
   }
 
-  // Create MAL-compatible XML for anime from AniList
-  async createAniListAnimeXML(animeLists, username, useAuth) {
+  async createAniListAnimeXML(animeLists, folderPath) {
     const xmlHeader = `<?xml version="1.0" encoding="UTF-8" ?>
 <myanimelist>
   <myinfo>
     <user_id>0</user_id>
-    <user_name>${this.xmlEscape(username)}</user_name>
+    <user_name>Zoro</user_name>
     <user_export_type>1</user_export_type>
   </myinfo>`;
 
@@ -12055,11 +12060,9 @@ class Export {
         const episodes = entry.progress || 0;
         const malId = media.idMal || 0;
         
-        // Format dates
         const startDate = this.aniListDateToString(entry.startedAt);
         const finishDate = entry.status === 'COMPLETED' ? this.aniListDateToString(entry.completedAt) : '';
         
-        // Determine anime type
         const animeType = this.getAniListAnimeType(media.format);
         
         animeXml += `
@@ -12090,20 +12093,18 @@ class Export {
     }
 
     const xml = xmlHeader + animeXml + xmlFooter;
-    const suffix = useAuth ? '' : '_PUBLIC';
-    const fileName = `AniList_Anime_MAL_${username}${suffix}_${new Date().toISOString().slice(0, 10)}.xml`;
+    const fileName = `${folderPath}/Zoro_AniList_Anime.xml`;
     
     await this.plugin.app.vault.create(fileName, xml);
     console.log('[AniList Export] Anime MAL XML created successfully');
   }
 
-  // Create MAL-compatible XML for manga from AniList
-  async createAniListMangaXML(mangaLists, username, useAuth) {
+  async createAniListMangaXML(mangaLists, folderPath) {
     const xmlHeader = `<?xml version="1.0" encoding="UTF-8" ?>
 <myanimelist>
   <myinfo>
     <user_id>0</user_id>
-    <user_name>${this.xmlEscape(username)}</user_name>
+    <user_name>Zoro</user_name>
     <user_export_type>2</user_export_type>
   </myinfo>`;
 
@@ -12119,11 +12120,9 @@ class Export {
         const chapters = entry.progress || 0;
         const malId = media.idMal || 0;
         
-        // Format dates
         const startDate = this.aniListDateToString(entry.startedAt);
         const finishDate = entry.status === 'COMPLETED' ? this.aniListDateToString(entry.completedAt) : '';
         
-        // Determine manga type
         const mangaType = this.getAniListMangaType(media.format);
         
         mangaXml += `
@@ -12155,24 +12154,21 @@ class Export {
     }
 
     const xml = xmlHeader + mangaXml + xmlFooter;
-    const suffix = useAuth ? '' : '_PUBLIC';
-    const fileName = `AniList_Manga_MAL_${username}${suffix}_${new Date().toISOString().slice(0, 10)}.xml`;
+    const fileName = `${folderPath}/Zoro_AniList_Manga.xml`;
     
     await this.plugin.app.vault.create(fileName, xml);
     console.log('[AniList Export] Manga MAL XML created successfully');
   }
 
-  // Helper methods for AniList exports
-
   mapAniListToMalStatus(anilistStatus) {
     const statusMap = {
-      'CURRENT': 'Watching', // For anime
-      'READING': 'Reading',  // For manga  
+      'CURRENT': 'Watching',
+      'READING': 'Reading',
       'COMPLETED': 'Completed',
       'PAUSED': 'On-Hold',
       'DROPPED': 'Dropped',
-      'PLANNING': 'Plan to Watch', // For anime
-      'PLAN_TO_READ': 'Plan to Read' // For manga
+      'PLANNING': 'Plan to Watch',
+      'PLAN_TO_READ': 'Plan to Read'
     };
     return statusMap[anilistStatus] || 'Plan to Watch';
   }
@@ -12218,13 +12214,13 @@ class Export {
   
   async exportMALListsToCSV() {
     if (!this.plugin.malAuth.isLoggedIn) {
-      new Notice('❌ Please authenticate with MyAnimeList first.', 4000);
+      new Notice('❌ Please authenticate with MyAnimeList first.', 3000);
       return;
     }
 
     const username = this.plugin.settings.malUserInfo?.name;
     if (!username) {
-      new Notice('❌ Could not fetch MAL username.', 4000);
+      new Notice('❌ Could not fetch MAL username.', 3000);
       return;
     }
 
@@ -12256,34 +12252,32 @@ class Export {
     ]);
 
     if (anime.length === 0 && manga.length === 0) {
-      new Notice('No MAL data found.', 4000);
+      new Notice('No MAL data found.', 3000);
       return;
     }
 
     this.updateProgressNotice(progress, '📊 Generating standard export files...');
 
-    // 1. Create original unified CSV
-    await this.createMALUnifiedCSV([...anime, ...manga], username);
+    const folderPath = await this.ensureZoroFolder();
 
-    // 2. Create MAL-compatible XML for anime
+    await this.createMALUnifiedCSV([...anime, ...manga], folderPath);
+
     if (anime.length > 0) {
-      await this.createMALAnimeXML(anime, username);
+      await this.createMALAnimeXML(anime, folderPath);
     }
 
-    // 3. Create MAL-compatible XML for manga
     if (manga.length > 0) {
-      await this.createMALMangaXML(manga, username);
+      await this.createMALMangaXML(manga, folderPath);
     }
 
     const totalItems = anime.length + manga.length;
     const fileCount = 1 + (anime.length > 0 ? 1 : 0) + (manga.length > 0 ? 1 : 0);
     
     this.finishProgressNotice(progress, `✅ Exported ${totalItems} items in ${fileCount} files`);
-    new Notice(`✅ MAL export complete! Created ${fileCount} files`, 5000);
+    new Notice(`✅ MAL export complete! Created ${fileCount} files`, 3000);
   }
 
-  // Create original unified CSV for MAL
-  async createMALUnifiedCSV(allItems, username) {
+  async createMALUnifiedCSV(allItems, folderPath) {
     const rows = [];
     const headers = [
       'Type','Status','Progress','Score','Title','Start','End','Episodes','Chapters','Mean','MAL_ID','URL'
@@ -12311,19 +12305,18 @@ class Export {
     });
 
     const csv = rows.join('\n');
-    const fileName = `MAL_${username}_${new Date().toISOString().slice(0, 10)}.csv`;
+    const fileName = `${folderPath}/Zoro_MAL_Unified.csv`;
     await this.plugin.app.vault.create(fileName, csv);
     console.log('[MAL Export] Unified CSV created successfully');
     await this.plugin.app.workspace.openLinkText(fileName, '', false);
   }
 
-  // Create MAL-compatible XML for anime
-  async createMALAnimeXML(animeItems, username) {
+  async createMALAnimeXML(animeItems, folderPath) {
     const xmlHeader = `<?xml version="1.0" encoding="UTF-8" ?>
 <myanimelist>
   <myinfo>
     <user_id>0</user_id>
-    <user_name>${this.xmlEscape(username)}</user_name>
+    <user_name>Zoro</user_name>
     <user_export_type>1</user_export_type>
   </myinfo>`;
 
@@ -12335,17 +12328,14 @@ class Export {
       const media = item.node;
       const listStatus = item.list_status;
       
-      // Map MAL status to proper XML format
       const malStatus = this.mapMALStatusToXML(listStatus.status, 'anime');
       const score = listStatus.score || 0;
       const episodes = listStatus.num_episodes_watched || 0;
       const malId = media.id;
       
-      // Format dates
       const startDate = this.malDateToString(listStatus.start_date);
       const finishDate = this.malDateToString(listStatus.finish_date);
       
-      // Determine anime type
       const animeType = this.getMALAnimeType(media.media_type);
       
       animeXml += `
@@ -12375,19 +12365,18 @@ class Export {
     });
 
     const xml = xmlHeader + animeXml + xmlFooter;
-    const fileName = `MAL_Anime_${username}_${new Date().toISOString().slice(0, 10)}.xml`;
+    const fileName = `${folderPath}/Zoro_MAL_Anime.xml`;
     
     await this.plugin.app.vault.create(fileName, xml);
     console.log('[MAL Export] Anime XML created successfully');
   }
 
-  // Create MAL-compatible XML for manga
-  async createMALMangaXML(mangaItems, username) {
+  async createMALMangaXML(mangaItems, folderPath) {
     const xmlHeader = `<?xml version="1.0" encoding="UTF-8" ?>
 <myanimelist>
   <myinfo>
     <user_id>0</user_id>
-    <user_name>${this.xmlEscape(username)}</user_name>
+    <user_name>Zoro</user_name>
     <user_export_type>2</user_export_type>
   </myinfo>`;
 
@@ -12399,17 +12388,14 @@ class Export {
       const media = item.node;
       const listStatus = item.list_status;
       
-      // Map MAL status to proper XML format
       const malStatus = this.mapMALStatusToXML(listStatus.status, 'manga');
       const score = listStatus.score || 0;
       const chapters = listStatus.num_chapters_read || 0;
       const malId = media.id;
       
-      // Format dates
       const startDate = this.malDateToString(listStatus.start_date);
       const finishDate = this.malDateToString(listStatus.finish_date);
       
-      // Determine manga type
       const mangaType = this.getMALMangaType(media.media_type);
       
       mangaXml += `
@@ -12440,13 +12426,11 @@ class Export {
     });
 
     const xml = xmlHeader + mangaXml + xmlFooter;
-    const fileName = `MAL_Manga_${username}_${new Date().toISOString().slice(0, 10)}.xml`;
+    const fileName = `${folderPath}/Zoro_MAL_Manga.xml`;
     
     await this.plugin.app.vault.create(fileName, xml);
     console.log('[MAL Export] Manga XML created successfully');
   }
-
-  // Helper methods for MAL exports
 
   mapMALStatusToXML(malStatus, type) {
     const animeStatusMap = {
@@ -12512,12 +12496,10 @@ class Export {
   formatMALTags(userTags, genres) {
     const tags = [];
     
-    // Add user tags if they exist
     if (userTags && Array.isArray(userTags)) {
       tags.push(...userTags);
     }
     
-    // Add genres as tags
     if (genres && Array.isArray(genres)) {
       tags.push(...genres.map(genre => genre.name || genre));
     }
@@ -12527,19 +12509,18 @@ class Export {
 
   malDateToString(dateStr) {
     if (!dateStr) return '0000-00-00';
-    // MAL API returns dates in YYYY-MM-DD format already
     return dateStr;
   }
 
   async exportSimklListsToCSV() {
     if (!this.plugin.simklAuth.isLoggedIn) {
-      new Notice('❌ Please authenticate with SIMKL first.', 4000);
+      new Notice('❌ Please authenticate with SIMKL first.', 3000);
       return;
     }
 
     const username = this.plugin.settings.simklUserInfo?.user?.name;
     if (!username) {
-      new Notice('❌ Could not fetch SIMKL username.', 4000);
+      new Notice('❌ Could not fetch SIMKL username.', 3000);
       return;
     }
 
@@ -12548,7 +12529,6 @@ class Export {
     const progress = this.createProgressNotice('📊 Fetching SIMKL data...');
 
     try {
-      // Fetch all items using the working endpoint
       this.updateProgressNotice(progress, '📊 Fetching all items...');
       
       const allItemsUrl = 'https://api.simkl.com/sync/all-items/';
@@ -12578,11 +12558,9 @@ class Export {
       console.log('[SIMKL Export] Data keys:', Object.keys(data));
       console.log('[SIMKL Export] Data structure:', data);
 
-      // Process the object-based response
       const allItems = [];
       let totalItemsFound = 0;
 
-      // Iterate through all keys in the response (movies, shows, anime, etc.)
       Object.keys(data).forEach(category => {
         console.log(`[SIMKL Export] Processing category: ${category}`);
         
@@ -12598,7 +12576,6 @@ class Export {
             });
           });
         } else if (data[category] && typeof data[category] === 'object') {
-          // Check if this category has status-based subcategories
           console.log(`[SIMKL Export] ${category} has subcategories:`, Object.keys(data[category]));
           
           Object.keys(data[category]).forEach(status => {
@@ -12625,11 +12602,10 @@ class Export {
       if (allItems.length === 0) {
         console.log('[SIMKL Export] No items found after processing');
         this.finishProgressNotice(progress, '❌ No data found');
-        new Notice('No SIMKL data found after processing.', 4000);
+        new Notice('No SIMKL data found after processing.', 3000);
         return;
       }
 
-      // Separate items by type for standardized exports
       const animeItems = allItems.filter(item => 
         item._category === 'anime' || 
         item._type === 'ANIME' ||
@@ -12647,31 +12623,29 @@ class Export {
 
       this.updateProgressNotice(progress, '📊 Generating standard export files...');
 
-      // 1. Create original unified CSV
-      await this.createSimklUnifiedCSV(allItems, username);
+      const folderPath = await this.ensureZoroFolder();
 
-      // 2. Create IMDb-compatible CSV for movies/TV shows
+      await this.createSimklUnifiedCSV(allItems, folderPath);
+
       if (moviesTvItems.length > 0) {
-        await this.createSimklImdbCSV(moviesTvItems, username);
+        await this.createSimklImdbCSV(moviesTvItems, folderPath);
       }
 
-      // 3. Create MAL-compatible XML for anime
       if (animeItems.length > 0) {
-        await this.createSimklMalXML(animeItems, username);
+        await this.createSimklMalXML(animeItems, folderPath);
       }
 
       this.finishProgressNotice(progress, `✅ Exported ${allItems.length} items in multiple formats`);
-      new Notice(`✅ SIMKL export complete! Created ${1 + (moviesTvItems.length > 0 ? 1 : 0) + (animeItems.length > 0 ? 1 : 0)} files`, 5000);
+      new Notice(`✅ SIMKL export complete! Created ${1 + (moviesTvItems.length > 0 ? 1 : 0) + (animeItems.length > 0 ? 1 : 0)} files`, 3000);
 
     } catch (error) {
       console.error('[SIMKL Export] Export failed:', error);
       this.finishProgressNotice(progress, `❌ Export failed: ${error.message}`);
-      new Notice(`❌ SIMKL export failed: ${error.message}`, 6000);
+      new Notice(`❌ SIMKL export failed: ${error.message}`, 3000);
     }
   }
 
-  // Create original unified CSV
-  async createSimklUnifiedCSV(allItems, username) {
+  async createSimklUnifiedCSV(allItems, folderPath) {
     const headers = [
       'Category', 'Type', 'Title', 'Year', 'Status', 'Rating',
       'SIMKL_ID', 'IMDB_ID', 'TMDB_ID', 'MAL_ID', 'Anilist_ID'
@@ -12708,16 +12682,14 @@ class Export {
     });
 
     const csv = rows.join('\n');
-    const fileName = `SIMKL_Export_${username}_${new Date().toISOString().slice(0, 10)}.csv`;
+    const fileName = `${folderPath}/Zoro_SIMKL_Unified.csv`;
     
     await this.plugin.app.vault.create(fileName, csv);
     console.log('[SIMKL Export] Unified CSV created successfully');
     await this.plugin.app.workspace.openLinkText(fileName, '', false);
   }
 
-  // Create IMDb-compatible CSV for movies and TV shows
-  async createSimklImdbCSV(moviesTvItems, username) {
-    // IMDb export format headers
+  async createSimklImdbCSV(moviesTvItems, folderPath) {
     const headers = [
       'Const', 'Your Rating', 'Date Rated', 'Title', 'URL', 'Title Type', 
       'IMDb Rating', 'Runtime (mins)', 'Year', 'Genres', 'Num Votes', 
@@ -12736,45 +12708,43 @@ class Export {
         }
       };
 
-      // Map SIMKL status to a reasonable date
       const dateRated = this.getDateFromStatus(item._status || item.status);
       const imdbId = safeGet(mediaObject, 'ids.imdb');
       const imdbUrl = imdbId ? `https://www.imdb.com/title/${imdbId}/` : '';
       const titleType = item._category === 'movies' ? 'movie' : 'tvSeries';
       
       const row = [
-        imdbId || '', // Const (IMDb ID)
-        item.user_rating || item.rating || item.score || '', // Your Rating
-        dateRated, // Date Rated
-        this.csvEscape(mediaObject.title || mediaObject.name || ''), // Title
-        this.csvEscape(imdbUrl), // URL
-        titleType, // Title Type
-        mediaObject.rating || '', // IMDb Rating
-        mediaObject.runtime || '', // Runtime
-        mediaObject.year || mediaObject.aired?.year || mediaObject.released?.year || '', // Year
-        this.csvEscape((mediaObject.genres || []).join(', ')), // Genres
-        '', // Num Votes (not available from SIMKL)
-        this.formatReleaseDate(mediaObject.released || mediaObject.aired), // Release Date
-        this.csvEscape((mediaObject.directors || []).join(', ')) // Directors
+        imdbId || '',
+        item.user_rating || item.rating || item.score || '',
+        dateRated,
+        this.csvEscape(mediaObject.title || mediaObject.name || ''),
+        this.csvEscape(imdbUrl),
+        titleType,
+        mediaObject.rating || '',
+        mediaObject.runtime || '',
+        mediaObject.year || mediaObject.aired?.year || mediaObject.released?.year || '',
+        this.csvEscape((mediaObject.genres || []).join(', ')),
+        '',
+        this.formatReleaseDate(mediaObject.released || mediaObject.aired),
+        this.csvEscape((mediaObject.directors || []).join(', '))
       ];
       
       rows.push(row.join(','));
     });
 
     const csv = rows.join('\n');
-    const fileName = `SIMKL_IMDb_Export_${username}_${new Date().toISOString().slice(0, 10)}.csv`;
+    const fileName = `${folderPath}/Zoro_SIMKL_IMDb.csv`;
     
     await this.plugin.app.vault.create(fileName, csv);
     console.log('[SIMKL Export] IMDb CSV created successfully');
   }
 
-  // Create MAL-compatible XML for anime
-  async createSimklMalXML(animeItems, username) {
+  async createSimklMalXML(animeItems, folderPath) {
     const xmlHeader = `<?xml version="1.0" encoding="UTF-8" ?>
 <myanimelist>
   <myinfo>
     <user_id>0</user_id>
-    <user_name>${this.xmlEscape(username)}</user_name>
+    <user_name>Zoro</user_name>
     <user_export_type>1</user_export_type>
   </myinfo>`;
 
@@ -12792,13 +12762,11 @@ class Export {
         }
       };
 
-      // Map SIMKL status to MAL status
       const malStatus = this.mapSimklToMalStatus(item._status || item.status);
       const score = item.user_rating || item.rating || item.score || 0;
       const episodes = this.getSimklProgress(item);
       const malId = safeGet(mediaObject, 'ids.mal');
       
-      // Get dates
       const startDate = this.getDateFromStatus(item._status || item.status, 'start');
       const finishDate = malStatus === 'Completed' ? this.getDateFromStatus(item._status || item.status, 'finish') : '';
       
@@ -12829,13 +12797,11 @@ class Export {
     });
 
     const xml = xmlHeader + animeXml + xmlFooter;
-    const fileName = `SIMKL_MAL_Export_${username}_${new Date().toISOString().slice(0, 10)}.xml`;
+    const fileName = `${folderPath}/Zoro_SIMKL_MAL.xml`;
     
     await this.plugin.app.vault.create(fileName, xml);
     console.log('[SIMKL Export] MAL XML created successfully');
   }
-
-  // Helper methods for standardized exports
 
   mapSimklToMalStatus(simklStatus) {
     const statusMap = {
@@ -12864,7 +12830,6 @@ class Export {
   }
 
   getDateFromStatus(status, type = 'rated') {
-    // Since SIMKL doesn't provide exact dates, we'll use reasonable defaults
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
@@ -12873,7 +12838,6 @@ class Export {
     if (status === 'completed' && type === 'finish') {
       return `${currentYear}-${currentMonth}-${currentDay}`;
     } else if (type === 'start' && (status === 'watching' || status === 'completed')) {
-      // Assume started a month ago for active/completed items
       const startDate = new Date();
       startDate.setMonth(startDate.getMonth() - 1);
       return `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`;
@@ -12908,64 +12872,62 @@ class Export {
     });
   }
 
-// Helper method to determine item type
-determineItemType(item, category) {
-  // Use the item's type field first
-  if (item.type) {
-    return item.type.toUpperCase();
-  }
-  
-  // Fall back to category
-  if (category) {
-    return category.toUpperCase();
-  }
-  
-  return 'UNKNOWN';
-}
-
-mapSimklStatus(simklStatus) {
-  const statusMap = {
-    'watching': 'CURRENT',
-    'completed': 'COMPLETED', 
-    'plantowatch': 'PLANNING',
-    'hold': 'PAUSED',
-    'dropped': 'DROPPED'
-  };
-  return statusMap[simklStatus] || simklStatus.toUpperCase();
-}
-
-getSimklProgress(item) {
-  if (!item) return 0;
-
-  const watched = (item.watched_episodes_count ?? item.watched_episodes ?? item.episodes_watched ?? item.progress);
-  if (watched !== undefined && watched !== null && watched !== '') {
-    const n = Number(watched);
-    if (!isNaN(n)) return n;
+  determineItemType(item, category) {
+    if (item.type) {
+      return item.type.toUpperCase();
+    }
+    
+    if (category) {
+      return category.toUpperCase();
+    }
+    
+    return 'UNKNOWN';
   }
 
-  const total = (item.total_episodes_count ?? item.total_episodes ?? item.episodes);
-  if (item.seasons_watched && total) {
-    const episodesPerSeason = Number(total) / (item.seasons || 1);
-    return Math.floor(Number(item.seasons_watched) * episodesPerSeason);
+  mapSimklStatus(simklStatus) {
+    const statusMap = {
+      'watching': 'CURRENT',
+      'completed': 'COMPLETED', 
+      'plantowatch': 'PLANNING',
+      'hold': 'PAUSED',
+      'dropped': 'DROPPED'
+    };
+    return statusMap[simklStatus] || simklStatus.toUpperCase();
   }
 
-  const t = String(item._type || item.type || '').toLowerCase();
-  if (t === 'movie' || item.media_type === 'movie') {
-    return (String(item._status || item.status || '').toLowerCase() === 'completed') ? 1 : 0;
+  getSimklProgress(item) {
+    if (!item) return 0;
+
+    const watched = (item.watched_episodes_count ?? item.watched_episodes ?? item.episodes_watched ?? item.progress);
+    if (watched !== undefined && watched !== null && watched !== '') {
+      const n = Number(watched);
+      if (!isNaN(n)) return n;
+    }
+
+    const total = (item.total_episodes_count ?? item.total_episodes ?? item.episodes);
+    if (item.seasons_watched && total) {
+      const episodesPerSeason = Number(total) / (item.seasons || 1);
+      return Math.floor(Number(item.seasons_watched) * episodesPerSeason);
+    }
+
+    const t = String(item._type || item.type || '').toLowerCase();
+    if (t === 'movie' || item.media_type === 'movie') {
+      return (String(item._status || item.status || '').toLowerCase() === 'completed') ? 1 : 0;
+    }
+
+    return Number(item.seasons_watched) || 0;
   }
 
-  return Number(item.seasons_watched) || 0;
-}
+  getSimklUrl(apiType, simklId, title) {
+    if (!simklId) return '';
+    
+    const baseUrl = 'https://simkl.com';
+    const urlType = apiType === 'anime' ? 'anime' : 
+                   apiType === 'movies' ? 'movies' : 'tv';
+    
+    return `${baseUrl}/${urlType}/${simklId}`;
+  }
 
-getSimklUrl(apiType, simklId, title) {
-  if (!simklId) return '';
-  
-  const baseUrl = 'https://simkl.com';
-  const urlType = apiType === 'anime' ? 'anime' : 
-                 apiType === 'movies' ? 'movies' : 'tv';
-  
-  return `${baseUrl}/${urlType}/${simklId}`;
-}
   dateToString(dateObj) {
     if (!dateObj || !dateObj.year) return '';
     return `${dateObj.year}-${String(dateObj.month || 0).padStart(2, '0')}-${String(dateObj.day || 0).padStart(2, '0')}`;
@@ -12990,7 +12952,7 @@ getSimklUrl(apiType, simklId, title) {
 
   finishProgressNotice(notice, message) {
     notice.hide();
-    new Notice(message, 4000);
+    new Notice(message, 3000);
   }
 }
 
@@ -13160,18 +13122,6 @@ class ZoroSettingTab extends PluginSettingTab {
           window.open('https://github.com/zara-kasi/zoro/blob/8d432f1b3d648e1f9ddc1698676f21483472a427/Docs/mal-auth-setup.md', '_blank');
         }));
         
-      
-      new Setting(Setup)
-      .setName('️📚 Data Migration')
-      .setDesc('Instructions to export from MAL and import into AniList (and vice versa).')
-      .addButton(button =>
-        button
-          .setClass('mod-cta')
-          .setButtonText('Open')
-          .onClick(() => {
-            window.open('https://github.com/zara-kasi/zoro/blob/62ce085c71b45c29c0dc61a061c8dedc1d7a7189/Docs/data.md', '_blank');
-          })
-      );
 
     new Setting(Display)
       .setName('🧊 Layout')
@@ -13273,7 +13223,7 @@ class ZoroSettingTab extends PluginSettingTab {
     
     new Setting(Data)
       .setName('🧾 Export your data')
-      .setDesc("Everything you've watched, rated, and maybe ghosted — neatly exported into a CSV & standard export format")
+      .setDesc("Everything you've watched, rated, and maybe ghosted — neatly exported into a CSV & standard export format from AniList, MAL and Simkl.")
       .addButton(btn => btn
         .setButtonText('AniList')
         .setClass('mod-cta')
@@ -13321,6 +13271,18 @@ class ZoroSettingTab extends PluginSettingTab {
             btn.setButtonText('SIMKL');
           }
         })
+      );
+      
+      new Setting(Data)
+      .setName('Export Guide')
+      .setDesc('Export guide for AniList, MAL, and SIMKL data backup and migration. Creates CSV/XML files for cross-platform compatibility.')
+      .addButton(button =>
+        button
+          .setClass('mod-cta')
+          .setButtonText('Open')
+          .onClick(() => {
+            window.open('https://github.com/zara-kasi/zoro/blob/main/Docs/export-doc.md', '_blank');
+          })
       );
   
     new Setting(Theme)

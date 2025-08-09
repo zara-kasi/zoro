@@ -6439,8 +6439,12 @@ async handleTrendingOperation(api, config) {
       config.listType = 'CURRENT';
     }
     
-    if (config.source === 'mal' && config.listType === 'REPEATING') {
-    throw new Error('MyAnimeList does not support "Repeating" status. Switch to AniList or remove this block');
+    if (config.source === 'mal','simkl' && config.listType === 'REPEATING') {
+    throw new Error('Repeating is supported only on AniList.');
+  }
+  
+  if (config.source === 'simkl' && config.mediaType === 'MANGA') {
+    throw new Error('Manga is supported only on AniList and MyAnimeList.');
   }
 
     return config;
@@ -8709,9 +8713,11 @@ class RenderEditModal {
     
     // Filter out REPEATING status for MAL since it doesn't support it
     let availableStatuses = this.config.statuses;
-    if (source === 'mal') {
+    if (source === 'mal','simkl') {
       availableStatuses = this.config.statuses.filter(status => status.value !== 'REPEATING');
     }
+    
+    
     
     return this.createFormField({
       type: 'select',
@@ -13097,7 +13103,7 @@ class ZoroSettingTab extends PluginSettingTab {
     });
     
     new Setting(Setup)
-      .setName('⚡ Sample Folders')
+      .setName('⚡ Sample Folder')
       .setDesc('(Recommended)')
       .addButton(button =>
         button

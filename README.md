@@ -28,19 +28,18 @@
 
 ## 🚀 Quick Start
 
-**Step 1: Connect Your Account**
-1. Open Settings → Zoro
-2. Authenticate with AniList (or MAL/Simkl)
-3. Or use a AniList public username (View Only)
-4. For Authentication Guide: Setup → Authentication 
-5. Choose the Authentication guide: AniList ( MAL/Simkl)
-6. Follow the Guide properly
+### **Step 1: Connect Your Account**
+1. Go to **Settings → Zoro**  
+2. Authenticate with **AniList**, **MyAnimeList (MAL)**, or **Simkl**  
+3. Or enter an **AniList public username** for view-only mode  
+4. For detailed instructions, open **Setup → Authentication**  
+5. Select the guide for **AniList / MAL / Simkl** and follow it carefully  
 
-**Step 2:  Create Zoro folder**
-1. Setup→ Sample Folder
-2. click Create
-3. Go back to your vault
-4. Open Zoro folder
+### **Step 2: Create the Zoro Folder**
+1. Go to **Setup → Sample Folder**  
+2. Click **Create**  
+3. Return to your vault  
+4. Open the newly-created **Zoro** folder
 
 ---
 

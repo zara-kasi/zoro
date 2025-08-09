@@ -11961,19 +11961,42 @@ class Export {
           })
         })
       );
-      const percent = type === 'ANIME' ? 50 : 100;
+      const percent = type === 'ANIME' ? 33 : 66;
       this.updateProgressNotice(progress, `📊 Exporting… ${percent} %`);
       return res.json.data?.MediaListCollection?.lists || [];
     };
 
     const [animeLists, mangaLists] = await Promise.all([fetchType('ANIME'), fetchType('MANGA')]);
-    const lists = [...animeLists, ...mangaLists];
-
-    if (!lists.flatMap(l => l.entries).length) {
+    
+    if (!animeLists.flatMap(l => l.entries).length && !mangaLists.flatMap(l => l.entries).length) {
       new Notice('No lists found (private or empty).', 4000);
       return;
     }
 
+    this.updateProgressNotice(progress, '📊 Generating standard export files...');
+
+    // 1. Create original unified CSV
+    await this.createAniListUnifiedCSV([...animeLists, ...mangaLists], username, useAuth);
+
+    // 2. Create MAL-compatible XML for anime
+    if (animeLists.flatMap(l => l.entries).length > 0) {
+      await this.createAniListAnimeXML(animeLists, username, useAuth);
+    }
+
+    // 3. Create MAL-compatible XML for manga
+    if (mangaLists.flatMap(l => l.entries).length > 0) {
+      await this.createAniListMangaXML(mangaLists, username, useAuth);
+    }
+
+    const totalItems = [...animeLists, ...mangaLists].flatMap(l => l.entries).length;
+    const fileCount = 1 + (animeLists.flatMap(l => l.entries).length > 0 ? 1 : 0) + (mangaLists.flatMap(l => l.entries).length > 0 ? 1 : 0);
+    
+    this.finishProgressNotice(progress, `✅ Exported ${totalItems} items in ${fileCount} files`);
+    new Notice(`✅ AniList export complete! Created ${fileCount} files`, 5000);
+  }
+
+  // Create original unified CSV for AniList
+  async createAniListUnifiedCSV(lists, username, useAuth) {
     const rows = [];
     const headers = [
       'ListName', 'Status', 'Progress', 'Score', 'Repeat',
@@ -12006,8 +12029,191 @@ class Export {
     const suffix = useAuth ? '' : '_PUBLIC';
     const fileName = `AniList_${username}${suffix}_${new Date().toISOString().slice(0, 10)}.csv`;
     await this.plugin.app.vault.create(fileName, csv);
-    new Notice(`✅ CSV saved to vault: ${fileName}`, 4000);
+    console.log('[AniList Export] Unified CSV created successfully');
     await this.plugin.app.workspace.openLinkText(fileName, '', false);
+  }
+
+  // Create MAL-compatible XML for anime from AniList
+  async createAniListAnimeXML(animeLists, username, useAuth) {
+    const xmlHeader = `<?xml version="1.0" encoding="UTF-8" ?>
+<myanimelist>
+  <myinfo>
+    <user_id>0</user_id>
+    <user_name>${this.xmlEscape(username)}</user_name>
+    <user_export_type>1</user_export_type>
+  </myinfo>`;
+
+    const xmlFooter = `</myanimelist>`;
+
+    let animeXml = '';
+    
+    for (const list of animeLists) {
+      for (const entry of list.entries) {
+        const media = entry.media;
+        const malStatus = this.mapAniListToMalStatus(entry.status);
+        const score = entry.score || 0;
+        const episodes = entry.progress || 0;
+        const malId = media.idMal || 0;
+        
+        // Format dates
+        const startDate = this.aniListDateToString(entry.startedAt);
+        const finishDate = entry.status === 'COMPLETED' ? this.aniListDateToString(entry.completedAt) : '';
+        
+        // Determine anime type
+        const animeType = this.getAniListAnimeType(media.format);
+        
+        animeXml += `
+  <anime>
+    <series_animedb_id>${malId}</series_animedb_id>
+    <series_title><![CDATA[${media.title.english || media.title.romaji || media.title.native || ''}]]></series_title>
+    <series_type>${animeType}</series_type>
+    <series_episodes>${media.episodes || 0}</series_episodes>
+    <my_id>0</my_id>
+    <my_watched_episodes>${episodes}</my_watched_episodes>
+    <my_start_date>${startDate}</my_start_date>
+    <my_finish_date>${finishDate}</my_finish_date>
+    <my_rated></my_rated>
+    <my_score>${score}</my_score>
+    <my_storage></my_storage>
+    <my_storage_value>0.00</my_storage_value>
+    <my_status>${malStatus}</my_status>
+    <my_comments><![CDATA[Imported from AniList - List: ${list.name}]]></my_comments>
+    <my_times_watched>${entry.repeat || 0}</my_times_watched>
+    <my_rewatch_value></my_rewatch_value>
+    <my_priority>LOW</my_priority>
+    <my_tags><![CDATA[${(media.genres || []).join(', ')}]]></my_tags>
+    <my_rewatching>0</my_rewatching>
+    <my_rewatching_ep>0</my_rewatching_ep>
+    <update_on_import>1</update_on_import>
+  </anime>`;
+      }
+    }
+
+    const xml = xmlHeader + animeXml + xmlFooter;
+    const suffix = useAuth ? '' : '_PUBLIC';
+    const fileName = `AniList_Anime_MAL_${username}${suffix}_${new Date().toISOString().slice(0, 10)}.xml`;
+    
+    await this.plugin.app.vault.create(fileName, xml);
+    console.log('[AniList Export] Anime MAL XML created successfully');
+  }
+
+  // Create MAL-compatible XML for manga from AniList
+  async createAniListMangaXML(mangaLists, username, useAuth) {
+    const xmlHeader = `<?xml version="1.0" encoding="UTF-8" ?>
+<myanimelist>
+  <myinfo>
+    <user_id>0</user_id>
+    <user_name>${this.xmlEscape(username)}</user_name>
+    <user_export_type>2</user_export_type>
+  </myinfo>`;
+
+    const xmlFooter = `</myanimelist>`;
+
+    let mangaXml = '';
+    
+    for (const list of mangaLists) {
+      for (const entry of list.entries) {
+        const media = entry.media;
+        const malStatus = this.mapAniListToMalStatus(entry.status);
+        const score = entry.score || 0;
+        const chapters = entry.progress || 0;
+        const malId = media.idMal || 0;
+        
+        // Format dates
+        const startDate = this.aniListDateToString(entry.startedAt);
+        const finishDate = entry.status === 'COMPLETED' ? this.aniListDateToString(entry.completedAt) : '';
+        
+        // Determine manga type
+        const mangaType = this.getAniListMangaType(media.format);
+        
+        mangaXml += `
+  <manga>
+    <series_mangadb_id>${malId}</series_mangadb_id>
+    <series_title><![CDATA[${media.title.english || media.title.romaji || media.title.native || ''}]]></series_title>
+    <series_type>${mangaType}</series_type>
+    <series_chapters>${media.chapters || 0}</series_chapters>
+    <series_volumes>${media.volumes || 0}</series_volumes>
+    <my_id>0</my_id>
+    <my_read_chapters>${chapters}</my_read_chapters>
+    <my_read_volumes>0</my_read_volumes>
+    <my_start_date>${startDate}</my_start_date>
+    <my_finish_date>${finishDate}</my_finish_date>
+    <my_rated></my_rated>
+    <my_score>${score}</my_score>
+    <my_storage></my_storage>
+    <my_status>${malStatus}</my_status>
+    <my_comments><![CDATA[Imported from AniList - List: ${list.name}]]></my_comments>
+    <my_times_read>${entry.repeat || 0}</my_times_read>
+    <my_reread_value></my_reread_value>
+    <my_priority>LOW</my_priority>
+    <my_tags><![CDATA[${(media.genres || []).join(', ')}]]></my_tags>
+    <my_rereading>0</my_rereading>
+    <my_rereading_chap>0</my_rereading_chap>
+    <update_on_import>1</update_on_import>
+  </manga>`;
+      }
+    }
+
+    const xml = xmlHeader + mangaXml + xmlFooter;
+    const suffix = useAuth ? '' : '_PUBLIC';
+    const fileName = `AniList_Manga_MAL_${username}${suffix}_${new Date().toISOString().slice(0, 10)}.xml`;
+    
+    await this.plugin.app.vault.create(fileName, xml);
+    console.log('[AniList Export] Manga MAL XML created successfully');
+  }
+
+  // Helper methods for AniList exports
+
+  mapAniListToMalStatus(anilistStatus) {
+    const statusMap = {
+      'CURRENT': 'Watching', // For anime
+      'READING': 'Reading',  // For manga  
+      'COMPLETED': 'Completed',
+      'PAUSED': 'On-Hold',
+      'DROPPED': 'Dropped',
+      'PLANNING': 'Plan to Watch', // For anime
+      'PLAN_TO_READ': 'Plan to Read' // For manga
+    };
+    return statusMap[anilistStatus] || 'Plan to Watch';
+  }
+
+  getAniListAnimeType(format) {
+    if (!format) return 'TV';
+    
+    const typeMap = {
+      'TV': 'TV',
+      'TV_SHORT': 'TV',
+      'MOVIE': 'Movie',
+      'SPECIAL': 'Special',
+      'OVA': 'OVA',
+      'ONA': 'ONA',
+      'MUSIC': 'Music'
+    };
+    
+    return typeMap[format] || 'TV';
+  }
+
+  getAniListMangaType(format) {
+    if (!format) return 'Manga';
+    
+    const typeMap = {
+      'MANGA': 'Manga',
+      'LIGHT_NOVEL': 'Light Novel',
+      'ONE_SHOT': 'One-shot',
+      'DOUJINSHI': 'Doujinshi',
+      'MANHWA': 'Manhwa',
+      'MANHUA': 'Manhua',
+      'NOVEL': 'Novel'
+    };
+    
+    return typeMap[format] || 'Manga';
+  }
+
+  aniListDateToString(dateObj) {
+    if (!dateObj || !dateObj.year) return '0000-00-00';
+    const month = String(dateObj.month || 0).padStart(2, '0');
+    const day = String(dateObj.day || 0).padStart(2, '0');
+    return `${dateObj.year}-${month}-${day}`;
   }
   
   async exportMALListsToCSV() {
@@ -12080,177 +12286,146 @@ class Export {
 }
 
   async exportSimklListsToCSV() {
-  if (!this.plugin.simklAuth.isLoggedIn) {
-    new Notice('❌ Please authenticate with SIMKL first.', 4000);
-    return;
-  }
-
-  const username = this.plugin.settings.simklUserInfo?.user?.name;
-  if (!username) {
-    new Notice('❌ Could not fetch SIMKL username.', 4000);
-    return;
-  }
-
-  console.log('[SIMKL Export] Starting export for user:', username);
-  new Notice('📥 Exporting SIMKL data…', 3000);
-  const progress = this.createProgressNotice('📊 Fetching SIMKL data...');
-
-  try {
-    // Fetch all items using the working endpoint
-    this.updateProgressNotice(progress, '📊 Fetching all items...');
-    
-    const allItemsUrl = 'https://api.simkl.com/sync/all-items/';
-    console.log('[SIMKL Export] Fetching from:', allItemsUrl);
-
-    const allItemsRes = await this.plugin.requestQueue.add(() =>
-      requestUrl({
-        url: allItemsUrl,
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${this.plugin.settings.simklAccessToken}`,
-          'simkl-api-key': this.plugin.settings.simklClientId,
-          'Content-Type': 'application/json'
-        },
-        throw: false
-      })
-    );
-
-    console.log('[SIMKL Export] Response status:', allItemsRes.status);
-    console.log('[SIMKL Export] Response data:', allItemsRes.json);
-
-    if (allItemsRes.status !== 200) {
-      throw new Error(`Failed to fetch data: HTTP ${allItemsRes.status}`);
-    }
-
-    const data = allItemsRes.json || {};
-    console.log('[SIMKL Export] Data keys:', Object.keys(data));
-    console.log('[SIMKL Export] Data structure:', data);
-
-    // Process the object-based response
-    const allItems = [];
-    let totalItemsFound = 0;
-
-    // Iterate through all keys in the response (movies, shows, anime, etc.)
-    Object.keys(data).forEach(category => {
-      console.log(`[SIMKL Export] Processing category: ${category}`);
-      
-      if (data[category] && Array.isArray(data[category])) {
-        console.log(`[SIMKL Export] Found ${data[category].length} items in ${category}`);
-        totalItemsFound += data[category].length;
-        
-        data[category].forEach(item => {
-          allItems.push({
-            ...item,
-            _category: category,
-            _type: this.determineItemType(item, category)
-          });
-        });
-      } else if (data[category] && typeof data[category] === 'object') {
-        // Check if this category has status-based subcategories
-        console.log(`[SIMKL Export] ${category} has subcategories:`, Object.keys(data[category]));
-        
-        Object.keys(data[category]).forEach(status => {
-          if (Array.isArray(data[category][status])) {
-            console.log(`[SIMKL Export] Found ${data[category][status].length} items in ${category}.${status}`);
-            totalItemsFound += data[category][status].length;
-            
-            data[category][status].forEach(item => {
-              allItems.push({
-                ...item,
-                _category: category,
-                _status: status,
-                _type: this.determineItemType(item, category)
-              });
-            });
-          }
-        });
-      }
-    });
-
-    console.log('[SIMKL Export] Total items processed:', allItems.length);
-    console.log('[SIMKL Export] Total items found:', totalItemsFound);
-
-    if (allItems.length === 0) {
-      console.log('[SIMKL Export] No items found after processing');
-      this.finishProgressNotice(progress, '❌ No data found');
-      new Notice('No SIMKL data found after processing.', 4000);
+    if (!this.plugin.simklAuth.isLoggedIn) {
+      new Notice('❌ Please authenticate with SIMKL first.', 4000);
       return;
     }
 
-    // DEBUG: Analyze what fields actually exist in the data
-    console.log('[SIMKL Export] Analyzing available fields...');
-    const fieldAnalysis = {};
-    const sampleSize = Math.min(allItems.length, 10);
-    
-    for (let i = 0; i < sampleSize; i++) {
-      const item = allItems[i];
-      Object.keys(item).forEach(key => {
-        if (!fieldAnalysis[key]) {
-          fieldAnalysis[key] = { count: 0, hasData: 0, sampleValues: [] };
-        }
-        fieldAnalysis[key].count++;
-        if (item[key] !== null && item[key] !== undefined && item[key] !== '') {
-          fieldAnalysis[key].hasData++;
-          if (fieldAnalysis[key].sampleValues.length < 3) {
-            fieldAnalysis[key].sampleValues.push(item[key]);
-          }
+    const username = this.plugin.settings.simklUserInfo?.user?.name;
+    if (!username) {
+      new Notice('❌ Could not fetch SIMKL username.', 4000);
+      return;
+    }
+
+    console.log('[SIMKL Export] Starting export for user:', username);
+    new Notice('📥 Exporting SIMKL data…', 3000);
+    const progress = this.createProgressNotice('📊 Fetching SIMKL data...');
+
+    try {
+      // Fetch all items using the working endpoint
+      this.updateProgressNotice(progress, '📊 Fetching all items...');
+      
+      const allItemsUrl = 'https://api.simkl.com/sync/all-items/';
+      console.log('[SIMKL Export] Fetching from:', allItemsUrl);
+
+      const allItemsRes = await this.plugin.requestQueue.add(() =>
+        requestUrl({
+          url: allItemsUrl,
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${this.plugin.settings.simklAccessToken}`,
+            'simkl-api-key': this.plugin.settings.simklClientId,
+            'Content-Type': 'application/json'
+          },
+          throw: false
+        })
+      );
+
+      console.log('[SIMKL Export] Response status:', allItemsRes.status);
+      console.log('[SIMKL Export] Response data:', allItemsRes.json);
+
+      if (allItemsRes.status !== 200) {
+        throw new Error(`Failed to fetch data: HTTP ${allItemsRes.status}`);
+      }
+
+      const data = allItemsRes.json || {};
+      console.log('[SIMKL Export] Data keys:', Object.keys(data));
+      console.log('[SIMKL Export] Data structure:', data);
+
+      // Process the object-based response
+      const allItems = [];
+      let totalItemsFound = 0;
+
+      // Iterate through all keys in the response (movies, shows, anime, etc.)
+      Object.keys(data).forEach(category => {
+        console.log(`[SIMKL Export] Processing category: ${category}`);
+        
+        if (data[category] && Array.isArray(data[category])) {
+          console.log(`[SIMKL Export] Found ${data[category].length} items in ${category}`);
+          totalItemsFound += data[category].length;
+          
+          data[category].forEach(item => {
+            allItems.push({
+              ...item,
+              _category: category,
+              _type: this.determineItemType(item, category)
+            });
+          });
+        } else if (data[category] && typeof data[category] === 'object') {
+          // Check if this category has status-based subcategories
+          console.log(`[SIMKL Export] ${category} has subcategories:`, Object.keys(data[category]));
+          
+          Object.keys(data[category]).forEach(status => {
+            if (Array.isArray(data[category][status])) {
+              console.log(`[SIMKL Export] Found ${data[category][status].length} items in ${category}.${status}`);
+              totalItemsFound += data[category][status].length;
+              
+              data[category][status].forEach(item => {
+                allItems.push({
+                  ...item,
+                  _category: category,
+                  _status: status,
+                  _type: this.determineItemType(item, category)
+                });
+              });
+            }
+          });
         }
       });
-    }
-    
-    console.log('[SIMKL Export] Field analysis:');
-    Object.keys(fieldAnalysis).forEach(field => {
-      console.log(`  ${field}: ${fieldAnalysis[field].hasData}/${fieldAnalysis[field].count} items have data. Sample values:`, fieldAnalysis[field].sampleValues);
-    });
-    
-    // Show sample items with all properties (detailed)
-    console.log('[SIMKL Export] Sample items with all properties:');
-    allItems.slice(0, 3).forEach((item, index) => {
-      console.log(`[SIMKL Export] Item ${index}:`, JSON.stringify(item, null, 2));
-    });
 
-    // EXPORT DEBUG INFO TO FILE
-    const debugInfo = {
-      totalItems: allItems.length,
-      fieldAnalysis: fieldAnalysis,
-      sampleItems: allItems.slice(0, 5).map(item => JSON.stringify(item, null, 2)),
-      apiResponseStructure: {
-        keys: Object.keys(data),
-        structure: Object.keys(data).reduce((acc, key) => {
-          acc[key] = Array.isArray(data[key]) ? 'array' : Object.keys(data[key]);
-          return acc;
-        }, {})
+      console.log('[SIMKL Export] Total items processed:', allItems.length);
+      console.log('[SIMKL Export] Total items found:', totalItemsFound);
+
+      if (allItems.length === 0) {
+        console.log('[SIMKL Export] No items found after processing');
+        this.finishProgressNotice(progress, '❌ No data found');
+        new Notice('No SIMKL data found after processing.', 4000);
+        return;
       }
-    };
-    
-    const debugFileName = `SIMKL_Debug_${username}_${new Date().toISOString().slice(0, 10)}.md`;
-    const debugContent = `# SIMKL Export Debug Information
 
-## Field Analysis
-${Object.keys(fieldAnalysis).map(field => 
-  `- **${field}**: ${fieldAnalysis[field].hasData}/${fieldAnalysis[field].count} items have data\n  - Sample values: ${JSON.stringify(fieldAnalysis[field].sampleValues)}`
-).join('\n')}
+      // Separate items by type for standardized exports
+      const animeItems = allItems.filter(item => 
+        item._category === 'anime' || 
+        item._type === 'ANIME' ||
+        (item.show && item.show.type === 'anime')
+      );
+      
+      const moviesTvItems = allItems.filter(item => 
+        item._category === 'movies' || 
+        item._category === 'shows' ||
+        item._type === 'MOVIE' || 
+        item._type === 'SHOW' ||
+        item.movie || 
+        (item.show && item.show.type !== 'anime')
+      );
 
-## API Response Structure
-\`\`\`json
-${JSON.stringify(debugInfo.apiResponseStructure, null, 2)}
-\`\`\`
+      this.updateProgressNotice(progress, '📊 Generating standard export files...');
 
-## Sample Items (First 5)
-\`\`\`json
-${debugInfo.sampleItems.join('\n\n')}
-\`\`\`
+      // 1. Create original unified CSV
+      await this.createSimklUnifiedCSV(allItems, username);
 
-## Summary
-- Total items: ${debugInfo.totalItems}
-- Categories found: ${Object.keys(data).join(', ')}
-    `;
-    
-    await this.plugin.app.vault.create(debugFileName, debugContent);
-    console.log(`[SIMKL Export] Debug info saved to: ${debugFileName}`);
+      // 2. Create IMDb-compatible CSV for movies/TV shows
+      if (moviesTvItems.length > 0) {
+        await this.createSimklImdbCSV(moviesTvItems, username);
+      }
 
-    this.updateProgressNotice(progress, '📊 Generating CSV...');
+      // 3. Create MAL-compatible XML for anime
+      if (animeItems.length > 0) {
+        await this.createSimklMalXML(animeItems, username);
+      }
 
+      this.finishProgressNotice(progress, `✅ Exported ${allItems.length} items in multiple formats`);
+      new Notice(`✅ SIMKL export complete! Created ${1 + (moviesTvItems.length > 0 ? 1 : 0) + (animeItems.length > 0 ? 1 : 0)} files`, 5000);
+
+    } catch (error) {
+      console.error('[SIMKL Export] Export failed:', error);
+      this.finishProgressNotice(progress, `❌ Export failed: ${error.message}`);
+      new Notice(`❌ SIMKL export failed: ${error.message}`, 6000);
+    }
+  }
+
+  // Create original unified CSV
+  async createSimklUnifiedCSV(allItems, username) {
     const headers = [
       'Category', 'Type', 'Title', 'Year', 'Status', 'Rating',
       'SIMKL_ID', 'IMDB_ID', 'TMDB_ID', 'MAL_ID', 'Anilist_ID'
@@ -12259,7 +12434,6 @@ ${debugInfo.sampleItems.join('\n\n')}
     const rows = [headers.join(',')];
     
     allItems.forEach((item, index) => {
-      // Helper function to safely get nested values
       const safeGet = (obj, path, fallback = '') => {
         try {
           return path.split('.').reduce((o, p) => (o && o[p]) || fallback, obj);
@@ -12268,7 +12442,6 @@ ${debugInfo.sampleItems.join('\n\n')}
         }
       };
 
-      // Extract data from nested objects based on category
       const mediaObject = item.show || item.movie || item.anime || {};
       
       const row = [
@@ -12285,46 +12458,209 @@ ${debugInfo.sampleItems.join('\n\n')}
         safeGet(mediaObject, 'ids.anilist')
       ];
       
-      // DEBUG: Log first few rows to see what data we're actually getting
-      if (index < 5) {
-        const mediaObject = item.show || item.movie || item.anime || {};
-        console.log(`[SIMKL Export] Row ${index} data:`);
-        console.log(`  Category: "${item._category}"`);
-        console.log(`  Type: "${item._type}"`);
-        console.log(`  Title: "${mediaObject.title || mediaObject.name || 'MISSING'}"`);
-        console.log(`  Year: "${mediaObject.year || 'MISSING'}"`);
-        console.log(`  Status: "${item._status || item.status || 'MISSING'}"`);
-        console.log(`  Rating: "${item.user_rating || item.rating || item.score || 'MISSING'}"`);
-        console.log(`  IDs:`, mediaObject.ids || 'MISSING');
-      }
-      
       rows.push(row.join(','));
     });
 
     const csv = rows.join('\n');
     const fileName = `SIMKL_Export_${username}_${new Date().toISOString().slice(0, 10)}.csv`;
-
-    console.log(`[SIMKL Export] Generated CSV with ${rows.length - 1} rows`);
     
-    // DEBUG: Show a preview of the CSV content
-    console.log('[SIMKL Export] CSV Preview (first 5 lines):');
-    csv.split('\n').slice(0, 5).forEach((line, index) => {
-      console.log(`Line ${index}: ${line}`);
+    await this.plugin.app.vault.create(fileName, csv);
+    console.log('[SIMKL Export] Unified CSV created successfully');
+    await this.plugin.app.workspace.openLinkText(fileName, '', false);
+  }
+
+  // Create IMDb-compatible CSV for movies and TV shows
+  async createSimklImdbCSV(moviesTvItems, username) {
+    // IMDb export format headers
+    const headers = [
+      'Const', 'Your Rating', 'Date Rated', 'Title', 'URL', 'Title Type', 
+      'IMDb Rating', 'Runtime (mins)', 'Year', 'Genres', 'Num Votes', 
+      'Release Date', 'Directors'
+    ];
+
+    const rows = [headers.join(',')];
+    
+    moviesTvItems.forEach(item => {
+      const mediaObject = item.show || item.movie || {};
+      const safeGet = (obj, path, fallback = '') => {
+        try {
+          return path.split('.').reduce((o, p) => (o && o[p]) || fallback, obj);
+        } catch {
+          return fallback;
+        }
+      };
+
+      // Map SIMKL status to a reasonable date
+      const dateRated = this.getDateFromStatus(item._status || item.status);
+      const imdbId = safeGet(mediaObject, 'ids.imdb');
+      const imdbUrl = imdbId ? `https://www.imdb.com/title/${imdbId}/` : '';
+      const titleType = item._category === 'movies' ? 'movie' : 'tvSeries';
+      
+      const row = [
+        imdbId || '', // Const (IMDb ID)
+        item.user_rating || item.rating || item.score || '', // Your Rating
+        dateRated, // Date Rated
+        this.csvEscape(mediaObject.title || mediaObject.name || ''), // Title
+        this.csvEscape(imdbUrl), // URL
+        titleType, // Title Type
+        mediaObject.rating || '', // IMDb Rating
+        mediaObject.runtime || '', // Runtime
+        mediaObject.year || mediaObject.aired?.year || mediaObject.released?.year || '', // Year
+        this.csvEscape((mediaObject.genres || []).join(', ')), // Genres
+        '', // Num Votes (not available from SIMKL)
+        this.formatReleaseDate(mediaObject.released || mediaObject.aired), // Release Date
+        this.csvEscape((mediaObject.directors || []).join(', ')) // Directors
+      ];
+      
+      rows.push(row.join(','));
     });
 
-    await this.plugin.app.vault.create(fileName, csv);
-    console.log('[SIMKL Export] CSV file created successfully');
+    const csv = rows.join('\n');
+    const fileName = `SIMKL_IMDb_Export_${username}_${new Date().toISOString().slice(0, 10)}.csv`;
     
-    this.finishProgressNotice(progress, `✅ Exported ${allItems.length} items`);
-    new Notice(`✅ SIMKL export complete! ${allItems.length} items saved to ${fileName}`, 5000);
-    await this.plugin.app.workspace.openLinkText(fileName, '', false);
-
-  } catch (error) {
-    console.error('[SIMKL Export] Export failed:', error);
-    this.finishProgressNotice(progress, `❌ Export failed: ${error.message}`);
-    new Notice(`❌ SIMKL export failed: ${error.message}`, 6000);
+    await this.plugin.app.vault.create(fileName, csv);
+    console.log('[SIMKL Export] IMDb CSV created successfully');
   }
-}
+
+  // Create MAL-compatible XML for anime
+  async createSimklMalXML(animeItems, username) {
+    const xmlHeader = `<?xml version="1.0" encoding="UTF-8" ?>
+<myanimelist>
+  <myinfo>
+    <user_id>0</user_id>
+    <user_name>${this.xmlEscape(username)}</user_name>
+    <user_export_type>1</user_export_type>
+  </myinfo>`;
+
+    const xmlFooter = `</myanimelist>`;
+
+    let animeXml = '';
+    
+    animeItems.forEach(item => {
+      const mediaObject = item.show || item.anime || {};
+      const safeGet = (obj, path, fallback = '') => {
+        try {
+          return path.split('.').reduce((o, p) => (o && o[p]) || fallback, obj);
+        } catch {
+          return fallback;
+        }
+      };
+
+      // Map SIMKL status to MAL status
+      const malStatus = this.mapSimklToMalStatus(item._status || item.status);
+      const score = item.user_rating || item.rating || item.score || 0;
+      const episodes = this.getSimklProgress(item);
+      const malId = safeGet(mediaObject, 'ids.mal');
+      
+      // Get dates
+      const startDate = this.getDateFromStatus(item._status || item.status, 'start');
+      const finishDate = malStatus === 'Completed' ? this.getDateFromStatus(item._status || item.status, 'finish') : '';
+      
+      animeXml += `
+  <anime>
+    <series_animedb_id>${malId || 0}</series_animedb_id>
+    <series_title><![CDATA[${mediaObject.title || mediaObject.name || ''}]]></series_title>
+    <series_type>${this.getAnimeType(mediaObject)}</series_type>
+    <series_episodes>${mediaObject.episodes || 0}</series_episodes>
+    <my_id>0</my_id>
+    <my_watched_episodes>${episodes}</my_watched_episodes>
+    <my_start_date>${startDate}</my_start_date>
+    <my_finish_date>${finishDate}</my_finish_date>
+    <my_rated></my_rated>
+    <my_score>${score}</my_score>
+    <my_storage></my_storage>
+    <my_storage_value>0.00</my_storage_value>
+    <my_status>${malStatus}</my_status>
+    <my_comments><![CDATA[Imported from SIMKL]]></my_comments>
+    <my_times_watched>0</my_times_watched>
+    <my_rewatch_value></my_rewatch_value>
+    <my_priority>LOW</my_priority>
+    <my_tags><![CDATA[]]></my_tags>
+    <my_rewatching>0</my_rewatching>
+    <my_rewatching_ep>0</my_rewatching_ep>
+    <update_on_import>1</update_on_import>
+  </anime>`;
+    });
+
+    const xml = xmlHeader + animeXml + xmlFooter;
+    const fileName = `SIMKL_MAL_Export_${username}_${new Date().toISOString().slice(0, 10)}.xml`;
+    
+    await this.plugin.app.vault.create(fileName, xml);
+    console.log('[SIMKL Export] MAL XML created successfully');
+  }
+
+  // Helper methods for standardized exports
+
+  mapSimklToMalStatus(simklStatus) {
+    const statusMap = {
+      'watching': 'Watching',
+      'completed': 'Completed',
+      'plantowatch': 'Plan to Watch',
+      'hold': 'On-Hold',
+      'dropped': 'Dropped'
+    };
+    return statusMap[simklStatus?.toLowerCase()] || 'Plan to Watch';
+  }
+
+  getAnimeType(mediaObject) {
+    if (!mediaObject.type) return 'TV';
+    
+    const typeMap = {
+      'tv': 'TV',
+      'movie': 'Movie',
+      'ova': 'OVA',
+      'ona': 'ONA',
+      'special': 'Special',
+      'music': 'Music'
+    };
+    
+    return typeMap[mediaObject.type.toLowerCase()] || 'TV';
+  }
+
+  getDateFromStatus(status, type = 'rated') {
+    // Since SIMKL doesn't provide exact dates, we'll use reasonable defaults
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
+    const currentDay = String(now.getDate()).padStart(2, '0');
+    
+    if (status === 'completed' && type === 'finish') {
+      return `${currentYear}-${currentMonth}-${currentDay}`;
+    } else if (type === 'start' && (status === 'watching' || status === 'completed')) {
+      // Assume started a month ago for active/completed items
+      const startDate = new Date();
+      startDate.setMonth(startDate.getMonth() - 1);
+      return `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`;
+    } else if (type === 'rated') {
+      return `${currentYear}-${currentMonth}-${currentDay}`;
+    }
+    
+    return '';
+  }
+
+  formatReleaseDate(dateObj) {
+    if (!dateObj) return '';
+    if (typeof dateObj === 'string') return dateObj;
+    if (dateObj.year) {
+      const month = String(dateObj.month || 1).padStart(2, '0');
+      const day = String(dateObj.day || 1).padStart(2, '0');
+      return `${dateObj.year}-${month}-${day}`;
+    }
+    return '';
+  }
+
+  xmlEscape(str) {
+    if (typeof str !== 'string') str = String(str);
+    return str.replace(/[<>&'"]/g, function (c) {
+      switch (c) {
+        case '<': return '&lt;';
+        case '>': return '&gt;';
+        case '&': return '&amp;';
+        case "'": return '&apos;';
+        case '"': return '&quot;';
+      }
+    });
+  }
 
 // Helper method to determine item type
 determineItemType(item, category) {

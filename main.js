@@ -2253,7 +2253,6 @@ class RequestQueue {
     this.state.isProcessing = false;
     this.process();
   }
-  
   clear(priority = null) {
     if (priority) {
       const cleared = this.queues[priority].length;
@@ -3021,7 +3020,6 @@ class AnilistApi {
   sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
-
   // =================== MONITORING & METRICS ===================
 
   recordMetrics(operation, type, duration, errorType = null) {
@@ -5022,6 +5020,11 @@ class SimklApi {
       'Content-Type': 'application/json',
       'User-Agent': `Zoro-Plugin/${this.plugin.manifest?.version || '1.0.0'}`
     };
+
+    // Include Simkl API key for all requests
+    if (this.plugin.settings.simklClientId) {
+      headers['simkl-api-key'] = this.plugin.settings.simklClientId;
+    }
     
     // Add auth token for user-specific requests
     if (this.requiresAuth(config.type) && this.plugin.settings.simklAccessToken) {
@@ -5121,25 +5124,43 @@ class SimklApi {
 
   transformListResponse(data, config) {
     let entries = [];
-    const mediaType = config.mediaType?.toLowerCase() || 'anime';
-    
-    // Extract entries based on media type
-    if (data[mediaType] && Array.isArray(data[mediaType])) {
-      entries = data[mediaType];
-    } else if (data.anime && Array.isArray(data.anime)) {
-      entries = data.anime;
+    const mediaType = (config.mediaType?.toLowerCase() || 'anime');
+    const raw = data || {};
+
+    // Try direct array under type
+    if (Array.isArray(raw[mediaType])) {
+      entries = raw[mediaType];
+    } else if (Array.isArray(raw)) {
+      // Some endpoints might return a direct array
+      entries = raw;
+    } else if (raw[mediaType] && typeof raw[mediaType] === 'object') {
+      // Status-grouped object: flatten and annotate status
+      const grouped = raw[mediaType];
+      Object.keys(grouped).forEach(statusKey => {
+        const arr = grouped[statusKey];
+        if (Array.isArray(arr)) {
+          arr.forEach(item => entries.push({ ...item, _status: statusKey }));
+        }
+      });
+    } else {
+      // Fallback: collect any arrays at top level
+      Object.keys(raw).forEach(key => {
+        if (Array.isArray(raw[key])) {
+          raw[key].forEach(item => entries.push(item));
+        }
+      });
     }
     
     // Filter by status if specified
     if (config.listType && config.listType !== 'ALL') {
       const targetStatus = this.mapAniListStatusToSimkl(config.listType);
-      entries = entries.filter(entry => entry.status === targetStatus);
+      entries = entries.filter(entry => (entry.status || entry._status) === targetStatus);
     }
     
     return {
       MediaListCollection: {
         lists: [{
-          entries: entries.map(entry => this.transformListEntry(entry))
+          entries: entries.map(entry => this.transformListEntry(entry, mediaType))
         }]
       }
     };
@@ -5188,6 +5209,10 @@ class SimklApi {
     // Handle both search results and show objects
     const media = simklMedia.show || simklMedia;
     const ids = media.ids || {};
+
+    // Robust poster extraction and fallback
+    const poster = media.poster || media.image || media.cover || media.images?.poster || media.images?.poster_small || null;
+    const posterUrl = poster || (ids.simkl ? `https://simkl.in/posters/${ids.simkl}_m.jpg` : null);
     
     return {
       id: ids.simkl || ids.id || media.id,
@@ -5197,31 +5222,47 @@ class SimklApi {
         native: media.title || 'Unknown Title'
       },
       coverImage: {
-        large: media.poster || null,
-        medium: media.poster || null
+        large: posterUrl || null,
+        medium: posterUrl || null
       },
-      format: this.mapSimklFormat(media.type || 'tv'),
-      averageScore: media.rating ? Math.round(media.rating * 10) : null,
+      format: this.mapSimklFormat((media.type || media.kind || 'tv')),
+      averageScore: media.rating ? Math.round((media.rating > 10 ? media.rating : media.rating * 10)) : null,
       status: media.status ? media.status.toUpperCase() : null,
       genres: media.genres || [],
-      episodes: media.total_episodes || null,
-      chapters: null, // Simkl is primarily for anime/movies
+      episodes: media.total_episodes || media.episodes || (media.type === 'movie' ? 1 : null),
+      chapters: null, // Simkl is primarily for anime/movies/TV
       isFavourite: false,
       startDate: this.parseDate(media.first_aired),
       endDate: this.parseDate(media.last_aired)
     };
   }
 
-  transformListEntry(simklEntry) {
+  transformListEntry(simklEntry, mediaTypeHint) {
     if (!simklEntry) return null;
     
     const show = simklEntry.show || simklEntry;
+    const statusRaw = simklEntry.status || simklEntry._status || show.status || null;
+
+    // Derive progress with sensible fallbacks
+    let progress = 0;
+    if (typeof simklEntry.watched_episodes === 'number') {
+      progress = simklEntry.watched_episodes;
+    } else if (typeof simklEntry.episodes_watched === 'number') {
+      progress = simklEntry.episodes_watched;
+    } else if ((show.type || mediaTypeHint) && String(show.type || mediaTypeHint).toLowerCase().includes('movie')) {
+      progress = (String(statusRaw).toLowerCase() === 'completed') ? 1 : 0;
+    } else if (typeof simklEntry.seasons_watched === 'number' && (show.total_episodes || show.episodes)) {
+      const totalSeasons = show.seasons || 1;
+      const totalEpisodes = show.total_episodes || show.episodes || 0;
+      const perSeason = totalSeasons > 0 ? (totalEpisodes / totalSeasons) : 0;
+      progress = Math.floor(simklEntry.seasons_watched * perSeason);
+    }
     
     return {
       id: null, // Simkl doesn't provide list entry IDs like MAL does
-      status: this.mapSimklStatusToAniList(simklEntry.status),
-      score: simklEntry.rating || 0,
-      progress: simklEntry.watched_episodes || simklEntry.episodes_watched || 0,
+      status: this.mapSimklStatusToAniList(statusRaw),
+      score: simklEntry.rating || show.rating || 0,
+      progress: progress || 0,
       media: this.transformMedia({ show })
     };
   }
@@ -5508,7 +5549,9 @@ class SimklApi {
   getSimklUrl(mediaId, mediaType = 'ANIME') {
     try {
       this.validateMediaId(mediaId);
-      return `https://simkl.com/anime/${mediaId}`;
+      const typeUpper = (mediaType || 'ANIME').toString().toUpperCase();
+      const segment = typeUpper === 'ANIME' ? 'anime' : (typeUpper === 'MOVIE' || typeUpper === 'MOVIES') ? 'movies' : 'tv';
+      return `https://simkl.com/${segment}/${mediaId}`;
     } catch (error) {
       throw error;
     }
@@ -5581,7 +5624,6 @@ class SimklApi {
     console.log(`[Simkl] Debug mode ${enabled ? 'enabled' : 'disabled'}`);
   }
 }
-
 class ZoroPlugin extends Plugin {
   constructor(app, manifest) {
     super(app, manifest);
@@ -6360,8 +6402,6 @@ async handleTrendingOperation(api, config) {
         return false;
     }
   }
-
-
 parseInlineLink(href) {
   try {
     const [base, hash] = href.replace('zoro:', '').split('#');
@@ -8353,9 +8393,11 @@ class Edit {
     this.support = new SupportEditModal(plugin, this.renderer);
     this.anilistProvider = new AniListEditModal(plugin);
     this.malProvider = new MALEditModal(plugin);
+    this.simklProvider = new SimklEditModal(plugin);
     this.providers = {
       'anilist': this.anilistProvider,
-      'mal': this.malProvider
+      'mal': this.malProvider,
+      'simkl': this.simklProvider
     };
   }
 
@@ -8995,6 +9037,52 @@ class MALEditModal {
     return 'anime';
   }
 }
+
+class SimklEditModal {
+  constructor(plugin) {
+    this.plugin = plugin;
+  }
+
+  async initializeFavoriteButton(entry, favBtn) {
+    // Favorites are not supported for Simkl via API currently
+    favBtn.style.display = 'none';
+  }
+
+  async toggleFavorite(entry, favBtn) {
+    // No-op for Simkl
+    return;
+  }
+
+  async updateEntry(entry, updates, onSave) {
+    const mediaId = entry.media?.id || entry.mediaId;
+    if (!mediaId) throw new Error('Media ID not found');
+
+    await this.plugin.simklApi.updateMediaListEntry(mediaId, updates);
+    await onSave(updates);
+    Object.assign(entry, updates);
+    return entry;
+  }
+
+  async removeEntry(entry) {
+    const mediaId = entry.media?.id || entry.mediaId;
+    if (!mediaId) throw new Error('Media ID not found');
+
+    await this.plugin.simklApi.removeMediaListEntry(mediaId);
+  }
+
+  invalidateCache(entry) {
+    if (entry.media?.id) {
+      this.plugin.cache.invalidateByMedia(entry.media.id);
+    }
+    this.plugin.cache.invalidateScope?.('userData');
+  }
+
+  supportsFeature(feature) {
+    // Simkl supports update and remove via list endpoints
+    return ['update', 'remove'].includes(feature);
+  }
+}
+
 class SupportEditModal {
   constructor(plugin, renderer) {
     this.plugin = plugin;

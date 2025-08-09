@@ -12217,73 +12217,319 @@ class Export {
   }
   
   async exportMALListsToCSV() {
-  if (!this.plugin.malAuth.isLoggedIn) {
-    new Notice('❌ Please authenticate with MyAnimeList first.', 4000);
-    return;
+    if (!this.plugin.malAuth.isLoggedIn) {
+      new Notice('❌ Please authenticate with MyAnimeList first.', 4000);
+      return;
+    }
+
+    const username = this.plugin.settings.malUserInfo?.name;
+    if (!username) {
+      new Notice('❌ Could not fetch MAL username.', 4000);
+      return;
+    }
+
+    new Notice('📥 Exporting MyAnimeList…', 3000);
+    const progress = this.createProgressNotice('📊 MAL export 0 %');
+
+    const fetchType = async type => {
+      const headers = this.plugin.malAuth.getAuthHeaders();
+      const apiType = type === 'ANIME' ? 'anime' : 'manga';
+      const url = `https://api.myanimelist.net/v2/users/@me/${apiType}list?fields=list_status{status,score,num_episodes_watched,num_chapters_read,is_rewatching,num_times_rewatched,rewatch_value,start_date,finish_date,priority,num_times_reread,comments,tags},node{id,title,media_type,status,num_episodes,num_chapters,num_volumes,start_season,source,rating,mean,genres}&limit=1000&nsfw=true`;
+
+      const res = await this.plugin.requestQueue.add(() =>
+        requestUrl({ url, method: 'GET', headers })
+      );
+      
+      const items = (res.json?.data || []).map(item => ({
+        ...item,
+        _type: type
+      }));
+      
+      const percent = type === 'ANIME' ? 33 : 66;
+      this.updateProgressNotice(progress, `📊 MAL export ${percent} %`);
+      return items;
+    };
+
+    const [anime, manga] = await Promise.all([
+      fetchType('ANIME'),
+      fetchType('MANGA')
+    ]);
+
+    if (anime.length === 0 && manga.length === 0) {
+      new Notice('No MAL data found.', 4000);
+      return;
+    }
+
+    this.updateProgressNotice(progress, '📊 Generating standard export files...');
+
+    // 1. Create original unified CSV
+    await this.createMALUnifiedCSV([...anime, ...manga], username);
+
+    // 2. Create MAL-compatible XML for anime
+    if (anime.length > 0) {
+      await this.createMALAnimeXML(anime, username);
+    }
+
+    // 3. Create MAL-compatible XML for manga
+    if (manga.length > 0) {
+      await this.createMALMangaXML(manga, username);
+    }
+
+    const totalItems = anime.length + manga.length;
+    const fileCount = 1 + (anime.length > 0 ? 1 : 0) + (manga.length > 0 ? 1 : 0);
+    
+    this.finishProgressNotice(progress, `✅ Exported ${totalItems} items in ${fileCount} files`);
+    new Notice(`✅ MAL export complete! Created ${fileCount} files`, 5000);
   }
 
-  const username = this.plugin.settings.malUserInfo?.name;
-  if (!username) {
-    new Notice('❌ Could not fetch MAL username.', 4000);
-    return;
+  // Create original unified CSV for MAL
+  async createMALUnifiedCSV(allItems, username) {
+    const rows = [];
+    const headers = [
+      'Type','Status','Progress','Score','Title','Start','End','Episodes','Chapters','Mean','MAL_ID','URL'
+    ];
+    rows.push(headers.join(','));
+
+    allItems.forEach(item => {
+      const m = item.node;
+      const s = item.list_status;
+      const type = item._type;
+      rows.push([
+        type,
+        s.status,
+        s.num_episodes_watched || s.num_chapters_read || 0,
+        s.score || '',
+        this.csvEscape(m.title),
+        this.malDateToString(s.start_date),
+        this.malDateToString(s.finish_date),
+        m.num_episodes || '',
+        m.num_chapters || '',
+        m.mean || '',
+        m.id,
+        this.csvEscape(`https://myanimelist.net/${type.toLowerCase()}/${m.id}`)
+      ].join(','));
+    });
+
+    const csv = rows.join('\n');
+    const fileName = `MAL_${username}_${new Date().toISOString().slice(0, 10)}.csv`;
+    await this.plugin.app.vault.create(fileName, csv);
+    console.log('[MAL Export] Unified CSV created successfully');
+    await this.plugin.app.workspace.openLinkText(fileName, '', false);
   }
 
-  new Notice('📥 Exporting MyAnimeList…', 3000);
-  const progress = this.createProgressNotice('📊 MAL export 0 %');
+  // Create MAL-compatible XML for anime
+  async createMALAnimeXML(animeItems, username) {
+    const xmlHeader = `<?xml version="1.0" encoding="UTF-8" ?>
+<myanimelist>
+  <myinfo>
+    <user_id>0</user_id>
+    <user_name>${this.xmlEscape(username)}</user_name>
+    <user_export_type>1</user_export_type>
+  </myinfo>`;
 
-  const fetchType = async type => {
-    const headers = this.plugin.malAuth.getAuthHeaders();
-    const apiType = type === 'ANIME' ? 'anime' : 'manga';
-    const url = `https://api.myanimelist.net/v2/users/@me/${apiType}list?fields=list_status,media{title,start_date,end_date,num_episodes,num_chapters,status}&limit=1000&nsfw=true`;
+    const xmlFooter = `</myanimelist>`;
 
-    const res = await this.plugin.requestQueue.add(() =>
-      requestUrl({ url, method: 'GET', headers })
-    );
-      return (res.json?.data || []).map(item => ({
-    ...item,
-    _type: type
-  }));
-    this.updateProgressNotice(progress, `📊 MAL export ${type === 'ANIME' ? 50 : 100} %`);
-    return res.json?.data || [];
-  };
+    let animeXml = '';
+    
+    animeItems.forEach(item => {
+      const media = item.node;
+      const listStatus = item.list_status;
+      
+      // Map MAL status to proper XML format
+      const malStatus = this.mapMALStatusToXML(listStatus.status, 'anime');
+      const score = listStatus.score || 0;
+      const episodes = listStatus.num_episodes_watched || 0;
+      const malId = media.id;
+      
+      // Format dates
+      const startDate = this.malDateToString(listStatus.start_date);
+      const finishDate = this.malDateToString(listStatus.finish_date);
+      
+      // Determine anime type
+      const animeType = this.getMALAnimeType(media.media_type);
+      
+      animeXml += `
+  <anime>
+    <series_animedb_id>${malId}</series_animedb_id>
+    <series_title><![CDATA[${media.title || ''}]]></series_title>
+    <series_type>${animeType}</series_type>
+    <series_episodes>${media.num_episodes || 0}</series_episodes>
+    <my_id>0</my_id>
+    <my_watched_episodes>${episodes}</my_watched_episodes>
+    <my_start_date>${startDate}</my_start_date>
+    <my_finish_date>${finishDate}</my_finish_date>
+    <my_rated></my_rated>
+    <my_score>${score}</my_score>
+    <my_storage></my_storage>
+    <my_storage_value>0.00</my_storage_value>
+    <my_status>${malStatus}</my_status>
+    <my_comments><![CDATA[${listStatus.comments || ''}]]></my_comments>
+    <my_times_watched>${listStatus.num_times_rewatched || 0}</my_times_watched>
+    <my_rewatch_value>${listStatus.rewatch_value || ''}</my_rewatch_value>
+    <my_priority>${this.mapMALPriority(listStatus.priority)}</my_priority>
+    <my_tags><![CDATA[${this.formatMALTags(listStatus.tags, media.genres)}]]></my_tags>
+    <my_rewatching>${listStatus.is_rewatching ? 1 : 0}</my_rewatching>
+    <my_rewatching_ep>0</my_rewatching_ep>
+    <update_on_import>1</update_on_import>
+  </anime>`;
+    });
 
-  const [anime, manga] = await Promise.all([
-    fetchType('ANIME'),
-    fetchType('MANGA')
-  ]);
+    const xml = xmlHeader + animeXml + xmlFooter;
+    const fileName = `MAL_Anime_${username}_${new Date().toISOString().slice(0, 10)}.xml`;
+    
+    await this.plugin.app.vault.create(fileName, xml);
+    console.log('[MAL Export] Anime XML created successfully');
+  }
 
-  const rows = [];
-  const headers = [
-    'Type','Status','Progress','Score','Title','Start','End','Episodes','Chapters','Mean','MAL_ID','URL'
-  ];
-  rows.push(headers.join(','));
+  // Create MAL-compatible XML for manga
+  async createMALMangaXML(mangaItems, username) {
+    const xmlHeader = `<?xml version="1.0" encoding="UTF-8" ?>
+<myanimelist>
+  <myinfo>
+    <user_id>0</user_id>
+    <user_name>${this.xmlEscape(username)}</user_name>
+    <user_export_type>2</user_export_type>
+  </myinfo>`;
 
-  [...anime, ...manga].forEach(item => {
-    const m = item.node;
-    const s = item.list_status;
-    const type = item._type;
-    rows.push([
-      type,
-      s.status,
-      s.num_episodes_watched || s.num_chapters_read || 0,
-      s.score || '',
-      this.csvEscape(m.title),
-      this.dateToString(s.start_date),
-      this.dateToString(s.finish_date),
-      m.num_episodes || '',
-      m.num_chapters || '',
-      m.mean || '',
-      m.id,
-      this.csvEscape(`https://myanimelist.net/${type.toLowerCase()}/${m.id}`)
-    ].join(','));
-  });
+    const xmlFooter = `</myanimelist>`;
 
-  const csv = rows.join('\n');
-  const fileName = `MAL_${username}_${new Date().toISOString().slice(0, 10)}.csv`;
-  await this.plugin.app.vault.create(fileName, csv);
-  new Notice(`✅ MAL CSV saved: ${fileName}`, 4000);
-  await this.plugin.app.workspace.openLinkText(fileName, '', false);
-}
+    let mangaXml = '';
+    
+    mangaItems.forEach(item => {
+      const media = item.node;
+      const listStatus = item.list_status;
+      
+      // Map MAL status to proper XML format
+      const malStatus = this.mapMALStatusToXML(listStatus.status, 'manga');
+      const score = listStatus.score || 0;
+      const chapters = listStatus.num_chapters_read || 0;
+      const malId = media.id;
+      
+      // Format dates
+      const startDate = this.malDateToString(listStatus.start_date);
+      const finishDate = this.malDateToString(listStatus.finish_date);
+      
+      // Determine manga type
+      const mangaType = this.getMALMangaType(media.media_type);
+      
+      mangaXml += `
+  <manga>
+    <series_mangadb_id>${malId}</series_mangadb_id>
+    <series_title><![CDATA[${media.title || ''}]]></series_title>
+    <series_type>${mangaType}</series_type>
+    <series_chapters>${media.num_chapters || 0}</series_chapters>
+    <series_volumes>${media.num_volumes || 0}</series_volumes>
+    <my_id>0</my_id>
+    <my_read_chapters>${chapters}</my_read_chapters>
+    <my_read_volumes>0</my_read_volumes>
+    <my_start_date>${startDate}</my_start_date>
+    <my_finish_date>${finishDate}</my_finish_date>
+    <my_rated></my_rated>
+    <my_score>${score}</my_score>
+    <my_storage></my_storage>
+    <my_status>${malStatus}</my_status>
+    <my_comments><![CDATA[${listStatus.comments || ''}]]></my_comments>
+    <my_times_read>${listStatus.num_times_reread || 0}</my_times_read>
+    <my_reread_value></my_reread_value>
+    <my_priority>${this.mapMALPriority(listStatus.priority)}</my_priority>
+    <my_tags><![CDATA[${this.formatMALTags(listStatus.tags, media.genres)}]]></my_tags>
+    <my_rereading>0</my_rereading>
+    <my_rereading_chap>0</my_rereading_chap>
+    <update_on_import>1</update_on_import>
+  </manga>`;
+    });
+
+    const xml = xmlHeader + mangaXml + xmlFooter;
+    const fileName = `MAL_Manga_${username}_${new Date().toISOString().slice(0, 10)}.xml`;
+    
+    await this.plugin.app.vault.create(fileName, xml);
+    console.log('[MAL Export] Manga XML created successfully');
+  }
+
+  // Helper methods for MAL exports
+
+  mapMALStatusToXML(malStatus, type) {
+    const animeStatusMap = {
+      'watching': 'Watching',
+      'completed': 'Completed',
+      'on_hold': 'On-Hold',
+      'dropped': 'Dropped',
+      'plan_to_watch': 'Plan to Watch'
+    };
+
+    const mangaStatusMap = {
+      'reading': 'Reading',
+      'completed': 'Completed',
+      'on_hold': 'On-Hold',
+      'dropped': 'Dropped',
+      'plan_to_read': 'Plan to Read'
+    };
+
+    const statusMap = type === 'anime' ? animeStatusMap : mangaStatusMap;
+    return statusMap[malStatus] || (type === 'anime' ? 'Plan to Watch' : 'Plan to Read');
+  }
+
+  getMALAnimeType(mediaType) {
+    if (!mediaType) return 'TV';
+    
+    const typeMap = {
+      'tv': 'TV',
+      'movie': 'Movie',
+      'ova': 'OVA',
+      'special': 'Special',
+      'ona': 'ONA',
+      'music': 'Music'
+    };
+    
+    return typeMap[mediaType.toLowerCase()] || 'TV';
+  }
+
+  getMALMangaType(mediaType) {
+    if (!mediaType) return 'Manga';
+    
+    const typeMap = {
+      'manga': 'Manga',
+      'novel': 'Novel',
+      'light_novel': 'Light Novel',
+      'one_shot': 'One-shot',
+      'doujinshi': 'Doujinshi',
+      'manhwa': 'Manhwa',
+      'manhua': 'Manhua'
+    };
+    
+    return typeMap[mediaType.toLowerCase()] || 'Manga';
+  }
+
+  mapMALPriority(priority) {
+    const priorityMap = {
+      0: 'LOW',
+      1: 'MEDIUM', 
+      2: 'HIGH'
+    };
+    return priorityMap[priority] || 'LOW';
+  }
+
+  formatMALTags(userTags, genres) {
+    const tags = [];
+    
+    // Add user tags if they exist
+    if (userTags && Array.isArray(userTags)) {
+      tags.push(...userTags);
+    }
+    
+    // Add genres as tags
+    if (genres && Array.isArray(genres)) {
+      tags.push(...genres.map(genre => genre.name || genre));
+    }
+    
+    return tags.join(', ');
+  }
+
+  malDateToString(dateStr) {
+    if (!dateStr) return '0000-00-00';
+    // MAL API returns dates in YYYY-MM-DD format already
+    return dateStr;
+  }
 
   async exportSimklListsToCSV() {
     if (!this.plugin.simklAuth.isLoggedIn) {
@@ -13027,7 +13273,7 @@ class ZoroSettingTab extends PluginSettingTab {
     
     new Setting(Data)
       .setName('🧾 Export your data')
-      .setDesc("Everything you've watched, rated, and maybe ghosted — neatly exported into a CSV.")
+      .setDesc("Everything you've watched, rated, and maybe ghosted — neatly exported into a CSV & standard export format")
       .addButton(btn => btn
         .setButtonText('AniList')
         .setClass('mod-cta')

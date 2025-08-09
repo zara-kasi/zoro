@@ -12767,7 +12767,7 @@ class Sample {
             },
             {
                 name: 'Manga', 
-                files: ['Reading.md', 'Planning.md', 'Re-reading.md', 'On Hold.md', 'Completed.md', 'Dropped.md', 'Stats.md'],
+                files: ['Reading.md', 'Planning.md', 'Re-reading.md', 'On Hold.md', 'Completed.md', 'Dropped.md','Trending.md', 'Stats.md'],
                 firstFile: 'Reading.md'
             }
         ];

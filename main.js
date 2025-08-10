@@ -11833,7 +11833,7 @@ class Prompt {
     const message = document.createElement('p');
     message.className = 'zoro-auth-message';
     
-    message.textContent = 'You need to authenticate with AniList to edit your anime/manga entries. This will allow you to update your progress, scores, and status directly from Obsidian.';
+    message.textContent = 'You need to authenticate with AniList/MyAnimeList to edit your anime/manga entries. This will allow you to update your progress, scores, and status directly from Obsidian.';
 
     const featuresDiv = document.createElement('div');
     featuresDiv.className = 'zoro-auth-features';

@@ -22,6 +22,7 @@
 - [Advanced Features](#-advanced-features)
 - [API Support](#-api-support)
 - [Contributing](#-contributing)
+- [Acknowledgements](#-acknowledgements)
 - [License](#-license)
 
 ---
@@ -291,6 +292,18 @@ We welcome contributions! Here's how:
 3. Commit changes: `git commit -m 'Add amazing feature'`
 4. Push to branch: `git push origin feature/amazing-feature`
 5. Open Pull Request
+
+---
+
+## 🤝 Acknowledgements
+
+- **[Obsidian](https://obsidian.md/)**
+- **[Obsidian Raindrop Plugin](https://github.com/mtopping/obsidian-raindrop)**
+- **[AniList](https://anilist.co/)**
+- **[MyAnimeList](https://myanimelist.net/)**
+- **[Simkl](https://simkl.com/)**
+
+This work would not be possible without these essential tools and services.
 
 ---
 

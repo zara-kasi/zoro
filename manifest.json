@@ -3,7 +3,7 @@
   "name": "Zoro",
   "version": "1.0.5",
   "minAppVersion": "0.15.0",
-  "description": "Just enter a username to view  public AniList data — profile, lists, stats, and more. Authenticate only if you want to edit your list or access private info.",
+  "description": "Zoro — Track anime, manga, movies and TV inside Obsidian with AniList, MyAnimeList and Simkl.",
   "author": "Zarakasi",
   "authorUrl": "https://github.com/zara-kasi",
   "isDesktopOnly": false

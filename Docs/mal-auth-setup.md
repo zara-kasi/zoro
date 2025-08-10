@@ -2,6 +2,9 @@
 
 To log in, you’ll need to create your own **Client ID** and **Client Secret** from MyAnimeList (MAL). It’s quick and easy—just follow these steps.
 
+# 🎥 Watch the Video Guide
+[![Watch the YouTube Short](https://img.youtube.com/vi/SIOmZo6MSh4/0.jpg)](https://youtube.com/shorts/SIOmZo6MSh4)
+
 ---
 
 ## 📌 Step-by-Step Instructions
@@ -24,14 +27,6 @@ To log in, you’ll need to create your own **Client ID** and **Client Secret** 
    > ⚠️ **Important**: Ensure the **Redirect URI** is exactly `http://localhost:8080/callback` to make the authentication work.
 
 4. **Click Save** to create your app.
-
----
-
-### 🎥 Watch the Video Guide
-
-If you're not sure how to follow the steps, here's a quick video guide:
-
-[![Watch the YouTube Short](https://img.youtube.com/vi/dg-vHw4mM6M/0.jpg)](https://youtu.be/dg-vHw4mM6M)
 
 ---
 

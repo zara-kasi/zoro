@@ -2,6 +2,8 @@
 
 To log in, you’ll need to create your own **Client ID** and **Client Secret** from MyAnimeList (MAL). It’s quick and easy—just follow these steps.
 
+---
+
 # 🎥 Watch the Video Guide
 [![Watch the YouTube Short](https://img.youtube.com/vi/SIOmZo6MSh4/0.jpg)](https://youtube.com/shorts/SIOmZo6MSh4)
 

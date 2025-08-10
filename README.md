@@ -34,7 +34,7 @@
 2. Authenticate with **AniList**, **MyAnimeList (MAL)**, or **Simkl**.
 3. Alternatively, enter an **AniList public username** for view-only mode.
 4. For detailed instructions, open **Setup → Authentication**.
-5. Select the appropriate guide (**AniList / MAL / Simkl**) and follow it carefully.
+5. Or [Guides](#-guides)
 
 ### **Step 2: Create the Zoro Folder**
 

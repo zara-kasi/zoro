@@ -11876,12 +11876,7 @@ class Prompt {
       new Notice('📝 Please use AniList to authenticate from settings');
     };
 
-    const cancelBtn = document.createElement('button');
-    cancelBtn.className = 'zoro-close-btn';
-    cancelBtn.onclick = () => closeModal();
-
     buttonContainer.appendChild(authenticateBtn);
-    buttonContainer.appendChild(cancelBtn);
 
     content.appendChild(title);
     content.appendChild(message);

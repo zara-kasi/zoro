@@ -11873,7 +11873,7 @@ class Prompt {
       closeModal();
       this.plugin.app.setting.open();
       this.plugin.app.setting.openTabById(this.plugin.manifest.id);
-      new Notice('📝 Please use AniList/MyAnimeList to authenticate from settings');
+      new Notice('📝 Please use AniList/MyAnimeList to authenticate from settings. Hint: use Setup→ Authentication');
     };
 
     buttonContainer.appendChild(authenticateBtn);

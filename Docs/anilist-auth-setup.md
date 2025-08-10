@@ -4,6 +4,12 @@ To login , you'll need to create your own **Client ID** and **Client Secret** fr
 
 ---
 
+## 🎥 Watch the Video Guide
+
+[![Watch the YouTube Short](https://img.youtube.com/vi/1ZJzQomOBQA/0.jpg)](https://youtube.com/shorts/1ZJzQomOBQA)
+
+---
+
 ## 📌 Step-by-Step Instructions
 
 1. **Go to the AniList Developer Page**  
@@ -22,6 +28,7 @@ To login , you'll need to create your own **Client ID** and **Client Secret** fr
      ```
      https://anilist.co/api/v2/oauth/pin
      ```
+> ⚠️ **Important**: Ensure the **Redirect URI** is exactly `https://anilist.co/api/v2/oauth/pin` to make the authentication work.
 
 4. Click **Save**.
 

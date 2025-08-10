@@ -295,7 +295,7 @@ We welcome contributions! Here's how:
 
 ---
 
-## 🤝 Acknowledgements
+## 🌟 Acknowledgements
 
 - **[Obsidian](https://obsidian.md/)**
 - **[Obsidian Raindrop Plugin](https://github.com/mtopping/obsidian-raindrop)**

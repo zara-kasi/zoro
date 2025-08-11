@@ -5762,7 +5762,7 @@ this.emojiMapper.init({ patchSettings:true, patchCreateEl:true, patchNotice:true
     }
 
     this.registerMarkdownCodeBlockProcessor('zoro', this.processor.processZoroCodeBlock.bind(this.processor));
-    this.registerMarkdownPostProcessor(this.processor.processInlineLinks.bind(this.processor));
+
     
     this.addSettingTab(new ZoroSettingTab(this.app, this));
     
@@ -6273,62 +6273,7 @@ async handleTrendingOperation(api, config) {
     }
   }
 
-  async processInlineLinks(el, ctx) {
-    const inlineLinks = el.querySelectorAll('a[href^="zoro:"]');
 
-    const processingPromises = Array.from(inlineLinks).map(link => 
-      this.processInlineLink(link, ctx)
-    );
-
-    await Promise.allSettled(processingPromises);
-  }
-
-  async processInlineLink(link, ctx) {
-    const href = link.getAttribute('href');
-    
-    const placeholder = document.createElement('span');
-    placeholder.textContent = '🔄 Loading Zoro...';
-    placeholder.className = 'zoro-loading-placeholder';
-    link.replaceWith(placeholder);
-
-    try {
-      const config = this.parseInlineLink(href);
-      
-      this.validateOperation(config.source || 'anilist', config.type);
-      
-      const api = this.getApiInstance(config.source || 'anilist');
-      const data = await this.executeApiOperation(api, config);
-
-      const container = document.createElement('span');
-      container.className = 'zoro-inline-container';
-      
-      await this.renderData(container, data, config);
-
-      placeholder.replaceWith(container);
-
-      ctx.addChild({
-        unload: () => {
-          if (container.parentNode) {
-            container.remove();
-          }
-        }
-      });
-
-    } catch (error) {
-      console.warn(`[Zoro] Inline link failed for ${href}:`, error);
-
-      const container = document.createElement('span');
-      container.className = 'zoro-inline-container zoro-error-container';
-
-      const retryFn = () => {
-        container.replaceWith(placeholder);
-        this.processInlineLink(link, ctx);
-      };
-
-      this.plugin.renderError(container, error.message, 'Inline link', retryFn);
-      placeholder.replaceWith(container);
-    }
-  }
 
   parseCodeBlockConfig(source) {
     const config = {};
@@ -6450,80 +6395,7 @@ async handleTrendingOperation(api, config) {
   }
 
 
-parseInlineLink(href) {
-  try {
-    const [base, hash] = href.replace('zoro:', '').split('#');
-    const parts = base.split('/').filter(part => part !== '');
 
-    let username, pathParts;
-
-    if (parts.length === 0 || parts[0] === '') {
-      if (!this.plugin.settings.defaultUsername) {
-        throw new Error('⚠️ Default username not set. Configure it in plugin settings.');
-      }
-      username = this.plugin.settings.defaultUsername;
-      pathParts = parts.slice(1);
-    } else {
-      username = parts[0];
-      pathParts = parts.slice(1);
-    }
-
-    const config = {
-      username: username,
-      layout: 'card',
-      type: 'list',
-      source: this.plugin.settings.defaultApiSource || 'anilist'
-    };
-
-    if (hash) {
-      this.parseInlineLinkHash(config, hash);
-    }
-
-    // Always inject metadata for inline links
-    config.injectMetadata = true;
-    
-    return config;
-  } catch (error) {
-    throw new Error(`❌ Invalid Zoro inline link format: ${error.message}`);
-  }
-}
-
-
-  parseInlineLinkPath(config, pathParts) {
-    const [main, second] = pathParts;
-
-    if (main === 'stats') {
-      config.type = 'stats';
-    } else if (main === 'anime' || main === 'manga') {
-      config.type = 'single';
-      config.mediaType = main.toUpperCase();
-      
-      if (!second || isNaN(parseInt(second))) {
-        throw new Error('⚠️ Invalid media ID for anime/manga inline link.');
-      }
-      config.mediaId = parseInt(second);
-    } else {
-      config.listType = main.toUpperCase().replace(/[\s-]/g, '_');
-      config.type = 'list';
-    }
-  }
-
-  parseInlineLinkHash(config, hash) {
-    const validLayouts = ['compact', 'card', 'minimal', 'full'];
-    const validSources = ['anilist', 'mal', 'simkl'];
-    
-    const hashParts = hash.split(',').map(part => part.trim().toLowerCase());
-    
-    for (const modifier of hashParts) {
-      if (validLayouts.includes(modifier)) {
-        config.layout = modifier;
-      } else if (validSources.includes(modifier)) {
-        config.source = modifier;
-      } else if (modifier === 'nocache') {
-        config.nocache = true;
-      }
-    }
-  }
 }
 
 class Render {

@@ -2547,3 +2547,194 @@ body.theme-light .zoro-heart.favorited::before {
     }
 }
 
+/* Main Container */
+.zoro-note-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+/* Connect Interface */
+.zoro-note-connect-interface {
+  padding: 12px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  display: block; /* Default visible state */
+}
+
+.zoro-note-connect-interface.zoro-note-hidden {
+  display: none !important;
+}
+
+/* Search Input */
+.zoro-note-search-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background-color: var(--background-modifier-border);
+  color: var(--text-normal);
+  font-size: 14px;
+  outline: none;
+  margin-bottom: 8px;
+}
+
+/* Search Results Container */
+.zoro-note-search-results {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* No Results Message */
+.zoro-note-no-results {
+  padding: 8px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* Search Result Items */
+.zoro-note-search-result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  border-radius: 6px;
+  margin: 2px 0;
+  cursor: pointer;
+}
+
+.zoro-note-search-result:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.zoro-note-search-result:not(:hover) {
+  background-color: transparent;
+}
+
+/* Search Result Title */
+.zoro-note-result-title {
+  font-size: 13px;
+  flex: 1;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* Connect Button in Search Results */
+.zoro-note-connect-btn {
+  color: var(--text-normal);
+  border-radius: 3px;
+  padding: 2px 6px;
+  cursor: pointer;
+  margin-left: 8px;
+}
+
+/* Main Panel Content */
+.zoro-note-panel-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Empty State */
+.zoro-note-empty-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.zoro-note-empty-message {
+  /* No additional styles needed */
+}
+
+/* Notes List */
+.zoro-note-notes-list {
+  padding: 4px 0;
+}
+
+/* Individual Note Items */
+.zoro-note-item {
+  padding: 4px 16px;
+  border-radius: 6px;
+  margin: 4px 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.zoro-note-item:hover {
+  background-color: var(--background-modifier-hover);
+}
+
+.zoro-note-item:not(:hover) {
+  background-color: transparent;
+}
+
+/* Note Title */
+.zoro-note-title {
+  font-size: 15px;
+  color: var(--text-normal);
+  font-weight: 400;
+  flex: 1;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* Indicators Container */
+.zoro-note-indicators {
+  display: flex;
+  gap: 2px;
+  margin-left: 8px;
+}
+
+/* Individual Indicators */
+.zoro-note-id-indicator,
+.zoro-note-tag-indicator {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+/* Panel Footer */
+.zoro-note-panel-footer {
+  border-top: 1px solid var(--background-modifier-border);
+  padding: 12px;
+  display: flex;
+  gap: 8px;
+  background-color: var(--background-secondary);
+}
+
+/* Footer Buttons (Create & Connect Existing) */
+.zoro-note-create-btn,
+.zoro-note-connect-existing-btn {
+  flex: 1;
+  padding: 8px 16px;
+  border: 1px solid var(--background-modifier-border-hover);
+  border-radius: 6px;
+  background-color: var(--background-modifier-hover);
+  color: var(--text-normal);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.1s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+/* Button Hover Effects */
+.zoro-note-create-btn:hover,
+.zoro-note-connect-existing-btn:hover {
+  background-color: var(--background-modifier-border);
+  border-color: var(--background-modifier-border-focus);
+}
+
+.zoro-note-create-btn:not(:hover),
+.zoro-note-connect-existing-btn:not(:hover) {
+  background-color: var(--background-modifier-hover);
+  border-color: var(--background-modifier-border-hover);
+}
+
+/* Main Connected Notes Button */
+.zoro-note-button {
+  /* Placeholder - CSS will handle actual styling as mentioned in original comment */
+}

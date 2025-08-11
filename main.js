@@ -9536,31 +9536,15 @@ class ConnectedNotes {
    */
   renderConnectExistingInterface(container, searchIds, mediaType) {
     // Create search interface container
-    const connectInterface = container.createEl('div', { cls: 'zoro-connect-interface' });
-    connectInterface.style.padding = '12px';
-    connectInterface.style.borderBottom = '1px solid var(--background-modifier-border)';
-    connectInterface.style.display = 'none'; // Initially hidden
+    const connectInterface = container.createEl('div', { cls: 'zoro-note-connect-interface' });
     
-    // Search input (minimal, like native Obsidian search)
-    const searchInput = connectInterface.createEl('input', { cls: 'zoro-search-input' });
+    // Search input
+    const searchInput = connectInterface.createEl('input', { cls: 'zoro-note-search-input' });
     searchInput.type = 'text';
     searchInput.placeholder = '🔍 existing notes to connect...';
-    searchInput.style.width = '100%';
-    searchInput.style.padding = '8px 12px';
-    searchInput.style.border = '1px solid var(--background-modifier-border)';
-    searchInput.style.borderRadius = '6px';
-    searchInput.style.backgroundColor = 'var(--background-modifier-border)';
-    searchInput.style.color = 'var(--text-normal)';
-    searchInput.style.fontSize = '14px';
-    searchInput.style.outline = 'none';
-    searchInput.style.marginBottom = '8px';
     
     // Search results container
-    const resultsContainer = connectInterface.createEl('div', { cls: 'zoro-search-results' });
-    resultsContainer.style.maxHeight = '200px';
-    resultsContainer.style.overflowY = 'auto';
-    
-
+    const resultsContainer = connectInterface.createEl('div', { cls: 'zoro-note-search-results' });
     
     // Search functionality with debounce
     let searchTimeout;
@@ -9574,42 +9558,14 @@ class ConnectedNotes {
           const results = await this.findNotesToConnect(query, searchIds);
           
           if (results.length === 0) {
-            const noResults = resultsContainer.createEl('div', { text: 'No notes found' });
-            noResults.style.padding = '8px';
-            noResults.style.color = 'var(--text-muted)';
-            noResults.style.textAlign = 'center';
+            const noResults = resultsContainer.createEl('div', { text: 'No notes found', cls: 'zoro-note-no-results' });
           } else {
             results.forEach(result => {
-              const resultItem = resultsContainer.createEl('div', { cls: 'zoro-search-result' });
-              resultItem.style.display = 'flex';
-              resultItem.style.alignItems = 'center';
-              resultItem.style.justifyContent = 'space-between';
-              resultItem.style.padding = '4px 8px';
-              resultItem.style.borderRadius = '6px';
-              resultItem.style.margin = '2px 0';
-              resultItem.style.cursor = 'pointer';
+              const resultItem = resultsContainer.createEl('div', { cls: 'zoro-note-search-result' });
               
-              resultItem.addEventListener('mouseenter', () => {
-                resultItem.style.backgroundColor = 'var(--background-modifier-hover)';
-              });
-              resultItem.addEventListener('mouseleave', () => {
-                resultItem.style.backgroundColor = 'transparent';
-              });
+              const noteTitle = resultItem.createEl('span', { text: result.title, cls: 'zoro-note-result-title' });
               
-              const noteTitle = resultItem.createEl('span', { text: result.title });
-              noteTitle.style.fontSize = '13px';
-              noteTitle.style.flex = '1';
-              noteTitle.style.textOverflow = 'ellipsis';
-              noteTitle.style.overflow = 'hidden';
-              noteTitle.style.whiteSpace = 'nowrap';
-              
-              const connectBtn = resultItem.createEl('button', { text: '➕', cls: 'zoro-connect-btn' });
-              
-              connectBtn.style.color = 'var(--text-normal)';
-              connectBtn.style.borderRadius = '3px';
-              connectBtn.style.padding = '2px 6px';
-              connectBtn.style.cursor = 'pointer';
-              connectBtn.style.marginLeft = '8px';
+              const connectBtn = resultItem.createEl('button', { text: '➕', cls: 'zoro-note-connect-btn' });
               connectBtn.title = 'Connect this note';
               
               connectBtn.onclick = async (e) => {
@@ -9618,9 +9574,9 @@ class ConnectedNotes {
                 if (success) {
                   // Refresh the connected notes panel
                   const connectedNotes = await this.searchConnectedNotes(searchIds, mediaType);
-                  this.refreshConnectedNotesList(container.querySelector('.zoro-panel-content'), connectedNotes);
+                  this.refreshConnectedNotesList(container.querySelector('.zoro-note-panel-content'), connectedNotes);
                   // Close search interface
-                  connectInterface.style.display = 'none';
+                  connectInterface.classList.add('zoro-note-hidden');
                   searchInput.value = '';
                   resultsContainer.empty();
                 }
@@ -9646,62 +9602,27 @@ class ConnectedNotes {
    * Refresh the connected notes list without full re-render
    */
   refreshConnectedNotesList(mainContent, connectedNotes) {
-    const notesList = mainContent.querySelector('.zoro-notes-list');
-    const emptyState = mainContent.querySelector('.zoro-empty-state');
+    const notesList = mainContent.querySelector('.zoro-note-notes-list');
+    const emptyState = mainContent.querySelector('.zoro-note-empty-state');
     
     if (connectedNotes.length === 0) {
       if (notesList) notesList.remove();
       if (!emptyState) {
-        const newEmptyState = mainContent.createEl('div', { cls: 'zoro-empty-state' });
-        newEmptyState.style.flex = '1';
-        newEmptyState.style.display = 'flex';
-        newEmptyState.style.alignItems = 'center';
-        newEmptyState.style.justifyContent = 'center';
-        
-        newEmptyState.createEl('div', { 
-          text: 'No notes', 
-          cls: 'zoro-empty-message' 
-        });
+        const newEmptyState = mainContent.createEl('div', { cls: 'zoro-note-empty-state' });
+        newEmptyState.createEl('div', { text: 'No notes', cls: 'zoro-note-empty-message' });
       }
     } else {
       if (emptyState) emptyState.remove();
       if (notesList) notesList.remove();
       
       // Recreate notes list
-      const newNotesList = mainContent.createEl('div', { cls: 'zoro-notes-list' });
-      newNotesList.style.padding = '4px 0';
+      const newNotesList = mainContent.createEl('div', { cls: 'zoro-note-notes-list' });
       
       connectedNotes.forEach(note => {
-        // Style like native Obsidian search result items
         const noteItem = newNotesList.createEl('div', { cls: 'zoro-note-item' });
-        noteItem.style.padding = '4px 16px';
-        noteItem.style.borderRadius = '6px';
-        noteItem.style.margin = '4px 12px';
-        noteItem.style.cursor = 'pointer';
-        noteItem.style.display = 'flex';
-        noteItem.style.alignItems = 'center';
-        noteItem.style.justifyContent = 'space-between';
         
-        // Hover effect like native search results
-        noteItem.addEventListener('mouseenter', () => {
-          noteItem.style.backgroundColor = 'var(--background-modifier-hover)';
-        });
-        noteItem.addEventListener('mouseleave', () => {
-          noteItem.style.backgroundColor = 'transparent';
-        });
-        
-        // Note title styled like native search results
-        const noteTitle = noteItem.createEl('div', { 
-          text: note.title,
-          cls: 'zoro-note-title'
-        });
-        noteTitle.style.fontSize = '15px';
-        noteTitle.style.color = 'var(--text-normal)';
-        noteTitle.style.fontWeight = '400';
-        noteTitle.style.flex = '1';
-        noteTitle.style.textOverflow = 'ellipsis';
-        noteTitle.style.overflow = 'hidden';
-        noteTitle.style.whiteSpace = 'nowrap';
+        // Note title
+        const noteTitle = noteItem.createEl('div', { text: note.title, cls: 'zoro-note-title' });
         
         // Click handler for the entire item
         noteItem.onclick = (e) => {
@@ -9711,36 +9632,26 @@ class ConnectedNotes {
           this.app.workspace.setActiveLeaf(mainLeaf);
         };
 
-        // Show matching indicators (compact, like native file explorer)
+        // Show matching indicators
         const indicators = noteItem.createEl('div', { cls: 'zoro-note-indicators' });
-        indicators.style.display = 'flex';
-        indicators.style.gap = '2px';
-        indicators.style.marginLeft = '8px';
         
         if (note.hasMatchingId) {
-          const idIndicator = indicators.createEl('span', { text: '🔗', cls: 'zoro-id-indicator', title: 'Has matching ID' });
-          idIndicator.style.fontSize = '11px';
-          idIndicator.style.opacity = '0.7';
+          const idIndicator = indicators.createEl('span', { text: '🔗', cls: 'zoro-note-id-indicator', title: 'Has matching ID' });
         }
         if (note.hasZoroTag) {
-          const tagIndicator = indicators.createEl('span', { text: '🏷️', cls: 'zoro-tag-indicator', title: 'Has #Zoro tag' });
-          tagIndicator.style.fontSize = '11px';
-          tagIndicator.style.opacity = '0.7';
+          const tagIndicator = indicators.createEl('span', { text: '🏷️', cls: 'zoro-note-tag-indicator', title: 'Has #Zoro tag' });
         }
       });
     }
   }
+
   /**
    * Render connected notes in the dedicated Zoro view
    */
   renderConnectedNotesInView(view, connectedNotes, searchIds, mediaType) {
     const container = view.containerEl;
     container.empty();
-    
-    // Add flexbox layout to position elements properly
-    container.style.display = 'flex';
-    container.style.flexDirection = 'column';
-    container.style.height = '100%';
+    container.className = 'zoro-note-container';
 
     // Set multiple title properties to ensure "Zoro" appears everywhere
     if (view.titleEl) {
@@ -9780,62 +9691,24 @@ class ConnectedNotes {
 
     // Connect existing notes interface (initially hidden)
     const connectInterface = this.renderConnectExistingInterface(container, searchIds, mediaType);
+    connectInterface.classList.add('zoro-note-hidden'); // Initially hidden
 
-    // Main content area (grows to fill space)
-    const mainContent = container.createEl('div', { cls: 'zoro-panel-content' });
-    mainContent.style.flex = '1';
-    mainContent.style.display = 'flex';
-    mainContent.style.flexDirection = 'column';
+    // Main content area
+    const mainContent = container.createEl('div', { cls: 'zoro-note-panel-content' });
 
     // Notes list or empty state
     if (connectedNotes.length === 0) {
-      // Center the "No notes" text in the middle of the panel
-      const emptyState = mainContent.createEl('div', { cls: 'zoro-empty-state' });
-      emptyState.style.flex = '1';
-      emptyState.style.display = 'flex';
-      emptyState.style.alignItems = 'center';
-      emptyState.style.justifyContent = 'center';
-      
-      emptyState.createEl('div', { 
-        text: 'No notes', 
-        cls: 'zoro-empty-message' 
-      });
+      const emptyState = mainContent.createEl('div', { cls: 'zoro-note-empty-state' });
+      emptyState.createEl('div', { text: 'No notes', cls: 'zoro-note-empty-message' });
     } else {
-      // Notes list with proper padding like native Obsidian search results
-      const notesList = mainContent.createEl('div', { cls: 'zoro-notes-list' });
-      notesList.style.padding = '4px 0';
+      // Notes list
+      const notesList = mainContent.createEl('div', { cls: 'zoro-note-notes-list' });
       
       connectedNotes.forEach(note => {
-        // Style like native Obsidian search result items
         const noteItem = notesList.createEl('div', { cls: 'zoro-note-item' });
-        noteItem.style.padding = '4px 16px';
-        noteItem.style.borderRadius = '6px';
-        noteItem.style.margin = '4px 12px';
-        noteItem.style.cursor = 'pointer';
-        noteItem.style.display = 'flex';
-        noteItem.style.alignItems = 'center';
-        noteItem.style.justifyContent = 'space-between';
         
-        // Hover effect like native search results
-        noteItem.addEventListener('mouseenter', () => {
-          noteItem.style.backgroundColor = 'var(--background-modifier-hover)';
-        });
-        noteItem.addEventListener('mouseleave', () => {
-          noteItem.style.backgroundColor = 'transparent';
-        });
-        
-        // Note title styled like native search results
-        const noteTitle = noteItem.createEl('div', { 
-          text: note.title,
-          cls: 'zoro-note-title'
-        });
-        noteTitle.style.fontSize = '15px';
-        noteTitle.style.color = 'var(--text-normal)';
-        noteTitle.style.fontWeight = '400';
-        noteTitle.style.flex = '1';
-        noteTitle.style.textOverflow = 'ellipsis';
-        noteTitle.style.overflow = 'hidden';
-        noteTitle.style.whiteSpace = 'nowrap';
+        // Note title
+        const noteTitle = noteItem.createEl('div', { text: note.title, cls: 'zoro-note-title' });
         
         // Click handler for the entire item
         noteItem.onclick = (e) => {
@@ -9845,101 +9718,38 @@ class ConnectedNotes {
           this.app.workspace.setActiveLeaf(mainLeaf);
         };
 
-        // Show matching indicators (compact, like native file explorer)
+        // Show matching indicators
         const indicators = noteItem.createEl('div', { cls: 'zoro-note-indicators' });
-        indicators.style.display = 'flex';
-        indicators.style.gap = '2px';
-        indicators.style.marginLeft = '8px';
         
         if (note.hasMatchingId) {
-          const idIndicator = indicators.createEl('span', { text: '🔗', cls: 'zoro-id-indicator', title: 'Has matching ID' });
-          idIndicator.style.fontSize = '11px';
-          idIndicator.style.opacity = '0.7';
+          const idIndicator = indicators.createEl('span', { text: '🔗', cls: 'zoro-note-id-indicator', title: 'Has matching ID' });
         }
         if (note.hasZoroTag) {
-          const tagIndicator = indicators.createEl('span', { text: '🏷️', cls: 'zoro-tag-indicator', title: 'Has #Zoro tag' });
-          tagIndicator.style.fontSize = '11px';
-          tagIndicator.style.opacity = '0.7';
+          const tagIndicator = indicators.createEl('span', { text: '🏷️', cls: 'zoro-note-tag-indicator', title: 'Has #Zoro tag' });
         }
       });
     }
 
-    // Footer section at bottom (like native Obsidian panels)
-    const footer = container.createEl('div', { cls: 'zoro-panel-footer' });
-    footer.style.borderTop = '1px solid var(--background-modifier-border)';
-    footer.style.padding = '12px';
-    footer.style.display = 'flex';
-    footer.style.gap = '8px';
-    footer.style.backgroundColor = 'var(--background-secondary)';
+    // Footer section at bottom
+    const footer = container.createEl('div', { cls: 'zoro-note-panel-footer' });
     
-    const createButton = footer.createEl('button', { 
-      text: 'Create note', 
-      cls: 'zoro-create-btn' 
-    });
-    // Style like native Obsidian buttons with permanent grey accent look
-    createButton.style.flex = '1';
-    createButton.style.padding = '8px 16px';
-    createButton.style.border = '1px solid var(--background-modifier-border-hover)';
-    createButton.style.borderRadius = '6px';
-    createButton.style.backgroundColor = 'var(--background-modifier-hover)'; // Permanent grey look
-    createButton.style.color = 'var(--text-normal)';
-    createButton.style.cursor = 'pointer';
-    createButton.style.fontSize = '13px';
-    createButton.style.fontWeight = '500';
-    createButton.style.transition = 'all 0.1s ease';
-    createButton.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.05)';
-    
-    // Hover effects for create button
-    createButton.addEventListener('mouseenter', () => {
-      createButton.style.backgroundColor = 'var(--background-modifier-border)';
-      createButton.style.borderColor = 'var(--background-modifier-border-focus)';
-    });
-    createButton.addEventListener('mouseleave', () => {
-      createButton.style.backgroundColor = 'var(--background-modifier-hover)';
-      createButton.style.borderColor = 'var(--background-modifier-border-hover)';
-    });
-    
+    const createButton = footer.createEl('button', { text: 'Create note', cls: 'zoro-note-create-btn' });
     createButton.onclick = () => this.createNewConnectedNote(searchIds, mediaType);
     
     // New connect existing button
-    const connectButton = footer.createEl('button', { 
-      text: 'Connect existing', 
-      cls: 'zoro-connect-existing-btn' 
-    });
-    connectButton.style.flex = '1';
-    connectButton.style.padding = '8px 16px';
-    connectButton.style.border = '1px solid var(--background-modifier-border-hover)';
-    connectButton.style.borderRadius = '6px';
-    connectButton.style.backgroundColor = 'var(--background-modifier-hover)'; // Permanent grey look
-    connectButton.style.color = 'var(--text-normal)';
-    connectButton.style.cursor = 'pointer';
-    connectButton.style.fontSize = '13px';
-    connectButton.style.fontWeight = '500';
-    connectButton.style.transition = 'all 0.1s ease';
-    connectButton.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.05)';
-    
-    // Hover effects for connect button
-    connectButton.addEventListener('mouseenter', () => {
-      connectButton.style.backgroundColor = 'var(--background-modifier-border)';
-      connectButton.style.borderColor = 'var(--background-modifier-border-focus)';
-    });
-    connectButton.addEventListener('mouseleave', () => {
-      connectButton.style.backgroundColor = 'var(--background-modifier-hover)';
-      connectButton.style.borderColor = 'var(--background-modifier-border-hover)';
-    });
+    const connectButton = footer.createEl('button', { text: 'Connect existing', cls: 'zoro-note-connect-existing-btn' });
     
     connectButton.onclick = () => {
-      const isVisible = connectInterface.style.display !== 'none';
-      connectInterface.style.display = isVisible ? 'none' : 'block';
+      connectInterface.classList.toggle('zoro-note-hidden');
       
-      if (!isVisible) {
+      if (!connectInterface.classList.contains('zoro-note-hidden')) {
         // Focus on search input when opened
-        const searchInput = connectInterface.querySelector('.zoro-search-input');
+        const searchInput = connectInterface.querySelector('.zoro-note-search-input');
         setTimeout(() => searchInput.focus(), 100);
       } else {
         // Clear search when closed
-        const searchInput = connectInterface.querySelector('.zoro-search-input');
-        const resultsContainer = connectInterface.querySelector('.zoro-search-results');
+        const searchInput = connectInterface.querySelector('.zoro-note-search-input');
+        const resultsContainer = connectInterface.querySelector('.zoro-note-search-results');
         searchInput.value = '';
         resultsContainer.empty();
       }
@@ -10016,7 +9826,7 @@ class ConnectedNotes {
    */
   createConnectedNotesButton(media, entry, config) {
     const notesBtn = document.createElement('span');
-    notesBtn.className = 'zoro-connected-notes-button';
+    notesBtn.className = 'zoro-note-button';
     notesBtn.textContent = '➕'; // Placeholder - CSS will handle actual styling
     notesBtn.title = 'View connected notes';
     

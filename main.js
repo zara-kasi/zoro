@@ -5753,7 +5753,7 @@ async updateDefaultApiSourceBasedOnAuth() {
 
   async onload() {
     this.render = new Render(this);
-    
+    this.connectedNotes = new ConnectedNotes(this);
     try {
       await this.loadSettings();
     } catch (err) {
@@ -6965,33 +6965,35 @@ class CardRenderer {
 
     return title;
   }
-
   createMediaDetails(media, entry, config, isSearch) {
-    const details = document.createElement('div');
-    details.className = 'media-details';
+  const details = document.createElement('div');
+  details.className = 'media-details';
 
-    // Format badge
-    if (media.format) {
-      const formatBadge = document.createElement('span');
-      formatBadge.className = 'format-badge';
-      formatBadge.textContent = this.formatter.formatFormat(media.format);
-      details.appendChild(formatBadge);
-    }
-
-    // Status badge or edit button
-    if (!isSearch && entry && entry.status) {
-      const statusBadge = this.createStatusBadge(entry, config);
-      details.appendChild(statusBadge);
-    }
-
-    if (isSearch) {
-      const editBtn = this.createEditButton(media, entry, config);
-      details.appendChild(editBtn);
-    }
-
-    return details;
+  // Format badge
+  if (media.format) {
+    const formatBadge = document.createElement('span');
+    formatBadge.className = 'format-badge';
+    formatBadge.textContent = this.formatter.formatFormat(media.format);
+    details.appendChild(formatBadge);
   }
 
+  // Status badge or edit button
+  if (!isSearch && entry && entry.status) {
+    const statusBadge = this.createStatusBadge(entry, config);
+    details.appendChild(statusBadge);
+  }
+
+  if (isSearch) {
+    const editBtn = this.createEditButton(media, entry, config);
+    details.appendChild(editBtn);
+  }
+
+  // CONNECTED NOTES BUTTON - ADD THIS
+  const connectedNotesBtn = this.plugin.connectedNotes.createConnectedNotesButton(media, entry, config);
+  details.appendChild(connectedNotesBtn);
+
+  return details;
+}
   createStatusBadge(entry, config) {
     const statusBadge = document.createElement('span');
     const statusClass = this.formatter.getStatusClass(entry.status);
@@ -9102,7 +9104,6 @@ class MALEditModal {
     return 'anime';
   }
 }
-
 class SimklEditModal {
   constructor(plugin) {
     this.plugin = plugin;
@@ -9277,6 +9278,774 @@ class SupportEditModal {
           this.plugin.processZoroCodeBlock(block.textContent, container, {});
         }
       }
+    }
+  }
+}
+
+class ConnectedNotes {
+  constructor(plugin) {
+    this.plugin = plugin;
+    this.app = plugin.app;
+  }
+
+  /**
+   * Extract search IDs from media entry based on API source
+   */
+  extractSearchIds(media, entry, source) {
+    const ids = {};
+    
+    // mal_id is STANDARD for all anime/manga regardless of source
+    if (source === 'mal') {
+      ids.mal_id = media.id;
+    } else if (source === 'anilist') {
+      // Primary: use idMal if available, Fallback: use anilist id
+      if (media.idMal) {
+        ids.mal_id = media.idMal;
+      }
+      // Always add anilist_id as backup
+      ids.anilist_id = media.id;
+    } else if (source === 'simkl') {
+      ids.simkl_id = media.id;
+    }
+    
+    return ids;
+  }
+
+  /**
+   * Search vault for notes with matching properties
+   */
+  async searchConnectedNotes(searchIds, mediaType) {
+    const connectedNotes = [];
+    const markdownFiles = this.app.vault.getMarkdownFiles();
+
+    for (const file of markdownFiles) {
+      const metadata = this.app.metadataCache.getFileCache(file);
+      const frontmatter = metadata?.frontmatter;
+      
+      if (!frontmatter) continue;
+
+      // Check if note has matching IDs
+      let hasMatchingId = false;
+      for (const [idType, idValue] of Object.entries(searchIds)) {
+        if (frontmatter[idType] == idValue) {
+          hasMatchingId = true;
+          break;
+        }
+      }
+
+      // Also check for #Zoro tag
+      const hasZoroTag = metadata?.tags?.some(tag => tag.tag === '#Zoro') || false;
+      
+      if (hasMatchingId || hasZoroTag) {
+        connectedNotes.push({
+          file: file,
+          title: file.basename,
+          path: file.path,
+          frontmatter: frontmatter,
+          hasMatchingId: hasMatchingId,
+          hasZoroTag: hasZoroTag
+        });
+      }
+    }
+
+    return connectedNotes;
+  }
+
+  /**
+   * Search vault for existing notes to connect (excludes already connected ones)
+   */
+  async findNotesToConnect(searchQuery, searchIds) {
+    const allFiles = this.app.vault.getMarkdownFiles();
+    const searchResults = [];
+    
+    if (!searchQuery || searchQuery.trim().length < 2) {
+      return searchResults;
+    }
+    
+    const query = searchQuery.toLowerCase().trim();
+    
+    for (const file of allFiles) {
+      // Skip files that already have matching IDs
+      const metadata = this.app.metadataCache.getFileCache(file);
+      const frontmatter = metadata?.frontmatter;
+      
+      if (frontmatter) {
+        let alreadyConnected = false;
+        for (const [idType, idValue] of Object.entries(searchIds)) {
+          if (frontmatter[idType] == idValue) {
+            alreadyConnected = true;
+            break;
+          }
+        }
+        if (alreadyConnected) continue;
+      }
+      
+      // Search in filename
+      if (file.basename.toLowerCase().includes(query)) {
+        searchResults.push({
+          file: file,
+          title: file.basename,
+          path: file.path,
+          matchType: 'title'
+        });
+        continue;
+      }
+      
+      // Search in content (first 500 chars for performance)
+      try {
+        const content = await this.app.vault.cachedRead(file);
+        const contentPreview = content.slice(0, 500).toLowerCase();
+        if (contentPreview.includes(query)) {
+          searchResults.push({
+            file: file,
+            title: file.basename,
+            path: file.path,
+            matchType: 'content'
+          });
+        }
+      } catch (error) {
+        // Skip files that can't be read
+        continue;
+      }
+    }
+    
+    // Sort by relevance (title matches first, then alphabetically)
+    return searchResults.sort((a, b) => {
+      if (a.matchType !== b.matchType) {
+        return a.matchType === 'title' ? -1 : 1;
+      }
+      return a.title.localeCompare(b.title);
+    }).slice(0, 20); // Limit to 20 results for performance
+  }
+
+  /**
+   * Add metadata to existing note
+   */
+  async connectExistingNote(file, searchIds, mediaType) {
+    try {
+      const content = await this.app.vault.read(file);
+      const metadata = this.app.metadataCache.getFileCache(file);
+      const existingFrontmatter = metadata?.frontmatter || {};
+      
+      // Parse existing frontmatter
+      let frontmatterEnd = 0;
+      let bodyContent = content;
+      
+      if (content.startsWith('---\n')) {
+        const secondDelimiter = content.indexOf('\n---\n', 4);
+        if (secondDelimiter !== -1) {
+          frontmatterEnd = secondDelimiter + 5;
+          bodyContent = content.slice(frontmatterEnd);
+        }
+      }
+      
+      // Merge new IDs with existing frontmatter
+      const updatedFrontmatter = { ...existingFrontmatter };
+      
+      // Add new search IDs
+      Object.entries(searchIds).forEach(([key, value]) => {
+        updatedFrontmatter[key] = value;
+      });
+      
+      // Add media type
+      updatedFrontmatter.media_type = mediaType;
+      
+      // Add Zoro tag if not present
+      if (!updatedFrontmatter.tags) {
+        updatedFrontmatter.tags = ['Zoro'];
+      } else if (Array.isArray(updatedFrontmatter.tags)) {
+        if (!updatedFrontmatter.tags.includes('Zoro')) {
+          updatedFrontmatter.tags.push('Zoro');
+        }
+      }
+      
+      // Build new frontmatter
+      const frontmatterLines = ['---'];
+      Object.entries(updatedFrontmatter).forEach(([key, value]) => {
+        if (key === 'tags' && Array.isArray(value)) {
+          frontmatterLines.push('tags:');
+          value.forEach(tag => {
+            frontmatterLines.push(`  - ${tag}`);
+          });
+        } else {
+          frontmatterLines.push(`${key}: "${value}"`);
+        }
+      });
+      frontmatterLines.push('---', '');
+      
+      const newContent = frontmatterLines.join('\n') + bodyContent;
+      
+      // Write updated content
+      await this.app.vault.modify(file, newContent);
+      
+      new Notice(`Connected note: ${file.basename}`);
+      return true;
+      
+    } catch (error) {
+      console.error('[ConnectedNotes] Error connecting existing note:', error);
+      new Notice(`Failed to connect note: ${file.basename}`);
+      return false;
+    }
+  }
+
+  /**
+   * Show connected notes in a single dedicated side panel
+   */
+  async showConnectedNotes(searchIds, mediaType) {
+    try {
+      // Search for connected notes
+      const connectedNotes = await this.searchConnectedNotes(searchIds, mediaType);
+
+      // Look for existing Zoro panel first
+      let zoroLeaf = null;
+      this.app.workspace.iterateAllLeaves((leaf) => {
+        if (leaf.view.titleEl && leaf.view.titleEl.textContent === 'Zoro') {
+          zoroLeaf = leaf;
+          return false; // Stop iteration
+        }
+      });
+
+      // If no existing Zoro panel, create new one
+      if (!zoroLeaf) {
+        zoroLeaf = this.app.workspace.getRightLeaf(false);
+      }
+
+      // Render content and set title
+      this.renderConnectedNotesInView(zoroLeaf.view, connectedNotes, searchIds, mediaType);
+      
+      // Ensure the side panel is visible
+      this.app.workspace.revealLeaf(zoroLeaf);
+      
+    } catch (error) {
+      console.error('[ConnectedNotes] Error showing connected notes:', error);
+      new Notice('Failed to load connected notes');
+    }
+  }
+
+  /**
+   * Render the connect existing notes interface
+   */
+  renderConnectExistingInterface(container, searchIds, mediaType) {
+    // Create search interface container
+    const connectInterface = container.createEl('div', { cls: 'zoro-connect-interface' });
+    connectInterface.style.padding = '12px';
+    connectInterface.style.borderBottom = '1px solid var(--background-modifier-border)';
+    connectInterface.style.display = 'none'; // Initially hidden
+    
+    // Search input (minimal, like native Obsidian search)
+    const searchInput = connectInterface.createEl('input', { cls: 'zoro-search-input' });
+    searchInput.type = 'text';
+    searchInput.placeholder = '🔍 existing notes to connect...';
+    searchInput.style.width = '100%';
+    searchInput.style.padding = '8px 12px';
+    searchInput.style.border = '1px solid var(--background-modifier-border)';
+    searchInput.style.borderRadius = '6px';
+    searchInput.style.backgroundColor = 'var(--background-modifier-border)';
+    searchInput.style.color = 'var(--text-normal)';
+    searchInput.style.fontSize = '14px';
+    searchInput.style.outline = 'none';
+    searchInput.style.marginBottom = '8px';
+    
+    // Search results container
+    const resultsContainer = connectInterface.createEl('div', { cls: 'zoro-search-results' });
+    resultsContainer.style.maxHeight = '200px';
+    resultsContainer.style.overflowY = 'auto';
+    
+
+    
+    // Search functionality with debounce
+    let searchTimeout;
+    searchInput.addEventListener('input', () => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(async () => {
+        const query = searchInput.value;
+        resultsContainer.empty();
+        
+        if (query.trim().length >= 2) {
+          const results = await this.findNotesToConnect(query, searchIds);
+          
+          if (results.length === 0) {
+            const noResults = resultsContainer.createEl('div', { text: 'No notes found' });
+            noResults.style.padding = '8px';
+            noResults.style.color = 'var(--text-muted)';
+            noResults.style.textAlign = 'center';
+          } else {
+            results.forEach(result => {
+              const resultItem = resultsContainer.createEl('div', { cls: 'zoro-search-result' });
+              resultItem.style.display = 'flex';
+              resultItem.style.alignItems = 'center';
+              resultItem.style.justifyContent = 'space-between';
+              resultItem.style.padding = '4px 8px';
+              resultItem.style.borderRadius = '6px';
+              resultItem.style.margin = '2px 0';
+              resultItem.style.cursor = 'pointer';
+              
+              resultItem.addEventListener('mouseenter', () => {
+                resultItem.style.backgroundColor = 'var(--background-modifier-hover)';
+              });
+              resultItem.addEventListener('mouseleave', () => {
+                resultItem.style.backgroundColor = 'transparent';
+              });
+              
+              const noteTitle = resultItem.createEl('span', { text: result.title });
+              noteTitle.style.fontSize = '13px';
+              noteTitle.style.flex = '1';
+              noteTitle.style.textOverflow = 'ellipsis';
+              noteTitle.style.overflow = 'hidden';
+              noteTitle.style.whiteSpace = 'nowrap';
+              
+              const connectBtn = resultItem.createEl('button', { text: '➕', cls: 'zoro-connect-btn' });
+              
+              connectBtn.style.color = 'var(--text-normal)';
+              connectBtn.style.borderRadius = '3px';
+              connectBtn.style.padding = '2px 6px';
+              connectBtn.style.cursor = 'pointer';
+              connectBtn.style.marginLeft = '8px';
+              connectBtn.title = 'Connect this note';
+              
+              connectBtn.onclick = async (e) => {
+                e.stopPropagation();
+                const success = await this.connectExistingNote(result.file, searchIds, mediaType);
+                if (success) {
+                  // Refresh the connected notes panel
+                  const connectedNotes = await this.searchConnectedNotes(searchIds, mediaType);
+                  this.refreshConnectedNotesList(container.querySelector('.zoro-panel-content'), connectedNotes);
+                  // Close search interface
+                  connectInterface.style.display = 'none';
+                  searchInput.value = '';
+                  resultsContainer.empty();
+                }
+              };
+              
+              // Click on item to preview
+              resultItem.onclick = (e) => {
+                if (e.target !== connectBtn) {
+                  const mainLeaf = this.app.workspace.getLeaf('tab');
+                  mainLeaf.openFile(result.file);
+                }
+              };
+            });
+          }
+        }
+      }, 300); // 300ms debounce
+    });
+    
+    return connectInterface;
+  }
+
+  /**
+   * Refresh the connected notes list without full re-render
+   */
+  refreshConnectedNotesList(mainContent, connectedNotes) {
+    const notesList = mainContent.querySelector('.zoro-notes-list');
+    const emptyState = mainContent.querySelector('.zoro-empty-state');
+    
+    if (connectedNotes.length === 0) {
+      if (notesList) notesList.remove();
+      if (!emptyState) {
+        const newEmptyState = mainContent.createEl('div', { cls: 'zoro-empty-state' });
+        newEmptyState.style.flex = '1';
+        newEmptyState.style.display = 'flex';
+        newEmptyState.style.alignItems = 'center';
+        newEmptyState.style.justifyContent = 'center';
+        
+        newEmptyState.createEl('div', { 
+          text: 'No notes', 
+          cls: 'zoro-empty-message' 
+        });
+      }
+    } else {
+      if (emptyState) emptyState.remove();
+      if (notesList) notesList.remove();
+      
+      // Recreate notes list
+      const newNotesList = mainContent.createEl('div', { cls: 'zoro-notes-list' });
+      newNotesList.style.padding = '4px 0';
+      
+      connectedNotes.forEach(note => {
+        // Style like native Obsidian search result items
+        const noteItem = newNotesList.createEl('div', { cls: 'zoro-note-item' });
+        noteItem.style.padding = '4px 16px';
+        noteItem.style.borderRadius = '6px';
+        noteItem.style.margin = '4px 12px';
+        noteItem.style.cursor = 'pointer';
+        noteItem.style.display = 'flex';
+        noteItem.style.alignItems = 'center';
+        noteItem.style.justifyContent = 'space-between';
+        
+        // Hover effect like native search results
+        noteItem.addEventListener('mouseenter', () => {
+          noteItem.style.backgroundColor = 'var(--background-modifier-hover)';
+        });
+        noteItem.addEventListener('mouseleave', () => {
+          noteItem.style.backgroundColor = 'transparent';
+        });
+        
+        // Note title styled like native search results
+        const noteTitle = noteItem.createEl('div', { 
+          text: note.title,
+          cls: 'zoro-note-title'
+        });
+        noteTitle.style.fontSize = '15px';
+        noteTitle.style.color = 'var(--text-normal)';
+        noteTitle.style.fontWeight = '400';
+        noteTitle.style.flex = '1';
+        noteTitle.style.textOverflow = 'ellipsis';
+        noteTitle.style.overflow = 'hidden';
+        noteTitle.style.whiteSpace = 'nowrap';
+        
+        // Click handler for the entire item
+        noteItem.onclick = (e) => {
+          e.preventDefault();
+          const mainLeaf = this.app.workspace.getLeaf('tab');
+          mainLeaf.openFile(note.file);
+          this.app.workspace.setActiveLeaf(mainLeaf);
+        };
+
+        // Show matching indicators (compact, like native file explorer)
+        const indicators = noteItem.createEl('div', { cls: 'zoro-note-indicators' });
+        indicators.style.display = 'flex';
+        indicators.style.gap = '2px';
+        indicators.style.marginLeft = '8px';
+        
+        if (note.hasMatchingId) {
+          const idIndicator = indicators.createEl('span', { text: '🔗', cls: 'zoro-id-indicator', title: 'Has matching ID' });
+          idIndicator.style.fontSize = '11px';
+          idIndicator.style.opacity = '0.7';
+        }
+        if (note.hasZoroTag) {
+          const tagIndicator = indicators.createEl('span', { text: '🏷️', cls: 'zoro-tag-indicator', title: 'Has #Zoro tag' });
+          tagIndicator.style.fontSize = '11px';
+          tagIndicator.style.opacity = '0.7';
+        }
+      });
+    }
+  }
+
+  /**
+   * Render connected notes in the dedicated Zoro view
+   */
+  renderConnectedNotesInView(view, connectedNotes, searchIds, mediaType) {
+    const container = view.containerEl;
+    container.empty();
+    
+    // Add flexbox layout to position elements properly
+    container.style.display = 'flex';
+    container.style.flexDirection = 'column';
+    container.style.height = '100%';
+
+    // Set multiple title properties to ensure "Zoro" appears everywhere
+    if (view.titleEl) {
+      view.titleEl.setText('Zoro');
+    }
+    
+    // Set the view's display name
+    if (view.getDisplayText) {
+      view.getDisplayText = () => 'Zoro';
+    } else {
+      view.getDisplayText = () => 'Zoro';
+    }
+    
+    // Set view type if available
+    if (view.getViewType) {
+      view.getViewType = () => 'zoro-panel';
+    } else {
+      view.getViewType = () => 'zoro-panel';
+    }
+    
+    // Force update the leaf's tab header
+    if (view.leaf) {
+      const leaf = view.leaf;
+      setTimeout(() => {
+        if (leaf.tabHeaderEl) {
+          const titleEl = leaf.tabHeaderEl.querySelector('.workspace-tab-header-inner-title');
+          if (titleEl) {
+            titleEl.textContent = 'Zoro';
+          }
+        }
+        leaf.updateHeader();
+      }, 10);
+    }
+
+    // Store current media title for filename generation
+    this.currentMediaTitle = this.extractMediaTitleFromIds(searchIds);
+
+    // Connect existing notes interface (initially hidden)
+    const connectInterface = this.renderConnectExistingInterface(container, searchIds, mediaType);
+
+    // Main content area (grows to fill space)
+    const mainContent = container.createEl('div', { cls: 'zoro-panel-content' });
+    mainContent.style.flex = '1';
+    mainContent.style.display = 'flex';
+    mainContent.style.flexDirection = 'column';
+
+    // Notes list or empty state
+    if (connectedNotes.length === 0) {
+      // Center the "No notes" text in the middle of the panel
+      const emptyState = mainContent.createEl('div', { cls: 'zoro-empty-state' });
+      emptyState.style.flex = '1';
+      emptyState.style.display = 'flex';
+      emptyState.style.alignItems = 'center';
+      emptyState.style.justifyContent = 'center';
+      
+      emptyState.createEl('div', { 
+        text: 'No notes', 
+        cls: 'zoro-empty-message' 
+      });
+    } else {
+      // Notes list with proper padding like native Obsidian search results
+      const notesList = mainContent.createEl('div', { cls: 'zoro-notes-list' });
+      notesList.style.padding = '4px 0';
+      
+      connectedNotes.forEach(note => {
+        // Style like native Obsidian search result items
+        const noteItem = notesList.createEl('div', { cls: 'zoro-note-item' });
+        noteItem.style.padding = '4px 16px';
+        noteItem.style.borderRadius = '6px';
+        noteItem.style.margin = '4px 12px';
+        noteItem.style.cursor = 'pointer';
+        noteItem.style.display = 'flex';
+        noteItem.style.alignItems = 'center';
+        noteItem.style.justifyContent = 'space-between';
+        
+        // Hover effect like native search results
+        noteItem.addEventListener('mouseenter', () => {
+          noteItem.style.backgroundColor = 'var(--background-modifier-hover)';
+        });
+        noteItem.addEventListener('mouseleave', () => {
+          noteItem.style.backgroundColor = 'transparent';
+        });
+        
+        // Note title styled like native search results
+        const noteTitle = noteItem.createEl('div', { 
+          text: note.title,
+          cls: 'zoro-note-title'
+        });
+        noteTitle.style.fontSize = '15px';
+        noteTitle.style.color = 'var(--text-normal)';
+        noteTitle.style.fontWeight = '400';
+        noteTitle.style.flex = '1';
+        noteTitle.style.textOverflow = 'ellipsis';
+        noteTitle.style.overflow = 'hidden';
+        noteTitle.style.whiteSpace = 'nowrap';
+        
+        // Click handler for the entire item
+        noteItem.onclick = (e) => {
+          e.preventDefault();
+          const mainLeaf = this.app.workspace.getLeaf('tab');
+          mainLeaf.openFile(note.file);
+          this.app.workspace.setActiveLeaf(mainLeaf);
+        };
+
+        // Show matching indicators (compact, like native file explorer)
+        const indicators = noteItem.createEl('div', { cls: 'zoro-note-indicators' });
+        indicators.style.display = 'flex';
+        indicators.style.gap = '2px';
+        indicators.style.marginLeft = '8px';
+        
+        if (note.hasMatchingId) {
+          const idIndicator = indicators.createEl('span', { text: '🔗', cls: 'zoro-id-indicator', title: 'Has matching ID' });
+          idIndicator.style.fontSize = '11px';
+          idIndicator.style.opacity = '0.7';
+        }
+        if (note.hasZoroTag) {
+          const tagIndicator = indicators.createEl('span', { text: '🏷️', cls: 'zoro-tag-indicator', title: 'Has #Zoro tag' });
+          tagIndicator.style.fontSize = '11px';
+          tagIndicator.style.opacity = '0.7';
+        }
+      });
+    }
+
+    // Footer section at bottom (like native Obsidian panels)
+    const footer = container.createEl('div', { cls: 'zoro-panel-footer' });
+    footer.style.borderTop = '1px solid var(--background-modifier-border)';
+    footer.style.padding = '12px';
+    footer.style.display = 'flex';
+    footer.style.gap = '8px';
+    footer.style.backgroundColor = 'var(--background-secondary)';
+    
+    const createButton = footer.createEl('button', { 
+      text: 'Create note', 
+      cls: 'zoro-create-btn' 
+    });
+    // Style like native Obsidian buttons with permanent grey accent look
+    createButton.style.flex = '1';
+    createButton.style.padding = '8px 16px';
+    createButton.style.border = '1px solid var(--background-modifier-border-hover)';
+    createButton.style.borderRadius = '6px';
+    createButton.style.backgroundColor = 'var(--background-modifier-hover)'; // Permanent grey look
+    createButton.style.color = 'var(--text-normal)';
+    createButton.style.cursor = 'pointer';
+    createButton.style.fontSize = '13px';
+    createButton.style.fontWeight = '500';
+    createButton.style.transition = 'all 0.1s ease';
+    createButton.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.05)';
+    
+    // Hover effects for create button
+    createButton.addEventListener('mouseenter', () => {
+      createButton.style.backgroundColor = 'var(--background-modifier-border)';
+      createButton.style.borderColor = 'var(--background-modifier-border-focus)';
+    });
+    createButton.addEventListener('mouseleave', () => {
+      createButton.style.backgroundColor = 'var(--background-modifier-hover)';
+      createButton.style.borderColor = 'var(--background-modifier-border-hover)';
+    });
+    
+    createButton.onclick = () => this.createNewConnectedNote(searchIds, mediaType);
+    
+    // New connect existing button
+    const connectButton = footer.createEl('button', { 
+      text: 'Connect existing', 
+      cls: 'zoro-connect-existing-btn' 
+    });
+    connectButton.style.flex = '1';
+    connectButton.style.padding = '8px 16px';
+    connectButton.style.border = '1px solid var(--background-modifier-border-hover)';
+    connectButton.style.borderRadius = '6px';
+    connectButton.style.backgroundColor = 'var(--background-modifier-hover)'; // Permanent grey look
+    connectButton.style.color = 'var(--text-normal)';
+    connectButton.style.cursor = 'pointer';
+    connectButton.style.fontSize = '13px';
+    connectButton.style.fontWeight = '500';
+    connectButton.style.transition = 'all 0.1s ease';
+    connectButton.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.05)';
+    
+    // Hover effects for connect button
+    connectButton.addEventListener('mouseenter', () => {
+      connectButton.style.backgroundColor = 'var(--background-modifier-border)';
+      connectButton.style.borderColor = 'var(--background-modifier-border-focus)';
+    });
+    connectButton.addEventListener('mouseleave', () => {
+      connectButton.style.backgroundColor = 'var(--background-modifier-hover)';
+      connectButton.style.borderColor = 'var(--background-modifier-border-hover)';
+    });
+    
+    connectButton.onclick = () => {
+      const isVisible = connectInterface.style.display !== 'none';
+      connectInterface.style.display = isVisible ? 'none' : 'block';
+      
+      if (!isVisible) {
+        // Focus on search input when opened
+        const searchInput = connectInterface.querySelector('.zoro-search-input');
+        setTimeout(() => searchInput.focus(), 100);
+      } else {
+        // Clear search when closed
+        const searchInput = connectInterface.querySelector('.zoro-search-input');
+        const resultsContainer = connectInterface.querySelector('.zoro-search-results');
+        searchInput.value = '';
+        resultsContainer.empty();
+      }
+    };
+  }
+
+  /**
+   * Extract media title from current context for better filename
+   */
+  extractMediaTitleFromIds(searchIds) {
+    // This will be enhanced to get actual media title from context
+    return 'Media Note'; // Fallback for now
+  }
+
+  /**
+   * Generate unique filename like Obsidian does (Untitled, Untitled 1, Untitled 2, etc.)
+   */
+  generateUniqueFilename(baseName = 'Untitled') {
+    const baseFileName = `${baseName}.md`;
+    
+    // Check if base filename exists
+    if (!this.app.vault.getAbstractFileByPath(baseFileName)) {
+      return baseFileName;
+    }
+    
+    // Generate numbered variants until we find one that doesn't exist
+    let counter = 1;
+    let uniqueFileName;
+    do {
+      uniqueFileName = `${baseName} ${counter}.md`;
+      counter++;
+    } while (this.app.vault.getAbstractFileByPath(uniqueFileName));
+    
+    return uniqueFileName;
+  }
+
+  /**
+   * Create a new note with unique filename and add metadata
+   */
+  async createNewConnectedNote(searchIds, mediaType) {
+    try {
+      // Generate unique filename (Untitled, Untitled 1, etc.)
+      const uniqueFileName = this.generateUniqueFilename('Untitled');
+      
+      // Create frontmatter content
+      const frontmatter = [
+        '---',
+        ...Object.entries(searchIds).map(([key, value]) => `${key}: "${value}"`),
+        `media_type: "${mediaType}"`,
+        'tags:',
+        '  - Zoro',
+        '---',
+        ''
+      ].join('\n');
+
+      // Create the file with unique name and frontmatter
+      const file = await this.app.vault.create(uniqueFileName, frontmatter);
+      
+      // Open in main workspace
+      const mainLeaf = this.app.workspace.getLeaf('tab');
+      await mainLeaf.openFile(file);
+      this.app.workspace.setActiveLeaf(mainLeaf);
+      
+      new Notice('Created new connected note!');
+      
+    } catch (error) {
+      console.error('[ConnectedNotes] Error creating new note:', error);
+      new Notice('Failed to create new note');
+    }
+  }
+
+  /**
+   * Create the connected notes button for media cards
+   */
+  createConnectedNotesButton(media, entry, config) {
+    const notesBtn = document.createElement('span');
+    notesBtn.className = 'zoro-connected-notes-button';
+    notesBtn.textContent = '➕'; // Placeholder - CSS will handle actual styling
+    notesBtn.title = 'View connected notes';
+    
+    notesBtn.onclick = (e) => this.handleConnectedNotesClick(e, media, entry, config);
+    
+    return notesBtn;
+  }
+
+  /**
+   * Handle connected notes button click
+   */
+  async handleConnectedNotesClick(e, media, entry, config) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    try {
+      // Extract source and media type
+      const source = this.plugin.apiHelper ? 
+        this.plugin.apiHelper.detectSource(entry, config) : 
+        (entry?._zoroMeta?.source || config?.source || 'anilist');
+      
+      const mediaType = this.plugin.apiHelper ? 
+        this.plugin.apiHelper.detectMediaType(entry, config, media) : 
+        (entry?._zoroMeta?.mediaType || config?.mediaType || 'ANIME');
+      
+      // Store media title for filename generation
+      this.currentMediaTitle = media.title?.english || media.title?.romaji || `${mediaType} Note`;
+      
+      // Extract search IDs
+      const searchIds = this.extractSearchIds(media, entry, source);
+      
+      // Show connected notes
+      await this.showConnectedNotes(searchIds, mediaType);
+      
+    } catch (error) {
+      console.error('[ConnectedNotes] Button click error:', error);
+      new Notice('Failed to open connected notes');
     }
   }
 }
@@ -10152,6 +10921,7 @@ class OpenDetailPanel {
     }
   }
 }
+
 class Trending {
   constructor(plugin) { 
     this.plugin = plugin; 
@@ -10704,7 +11474,6 @@ modal.open();
     return name;
   }
 }
-
 class MALAuthentication {
   constructor(plugin) {
     this.plugin = plugin;
@@ -11080,7 +11849,6 @@ return;
     return this.plugin.settings.malUserInfo; 
   }
 }
-
 class SimklAuthentication {
   constructor(plugin) {
     this.plugin = plugin;
@@ -11423,7 +12191,6 @@ class SimklPinModal extends Modal {
     }
   }
 }
-
 class AuthModal extends Modal {
   constructor(app, config) {
     super(app);

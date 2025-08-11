@@ -4227,51 +4227,26 @@ volumesRead: listStatus?.num_volumes_read ?? null,
   }
 
   async updateMediaListEntry(mediaId, updates) {
-  console.log('[MAL-EDIT-UPDATE] Entry point', { 
-    mediaId, 
-    mediaIdType: typeof mediaId, 
-    updates, 
-    updatesKeys: Object.keys(updates || {}),
-    hasZoroError: !!ZoroError,
-    hasExecuteUpdate: typeof this.executeUpdate
-  });
+  
   
   try {
-    console.log('[MAL-EDIT-UPDATE] Before ZoroError.guard call');
+    
     
     const result = await ZoroError.guard(
       async () => {
-        console.log('[MAL-EDIT-UPDATE] Inside guard function, calling executeUpdate');
+        
         return await this.executeUpdate(mediaId, updates);
       },
       'retry_once',
       'MalApi.updateMediaListEntry'
     );
     
-    console.log('[MAL-EDIT-UPDATE] ZoroError.guard completed successfully', { 
-      result, 
-      resultType: typeof result,
-      resultKeys: result ? Object.keys(result) : null
-    });
+    
     
     return result;
   } catch (error) {
-    console.error('[MAL-EDIT-UPDATE] Error caught in updateMediaListEntry', {
-      errorMessage: error?.message,
-      errorType: error?.constructor?.name,
-      errorStack: error?.stack,
-      errorProperties: Object.keys(error || {}),
-      zoroErrorType: error?.type,
-      zoroErrorCode: error?.code,
-      originalError: error?.originalError,
-      mediaId,
-      updates,
-      hasExecuteUpdate: typeof this.executeUpdate === 'function',
-      thisContext: !!this,
-      pluginExists: !!this.plugin
-    });
     
-    console.error('[MAL-EDIT-UPDATE] Full error object:', error);
+    
     throw error;
   }
 }
@@ -8451,12 +8426,12 @@ class EmojiIconMapper {
       '🚧': 'construction',
       'ℹ️': 'info',
       '🆔': 'id-card',
-      '✳️': 'star',
-      '🗾': 'map',
+      '✳️': 'shell',
+      '🗾': 'origami',
       '⚡': 'zap',
       '🗝️': 'key',
       '🧊': 'layout-grid',
-      '🔲': 'grid-3x3',
+      '🔲': 'columns-3',
       '⏳': 'loader',
       '🔗': 'link',
       '🌆': 'image',
@@ -8487,6 +8462,11 @@ class EmojiIconMapper {
       '🧨': 'zap',
       'ℹ': 'info',
       '⚠️': 'alert-triangle',
+      '➕': 'circle-plus',
+      '📝': 'square-pen',
+      '⛓️': 'workflow',
+      '💾': 'database-backup',
+      '🌓': 'swatch-book',
       ...Object.fromEntries(opts.map || [])
     }));
     
@@ -8496,8 +8476,8 @@ class EmojiIconMapper {
     this._colonRegex = /:([a-z0-9-]+):/gi;
     this._patches = new Map();
     this._patched = false;
-    this.iconSize = opts.iconSize ?? 20;
-    this.gap = opts.gap ?? 6;
+    this.iconSize = opts.iconSize ?? 25;
+    this.gap = opts.gap ?? 20;
     this._iconStyle = `display:inline-flex;align-items:center;justify-content:center;width:${this.iconSize}px;height:${this.iconSize}px;vertical-align:middle`;
   }
 
@@ -9595,6 +9575,7 @@ class ConnectedNotes {
   constructor(plugin) {
     this.plugin = plugin;
     this.app = plugin.app;
+    this.currentMedia = null; // Store current media for filename generation
   }
 
   /**
@@ -9841,7 +9822,7 @@ class ConnectedNotes {
     // Search input
     const searchInput = connectInterface.createEl('input', { cls: 'zoro-note-search-input' });
     searchInput.type = 'text';
-    searchInput.placeholder = '🔍 existing notes to connect...';
+    searchInput.placeholder = '🔍 Search notes to connect...';
     
     // Search results container
     const resultsContainer = connectInterface.createEl('div', { cls: 'zoro-note-search-results' });
@@ -9986,9 +9967,6 @@ class ConnectedNotes {
       }, 10);
     }
 
-    // Store current media title for filename generation
-    this.currentMediaTitle = this.extractMediaTitleFromIds(searchIds);
-
     // Connect existing notes interface (initially hidden)
     const connectInterface = this.renderConnectExistingInterface(container, searchIds, mediaType);
     connectInterface.classList.add('zoro-note-hidden'); // Initially hidden
@@ -10033,11 +10011,11 @@ class ConnectedNotes {
     // Footer section at bottom
     const footer = container.createEl('div', { cls: 'zoro-note-panel-footer' });
     
-    const createButton = footer.createEl('button', { text: 'Create note', cls: 'zoro-note-create-btn' });
+    const createButton = footer.createEl('button', { text: '📝', cls: 'zoro-note-create-btn' });
     createButton.onclick = () => this.createNewConnectedNote(searchIds, mediaType);
     
     // New connect existing button
-    const connectButton = footer.createEl('button', { text: 'Connect existing', cls: 'zoro-note-connect-existing-btn' });
+    const connectButton = footer.createEl('button', { text: '⛓️', cls: 'zoro-note-connect-existing-btn' });
     
     connectButton.onclick = () => {
       connectInterface.classList.toggle('zoro-note-hidden');
@@ -10057,18 +10035,30 @@ class ConnectedNotes {
   }
 
   /**
-   * Extract media title from current context for better filename
+   * Extract media title for filename (prefers English, falls back to romaji)
    */
-  extractMediaTitleFromIds(searchIds) {
-    // This will be enhanced to get actual media title from context
-    return 'Media Note'; // Fallback for now
+  getMediaTitleForFilename() {
+    if (!this.currentMedia) {
+      return 'Untitled'; // Fallback if no media stored
+    }
+    
+    // Prefer English title, fall back to romaji, then native, then 'Untitled'
+    const title = this.currentMedia.title?.english || 
+                  this.currentMedia.title?.romaji || 
+                  this.currentMedia.title?.native || 
+                  'Untitled';
+    
+    // Clean the title for filename (remove invalid characters)
+    return title.replace(/[<>:"/\\|?*]/g, '').trim();
   }
 
   /**
-   * Generate unique filename like Obsidian does (Untitled, Untitled 1, Untitled 2, etc.)
+   * Generate unique filename like Obsidian does (Title, Title 1, Title 2, etc.)
    */
-  generateUniqueFilename(baseName = 'Untitled') {
-    const baseFileName = `${baseName}.md`;
+  generateUniqueFilename(baseName = null) {
+    // Use media title if available, otherwise fallback to 'Untitled'
+    const preferredBaseName = baseName || this.getMediaTitleForFilename();
+    const baseFileName = `${preferredBaseName}.md`;
     
     // Check if base filename exists
     if (!this.app.vault.getAbstractFileByPath(baseFileName)) {
@@ -10079,7 +10069,7 @@ class ConnectedNotes {
     let counter = 1;
     let uniqueFileName;
     do {
-      uniqueFileName = `${baseName} ${counter}.md`;
+      uniqueFileName = `${preferredBaseName} ${counter}.md`;
       counter++;
     } while (this.app.vault.getAbstractFileByPath(uniqueFileName));
     
@@ -10091,8 +10081,8 @@ class ConnectedNotes {
    */
   async createNewConnectedNote(searchIds, mediaType) {
     try {
-      // Generate unique filename (Untitled, Untitled 1, etc.)
-      const uniqueFileName = this.generateUniqueFilename('Untitled');
+      // Generate unique filename using media title
+      const uniqueFileName = this.generateUniqueFilename();
       
       // Create frontmatter content
       const frontmatter = [
@@ -10126,8 +10116,8 @@ class ConnectedNotes {
    */
   createConnectedNotesButton(media, entry, config) {
     const notesBtn = document.createElement('span');
-    notesBtn.className = 'zoro-note-button';
-    notesBtn.textContent = '➕'; // Placeholder - CSS will handle actual styling
+    notesBtn.className = 'zoro-note-obsidian';
+    notesBtn.textContent = 'Obsidian'; // Placeholder - CSS will handle actual styling
     notesBtn.title = 'View connected notes';
     
     notesBtn.onclick = (e) => this.handleConnectedNotesClick(e, media, entry, config);
@@ -10152,8 +10142,8 @@ class ConnectedNotes {
         this.plugin.apiHelper.detectMediaType(entry, config, media) : 
         (entry?._zoroMeta?.mediaType || config?.mediaType || 'ANIME');
       
-      // Store media title for filename generation
-      this.currentMediaTitle = media.title?.english || media.title?.romaji || `${mediaType} Note`;
+      // Store current media for filename generation (PREFER ENGLISH TITLE)
+      this.currentMedia = media;
       
       // Extract search IDs
       const searchIds = this.extractSearchIds(media, entry, source);
@@ -13758,9 +13748,9 @@ class ZoroSettingTab extends PluginSettingTab {
     const Account = section('👤 Account');
     const Setup = section('🧭 Setup');
     const Display = section('📺 Display');
-    const Theme = section('🌌 Theme');
+    const Theme = section('🌓 Theme');
     const More = section('✨  More');
-    const Data = section('📤 Data');
+    const Data = section('💾 Data');
     const Cache = section('🔁 Cache');
     const Exp = section('🚧 Beta');
     const About = section('ℹ️ About');
@@ -13926,7 +13916,7 @@ class ZoroSettingTab extends PluginSettingTab {
         }));
     
     new Setting(Data)
-      .setName('🧾 Export your data')
+      .setName('📤 Export your data')
       .setDesc("Everything you've watched, rated, and maybe ghosted — neatly exported into a CSV & standard export format from AniList, MAL and Simkl.")
       .addButton(btn => btn
         .setButtonText('AniList')
@@ -13978,7 +13968,7 @@ class ZoroSettingTab extends PluginSettingTab {
       );
       
       new Setting(Data)
-      .setName('Export Guide')
+      .setName('🧾 Export Guide')
       .setDesc('Export guide for AniList, MAL, and SIMKL data backup and migration. Creates CSV/XML files for cross-platform compatibility.')
       .addButton(button =>
         button

@@ -2724,17 +2724,25 @@ body.theme-light .zoro-heart.favorited::before {
 /* Button Hover Effects */
 .zoro-note-create-btn:hover,
 .zoro-note-connect-existing-btn:hover {
-  background-color: var(--background-modifier-border);
-  border-color: var(--background-modifier-border-focus);
+  background-color: transparent;
+  border-color: transparent;
 }
 
 .zoro-note-create-btn:not(:hover),
 .zoro-note-connect-existing-btn:not(:hover) {
-  background-color: var(--background-modifier-hover);
-  border-color: var(--background-modifier-border-hover);
+  background-color: transparent;
+  border-color: transparent;
+  color: hsl(var(--accent-h), var(--accent-s), var(--accent-l));
 }
 
 /* Main Connected Notes Button */
-.zoro-note-button {
-  /* Placeholder - CSS will handle actual styling as mentioned in original comment */
+.zoro-note-obsidian {
+  color: hsl(var(--accent-h), var(--accent-s), var(--accent-l));
+    display: block;
+    text-align: center;
+    width: 100%;
+    margin-top: auto;
+    padding: 0px 0;
+    cursor: pointer;
+    border-top: transparent;
 }

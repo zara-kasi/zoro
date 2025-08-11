@@ -2253,7 +2253,6 @@ class RequestQueue {
     this.state.isProcessing = false;
     this.process();
   }
-  
   clear(priority = null) {
     if (priority) {
       const cleared = this.queues[priority].length;
@@ -2762,6 +2761,7 @@ class AnilistApi {
         Page(page: 1, perPage: ${mediaIds.length}) {
           media(id_in: $ids) {
             id
+            idMal
             title { romaji english native }
             coverImage { large medium }
             format
@@ -2815,6 +2815,7 @@ class AnilistApi {
             updatedAt
             media {
               id
+              idMal
               title { romaji english }
             }
           }
@@ -3021,7 +3022,6 @@ class AnilistApi {
   sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
-
   // =================== MONITORING & METRICS ===================
 
   recordMetrics(operation, type, duration, errorType = null) {
@@ -3341,6 +3341,7 @@ class AnilistApi {
     const mediaFields = {
       compact: `
         id
+        idMal
         title {
           romaji
         }
@@ -3350,6 +3351,7 @@ class AnilistApi {
       `,
       card: `
         id
+        idMal
         title {
           romaji
           english
@@ -3369,6 +3371,7 @@ class AnilistApi {
       `,
       full: `
         id
+        idMal
         title {
           romaji
           english
@@ -3436,6 +3439,7 @@ class AnilistApi {
     const mediaFields = {
       compact: `
         id
+        idMal
         title {
           romaji
         }
@@ -3445,6 +3449,7 @@ class AnilistApi {
       `,
       card: `
         id
+        idMal
         title {
           romaji
           english
@@ -3464,6 +3469,7 @@ class AnilistApi {
       `,
       full: `
         id
+        idMal
         title {
           romaji
           english
@@ -3614,6 +3620,7 @@ class AnilistApi {
             ${typeKey} {
               nodes {
                 id
+                idMal
                 title {
                   romaji
                   english
@@ -3640,6 +3647,7 @@ class AnilistApi {
     const mediaFields = {
       compact: `
         id
+        idMal
         title {
           romaji
         }
@@ -3649,6 +3657,7 @@ class AnilistApi {
       `,
       card: `
         id
+        idMal
         title {
           romaji
           english
@@ -3668,6 +3677,7 @@ class AnilistApi {
       `,
       full: `
         id
+        idMal
         title {
           romaji
           english
@@ -3752,6 +3762,7 @@ async getUserEntryForMedia(mediaId, mediaType) {
           progress
           media {
             id
+            idMal
             title {
               english
               romaji
@@ -5269,7 +5280,6 @@ if (Array.isArray(raw[mediaType])) {
     endDate: this.parseDate(media.last_aired)
   };
 }
-
 transformListEntry(simklEntry, mediaTypeHint) {
   if (!simklEntry) return null;
   
@@ -5982,7 +5992,6 @@ async updateDefaultApiSourceBasedOnAuth() {
     if (loader) loader.remove();
   }
 }
-
 class Processor {
   constructor(plugin) {
     this.plugin = plugin;
@@ -9721,7 +9730,6 @@ class ConnectedNotes {
       });
     }
   }
-
   /**
    * Render connected notes in the dedicated Zoro view
    */
@@ -10050,67 +10058,35 @@ class ConnectedNotes {
   }
 }
 
-class MoreDetailsPanel {
-  constructor(plugin) {
-    this.plugin = plugin;
-    this.openDetailPanel = new OpenDetailPanel(plugin);
-  }
-
-  async showPanel(media, entry = null, triggerElement) {
-    return await this.openDetailPanel.showPanel(media, entry, triggerElement);
-  }
-
-  closePanel() {
-    this.openDetailPanel.closePanel();
-  }
-
-  get currentPanel() {
-    return this.openDetailPanel.currentPanel;
-  }
-}
 class DetailPanelSource {
   constructor(plugin) {
     this.plugin = plugin;
   }
 
   async convertMalToAnilistId(malId, malType) {
-    // Cache ID conversions for a very long time since they never change
     const cacheKey = this.plugin.cache.structuredKey('conversion', 'mal_to_anilist', `${malId}_${malType || 'unknown'}`);
-    
-    const cached = this.plugin.cache.get(cacheKey, {
-      scope: 'mediaData',
-      source: 'anilist'
-    });
-    
-    if (cached) {
-      console.log('[DetailPanel] Using cached MAL->AniList conversion');
-      return cached;
-    }
+    const cached = this.plugin.cache.get(cacheKey, { scope: 'mediaData', source: 'anilist' });
+    if (cached) return cached;
 
     const anilistType = this.convertMalTypeToAnilistType(malType);
-    
     let result = null;
     if (!anilistType) {
       for (const tryType of ['ANIME', 'MANGA']) {
         result = await this.tryConvertWithType(malId, tryType);
-        if (result) {
-          break;
-        }
+        if (result) break;
       }
     } else {
       result = await this.tryConvertWithType(malId, anilistType);
     }
-    
-    // Cache conversions for 30 days - they never change
+
     if (result) {
       this.plugin.cache.set(cacheKey, result, {
         scope: 'mediaData',
         source: 'anilist',
-        ttl: 30 * 24 * 60 * 60 * 1000, // 30 days
+        ttl: 30 * 24 * 60 * 60 * 1000,
         tags: ['conversion', 'mal_to_anilist']
       });
     }
-    
     return result;
   }
 
@@ -10130,51 +10106,28 @@ class DetailPanelSource {
         });
         response = await apiResponse.json();
       }
-
       const anilistId = response?.data?.Media?.id;
       const anilistTypeResult = response?.data?.Media?.type;
-      
-      if (anilistId) {
-        return { id: anilistId, type: anilistTypeResult };
-      }
-      
+      if (anilistId) return { id: anilistId, type: anilistTypeResult };
       return null;
-    } catch (error) {
-      console.error('Conversion attempt failed for type', anilistType, ':', error);
+    } catch {
       return null;
     }
   }
 
   convertMalTypeToAnilistType(malType) {
-    if (!malType) {
-      return null;
-    }
-    
+    if (!malType) return null;
     const normalizedType = malType.toString().toLowerCase();
-    
     const typeMap = {
-      'anime': 'ANIME',
-      'manga': 'MANGA',
-      'tv': 'ANIME',
-      'movie': 'ANIME',
-      'ova': 'ANIME',
-      'ona': 'ANIME',
-      'special': 'ANIME',
-      'music': 'ANIME',
-      'manhwa': 'MANGA',
-      'manhua': 'MANGA',
-      'novel': 'MANGA',
-      'light_novel': 'MANGA',
-      'one_shot': 'MANGA'
+      'anime': 'ANIME', 'tv': 'ANIME', 'movie': 'ANIME', 'ova': 'ANIME', 'ona': 'ANIME', 'special': 'ANIME', 'music': 'ANIME',
+      'manga': 'MANGA', 'manhwa': 'MANGA', 'manhua': 'MANGA', 'novel': 'MANGA', 'light_novel': 'MANGA', 'one_shot': 'MANGA'
     };
-    
     return typeMap[normalizedType] || null;
   }
 
   shouldFetchDetailedData(media) {
     const missingBasicData = !media.description || !media.genres || !media.averageScore;
     const isAnimeWithoutAiring = media.type === 'ANIME' && !media.nextAiringEpisode;
-    
     return missingBasicData || isAnimeWithoutAiring;
   }
 
@@ -10188,7 +10141,6 @@ class DetailPanelSource {
 
   async fetchDetailedData(mediaId, entryOrSource = null, mediaType = null) {
     let source, resolvedMediaType;
-
     if (typeof entryOrSource === 'object' && entryOrSource !== null) {
       source = this.extractSourceFromEntry(entryOrSource);
       resolvedMediaType = this.extractMediaTypeFromEntry(entryOrSource);
@@ -10202,170 +10154,86 @@ class DetailPanelSource {
 
     let targetId = mediaId;
     let originalMalId = null;
-    let correctedType = resolvedMediaType;
 
     if (source === 'mal') {
       originalMalId = mediaId;
-      const typeForConversion = resolvedMediaType;
-      
-      const conversionResult = await this.convertMalToAnilistId(mediaId, typeForConversion);
-      
+      const conversionResult = await this.convertMalToAnilistId(mediaId, resolvedMediaType);
       if (!conversionResult || !conversionResult.id) {
         throw new Error(`Could not convert MAL ID ${mediaId} to AniList ID`);
       }
-      
       targetId = conversionResult.id;
-      correctedType = conversionResult.type;
+      this._noticeCache = this._noticeCache || { malConversion: new Set(), missingMalId: new Set() };
+      if (!this._noticeCache.malConversion.has(String(mediaId))) {
+        try { new Notice('Using AniList data via MAL→AniList ID conversion'); } catch {}
+        this._noticeCache.malConversion.add(String(mediaId));
+      }
     }
 
-    // Use separate cache keys for stable vs dynamic data
     const stableCacheKey = this.plugin.cache.structuredKey('details', 'stable', targetId);
     const dynamicCacheKey = this.plugin.cache.structuredKey('details', 'airing', targetId);
 
-    // Check for cached stable data first (long-term cache)
-    let stableData = this.plugin.cache.get(stableCacheKey, {
-      scope: 'mediaData',
-      source: 'anilist'
-    });
+    let stableData = this.plugin.cache.get(stableCacheKey, { scope: 'mediaData', source: 'anilist' });
+    let airingData = this.plugin.cache.get(dynamicCacheKey, { scope: 'mediaData', source: 'anilist' });
 
-    // Check for cached airing data (short-term cache)
-    let airingData = this.plugin.cache.get(dynamicCacheKey, {
-      scope: 'mediaData', 
-      source: 'anilist'
-    });
-
-    // If we have complete cached data, return it
     if (stableData && (stableData.type !== 'ANIME' || airingData)) {
       const combinedData = { ...stableData };
-      if (airingData?.nextAiringEpisode) {
-        combinedData.nextAiringEpisode = airingData.nextAiringEpisode;
-      }
+      if (airingData?.nextAiringEpisode) combinedData.nextAiringEpisode = airingData.nextAiringEpisode;
       return combinedData;
     }
-    
+
     const query = this.getDetailedMediaQuery();
     const variables = { id: targetId };
 
     let response;
-    try {
-      if (this.plugin.fetchAniListData) {
-        response = await this.plugin.fetchAniListData(query, variables);
-      } else {
-        const apiResponse = await fetch('https://graphql.anilist.co', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query, variables })
-        });
-        response = await apiResponse.json();
-      }
-
-      if (!response?.data?.Media)
-        throw new Error('No media data received');
-
-      const data = response.data.Media;
-      
-      if (originalMalId) {
-        data.originalMalId = originalMalId;
-      }
-      
-      // Split data into stable and dynamic parts
-      const { nextAiringEpisode, ...stableDataOnly } = data;
-      
-      // Cache stable data for 30 days
-      this.plugin.cache.set(stableCacheKey, stableDataOnly, {
-        scope: 'mediaData',
-        source: 'anilist',
-        ttl: 30 * 24 * 60 * 60 * 1000, // 30 days
-        tags: ['details', 'stable', data.type?.toLowerCase()]
+    if (this.plugin.fetchAniListData) {
+      response = await this.plugin.fetchAniListData(query, variables);
+    } else {
+      const apiResponse = await fetch('https://graphql.anilist.co', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query, variables })
       });
-
-      // Cache airing data for 1 hour (only for anime with airing info)
-      if (data.type === 'ANIME' && nextAiringEpisode) {
-        this.plugin.cache.set(dynamicCacheKey, { nextAiringEpisode }, {
-          scope: 'mediaData',
-          source: 'anilist', 
-          ttl: 60 * 60 * 1000, // 1 hour
-          tags: ['details', 'airing', 'anime']
-        });
-      }
-      
-      return data;
-
-    } catch (error) {
-      console.error('AniList API fetch failed:', error);
-      
-      // Fallback to any cached data, even if stale
-      if (stableData) {
-        
-        const combinedData = { ...stableData };
-        if (airingData?.nextAiringEpisode) {
-          combinedData.nextAiringEpisode = airingData.nextAiringEpisode;
-        }
-        return combinedData;
-      }
-      
-      throw error;
+      response = await apiResponse.json();
     }
+
+    if (!response?.data?.Media) throw new Error('No media data received');
+    const data = response.data.Media;
+    if (originalMalId) data.originalMalId = originalMalId;
+
+    const { nextAiringEpisode, ...stableDataOnly } = data;
+    this.plugin.cache.set(stableCacheKey, stableDataOnly, { scope: 'mediaData', source: 'anilist', ttl: 30 * 24 * 60 * 60 * 1000, tags: ['details', 'stable', data.type?.toLowerCase()] });
+    if (data.type === 'ANIME' && nextAiringEpisode) {
+      this.plugin.cache.set(dynamicCacheKey, { nextAiringEpisode }, { scope: 'mediaData', source: 'anilist', ttl: 60 * 60 * 1000, tags: ['details', 'airing', 'anime'] });
+    }
+    return data;
   }
 
   async fetchMALData(malId, mediaType) {
     if (!malId) return null;
-
     const cacheKey = this.plugin.cache.structuredKey('mal', 'details', `${malId}_${mediaType}`);
-    
-    // Check cache first - MAL data is very stable, cache for 7 days
-    const cached = this.plugin.cache.get(cacheKey, {
-      scope: 'mediaData',
-      source: 'mal'
-    });
-    
-    if (cached) {
-      
-      return cached;
-    }
+    const cached = this.plugin.cache.get(cacheKey, { scope: 'mediaData', source: 'mal' });
+    if (cached) return cached;
 
     try {
       const type = mediaType === 'MANGA' ? 'manga' : 'anime';
       const response = await fetch(`https://api.jikan.moe/v4/${type}/${malId}`);
-
-      if (!response.ok)
-        throw new Error(`Jikan API error: ${response.status}`);
-
+      if (!response.ok) throw new Error(`Jikan API error: ${response.status}`);
       const data = (await response.json())?.data;
-      
-      // Cache MAL data for 7 days - scores/ranks change rarely
-      this.plugin.cache.set(cacheKey, data, {
-        scope: 'mediaData',
-        source: 'mal',
-        ttl: 7 * 24 * 60 * 60 * 1000, // 7 days
-        tags: ['mal', 'details', type]
-      });
-      
-      
+      this.plugin.cache.set(cacheKey, data, { scope: 'mediaData', source: 'mal', ttl: 7 * 24 * 60 * 60 * 1000, tags: ['mal', 'details', type] });
       return data;
-
-    } catch (error) {
-      console.error('Failed to fetch MAL data:', error);
+    } catch {
       return null;
     }
   }
 
   async fetchAndUpdateData(mediaId, entryOrSource = null, mediaTypeOrCallback = null, onUpdate = null) {
     let source, mediaType, callback;
-
     if (typeof entryOrSource === 'object' && entryOrSource !== null) {
       source = this.extractSourceFromEntry(entryOrSource);
       mediaType = this.extractMediaTypeFromEntry(entryOrSource);
       callback = mediaTypeOrCallback;
     } else if (typeof entryOrSource === 'string') {
       source = entryOrSource;
-      if (typeof mediaTypeOrCallback === 'function') {
-        mediaType = null;
-        callback = mediaTypeOrCallback;
-      } else {
-        mediaType = mediaTypeOrCallback;
-        callback = onUpdate;
-      }
+      if (typeof mediaTypeOrCallback === 'function') { mediaType = null; callback = mediaTypeOrCallback; }
+      else { mediaType = mediaTypeOrCallback; callback = onUpdate; }
     } else {
       source = this.plugin.settings.defaultApiSource || 'anilist';
       mediaType = null;
@@ -10374,80 +10242,97 @@ class DetailPanelSource {
 
     try {
       const detailedMedia = await this.fetchDetailedData(mediaId, source, mediaType);
-      
       const malId = source === 'mal' ? (detailedMedia.originalMalId || mediaId) : detailedMedia.idMal;
-      
+      if (!malId && source !== 'mal') {
+        this._noticeCache = this._noticeCache || { malConversion: new Set(), missingMalId: new Set() };
+        if (!this._noticeCache.missingMalId.has(String(detailedMedia.id))) {
+          try { new Notice('No MAL ID mapping found on AniList for this title'); } catch {}
+          this._noticeCache.missingMalId.add(String(detailedMedia.id));
+        }
+      }
       let malDataPromise = null;
-      if (malId) {
-        malDataPromise = this.fetchMALData(malId, detailedMedia.type);
-      }
-      
-      if (this.hasMoreData(detailedMedia)) {
-        callback(detailedMedia, null);
-      }
-      
+      if (malId) malDataPromise = this.fetchMALData(malId, detailedMedia.type);
+      if (this.hasMoreData(detailedMedia)) callback(detailedMedia, null);
       if (malDataPromise) {
         const malData = await malDataPromise;
-        if (malData) {
-          callback(detailedMedia, malData);
-        }
+        if (malData) callback(detailedMedia, malData);
       }
     } catch (error) {
       console.error('fetchAndUpdateData failed:', error);
     }
   }
-  
+
   hasMoreData(newMedia) {
     const hasBasicData = newMedia.description || newMedia.genres?.length > 0 || newMedia.averageScore > 0;
     const hasAiringData = newMedia.type === 'ANIME' && newMedia.nextAiringEpisode;
-    
     return hasBasicData || hasAiringData;
   }
 
   getDetailedMediaQuery() {
     return `query($id:Int){Media(id:$id){id type title{romaji english native}description(asHtml:false)format status season seasonYear averageScore genres nextAiringEpisode{airingAt episode timeUntilAiring}idMal}}`;
   }
+}
 
-  getAniListUrl(mediaId, mediaType = 'ANIME') {
-    return this.plugin.getAniListUrl(mediaId, mediaType);
+class OpenDetailPanel {
+  constructor(plugin) {
+    this.plugin = plugin;
+    this.currentPanel = null;
+    this.boundOutsideClickHandler = this.handleOutsideClick.bind(this);
+    this.renderer = new RenderDetailPanel(plugin);
+    this.dataSource = new DetailPanelSource(plugin);
   }
 
-  getMyAnimeListUrl(malId, mediaType = 'ANIME') {
-    if (!malId) return null;
-    const type = mediaType === 'MANGA' ? 'manga' : 'anime';
-    return `https://myanimelist.net/${type}/${malId}`;
-  }
+  async showPanel(media, entry = null, triggerElement) {
+    this.closePanel();
+    const panel = this.renderer.createPanel(media, entry);
+    this.currentPanel = panel;
+    this.renderer.positionPanel(panel, triggerElement);
+    const closeBtn = panel.querySelector('.panel-close-btn');
+    if (closeBtn) closeBtn.onclick = () => this.closePanel();
+    document.body.appendChild(panel);
+    document.addEventListener('click', this.boundOutsideClickHandler);
+    this.plugin.requestQueue.showGlobalLoader();
 
-  // Cache management utilities
-  invalidateDetailCache(mediaId, source = null) {
-    const stableCacheKey = this.plugin.cache.structuredKey('details', 'stable', mediaId);
-    const dynamicCacheKey = this.plugin.cache.structuredKey('details', 'airing', mediaId);
-    
-    this.plugin.cache.delete(stableCacheKey, { scope: 'mediaData', source: source || 'anilist' });
-    this.plugin.cache.delete(dynamicCacheKey, { scope: 'mediaData', source: source || 'anilist' });
-    
-    console.log('[DetailPanel] Invalidated detail cache for:', mediaId);
-  }
-
-  invalidateConversionCache(malId = null) {
-    if (malId) {
-      // Invalidate specific conversion
-      const cacheKey = this.plugin.cache.structuredKey('conversion', 'mal_to_anilist', `${malId}_unknown`);
-      this.plugin.cache.delete(cacheKey, { scope: 'mediaData', source: 'anilist' });
+    if (this.dataSource.shouldFetchDetailedData(media)) {
+      this.dataSource.fetchAndUpdateData(media.id, entry, (detailedMedia, malData) => {
+        if (this.currentPanel === panel) this.renderer.updatePanelContent(panel, detailedMedia, malData);
+      }).finally(() => this.plugin.requestQueue.hideGlobalLoader());
     } else {
-      // Invalidate all conversions
-      this.plugin.cache.invalidateByTag('conversion');
+      this.plugin.requestQueue.hideGlobalLoader();
     }
-    console.log('[DetailPanel] Invalidated conversion cache');
+    return panel;
   }
 
-  // Force refresh airing data only
-  async refreshAiringData(mediaId) {
-    const dynamicCacheKey = this.plugin.cache.structuredKey('details', 'airing', mediaId);
-    this.plugin.cache.delete(dynamicCacheKey, { scope: 'mediaData', source: 'anilist' });
-    
-    // This will fetch only the airing data on next request
-    return await this.fetchDetailedData(mediaId);
+  handleOutsideClick(event) {
+    if (this.currentPanel && !this.currentPanel.contains(event.target)) this.closePanel();
+  }
+
+  closePanel() {
+    if (this.currentPanel) {
+      this.renderer.cleanupCountdowns(this.currentPanel);
+      document.removeEventListener('click', this.boundOutsideClickHandler);
+      this.currentPanel.remove();
+      this.currentPanel = null;
+    }
+  }
+}
+
+class MoreDetailsPanel {
+  constructor(plugin) {
+    this.plugin = plugin;
+    this.openDetailPanel = new OpenDetailPanel(plugin);
+  }
+
+  async showPanel(media, entry = null, triggerElement) {
+    return await this.openDetailPanel.showPanel(media, entry, triggerElement);
+  }
+
+  closePanel() {
+    this.openDetailPanel.closePanel();
+  }
+
+  get currentPanel() {
+    return this.openDetailPanel.currentPanel;
   }
 }
 class RenderDetailPanel {
@@ -10865,63 +10750,6 @@ class RenderDetailPanel {
     });
   }
 }
-class OpenDetailPanel {
-  constructor(plugin) {
-    this.plugin = plugin;
-    this.currentPanel = null;
-    this.boundOutsideClickHandler = this.handleOutsideClick.bind(this);
-    
-    this.renderer = new RenderDetailPanel(plugin);
-    this.dataSource = new DetailPanelSource(plugin);
-  }
-
-  async showPanel(media, entry = null, triggerElement) {
-    this.closePanel();
-
-    const panel = this.renderer.createPanel(media, entry);
-    this.currentPanel = panel;
-    this.renderer.positionPanel(panel, triggerElement);
-    
-    const closeBtn = panel.querySelector('.panel-close-btn');
-    if (closeBtn) {
-      closeBtn.onclick = () => this.closePanel();
-    }
-    
-    document.body.appendChild(panel);
-    document.addEventListener('click', this.boundOutsideClickHandler);
-    
-    this.plugin.requestQueue.showGlobalLoader();
-    
-    if (this.dataSource.shouldFetchDetailedData(media)) {
-      // Let DetailPanelSource handle source detection and smart caching automatically
-      this.dataSource.fetchAndUpdateData(media.id, entry, (detailedMedia, malData) => {
-        if (this.currentPanel === panel) {
-          this.renderer.updatePanelContent(panel, detailedMedia, malData);
-        }
-      }).finally(() => {
-        this.plugin.requestQueue.hideGlobalLoader();
-      });
-    } else {
-      this.plugin.requestQueue.hideGlobalLoader();
-    }
-  }
-
-  handleOutsideClick(event) {
-    if (this.currentPanel && !this.currentPanel.contains(event.target)) {
-      this.closePanel();
-    }
-  }
-
-  closePanel() {
-    if (this.currentPanel) {
-      this.renderer.cleanupCountdowns(this.currentPanel);
-      document.removeEventListener('click', this.boundOutsideClickHandler);
-      this.currentPanel.remove();
-      this.currentPanel = null;
-    }
-  }
-}
-
 class Trending {
   constructor(plugin) { 
     this.plugin = plugin; 
@@ -12436,7 +12264,6 @@ static THEME_REPO_URL = 'https://api.github.com/repos/zara-kasi/zoro/contents/Th
     return false;
   }
 }
-
   scopeToPlugin(css) {
     const rules = this.extractCSSRules(css);
     const scopedRules = [];
@@ -13794,7 +13621,6 @@ class Sample {
         }
     }
 }
-
 class ZoroSettingTab extends PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);

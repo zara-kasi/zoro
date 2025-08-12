@@ -6278,7 +6278,12 @@ async handleTrendingOperation(api, config) {
       'perpage': 'perPage',
       'per-page': 'perPage',
       'per_page': 'perPage',
-      'limit': 'perPage'
+      'limit': 'perPage',
+      // support single media identifiers
+      'mediaid': 'mediaId',
+      'media-id': 'mediaId',
+      'media_id': 'mediaId',
+      'id': 'mediaId'
     };
 
     for (let raw of lines) {
@@ -6309,6 +6314,7 @@ async handleTrendingOperation(api, config) {
         return value.toLowerCase();
       case 'page':
       case 'perPage':
+      case 'mediaId':
         return parseInt(value) || undefined;
       default:
         return value;
@@ -6350,13 +6356,13 @@ async handleTrendingOperation(api, config) {
       config.listType = 'CURRENT';
     }
     
-    if (config.source === 'mal','simkl' && config.listType === 'REPEATING') {
-    throw new Error('Repeating is supported only on AniList.');
-  }
-  
-  if (config.source === 'simkl' && config.mediaType === 'MANGA') {
-    throw new Error('Manga is supported only on AniList and MyAnimeList.');
-  }
+    if ((config.source === 'mal' || config.source === 'simkl') && config.listType === 'REPEATING') {
+      throw new Error('Repeating is supported only on AniList.');
+    }
+    
+    if (config.source === 'simkl' && config.mediaType === 'MANGA') {
+      throw new Error('Manga is supported only on AniList and MyAnimeList.');
+    }
 
     return config;
   }
@@ -7126,7 +7132,15 @@ class MediaListRenderer {
   }
 
   renderSingle(el, mediaList, config) {
-    const media = mediaList.media;
+    const media = mediaList && mediaList.media;
+    if (!media) {
+      el.empty();
+      el.className = 'zoro-container';
+      const box = el.createDiv({ cls: 'zoro-error-box' });
+      box.createEl('strong', { text: '❌ Single media' });
+      box.createEl('pre', { text: 'Media entry not found. Ensure the item exists in your list and the mediaId is correct.' });
+      return;
+    }
     el.empty(); 
     el.className = 'zoro-container';
     const card = el.createDiv({ cls: 'zoro-single-card' });

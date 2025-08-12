@@ -6414,7 +6414,12 @@ class Render {
   }
 
   renderSingleMedia(el, mediaList, config) {
-    return this.mediaListRenderer.renderSingle(el, mediaList, config);
+    if (!mediaList || !mediaList.media) {
+      el.empty();
+      this.plugin.renderError(el, 'Media entry not found. Ensure the item exists in your list and the mediaId is correct.', 'Single media');
+      return;
+    }
+    return this.mediaListRenderer.render(el, [mediaList], config);
   }
 
   renderUserStats(el, user, options = {}) {

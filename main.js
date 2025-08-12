@@ -10,6 +10,7 @@ const DEFAULT_SETTINGS = {
   defaultUsername: '',
   defaultLayout: 'card',
   notePath: 'Zoro/Note',
+  insertCodeBlockOnNote: true,
   showCoverImages: true,
   showRatings: true,
   showProgress: true,
@@ -5769,6 +5770,7 @@ this.emojiMapper.init({ patchSettings:true, patchCreateEl:true, patchNotice:true
     defaultUsername: typeof settings?.defaultUsername === 'string' ? settings.defaultUsername : '',
     defaultLayout: ['card', 'table'].includes(settings?.defaultLayout) ? settings.defaultLayout : 'card',
     notePath: typeof settings?.notePath === 'string' ? settings.notePath : 'Zoro/Note',
+    insertCodeBlockOnNote: typeof settings?.insertCodeBlockOnNote === 'boolean' ? settings.insertCodeBlockOnNote : true,
     showCoverImages: typeof settings?.showCoverImages === 'boolean' ? settings.showCoverImages : true,
     showRatings: typeof settings?.showRatings === 'boolean' ? settings.showRatings : true,
     showProgress: typeof settings?.showProgress === 'boolean' ? settings.showProgress : true,
@@ -8272,6 +8274,7 @@ class EmojiIconMapper {
       '🗒️': 'notebook-pen', 
       '🗂️': 'folder-open',
       '🔮': 'square-mouse-pointer',
+      '🎴': 'file-input',
       ...Object.fromEntries(opts.map || [])
     }));
     
@@ -9607,6 +9610,9 @@ class ConnectedNotes {
    * Generate code block content based on current media entry
    */
   generateCodeBlockContent() {
+    if (!this.plugin.settings.insertCodeBlockOnNote) {
+    return ''; // Return empty if setting is disabled
+  }
     if (!this.currentMedia || !this.currentSource || !this.currentMediaType) {
       return ''; // Return empty if missing required data
     }
@@ -13867,6 +13873,16 @@ class ZoroSettingTab extends PluginSettingTab {
           this.plugin.settings.notePath = cleanPath;
           await this.plugin.saveSettings();
         }));
+        
+        new Setting(Note)
+  .setName('🎴 Media block')
+.setDesc('Auto-insert cover, rating, and details in new notes')
+  .addToggle(toggle => toggle
+    .setValue(this.plugin.settings.insertCodeBlockOnNote)
+    .onChange(async (value) => {
+      this.plugin.settings.insertCodeBlockOnNote = value;
+      await this.plugin.saveSettings();
+    }));
         
         new Setting(More)
       .setName('⏳ Loading Icon')

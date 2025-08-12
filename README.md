@@ -17,6 +17,7 @@
 - [Supported Platforms](#-supported-platforms)
 - [Usage Guide](#-usage-guide)
 - [Layout Options](#-layout-options)
+- [Single Media](#-single-media)
 - [Configuration](#-configuration)
 - [Advanced Features](#-advanced-features)
 - [API Support](#-api-support)
@@ -183,6 +184,29 @@ layout: card
 ```zoro
 layout: table
 ```
+
+## 🧩 Single Media
+(AniList and MAL)
+
+Render a single entry from your list by AniList or MAL ID. For AniList, either set a default username, authenticate, or provide `username`.
+
+```zoro
+# AniList single media example
+source: anilist
+type: single
+mediaType: anime
+username: your_anilist_username
+mediaId: 16498  # Attack on Titan (example)
+```
+
+```zoro
+# MAL single media example (requires MAL auth)
+source: mal
+type: single
+mediaType: anime
+mediaId: 5114  # Fullmetal Alchemist: Brotherhood (example)
+```
+
 
 ---
 

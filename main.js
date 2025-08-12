@@ -9,6 +9,7 @@ const DEFAULT_SETTINGS = {
   defaultApiUserOverride: false,
   defaultUsername: '',
   defaultLayout: 'card',
+  notePath: 'Zoro/Note',
   showCoverImages: true,
   showRatings: true,
   showProgress: true,
@@ -5764,64 +5765,47 @@ this.emojiMapper.init({ patchSettings:true, patchCreateEl:true, patchNotice:true
     this.registerMarkdownCodeBlockProcessor('zoro', this.processor.processZoroCodeBlock.bind(this.processor));
     this.addSettingTab(new ZoroSettingTab(this.app, this));
     
-    
-    
-    this.addCommand({
-  id: 'export-simkl-debug-logs',
-  name: 'Export Simkl Debug Logs',
-  callback: () => {
-    if (this.simklApi) {
-      const logs = this.simklApi.getDebugLogsAsMarkdown();
-      
-      // Create a new note with the logs
-      const fileName = `Simkl Debug Logs ${new Date().toISOString().split('T')[0]}.md`;
-      this.app.vault.create(fileName, logs);
-      new Notice(`Debug logs saved to: ${fileName}`);
-    } else {
-      new Notice('No Simkl API instance available');
-    }
-  }
-});
   }
 
   validateSettings(settings) {
-    return {
-      defaultApiSource: ['anilist', 'mal', 'simkl'].includes(settings?.defaultApiSource) ? settings.defaultApiSource : 'anilist',
-      defaultApiUserOverride: typeof settings?.defaultApiUserOverride === 'boolean' ? settings.defaultApiUserOverride : false,
-      defaultUsername: typeof settings?.defaultUsername === 'string' ? settings.defaultUsername : '',
-      defaultLayout: ['card', 'table'].includes(settings?.defaultLayout) ? settings.defaultLayout : 'card',
-      showCoverImages: typeof settings?.showCoverImages === 'boolean' ? settings.showCoverImages : true,
-      showRatings: typeof settings?.showRatings === 'boolean' ? settings.showRatings : true,
-      showProgress: typeof settings?.showProgress === 'boolean' ? settings.showProgress : true,
-      showGenres: typeof settings?.showGenres === 'boolean' ? settings.showGenres : false,
-      showLoadingIcon: typeof settings?.showLoadingIcon === 'boolean' ? settings.showLoadingIcon : true,
-      gridColumns: Number.isInteger(settings?.gridColumns) ? settings.gridColumns : getDefaultGridColumns(),
-      theme: typeof settings?.theme === 'string' ? settings.theme : '',
-      hideUrlsInTitles: typeof settings?.hideUrlsInTitles === 'boolean' ? settings.hideUrlsInTitles : true,
-      forceScoreFormat: typeof settings?.forceScoreFormat === 'boolean' ? settings.forceScoreFormat : true,
-      showAvatar: typeof settings?.showAvatar === 'boolean' ? settings.showAvatar : true,
-      showFavorites: typeof settings?.showFavorites === 'boolean' ? settings.showFavorites : true,
-      showBreakdowns: typeof settings?.showBreakdowns === 'boolean' ? settings.showBreakdowns : true,
-      showTimeStats: typeof settings?.showTimeStats === 'boolean' ? settings.showTimeStats : true,
-      statsLayout: ['enhanced', 'compact', 'minimal'].includes(settings?.statsLayout) ? settings.statsLayout : 'enhanced',
-      statsTheme: ['auto', 'light', 'dark'].includes(settings?.statsTheme) ? settings.statsTheme : 'auto',
-      clientId: typeof settings?.clientId === 'string' ? settings.clientId : '',
-      clientSecret: typeof settings?.clientSecret === 'string' ? settings.clientSecret : '',
-      redirectUri: typeof settings?.redirectUri === 'string' ? settings.redirectUri : 'https://anilist.co/api/v2/oauth/pin',
-      accessToken: typeof settings?.accessToken === 'string' ? settings.accessToken : '',
-      malClientId: typeof settings?.malClientId === 'string' ? settings.malClientId : '',
-      malClientSecret: typeof settings?.malClientSecret === 'string' ? settings.malClientSecret : '',
-      malAccessToken: typeof settings?.malAccessToken === 'string' ? settings.malAccessToken : '',
-      malRefreshToken: typeof settings?.malRefreshToken === 'string' ? settings.malRefreshToken : '',
-      malTokenExpiry: settings?.malTokenExpiry === null || typeof settings?.malTokenExpiry === 'number' ? settings.malTokenExpiry : null,
-      malUserInfo: settings?.malUserInfo === null || typeof settings?.malUserInfo === 'object' ? settings.malUserInfo : null,
-      simklClientId: typeof settings?.simklClientId === 'string' ? settings.simklClientId : '',
-      simklClientSecret: typeof settings?.simklClientSecret === 'string' ? settings.simklClientSecret : '',
-      simklAccessToken: typeof settings?.simklAccessToken === 'string' ? settings.simklAccessToken : '',
-      simklUserInfo: settings?.simklUserInfo === null || typeof settings?.simklUserInfo === 'object' ? settings.simklUserInfo : null,
-      debugMode: typeof settings?.debugMode === 'boolean' ? settings.debugMode : false,
-    };
-  }
+  return {
+    defaultApiSource: ['anilist', 'mal', 'simkl'].includes(settings?.defaultApiSource) ? settings.defaultApiSource : 'anilist',
+    defaultApiUserOverride: typeof settings?.defaultApiUserOverride === 'boolean' ? settings.defaultApiUserOverride : false,
+    defaultUsername: typeof settings?.defaultUsername === 'string' ? settings.defaultUsername : '',
+    defaultLayout: ['card', 'table'].includes(settings?.defaultLayout) ? settings.defaultLayout : 'card',
+    notePath: typeof settings?.notePath === 'string' ? settings.notePath : 'Zoro/Note',
+    showCoverImages: typeof settings?.showCoverImages === 'boolean' ? settings.showCoverImages : true,
+    showRatings: typeof settings?.showRatings === 'boolean' ? settings.showRatings : true,
+    showProgress: typeof settings?.showProgress === 'boolean' ? settings.showProgress : true,
+    showGenres: typeof settings?.showGenres === 'boolean' ? settings.showGenres : false,
+    showLoadingIcon: typeof settings?.showLoadingIcon === 'boolean' ? settings.showLoadingIcon : true,
+    gridColumns: Number.isInteger(settings?.gridColumns) ? settings.gridColumns : getDefaultGridColumns(),
+    theme: typeof settings?.theme === 'string' ? settings.theme : '',
+    hideUrlsInTitles: typeof settings?.hideUrlsInTitles === 'boolean' ? settings.hideUrlsInTitles : true,
+    forceScoreFormat: typeof settings?.forceScoreFormat === 'boolean' ? settings.forceScoreFormat : true,
+    showAvatar: typeof settings?.showAvatar === 'boolean' ? settings.showAvatar : true,
+    showFavorites: typeof settings?.showFavorites === 'boolean' ? settings.showFavorites : true,
+    showBreakdowns: typeof settings?.showBreakdowns === 'boolean' ? settings.showBreakdowns : true,
+    showTimeStats: typeof settings?.showTimeStats === 'boolean' ? settings.showTimeStats : true,
+    statsLayout: ['enhanced', 'compact', 'minimal'].includes(settings?.statsLayout) ? settings.statsLayout : 'enhanced',
+    statsTheme: ['auto', 'light', 'dark'].includes(settings?.statsTheme) ? settings.statsTheme : 'auto',
+    clientId: typeof settings?.clientId === 'string' ? settings.clientId : '',
+    clientSecret: typeof settings?.clientSecret === 'string' ? settings.clientSecret : '',
+    redirectUri: typeof settings?.redirectUri === 'string' ? settings.redirectUri : 'https://anilist.co/api/v2/oauth/pin',
+    accessToken: typeof settings?.accessToken === 'string' ? settings.accessToken : '',
+    malClientId: typeof settings?.malClientId === 'string' ? settings.malClientId : '',
+    malClientSecret: typeof settings?.malClientSecret === 'string' ? settings.malClientSecret : '',
+    malAccessToken: typeof settings?.malAccessToken === 'string' ? settings.malAccessToken : '',
+    malRefreshToken: typeof settings?.malRefreshToken === 'string' ? settings.malRefreshToken : '',
+    malTokenExpiry: settings?.malTokenExpiry === null || typeof settings?.malTokenExpiry === 'number' ? settings.malTokenExpiry : null,
+    malUserInfo: settings?.malUserInfo === null || typeof settings?.malUserInfo === 'object' ? settings.malUserInfo : null,
+    simklClientId: typeof settings?.simklClientId === 'string' ? settings.simklClientId : '',
+    simklClientSecret: typeof settings?.simklClientSecret === 'string' ? settings.simklClientSecret : '',
+    simklAccessToken: typeof settings?.simklAccessToken === 'string' ? settings.simklAccessToken : '',
+    simklUserInfo: settings?.simklUserInfo === null || typeof settings?.simklUserInfo === 'object' ? settings.simklUserInfo : null,
+    debugMode: typeof settings?.debugMode === 'boolean' ? settings.debugMode : false,
+  };
+}
 
   async saveSettings() {
     try {
@@ -8332,6 +8316,8 @@ class EmojiIconMapper {
       '⛓️': 'workflow',
       '💾': 'database-backup',
       '🌓': 'swatch-book',
+      '🗒️': 'notebook-pen', 
+      '🗂️': 'folder-open',
       ...Object.fromEntries(opts.map || [])
     }));
     
@@ -8341,8 +8327,8 @@ class EmojiIconMapper {
     this._colonRegex = /:([a-z0-9-]+):/gi;
     this._patches = new Map();
     this._patched = false;
-    this.iconSize = opts.iconSize ?? 25;
-    this.gap = opts.gap ?? 20;
+    this.iconSize = opts.iconSize ?? 30;
+    this.gap = opts.gap ?? 6;
     this._iconStyle = `display:inline-flex;align-items:center;justify-content:center;width:${this.iconSize}px;height:${this.iconSize}px;vertical-align:middle`;
   }
 
@@ -9441,6 +9427,7 @@ class ConnectedNotes {
     this.plugin = plugin;
     this.app = plugin.app;
     this.currentMedia = null; // Store current media for filename generation
+    this.currentUrls = null; // Store current URLs as array for matching
   }
 
   /**
@@ -9462,12 +9449,38 @@ class ConnectedNotes {
     } else if (source === 'simkl') {
       ids.simkl_id = media.id;
     }
-    if (media.idMal) {
-  frontmatter.push(`mal_url: "https://myanimelist.net/${mediaType.toLowerCase()}/${media.idMal}"`);
-}
-frontmatter.push(`anilist_url: "https://anilist.co/${mediaType.toLowerCase()}/${media.id}"`);
     
     return ids;
+  }
+
+  /**
+   * Build URLs array for current media to match against
+   */
+  buildCurrentUrls(media, mediaType) {
+    const urls = [];
+    
+    // Build MAL URL if MAL ID exists
+    if (media.idMal) {
+      urls.push(`https://myanimelist.net/${mediaType.toLowerCase()}/${media.idMal}`);
+    }
+    
+    // Always build AniList URL
+    urls.push(`https://anilist.co/${mediaType.toLowerCase()}/${media.id}`);
+    
+    return urls;
+  }
+
+  /**
+   * Check if any URL in the array matches the current media URLs
+   */
+  hasMatchingUrl(frontmatterUrls, currentUrls) {
+    if (!frontmatterUrls || !currentUrls) return false;
+    
+    // Ensure frontmatterUrls is an array
+    const urlArray = Array.isArray(frontmatterUrls) ? frontmatterUrls : [frontmatterUrls];
+    
+    // Check if any URL in frontmatter matches any current URL
+    return urlArray.some(url => currentUrls.includes(url));
   }
 
   /**
@@ -9483,13 +9496,33 @@ frontmatter.push(`anilist_url: "https://anilist.co/${mediaType.toLowerCase()}/${
       
       if (!frontmatter) continue;
 
-      // Check if note has matching IDs
       let hasMatchingId = false;
-      for (const [idType, idValue] of Object.entries(searchIds)) {
-        if (frontmatter[idType] == idValue && frontmatter.media_type === mediaType) {
-  hasMatchingId = true;
-  break;
-}
+
+      // Priority 1: Check MAL ID + media type
+      if (searchIds.mal_id && frontmatter.mal_id == searchIds.mal_id && frontmatter.media_type === mediaType) {
+        hasMatchingId = true;
+      }
+      
+      // Priority 2: Check AniList ID + media type (if MAL didn't match)
+      if (!hasMatchingId && searchIds.anilist_id && frontmatter.anilist_id == searchIds.anilist_id && frontmatter.media_type === mediaType) {
+        hasMatchingId = true;
+      }
+      
+      // Priority 3: Check other IDs + media type (if still no match)
+      if (!hasMatchingId) {
+        for (const [idType, idValue] of Object.entries(searchIds)) {
+          if (idType !== 'mal_id' && idType !== 'anilist_id' && frontmatter[idType] == idValue && frontmatter.media_type === mediaType) {
+            hasMatchingId = true;
+            break;
+          }
+        }
+      }
+
+      // Priority 4: Check URL array matching (fallback option)
+      if (!hasMatchingId && this.currentUrls) {
+        if (this.hasMatchingUrl(frontmatter.url, this.currentUrls)) {
+          hasMatchingId = true;
+        }
       }
 
       // Also check for #Zoro tag
@@ -9513,7 +9546,7 @@ frontmatter.push(`anilist_url: "https://anilist.co/${mediaType.toLowerCase()}/${
   /**
    * Search vault for existing notes to connect (excludes already connected ones)
    */
-  async findNotesToConnect(searchQuery, searchIds) {
+  async findNotesToConnect(searchQuery, searchIds, mediaType) {
     const allFiles = this.app.vault.getMarkdownFiles();
     const searchResults = [];
     
@@ -9524,18 +9557,28 @@ frontmatter.push(`anilist_url: "https://anilist.co/${mediaType.toLowerCase()}/${
     const query = searchQuery.toLowerCase().trim();
     
     for (const file of allFiles) {
-      // Skip files that already have matching IDs
+      // Skip files that already have matching IDs or URLs
       const metadata = this.app.metadataCache.getFileCache(file);
       const frontmatter = metadata?.frontmatter;
       
       if (frontmatter) {
         let alreadyConnected = false;
+        
+        // Check ID matching
         for (const [idType, idValue] of Object.entries(searchIds)) {
           if (frontmatter[idType] == idValue && frontmatter.media_type === mediaType) {
-  hasMatchingId = true;
-  break;
-}
+            alreadyConnected = true;
+            break;
+          }
         }
+        
+        // Check URL array matching if not already connected
+        if (!alreadyConnected && this.currentUrls) {
+          if (this.hasMatchingUrl(frontmatter.url, this.currentUrls)) {
+            alreadyConnected = true;
+          }
+        }
+        
         if (alreadyConnected) continue;
       }
       
@@ -9578,6 +9621,33 @@ frontmatter.push(`anilist_url: "https://anilist.co/${mediaType.toLowerCase()}/${
   }
 
   /**
+   * Merge URL arrays, avoiding duplicates
+   */
+  mergeUrlArrays(existingUrls, newUrls) {
+    if (!newUrls || newUrls.length === 0) {
+      return existingUrls || [];
+    }
+    
+    if (!existingUrls) {
+      return [...newUrls];
+    }
+    
+    // Ensure existing is an array
+    const existingArray = Array.isArray(existingUrls) ? existingUrls : [existingUrls];
+    
+    // Create new array with existing URLs plus new ones (no duplicates)
+    const mergedUrls = [...existingArray];
+    
+    newUrls.forEach(url => {
+      if (!mergedUrls.includes(url)) {
+        mergedUrls.push(url);
+      }
+    });
+    
+    return mergedUrls;
+  }
+
+  /**
    * Add metadata to existing note
    */
   async connectExistingNote(file, searchIds, mediaType) {
@@ -9606,6 +9676,11 @@ frontmatter.push(`anilist_url: "https://anilist.co/${mediaType.toLowerCase()}/${
         updatedFrontmatter[key] = value;
       });
       
+      // Merge URL arrays
+      if (this.currentUrls && this.currentUrls.length > 0) {
+        updatedFrontmatter.url = this.mergeUrlArrays(existingFrontmatter.url, this.currentUrls);
+      }
+      
       // Add media type
       updatedFrontmatter.media_type = mediaType;
       
@@ -9625,6 +9700,11 @@ frontmatter.push(`anilist_url: "https://anilist.co/${mediaType.toLowerCase()}/${
           frontmatterLines.push('tags:');
           value.forEach(tag => {
             frontmatterLines.push(`  - ${tag}`);
+          });
+        } else if (key === 'url' && Array.isArray(value)) {
+          frontmatterLines.push('url:');
+          value.forEach(url => {
+            frontmatterLines.push(`  - "${url}"`);
           });
         } else {
           frontmatterLines.push(`${key}: "${value}"`);
@@ -9691,7 +9771,7 @@ frontmatter.push(`anilist_url: "https://anilist.co/${mediaType.toLowerCase()}/${
     // Search input
     const searchInput = connectInterface.createEl('input', { cls: 'zoro-note-search-input' });
     searchInput.type = 'text';
-    searchInput.placeholder = '🔍 Search notes to connect...';
+    searchInput.placeholder = ' Search notes to connect...';
     
     // Search results container
     const resultsContainer = connectInterface.createEl('div', { cls: 'zoro-note-search-results' });
@@ -9705,7 +9785,7 @@ frontmatter.push(`anilist_url: "https://anilist.co/${mediaType.toLowerCase()}/${
         resultsContainer.empty();
         
         if (query.trim().length >= 2) {
-          const results = await this.findNotesToConnect(query, searchIds);
+          const results = await this.findNotesToConnect(query, searchIds, mediaType);
           
           if (results.length === 0) {
             const noResults = resultsContainer.createEl('div', { text: 'No notes found', cls: 'zoro-note-no-results' });
@@ -9922,12 +10002,32 @@ frontmatter.push(`anilist_url: "https://anilist.co/${mediaType.toLowerCase()}/${
   }
 
   /**
-   * Generate unique filename like Obsidian does (Title, Title 1, Title 2, etc.)
+   * Get the configured note path from settings
+   */
+  getConfiguredNotePath() {
+    // Get the note path from plugin settings
+    const notePath = this.plugin.settings?.notePath || '';
+    
+    // Ensure path ends with '/' if it's not empty
+    if (notePath && !notePath.endsWith('/')) {
+      return notePath + '/';
+    }
+    
+    return notePath;
+  }
+
+  /**
+   * Generate unique filename with path like Obsidian does (Title, Title 1, Title 2, etc.)
    */
   generateUniqueFilename(baseName = null) {
     // Use media title if available, otherwise fallback to 'Untitled'
     const preferredBaseName = baseName || this.getMediaTitleForFilename();
-    const baseFileName = `${preferredBaseName}.md`;
+    
+    // Get configured path
+    const notePath = this.getConfiguredNotePath();
+    
+    // Generate full path with filename
+    const baseFileName = `${notePath}${preferredBaseName}.md`;
     
     // Check if base filename exists
     if (!this.app.vault.getAbstractFileByPath(baseFileName)) {
@@ -9938,7 +10038,7 @@ frontmatter.push(`anilist_url: "https://anilist.co/${mediaType.toLowerCase()}/${
     let counter = 1;
     let uniqueFileName;
     do {
-      uniqueFileName = `${preferredBaseName} ${counter}.md`;
+      uniqueFileName = `${notePath}${preferredBaseName} ${counter}.md`;
       counter++;
     } while (this.app.vault.getAbstractFileByPath(uniqueFileName));
     
@@ -9946,23 +10046,57 @@ frontmatter.push(`anilist_url: "https://anilist.co/${mediaType.toLowerCase()}/${
   }
 
   /**
+   * Ensure the configured path exists in the vault
+   */
+  async ensurePathExists(filePath) {
+    // Extract directory path from file path
+    const pathParts = filePath.split('/');
+    pathParts.pop(); // Remove filename
+    const dirPath = pathParts.join('/');
+    
+    if (!dirPath) return; // No directory to create
+    
+    // Check if directory exists and create if it doesn't
+    const abstractFile = this.app.vault.getAbstractFileByPath(dirPath);
+    if (!abstractFile) {
+      try {
+        await this.app.vault.createFolder(dirPath);
+      } catch (error) {
+        // Folder might already exist, or there might be another issue
+        console.warn('[ConnectedNotes] Could not create folder:', dirPath, error);
+      }
+    }
+  }
+
+  /**
    * Create a new note with unique filename and add metadata
    */
   async createNewConnectedNote(searchIds, mediaType) {
     try {
-      // Generate unique filename using media title
+      // Generate unique filename using media title with configured path
       const uniqueFileName = this.generateUniqueFilename();
       
+      // Ensure the directory path exists
+      await this.ensurePathExists(uniqueFileName);
+      
       // Create frontmatter content
-      const frontmatter = [
+      const frontmatterLines = [
         '---',
         ...Object.entries(searchIds).map(([key, value]) => `${key}: "${value}"`),
         `media_type: "${mediaType}"`,
-        'tags:',
-        '  - Zoro',
-        '---',
-        ''
-      ].join('\n');
+      ];
+      
+      // Add URL array to frontmatter
+      if (this.currentUrls && this.currentUrls.length > 0) {
+        frontmatterLines.push('url:');
+        this.currentUrls.forEach(url => {
+          frontmatterLines.push(`  - "${url}"`);
+        });
+      }
+      
+      frontmatterLines.push('tags:', '  - Zoro', '---', '');
+      
+      const frontmatter = frontmatterLines.join('\n');
 
       // Create the file with unique name and frontmatter
       const file = await this.app.vault.create(uniqueFileName, frontmatter);
@@ -10013,6 +10147,9 @@ frontmatter.push(`anilist_url: "https://anilist.co/${mediaType.toLowerCase()}/${
       
       // Store current media for filename generation (PREFER ENGLISH TITLE)
       this.currentMedia = media;
+      
+      // Build URLs array for current media
+      this.currentUrls = this.buildCurrentUrls(media, mediaType);
       
       // Extract search IDs
       const searchIds = this.extractSearchIds(media, entry, source);
@@ -13618,6 +13755,7 @@ class ZoroSettingTab extends PluginSettingTab {
     const Setup = section('🧭 Setup');
     const Display = section('📺 Display');
     const Theme = section('🌓 Theme');
+    const Note = section('🗒️ Note');
     const More = section('✨  More');
     const Data = section('💾 Data');
     const Cache = section('🔁 Cache');
@@ -13709,6 +13847,25 @@ class ZoroSettingTab extends PluginSettingTab {
           this.plugin.settings.gridColumns = value;
           await this.plugin.saveSettings();
           this.updateGridColumns(value);
+        }));
+        
+        new Setting(Note)
+      .setName('🗂️ Note path')
+      .setDesc('Folder path where new connected notes will be created.')
+      .addText(text => text
+        .setPlaceholder('folder/subfolder')
+        .setValue(this.plugin.settings.notePath || '')
+        .onChange(async (value) => {
+          let cleanPath = value.trim();
+          if (cleanPath.startsWith('/')) {
+            cleanPath = cleanPath.substring(1);
+          }
+          if (cleanPath.endsWith('/')) {
+            cleanPath = cleanPath.substring(0, cleanPath.length - 1);
+          }
+          
+          this.plugin.settings.notePath = cleanPath;
+          await this.plugin.saveSettings();
         }));
         
         new Setting(More)

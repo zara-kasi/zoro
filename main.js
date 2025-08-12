@@ -6703,6 +6703,12 @@ class CardRenderer {
     
     coverContainer.appendChild(img);
     
+    // Add format badge to cover if available
+    if (media.format) {
+      const formatBadge = this.createFormatBadgeForCover(media);
+      coverContainer.appendChild(formatBadge);
+    }
+    
     const needsOverlay = (!isSearch && entry && this.plugin.settings.showProgress) || 
                         (this.plugin.settings.showRatings && ((isSearch && media.averageScore != null) || (!isSearch && entry?.score != null)));
                         
@@ -6712,6 +6718,13 @@ class CardRenderer {
     }
     
     return coverContainer;
+  }
+
+  createFormatBadgeForCover(media) {
+    const formatBadge = document.createElement('div');
+    formatBadge.className = 'zoro-format-badge-cover';
+    formatBadge.textContent = this.formatter.formatFormat(media.format);
+    return formatBadge;
   }
 
   createCoverOverlay(media, entry, isSearch) {
@@ -6753,7 +6766,7 @@ class CardRenderer {
     const title = this.createTitle(media, entry, config);
     info.appendChild(title);
 
-    // Details (format, status, edit button)
+    // Details (status, edit button - format badge removed)
     if (!isCompact) {
       const details = this.createMediaDetails(media, entry, config, isSearch);
       info.appendChild(details);
@@ -6791,35 +6804,31 @@ class CardRenderer {
 
     return title;
   }
+  
   createMediaDetails(media, entry, config, isSearch) {
-  const details = document.createElement('div');
-  details.className = 'media-details';
+    const details = document.createElement('div');
+    details.className = 'media-details';
 
-  // Format badge
-  if (media.format) {
-    const formatBadge = document.createElement('span');
-    formatBadge.className = 'format-badge';
-    formatBadge.textContent = this.formatter.formatFormat(media.format);
-    details.appendChild(formatBadge);
+    // Format badge removed from here - now on cover image
+
+    // Status badge or edit button
+    if (!isSearch && entry && entry.status) {
+      const statusBadge = this.createStatusBadge(entry, config);
+      details.appendChild(statusBadge);
+    }
+
+    if (isSearch) {
+      const editBtn = this.createEditButton(media, entry, config);
+      details.appendChild(editBtn);
+    }
+
+    // CONNECTED NOTES BUTTON - ADD THIS
+    const connectedNotesBtn = this.plugin.connectedNotes.createConnectedNotesButton(media, entry, config);
+    details.appendChild(connectedNotesBtn);
+
+    return details;
   }
-
-  // Status badge or edit button
-  if (!isSearch && entry && entry.status) {
-    const statusBadge = this.createStatusBadge(entry, config);
-    details.appendChild(statusBadge);
-  }
-
-  if (isSearch) {
-    const editBtn = this.createEditButton(media, entry, config);
-    details.appendChild(editBtn);
-  }
-
-  // CONNECTED NOTES BUTTON - ADD THIS
-  const connectedNotesBtn = this.plugin.connectedNotes.createConnectedNotesButton(media, entry, config);
-  details.appendChild(connectedNotesBtn);
-
-  return details;
-}
+  
   createStatusBadge(entry, config) {
     const statusBadge = document.createElement('span');
     const statusClass = this.formatter.getStatusClass(entry.status);

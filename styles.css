@@ -256,7 +256,6 @@
 }
 
 /* Badges */
-.format-badge,
 .status-badge {
   padding: var(--zoro-badge-padding);
   border-radius: var(--zoro-badge-border-radius);
@@ -1874,12 +1873,6 @@ The panel will automatically adapt to the user's system theme preference:
   opacity: 0.7;
 }
 
-.format-badge {
-  display: inline-block;
-  width: 24px;
-  text-align: left;
-  min-width: 24px;
-}
 
 
 /* === More-Details Modal ============================================ */
@@ -1894,10 +1887,6 @@ The panel will automatically adapt to the user's system theme preference:
   width: 600px;
 }
 
-/* spacing between format badge and status badge */
-.media-details .format-badge + .status-badge {
-  margin-left: 0.5em;
-}
 
 .zoro-modal-error {
   background: var(--background-modifier-error);
@@ -2142,6 +2131,8 @@ The panel will automatically adapt to the user's system theme preference:
   width: var(--heart-size);
   height: var(--heart-size);
   cursor: pointer;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.5));
   
   /* No background - clean transparent icon */
   background: transparent;
@@ -2150,7 +2141,6 @@ The panel will automatically adapt to the user's system theme preference:
   
   transform-origin: center;
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  filter: drop-shadow(var(--heart-shadow));
 }
 
 .zoro-heart::before,
@@ -2745,4 +2735,20 @@ body.theme-light .zoro-heart.favorited::before {
     padding: 0px 0;
     cursor: pointer;
     border-top: transparent;
+}
+
+.zoro-format-badge-cover {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 24px;
+  height: 24px;
+  font-size: 11px !important;
+  font-weight: 550;
+  cursor: pointer;
+  text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.5));
+  border: none;
+  padding: 0;
+  
 }

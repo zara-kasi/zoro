@@ -6391,15 +6391,6 @@ class Render {
     this.statsRenderer = new StatsRenderer(this);
   }
 
-  // Debug logging - unchanged
-  logDebug(...args) {
-    if (this.plugin.settings.debugMode) {
-      console.log('[Zoro-Render]', ...args);
-    }
-  }
-
-  // ========== PUBLIC API METHODS - UNCHANGED INTERFACE ==========
-  
   renderSearchInterface(el, config) {
     return this.searchRenderer.render(el, config);
   }
@@ -8318,6 +8309,7 @@ class EmojiIconMapper {
       '🌓': 'swatch-book',
       '🗒️': 'notebook-pen', 
       '🗂️': 'folder-open',
+      '🔮': 'square-mouse-pointer',
       ...Object.fromEntries(opts.map || [])
     }));
     

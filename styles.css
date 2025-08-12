@@ -2746,3 +2746,22 @@ body.theme-light .zoro-heart.favorited::before {
     cursor: pointer;
     border-top: transparent;
 }
+
+.zoro-note-search-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.zoro-note-search-input {
+  width: 100%;
+  padding-left: 35px; /* Make room for the icon */
+}
+
+.zoro-note-search-icon {
+  position: absolute;
+  left: 8px;
+  pointer-events: none;
+  color: var(--text-muted);
+  z-index: 1;
+}

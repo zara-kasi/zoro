@@ -3215,7 +3215,6 @@ class AnilistApi {
     } else if (config.type === 'single') {
       query = this.getSingleMediaQuery(config.layout);
       variables = {
-        username: config.username,
         mediaId: parseInt(config.mediaId),
         type: config.mediaType
       };
@@ -3512,12 +3511,9 @@ class AnilistApi {
     const selectedMediaFields = mediaFields[layout] || mediaFields.card;
 
     return `
-      query ($username: String, $mediaId: Int, $type: MediaType) {
-        MediaList(userName: $username, mediaId: $mediaId, type: $type) {
-          ${baseFields}
-          media {
-            ${selectedMediaFields}
-          }
+      query ($mediaId: Int, $type: MediaType) {
+        Media(id: $mediaId, type: $type) {
+          ${selectedMediaFields}
         }
       }
     `;
@@ -4085,12 +4081,11 @@ class MalApi {
       case 'search':
         return { Page: { media: data.data?.map(item => this.transformMedia(item)) || [] } };
       case 'single':
-        if (!data.data || data.data.length === 0) {
-          return { MediaList: null };
+        // Public detail endpoint returns an object, transform to search-like payload
+        if (!data) {
+          return { Page: { media: [] } };
         }
-        
-        const singleEntry = data.data.find(item => item.node.id === parseInt(config.mediaId)) || data.data[0];
-        return { MediaList: singleEntry ? this.transformListEntry(singleEntry, config) : null };
+        return { Page: { media: [this.transformMedia(data)] } };
       case 'stats':
         return { User: this.transformUser(data) };
       default:
@@ -4155,6 +4150,9 @@ volumesRead: listStatus?.num_volumes_read ?? null,
     
     switch (config.type) {
       case 'single':
+        // Public single item fetch should use search field sets (no list_status)
+        params.fields = this.getFieldsForLayout(config.layout || 'card', true);
+        break;
       case 'list':
         // Use list field sets that include list_status
         params.fields = this.getFieldsForLayout(config.layout || 'card', false);
@@ -4479,7 +4477,7 @@ manga: {
   }
 
   requiresAuth(requestType) {
-    return requestType !== 'search';
+    return requestType !== 'search' && requestType !== 'single';
   }
 
   validateConfig(config) {
@@ -4520,7 +4518,9 @@ manga: {
       case 'list':
         // FIXED: Use correct endpoint format
         const mediaType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
-        return `${this.baseUrl}/users/@me/${mediaType}list`;
+        return config.type === 'single'
+          ? `${this.baseUrl}/${mediaType}/${config.mediaId}`
+          : `${this.baseUrl}/users/@me/${mediaType}list`;
       case 'search':
         const searchType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
         return `${this.baseUrl}/${searchType}`;
@@ -6123,19 +6123,17 @@ async handleSingleOperation(api, config) {
       throw new Error('❌ Media ID is required for single media view');
     }
     const response = await api.fetchMALData({ ...config, type: 'single' });
-    const data = response?.MediaList;
-    return this.injectMetadata(data, config);
+    return response;
   } else if (config.source === 'simkl') {
     if (!config.mediaId) {
       throw new Error('❌ Media ID is required for single media view');
     }
     const response = await api.fetchSimklData({ ...config, type: 'single' });
-    const data = response?.MediaList;
-    return this.injectMetadata(data, config);
+    return response;
   } else {
     const data = await api.fetchAniListData?.(config);
-    const result = data?.MediaList;
-    return this.injectMetadata(result, config);
+    const media = data?.Media ? [data.Media] : [];
+    return { Page: { media } };
   }
 }
 
@@ -6183,7 +6181,7 @@ async handleTrendingOperation(api, config) {
           break;
 
         case 'single':
-          this.plugin.render.renderSingleMedia(el, data, config);
+          this.plugin.render.renderSearchResults(el, data.Page?.media || [], config);
           break;
 
         case 'list':
@@ -6337,13 +6335,14 @@ async handleTrendingOperation(api, config) {
         throw new Error(`❌ ${config.source.toUpperCase()} authentication required. Please authenticate in plugin settings.`);
       }
     } else {
-      if (!config.username) {
+      // AniList: username only required for list/stats. Search/single use public data.
+      if ((config.type === 'list' || config.type === 'stats') && !config.username) {
         if (this.plugin.settings.defaultUsername) {
           config.username = this.plugin.settings.defaultUsername;
         } else if (this.hasValidAuthForSource(config.source)) {
           config.useAuthenticatedUser = true;
         } else {
-          throw new Error('❌ Username is required. Please set a default username in plugin settings, authenticate, or specify one in the code block.');
+          throw new Error('❌ Username is required for list/stats. Set a default username, authenticate, or specify one.');
         }
       }
     }

@@ -17,7 +17,6 @@
 - [Supported Platforms](#-supported-platforms)
 - [Usage Guide](#-usage-guide)
 - [Layout Options](#-layout-options)
-- [Inline Links](#-inline-links)
 - [Configuration](#-configuration)
 - [Advanced Features](#-advanced-features)
 - [API Support](#-api-support)
@@ -184,19 +183,9 @@ layout: card
 ```zoro
 layout: table
 ```
----
-
-## 🧩 Inline Links
-
-Use anywhere in your notes:
-
-```markdown
-[zoro:username/CURRENT](zoro:username/CURRENT#card)
-[zoro:username/stats](zoro:username/stats#enhanced)
-[zoro:username/search](zoro:username/search#attack on titan)
-```
 
 ---
+
 
 ## ⚙️ Configuration
 

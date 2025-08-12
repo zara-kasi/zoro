@@ -3215,6 +3215,7 @@ class AnilistApi {
     } else if (config.type === 'single') {
       query = this.getSingleMediaQuery(config.layout);
       variables = {
+        username: config.username,
         mediaId: parseInt(config.mediaId),
         type: config.mediaType
       };
@@ -3511,9 +3512,15 @@ class AnilistApi {
     const selectedMediaFields = mediaFields[layout] || mediaFields.card;
 
     return `
-      query ($mediaId: Int, $type: MediaType) {
-        Media(id: $mediaId, type: $type) {
-          ${selectedMediaFields}
+      query ($username: String, $mediaId: Int, $type: MediaType) {
+        MediaList(userName: $username, mediaId: $mediaId, type: $type) {
+          id
+          status
+          score
+          progress
+          media {
+            ${selectedMediaFields}
+          }
         }
       }
     `;
@@ -6123,61 +6130,19 @@ async handleSingleOperation(api, config) {
       throw new Error('❌ Media ID is required for single media view');
     }
     const response = await api.fetchMALData({ ...config, type: 'single' });
-    const listEntry = response?.MediaList;
-    if (listEntry) {
-      return this.injectMetadata(listEntry, config);
-    }
-    // Fallback: fetch public details by ID and render like a search result card
-    const mediaTypeLower = config.mediaType === 'ANIME' ? 'anime' : 'manga';
-    const fields = api.getFieldsForLayout(config.layout || 'card', true);
-    const requestParams = {
-      url: `${api.baseUrl}/${mediaTypeLower}/${config.mediaId}?fields=${encodeURIComponent(fields)}`,
-      method: 'GET',
-      headers: api.getAuthHeaders(),
-      priority: 'normal',
-      metadata: { type: 'single', mediaType: config.mediaType }
-    };
-    const raw = await api.makeRequest(requestParams);
-    const media = api.transformMedia(raw);
-    return { Page: { media: [media] } };
+    const data = response?.MediaList;
+    return this.injectMetadata(data, config);
   } else if (config.source === 'simkl') {
     if (!config.mediaId) {
       throw new Error('❌ Media ID is required for single media view');
     }
     const response = await api.fetchSimklData({ ...config, type: 'single' });
-    return response;
+    const data = response?.MediaList;
+    return this.injectMetadata(data, config);
   } else {
     const data = await api.fetchAniListData?.(config);
-    const listEntry = data?.MediaList;
-    if (listEntry) {
-      return this.injectMetadata(listEntry, config);
-    }
-
-    // Fallback: public AniList Media by ID
-    const query = `
-      query ($mediaId: Int, $type: MediaType) {
-        Media(id: $mediaId, type: $type) {
-          id
-          idMal
-          title { romaji english native }
-          coverImage { large medium }
-          format
-          averageScore
-          status
-          genres
-          episodes
-          chapters
-          isFavourite
-        }
-      }
-    `;
-    const result = await api.makeRawRequest({
-      query,
-      variables: { mediaId: parseInt(config.mediaId), type: config.mediaType },
-      config: { type: 'single_public' }
-    });
-    const media = result?.Media ? [result.Media] : [];
-    return { Page: { media } };
+    const result = data?.MediaList;
+    return this.injectMetadata(result, config);
   }
 }
 
@@ -6225,12 +6190,7 @@ async handleTrendingOperation(api, config) {
           break;
 
         case 'single':
-          // Prefer rendering a single card; if payload is list entry, fallback to old renderer
-          if (Array.isArray(data?.Page?.media)) {
-            this.plugin.render.renderSearchResults(el, data.Page.media, config);
-          } else {
-            this.plugin.render.renderSingleMedia(el, data, config);
-          }
+          this.plugin.render.renderSingleMedia(el, data, config);
           break;
 
         case 'list':

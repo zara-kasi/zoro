@@ -3161,7 +3161,7 @@ class AnilistApi {
   determineCacheType(config) {
     const typeMap = {
       'stats': 'userData',
-      'single': 'mediaData', 
+      'single': 'mediaData',
       'search': 'searchResults',
       'list': 'userData'
     };
@@ -3215,7 +3215,6 @@ class AnilistApi {
     } else if (config.type === 'single') {
       query = this.getSingleMediaQuery(config.layout);
       variables = {
-        username: config.username,
         mediaId: parseInt(config.mediaId),
         type: config.mediaType
       };
@@ -3308,18 +3307,12 @@ class AnilistApi {
     if (!this.plugin.settings.accessToken) return false;
     
     try {
-      // Use cache-friendly approach
-      const config = {
-        type: 'single',
-        mediaType: mediaType,
-        mediaId: parseInt(mediaId)
-      };
-      
-      const response = await this.fetchAniListData(config);
-      return response.MediaList !== null;
-      
+      // Use direct Media(id) query instead of user list
+      const query = `query ($id: Int, $type: MediaType){ Media(id: $id, type: $type){ id } }`;
+      const variables = { id: parseInt(mediaId), type: mediaType };
+      const result = await this.makeRawRequest({ query, variables, config: { type: 'single_check', nocache: true } });
+      return !!result?.Media?.id;
     } catch (error) {
-      // Don't throw errors for this check, just return false
       this.log('MEDIA_CHECK_FAILED', 'utility', this.generateRequestId(), {
         mediaId,
         mediaType,
@@ -3430,13 +3423,6 @@ class AnilistApi {
   }
 
   getSingleMediaQuery(layout = 'card') {
-    const baseFields = `
-      id
-      status
-      score
-      progress
-    `;
-
     const mediaFields = {
       compact: `
         id
@@ -3512,12 +3498,9 @@ class AnilistApi {
     const selectedMediaFields = mediaFields[layout] || mediaFields.card;
 
     return `
-      query ($username: String, $mediaId: Int, $type: MediaType) {
-        MediaList(userName: $username, mediaId: $mediaId, type: $type) {
-          ${baseFields}
-          media {
-            ${selectedMediaFields}
-          }
+      query ($mediaId: Int, $type: MediaType) {
+        Media(id: $mediaId, type: $type) {
+          ${selectedMediaFields}
         }
       }
     `;
@@ -4085,12 +4068,10 @@ class MalApi {
       case 'search':
         return { Page: { media: data.data?.map(item => this.transformMedia(item)) || [] } };
       case 'single':
-        if (!data.data || data.data.length === 0) {
-          return { MediaList: null };
-        }
-        
-        const singleEntry = data.data.find(item => item.node.id === parseInt(config.mediaId)) || data.data[0];
-        return { MediaList: singleEntry ? this.transformListEntry(singleEntry, config) : null };
+        // Prefer search/item based retrieval for single; this block remains for legacy but returns null to avoid random item
+        return { MediaList: null };
+      case 'item':
+        return { Media: this.transformMedia(data) };
       case 'stats':
         return { User: this.transformUser(data) };
       default:
@@ -4175,6 +4156,11 @@ volumesRead: listStatus?.num_volumes_read ?? null,
         params.limit = config.perPage || 25;
         params.offset = ((config.page || 1) - 1) * (config.perPage || 25);
         // Use search field sets (no user data)
+        params.fields = this.getFieldsForLayout(config.layout || 'card', true);
+        break;
+      
+      case 'item':
+        // Use detailed non-list fields for single item fetch
         params.fields = this.getFieldsForLayout(config.layout || 'card', true);
         break;
         
@@ -4524,6 +4510,9 @@ manga: {
       case 'search':
         const searchType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
         return `${this.baseUrl}/${searchType}`;
+      case 'item':
+        const itemType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
+        return `${this.baseUrl}/${itemType}/${parseInt(config.mediaId)}`;
       default:
         throw ZoroError.create('INVALID_REQUEST_TYPE', `Unknown type: ${config.type}`, { config }, 'error');
     }
@@ -4562,6 +4551,7 @@ manga: {
     const scopeMap = {
       'stats': 'userData',
       'single': 'mediaData', 
+      'item': 'mediaData',
       'search': 'searchResults',
       'list': 'userData'
     };
@@ -4648,12 +4638,17 @@ manga: {
 
   async checkIfMediaInList(mediaId, mediaType) {
     if (!this.plugin.settings.malAccessToken) return false;
-    
     try {
-      const config = { type: 'single', mediaType, mediaId: parseInt(mediaId) };
-      const response = await this.fetchMALData(config);
-      return response.MediaList !== null;
-    } catch (error) {
+      // Use item endpoint to determine existence instead of user list
+      const type = mediaType === 'ANIME' ? 'anime' : 'manga';
+      const requestParams = {
+        url: `${this.baseUrl}/${type}/${parseInt(mediaId)}?fields=id`,
+        headers: this.getAuthHeaders(),
+        priority: 'low'
+      };
+      const resp = await this.makeRequest(requestParams);
+      return !!resp?.id;
+    } catch {
       return false;
     }
   }
@@ -5574,7 +5569,7 @@ transformListEntry(simklEntry, mediaTypeHint) {
   getCacheScope(requestType) {
     const scopeMap = {
       'stats': 'userData',
-      'single': 'userData',
+      'single': 'mediaData',
       'search': 'searchResults',
       'list': 'userData'
     };
@@ -6118,24 +6113,26 @@ async handleSearchOperation(api, config) {
 }
 
 async handleSingleOperation(api, config) {
+  if (!config.mediaId) {
+    throw new Error('❌ Media ID is required for single media view');
+  }
+
   if (config.source === 'mal') {
-    if (!config.mediaId) {
-      throw new Error('❌ Media ID is required for single media view');
-    }
-    const response = await api.fetchMALData({ ...config, type: 'single' });
-    const data = response?.MediaList;
-    return this.injectMetadata(data, config);
+    // Use item endpoint to fetch single MAL media reliably
+    const response = await api.fetchMALData({ ...config, type: 'item' });
+    const media = response?.Media;
+    const wrapped = media ? { id: null, status: null, score: null, progress: 0, media } : null;
+    return this.injectMetadata(wrapped, config);
   } else if (config.source === 'simkl') {
-    if (!config.mediaId) {
-      throw new Error('❌ Media ID is required for single media view');
-    }
     const response = await api.fetchSimklData({ ...config, type: 'single' });
     const data = response?.MediaList;
     return this.injectMetadata(data, config);
   } else {
-    const data = await api.fetchAniListData?.(config);
-    const result = data?.MediaList;
-    return this.injectMetadata(result, config);
+    // AniList: use Media(id) query; wrap result to MediaList-like shape for renderer
+    const data = await api.fetchAniListData?.({ ...config, type: 'single' });
+    const media = data?.Media;
+    const wrapped = media ? { id: null, status: null, score: null, progress: 0, media } : null;
+    return this.injectMetadata(wrapped, config);
   }
 }
 
@@ -6414,8 +6411,18 @@ class Render {
   }
 
   renderSingleMedia(el, mediaList, config) {
-    return this.mediaListRenderer.renderSingle(el, mediaList, config);
+  if (!mediaList?.media) {
+    el.empty();
+    this.plugin.renderError(
+      el, 
+      'Media entry not found. Ensure the item exists in your list and the mediaId is correct.', 
+      'Single media'
+    );
+    return;
   }
+  
+  return this.mediaListRenderer.render(el, [mediaList], config);
+}
 
   renderUserStats(el, user, options = {}) {
     return this.statsRenderer.render(el, user, options);
@@ -7138,7 +7145,7 @@ class MediaListRenderer {
       el.className = 'zoro-container';
       const box = el.createDiv({ cls: 'zoro-error-box' });
       box.createEl('strong', { text: '❌ Single media' });
-      box.createEl('pre', { text: 'Media entry not found. Ensure the item exists in your list and the mediaId is correct.' });
+      box.createEl('pre', { text: 'Media not found. Ensure the mediaId is correct and exists on the selected source.' });
       return;
     }
     el.empty(); 

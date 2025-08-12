@@ -6278,7 +6278,12 @@ async handleTrendingOperation(api, config) {
       'perpage': 'perPage',
       'per-page': 'perPage',
       'per_page': 'perPage',
-      'limit': 'perPage'
+      'limit': 'perPage',
+      // support single media identifiers
+      'mediaid': 'mediaId',
+      'media-id': 'mediaId',
+      'media_id': 'mediaId',
+      'id': 'mediaId'
     };
 
     for (let raw of lines) {
@@ -6309,6 +6314,7 @@ async handleTrendingOperation(api, config) {
         return value.toLowerCase();
       case 'page':
       case 'perPage':
+      case 'mediaId':
         return parseInt(value) || undefined;
       default:
         return value;
@@ -6350,13 +6356,13 @@ async handleTrendingOperation(api, config) {
       config.listType = 'CURRENT';
     }
     
-    if (config.source === 'mal','simkl' && config.listType === 'REPEATING') {
-    throw new Error('Repeating is supported only on AniList.');
-  }
-  
-  if (config.source === 'simkl' && config.mediaType === 'MANGA') {
-    throw new Error('Manga is supported only on AniList and MyAnimeList.');
-  }
+    if ((config.source === 'mal' || config.source === 'simkl') && config.listType === 'REPEATING') {
+      throw new Error('Repeating is supported only on AniList.');
+    }
+    
+    if (config.source === 'simkl' && config.mediaType === 'MANGA') {
+      throw new Error('Manga is supported only on AniList and MyAnimeList.');
+    }
 
     return config;
   }
@@ -7126,7 +7132,15 @@ class MediaListRenderer {
   }
 
   renderSingle(el, mediaList, config) {
-    const media = mediaList.media;
+    const media = mediaList && mediaList.media;
+    if (!media) {
+      el.empty();
+      el.className = 'zoro-container';
+      const box = el.createDiv({ cls: 'zoro-error-box' });
+      box.createEl('strong', { text: '❌ Single media' });
+      box.createEl('pre', { text: 'Media entry not found. Ensure the item exists in your list and the mediaId is correct.' });
+      return;
+    }
     el.empty(); 
     el.className = 'zoro-container';
     const card = el.createDiv({ cls: 'zoro-single-card' });
@@ -9429,6 +9443,8 @@ class ConnectedNotes {
     this.app = plugin.app;
     this.currentMedia = null; // Store current media for filename generation
     this.currentUrls = null; // Store current URLs as array for matching
+    this.currentSource = null; // Store current source for code block generation
+    this.currentMediaType = null; // Store current media type for code block generation
   }
 
   /**
@@ -9649,6 +9665,26 @@ class ConnectedNotes {
   }
 
   /**
+   * Generate code block content based on current media entry
+   */
+  generateCodeBlockContent() {
+    if (!this.currentMedia || !this.currentSource || !this.currentMediaType) {
+      return ''; // Return empty if missing required data
+    }
+
+    const codeBlockLines = [
+      '```zoro',
+      'type: single',
+      `source: ${this.currentSource}`,
+      `mediaType: ${this.currentMediaType}`,
+      `mediaId: ${this.currentMedia.id}`,
+      '```'
+    ];
+
+    return codeBlockLines.join('\n');
+  }
+
+  /**
    * Add metadata to existing note
    */
   async connectExistingNote(file, searchIds, mediaType) {
@@ -9713,7 +9749,18 @@ class ConnectedNotes {
       });
       frontmatterLines.push('---', '');
       
-      const newContent = frontmatterLines.join('\n') + bodyContent;
+      // Generate and add code block if not already present
+      const codeBlockContent = this.generateCodeBlockContent();
+      let finalBodyContent = bodyContent;
+      
+      // Check if a zoro code block already exists in the body
+      const zoroCodeBlockRegex = /```zoro[\s\S]*?```/;
+      if (codeBlockContent && !zoroCodeBlockRegex.test(bodyContent)) {
+        // Add code block after frontmatter with proper spacing
+        finalBodyContent = codeBlockContent + '\n\n' + bodyContent;
+      }
+      
+      const newContent = frontmatterLines.join('\n') + finalBodyContent;
       
       // Write updated content
       await this.app.vault.modify(file, newContent);
@@ -10099,8 +10146,17 @@ class ConnectedNotes {
       
       const frontmatter = frontmatterLines.join('\n');
 
-      // Create the file with unique name and frontmatter
-      const file = await this.app.vault.create(uniqueFileName, frontmatter);
+      // Generate code block content
+      const codeBlockContent = this.generateCodeBlockContent();
+      
+      // Combine frontmatter with code block and additional spacing
+      let noteContent = frontmatter;
+      if (codeBlockContent) {
+        noteContent += codeBlockContent + '\n\n';
+      }
+
+      // Create the file with unique name, frontmatter, and code block
+      const file = await this.app.vault.create(uniqueFileName, noteContent);
       
       // Open in main workspace
       const mainLeaf = this.app.workspace.getLeaf('tab');
@@ -10148,6 +10204,10 @@ class ConnectedNotes {
       
       // Store current media for filename generation (PREFER ENGLISH TITLE)
       this.currentMedia = media;
+      
+      // Store current source and media type for code block generation
+      this.currentSource = source;
+      this.currentMediaType = mediaType;
       
       // Build URLs array for current media
       this.currentUrls = this.buildCurrentUrls(media, mediaType);

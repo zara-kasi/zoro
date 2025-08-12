@@ -2699,7 +2699,7 @@ body.theme-light .zoro-heart.favorited::before {
 /* Panel Footer */
 .zoro-note-panel-footer {
   border-top: 1px solid var(--background-modifier-border);
-  padding: 12px;
+  padding: 4px;
   display: flex;
   gap: 8px;
   background-color: var(--background-secondary);
@@ -2745,23 +2745,4 @@ body.theme-light .zoro-heart.favorited::before {
     padding: 0px 0;
     cursor: pointer;
     border-top: transparent;
-}
-
-.zoro-note-search-container {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.zoro-note-search-input {
-  width: 100%;
-  padding-left: 35px; /* Make room for the icon */
-}
-
-.zoro-note-search-icon {
-  position: absolute;
-  left: 8px;
-  pointer-events: none;
-  color: var(--text-muted);
-  z-index: 1;
 }

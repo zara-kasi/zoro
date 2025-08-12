@@ -9632,26 +9632,60 @@ class ConnectedNotes {
   /**
    * Add metadata to existing note
    */
-  async connectExistingNote(file, searchIds, mediaType) {
-    try {
-      const content = await this.app.vault.read(file);
-      const metadata = this.app.metadataCache.getFileCache(file);
-      const existingFrontmatter = metadata?.frontmatter || {};
+   async connectExistingNote(file, searchIds, mediaType) {
+  try {
+    const content = await this.app.vault.read(file);
+    const metadata = this.app.metadataCache.getFileCache(file);
+    const existingFrontmatter = metadata?.frontmatter || {};
+    
+    // Parse existing frontmatter
+    let frontmatterEnd = 0;
+    let bodyContent = content;
+    
+    if (content.startsWith('---\n')) {
+      const secondDelimiter = content.indexOf('\n---\n', 4);
+      if (secondDelimiter !== -1) {
+        frontmatterEnd = secondDelimiter + 5;
+        bodyContent = content.slice(frontmatterEnd);
+      }
+    }
+    
+    // Check if note is already connected to Zoro (has Zoro tag and some metadata)
+    const hasZoroTag = metadata?.tags?.some(tag => tag.tag === '#Zoro') || 
+                      (Array.isArray(existingFrontmatter.tags) && existingFrontmatter.tags.includes('Zoro'));
+    
+    const hasExistingIds = existingFrontmatter.mal_id || 
+                          existingFrontmatter.anilist_id || 
+                          existingFrontmatter.simkl_id ||
+                          existingFrontmatter.media_type ||
+                          existingFrontmatter.url;
+    
+    const isAlreadyConnected = hasZoroTag && hasExistingIds;
+    
+    // Start with existing frontmatter
+    const updatedFrontmatter = { ...existingFrontmatter };
+    
+    if (isAlreadyConnected) {
+      // Note is already connected - only merge URLs, don't overwrite other metadata
+      console.log(`[ConnectedNotes] Note "${file.basename}" is already connected, only adding URLs`);
       
-      // Parse existing frontmatter
-      let frontmatterEnd = 0;
-      let bodyContent = content;
+      // Only merge URL arrays
+      if (this.currentUrls && this.currentUrls.length > 0) {
+        updatedFrontmatter.url = this.mergeUrlArrays(existingFrontmatter.url, this.currentUrls);
+      }
       
-      if (content.startsWith('---\n')) {
-        const secondDelimiter = content.indexOf('\n---\n', 4);
-        if (secondDelimiter !== -1) {
-          frontmatterEnd = secondDelimiter + 5;
-          bodyContent = content.slice(frontmatterEnd);
+      // Ensure Zoro tag is present (in case it was removed)
+      if (!updatedFrontmatter.tags) {
+        updatedFrontmatter.tags = ['Zoro'];
+      } else if (Array.isArray(updatedFrontmatter.tags)) {
+        if (!updatedFrontmatter.tags.includes('Zoro')) {
+          updatedFrontmatter.tags.push('Zoro');
         }
       }
       
-      // Merge new IDs with existing frontmatter
-      const updatedFrontmatter = { ...existingFrontmatter };
+    } else {
+      // Note is not connected yet - add full metadata
+      console.log(`[ConnectedNotes] Note "${file.basename}" is not connected, adding full metadata`);
       
       // Add new search IDs
       Object.entries(searchIds).forEach(([key, value]) => {
@@ -9674,29 +9708,33 @@ class ConnectedNotes {
           updatedFrontmatter.tags.push('Zoro');
         }
       }
-      
-      // Build new frontmatter
-      const frontmatterLines = ['---'];
-      Object.entries(updatedFrontmatter).forEach(([key, value]) => {
-        if (key === 'tags' && Array.isArray(value)) {
-          frontmatterLines.push('tags:');
-          value.forEach(tag => {
-            frontmatterLines.push(`  - ${tag}`);
-          });
-        } else if (key === 'url' && Array.isArray(value)) {
-          frontmatterLines.push('url:');
-          value.forEach(url => {
-            frontmatterLines.push(`  - "${url}"`);
-          });
-        } else {
-          frontmatterLines.push(`${key}: "${value}"`);
-        }
-      });
-      frontmatterLines.push('---', '');
-      
-      // Generate and add code block if not already present
+    }
+    
+    // Build new frontmatter
+    const frontmatterLines = ['---'];
+    Object.entries(updatedFrontmatter).forEach(([key, value]) => {
+      if (key === 'tags' && Array.isArray(value)) {
+        frontmatterLines.push('tags:');
+        value.forEach(tag => {
+          frontmatterLines.push(`  - ${tag}`);
+        });
+      } else if (key === 'url' && Array.isArray(value)) {
+        frontmatterLines.push('url:');
+        value.forEach(url => {
+          frontmatterLines.push(`  - "${url}"`);
+        });
+      } else {
+        frontmatterLines.push(`${key}: "${value}"`);
+      }
+    });
+    frontmatterLines.push('---', '');
+    
+    // Handle code block generation
+    let finalBodyContent = bodyContent;
+    
+    if (!isAlreadyConnected) {
+      // Only add code block for new connections (not for URL-only updates)
       const codeBlockContent = this.generateCodeBlockContent();
-      let finalBodyContent = bodyContent;
       
       // Check if a zoro code block already exists in the body
       const zoroCodeBlockRegex = /```zoro[\s\S]*?```/;
@@ -9704,21 +9742,28 @@ class ConnectedNotes {
         // Add code block after frontmatter with proper spacing
         finalBodyContent = codeBlockContent + '\n\n' + bodyContent;
       }
-      
-      const newContent = frontmatterLines.join('\n') + finalBodyContent;
-      
-      // Write updated content
-      await this.app.vault.modify(file, newContent);
-      
-      new Notice(`Connected note: ${file.basename}`);
-      return true;
-      
-    } catch (error) {
-      console.error('[ConnectedNotes] Error connecting existing note:', error);
-      new Notice(`Failed to connect note: ${file.basename}`);
-      return false;
     }
+    
+    const newContent = frontmatterLines.join('\n') + finalBodyContent;
+    
+    // Write updated content
+    await this.app.vault.modify(file, newContent);
+    
+    // Show appropriate success message
+    if (isAlreadyConnected) {
+      new Notice(`Updated URLs for: ${file.basename}`);
+    } else {
+      new Notice(`Connected note: ${file.basename}`);
+    }
+    
+    return true;
+    
+  } catch (error) {
+    console.error('[ConnectedNotes] Error connecting existing note:', error);
+    new Notice(`Failed to connect note: ${file.basename}`);
+    return false;
   }
+}
 
   /**
    * Show connected notes in a single dedicated side panel

@@ -13857,7 +13857,7 @@ class ZoroSettingTab extends PluginSettingTab {
         
         new Setting(Note)
       .setName('🗂️ Note path')
-      .setDesc('Folder path where new connected notes will be created.')
+      .setDesc('Folder path where new connected notes will be created')
       .addText(text => text
         .setPlaceholder('folder/subfolder')
         .setValue(this.plugin.settings.notePath || '')

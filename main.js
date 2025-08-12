@@ -7138,79 +7138,21 @@ class MediaListRenderer {
       box.createEl('pre', { text: 'Media not found. Ensure the mediaId is correct and exists on the selected source.' });
       return;
     }
-    el.empty(); 
+
+    el.empty();
     el.className = 'zoro-container';
-    const card = el.createDiv({ cls: 'zoro-single-card' });
 
-    if (this.plugin.settings.showCoverImages) {
-      card.createEl('img', { 
-        cls: 'media-cover', 
-        attr: { 
-          src: media.coverImage.large, 
-          alt: this.parent.formatter.formatTitle(media)
-        } 
-      });
-    }
-    
-    const info = card.createDiv({ cls: 'media-info' });
-    info.createEl('h3', null, h => {
-      if (this.plugin.settings.hideUrlsInTitles) {
-        h.textContent = this.parent.formatter.formatTitle(media);
-      } else {
-        h.createEl('a', { 
-          text: this.parent.formatter.formatTitle(media), 
-          href: this.parent.apiHelper.getSourceUrl(media.id, config.mediaType, config.source), 
-          cls: 'zoro-title-link', 
-          target: '_blank' 
-        });
-      }
-    });
+    // Render like a search card: shows Edit button, no progress, shows ratings
+    const grid = el.createDiv({ cls: 'zoro-cards-grid' });
+    try {
+      const cols = Number(this.plugin.settings.gridColumns) || 2;
+      grid.style.setProperty('--zoro-grid-columns', String(cols));
+      grid.style.setProperty('--grid-cols', String(cols));
+      grid.style.setProperty('--zoro-grid-gap', 'var(--size-4-4)');
+    } catch {}
 
-    const details = info.createDiv({ cls: 'media-details' });
-    if (media.format) {
-      details.createEl('span', { text: media.format, cls: 'format-badge' });
-    }
-    
-    details.createEl('span', { 
-      text: mediaList.status, 
-      cls: `status-badge status-${this.parent.formatter.getStatusClass(mediaList.status)}` 
-    });
-    
-    const status = details.lastChild;
-    status.classList.add('clickable-status');
-    status.onclick = e => {
-      e.preventDefault(); 
-      e.stopPropagation();
-      
-      const source = this.parent.apiHelper.detectSource(mediaList, config);
-      
-      if (!this.parent.apiHelper.isAuthenticated(source)) {
-        this.plugin.prompt.createAuthenticationPrompt();
-        return;
-      }
-      this.plugin.handleEditClick(e, mediaList, status, config);
-    };
-
-    if (this.plugin.settings.showProgress) {
-      details.createEl('span', { 
-        text: this.parent.formatter.formatProgress(mediaList.progress, media.episodes || media.chapters), 
-        cls: 'progress' 
-      });
-    }
-    
-    if (this.plugin.settings.showRatings && mediaList.score != null) {
-      details.createEl('span', { 
-        text: this.parent.formatter.formatRating(mediaList.score), 
-        cls: 'score' 
-      });
-    }
-
-    if (this.plugin.settings.showGenres && media.genres?.length) {
-      const genresDiv = info.createDiv({ cls: 'genres' });
-      this.parent.formatter.formatGenres(media.genres).forEach(genre => 
-        genresDiv.createEl('span', { text: genre, cls: 'genre-tag' })
-      );
-    }
+    const card = this.cardRenderer.createMediaCard(media, config, { isSearch: true });
+    grid.appendChild(card);
   }
 }
 class TableRenderer {

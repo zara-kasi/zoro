@@ -9540,7 +9540,7 @@ class RenderEditModal {
     
     // Filter out REPEATING status for MAL since it doesn't support it
     let availableStatuses = this.config.statuses;
-    if (source === 'mal','simkl') {
+    if (source === 'mal' || source === 'simkl') {
       availableStatuses = this.config.statuses.filter(status => status.value !== 'REPEATING');
     }
     

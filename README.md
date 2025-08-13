@@ -237,7 +237,7 @@ mediaId: 5114  # Fullmetal Alchemist: Brotherhood (example)
 
 **Note:** `REPEATING` status is only supported on AniList.
 
-## Key Features:
+### Key Features:
 
 1. **Multiple Aliases**: Most parameters support multiple naming conventions (e.g., `mediaType`, `media-type`, `media_type`, `mediatype`)
 2. **Five Operation Types**: `stats`, `search`, `single`, `list`, and `trending`
@@ -245,7 +245,7 @@ mediaId: 5114  # Fullmetal Alchemist: Brotherhood (example)
 4. **Flexible Layouts**: Card, table, and compact display options
 5. **Smart Defaults**: The plugin uses sensible defaults when parameters are omitted
 
-## Source-Specific Limitations:
+### Source-Specific Limitations:
 
 | Feature/Status | AniList | MyAnimeList | Simkl |
 |----------------|---------|-------------|-------|

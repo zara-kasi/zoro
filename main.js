@@ -5436,7 +5436,10 @@ class SimklApi {
         _raw: media.poster || media.image || media.cover,
         _normalized: posterUrl
       },
-      format: this.mapSimklFormat(media.type || media.kind || originalData.type || 'tv', mediaType),
+      format: isMovie ? 'MOVIE' : this.mapSimklFormat(
+  media.type || media.kind || originalData.type || (mediaType || '').toString().toLowerCase(),
+  mediaType
+),
       averageScore: media.rating ? Math.round((media.rating > 10 ? media.rating : media.rating * 10)) : null,
       status: media.status ? media.status.toUpperCase() : null,
       genres: genres,

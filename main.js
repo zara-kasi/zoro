@@ -5376,6 +5376,8 @@ class SimklApi {
     
     const transformedResult = {
       id: ids.simkl || ids.id || media.id || originalData.id,
+      idMal: ids.mal || null,
+      idImdb: ids.imdb || null,
       title: extractedTitle,
       coverImage: {
         large: posterUrl,
@@ -8550,8 +8552,8 @@ class APISourceHelper {
     // AniList patterns
     if (entry.media?.siteUrl?.includes('anilist.co') ||
         entry.user?.siteUrl?.includes('anilist.co') ||
-        entry.media?.idMal !== undefined ||
-        entry.media?.id && entry.media?.title && entry.media?.type) {
+        (entry.media?.idMal !== undefined && !entry.media?.simkl_id) ||
+        (entry.media?.id && entry.media?.title && entry.media?.type && !entry.media?.simkl_id)) {
       return 'anilist';
     }
     
@@ -10055,6 +10057,8 @@ class ConnectedNotes {
       ids.anilist_id = media.id;
     } else if (source === 'simkl') {
       ids.simkl_id = media.id;
+      if (media.idMal) ids.mal_id = media.idMal; // anime MAL bridge
+      if (media.idImdb) ids.imdb_id = media.idImdb; // movies/TV IMDb bridge
     }
     
     return ids;
@@ -10069,6 +10073,11 @@ class ConnectedNotes {
     // Build MAL URL if MAL ID exists
     if (media.idMal) {
       urls.push(`https://myanimelist.net/${mediaType.toLowerCase()}/${media.idMal}`);
+    }
+
+    // Build IMDb URL for movies/TV if available
+    if (media.idImdb) {
+      urls.push(`https://www.imdb.com/title/${media.idImdb}/`);
     }
     
     // Always build AniList URL
@@ -10305,6 +10314,7 @@ class ConnectedNotes {
     const hasExistingIds = existingFrontmatter.mal_id || 
                           existingFrontmatter.anilist_id || 
                           existingFrontmatter.simkl_id ||
+                          existingFrontmatter.imdb_id ||
                           existingFrontmatter.media_type ||
                           existingFrontmatter.url;
     
@@ -11720,6 +11730,8 @@ class Trending {
         .filter(Boolean)
         .map(media => ({
           id: media.id,
+          idMal: media.idMal,
+          idImdb: media.idImdb,
           title: media.title,
           coverImage: media.coverImage,
           format: media.format,

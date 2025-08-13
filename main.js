@@ -5902,18 +5902,62 @@ getSimklMediaType(mediaType) {
     
     await this.ensureValidToken();
     
-    // Build update payload
-    const updatePayload = this.buildUpdatePayload(mediaId, updates, mediaType);
-    
-    const requestParams = {
-      url: `${this.baseUrl}/sync/add-to-list`,
-      method: 'POST',
-      headers: this.getHeaders({ type: 'update' }),
-      body: JSON.stringify(updatePayload),
-      priority: 'high'
-    };
-    
-    const response = await this.makeRequest(requestParams);
+   const typeUpper = (mediaType || '').toString().toUpperCase();
+    const isMovie = typeUpper === 'MOVIE' || typeUpper === 'MOVIES';
+
+    // 1) Status -> add-to-list
+    if (updates.status !== undefined) {
+      const listPayload = this.buildUpdatePayload(mediaId, { status: updates.status }, mediaType);
+      await this.makeRequest({
+        url: `${this.baseUrl}/sync/add-to-list`,
+        method: 'POST',
+        headers: this.getHeaders({ type: 'update' }),
+        body: JSON.stringify(listPayload),
+        priority: 'high'
+      });
+    }
+
+    // 2) Score -> ratings
+    if (updates.score !== undefined && updates.score !== null) {
+      const rating = Math.max(0, Math.min(10, Math.round(updates.score)));
+      if (rating > 0) {
+        const containerKey = isMovie ? 'movies' : 'shows';
+        const ratingsPayload = { [containerKey]: [{ ids: { simkl: parseInt(mediaId) }, rating }] };
+        await this.makeRequest({
+          url: `${this.baseUrl}/sync/ratings` ,
+          method: 'POST',
+          headers: this.getHeaders({ type: 'update' }),
+          body: JSON.stringify(ratingsPayload),
+          priority: 'high'
+        });
+      }
+    }
+
+    // 3) Progress -> history (movies only); shows keep watched_episodes via add-to-list payload
+    if (updates.progress !== undefined) {
+      if (isMovie) {
+        const watched = (parseInt(updates.progress) || 0) > 0;
+        const containerKey = 'movies';
+        const historyPayload = { [containerKey]: [{ ids: { simkl: parseInt(mediaId) } }] };
+        await this.makeRequest({
+          url: `${this.baseUrl}/sync/history${watched ? '' : '/remove'}`,
+          method: 'POST',
+          headers: this.getHeaders({ type: 'update' }),
+          body: JSON.stringify(historyPayload),
+          priority: 'high'
+        });
+      } else {
+        // For shows, keep watched_episodes within add-to-list
+        const listPayload = this.buildUpdatePayload(mediaId, { progress: updates.progress }, mediaType);
+        await this.makeRequest({
+          url: `${this.baseUrl}/sync/add-to-list`,
+          method: 'POST',
+          headers: this.getHeaders({ type: 'update' }),
+          body: JSON.stringify(listPayload),
+          priority: 'high'
+        });
+      }
+    }
     
     // Invalidate cache
     this.cache.invalidateByMedia(mediaId);
@@ -7597,7 +7641,7 @@ class CardRenderer {
     const statusText = this.formatter.getStatusText(entry.status);
     
     statusBadge.className = `status-badge status-${statusClass} clickable-status`;
-    statusBadge.textContent = statusText;
+    statusBadge.title = `Edit`;
     statusBadge.onclick = (e) => this.handleStatusClick(e, entry, statusBadge, config);
     
     return statusBadge;

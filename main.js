@@ -4908,7 +4908,7 @@ class SimklApi {
       return await this.executeFetch(config);
     } catch (error) {
       this.metrics.errors++;
-      console.error('[Simkl] Request failed:', error.message);
+      
       throw this.createUserFriendlyError(error);
     }
   }
@@ -4933,16 +4933,35 @@ class SimklApi {
     }
     
     // Build and execute request
-    const requestParams = this.buildRequestParams(normalizedConfig);
-    const rawResponse = await this.makeRequest(requestParams);
-    let transformedData = this.transformResponse(rawResponse, normalizedConfig);
+    let transformedData = null;
+    try {
+      const requestParams = this.buildRequestParams(normalizedConfig);
+      const rawResponse = await this.makeRequest(requestParams);
+      transformedData = this.transformResponse(rawResponse, normalizedConfig);
+    } catch (err) {
+      if (normalizedConfig.type !== 'single') {
+        throw err;
+      }
+      console.warn('[Simkl] Primary single request failed, will try public fallback:', err?.message || err);
+    }
     
     // If stats requested, enrich with distributions computed from user lists
     if (normalizedConfig.type === 'stats' && transformedData?.User) {
       try {
         await this.attachSimklDistributions(transformedData.User);
       } catch (e) {
-        console.warn('[Simkl] Failed to enrich stats with distributions:', e);
+        
+      }
+    }
+     // Public fallback for single media when not found or auth missing
+    if (normalizedConfig.type === 'single' && (!transformedData || transformedData.MediaList == null)) {
+      try {
+        const publicResult = await this.fetchSingleByIdPublic(normalizedConfig.mediaId, normalizedConfig.mediaType);
+        if (publicResult) {
+          transformedData = publicResult;
+        }
+      } catch (e) {
+        console.warn('[Simkl] Public single fetch fallback failed:', e?.message || e);
       }
     }
     
@@ -5069,15 +5088,15 @@ class SimklApi {
 
       // Handle Simkl error responses
       if (response.json.error) {
-        console.error('[Simkl] API error:', response.json);
+        
         throw new Error(response.json.error_description || response.json.error);
       }
 
-      console.log(`[Simkl] Request successful: ${requestParams.url.split('?')[0]}`);
+      
       return response.json;
 
     } catch (error) {
-      console.error('[Simkl] Request failed:', error.message);
+      
       throw error;
     }
   }
@@ -5085,7 +5104,7 @@ class SimklApi {
   // =================== DATA TRANSFORMATION (Fixed to match expected structure) ===================
 
   transformResponse(data, config) {
-    console.log(`[Simkl] Transforming response for type: ${config.type}, mediaType: ${config.mediaType}`);
+    
     
     switch (config.type) {
       case 'search':
@@ -5131,52 +5150,96 @@ class SimklApi {
       MediaList: targetEntry ? this.transformListEntry(targetEntry, config.mediaType) : null
     };
   }
+  
+    // Fallback: fetch a single media by Simkl ID using public search-by-id API
+  async fetchSingleByIdPublic(mediaId, mediaType) {
+    const id = parseInt(mediaId);
+    if (!id || Number.isNaN(id)) return null;
+
+    const url = `${this.baseUrl}/search/id?simkl=${encodeURIComponent(id)}`;
+    const headers = this.getHeaders({ type: 'search' });
+
+    try {
+      const response = await this.makeRequest({ url, method: 'GET', headers, priority: 'normal' });
+      const wrapped = this.transformSinglePublicResponse(response, mediaType, id);
+      return wrapped;
+    } catch (e) {
+      console.warn('[Simkl] fetchSingleByIdPublic failed:', e?.message || e);
+      return { MediaList: null };
+    }
+  }
+
+  // Parse public search-by-id response into MediaList shape
+  transformSinglePublicResponse(raw, mediaType, targetId) {
+    if (!raw || (typeof raw !== 'object' && !Array.isArray(raw))) return { MediaList: null };
+
+    const candidates = [];
+    ['anime', 'movies', 'tv', 'shows', 'results', 'items'].forEach(key => {
+      if (Array.isArray(raw?.[key])) candidates.push(...raw[key]);
+    });
+
+    if (Array.isArray(raw)) candidates.push(...raw);
+    if (candidates.length === 0 && raw?.ids) candidates.push(raw);
+
+    const match = candidates.find(item => {
+      const node = item.movie || item.show || item;
+      const ids = node?.ids || node || {};
+      return Number(ids.simkl || ids.id) === Number(targetId);
+    }) || null;
+
+    if (!match) return { MediaList: null };
+
+    const node = match.movie || match.show || match;
+    const entry = {
+      id: null,
+      status: null,
+      score: null,
+      progress: this.isMovieType(mediaType, node) ? 0 : 0,
+      media: this.transformMedia(node, mediaType)
+    };
+
+    return { MediaList: entry };
+  }
 
   // FIXED: Complete rewrite of list response transformation with comprehensive debugging
   transformListResponse(data, config) {
     let entries = [];
     
-    console.log('[Simkl] DEBUG: transformListResponse called with config:', config);
-    console.log('[Simkl] DEBUG: Raw API response structure:', {
-      dataType: typeof data,
-      dataKeys: data ? Object.keys(data) : 'null',
-      isArray: Array.isArray(data),
-      fullData: JSON.stringify(data, null, 2).substring(0, 1000) + '...' // Truncated for readability
-    });
+    
     
     // FIXED: Use the correct media type key from the response
     const simklMediaType = this.getSimklMediaType(config.mediaType);
     const raw = data || {};
 
-    console.log(`[Simkl] Looking for '${simklMediaType}' data in response keys:`, Object.keys(raw));
+    
     
     // CRITICAL FIX: Try multiple possible data structure patterns
     
     // Pattern 1: Direct array under media type key
     if (Array.isArray(raw[simklMediaType])) {
       entries = raw[simklMediaType];
-      console.log(`[Simkl] Pattern 1: Found ${entries.length} entries in ${simklMediaType} array`);
+      
     }
     // Pattern 2: Root is an array (search results)
     else if (Array.isArray(raw)) {
       entries = raw;
-      console.log(`[Simkl] Pattern 2: Using root array with ${entries.length} entries`);
+      
     }
     // Pattern 3: Grouped data by status (e.g., {watching: [], completed: []})
     else if (raw[simklMediaType] && typeof raw[simklMediaType] === 'object') {
       const grouped = raw[simklMediaType];
-      console.log(`[Simkl] Pattern 3: Found grouped data under ${simklMediaType}:`, Object.keys(grouped));
+      
       Object.keys(grouped).forEach(statusKey => {
         const arr = grouped[statusKey];
         if (Array.isArray(arr)) {
-          console.log(`[Simkl] Adding ${arr.length} entries from status '${statusKey}'`);
+          
           arr.forEach(item => entries.push({ ...item, _status: statusKey }));
         }
       });
     }
     // Pattern 4: Try alternative media type keys (fallback)
     else {
-      console.log(`[Simkl] Pattern 4: No direct match for '${simklMediaType}', trying all available keys`);
+      
       
       // Try common alternative keys
       const alternativeKeys = ['anime', 'movies', 'tv', 'shows', 'items', 'results'];
@@ -5184,7 +5247,7 @@ class SimklApi {
       
       for (const key of alternativeKeys) {
         if (raw[key] && Array.isArray(raw[key]) && raw[key].length > 0) {
-          console.log(`[Simkl] Found data under alternative key '${key}' with ${raw[key].length} items`);
+          
           entries = raw[key];
           found = true;
           break;
@@ -5193,40 +5256,30 @@ class SimklApi {
       
       // Last resort: try any array in the response
       if (!found) {
-        console.log(`[Simkl] Last resort: searching for any arrays in response`);
+        
         Object.keys(raw).forEach(key => {
           if (Array.isArray(raw[key]) && raw[key].length > 0) {
-            console.log(`[Simkl] Found array under '${key}' with ${raw[key].length} items`);
+            
             entries = entries.concat(raw[key]);
           }
         });
       }
     }
     
-    console.log(`[Simkl] Pre-filter entries count: ${entries.length}`);
+    
     
     // Sample the first entry to understand structure
     if (entries.length > 0) {
-      console.log('[Simkl] Sample entry structure:', {
-        keys: Object.keys(entries[0]),
-        hasShow: 'show' in entries[0],
-        hasMovie: 'movie' in entries[0],
-        showKeys: entries[0].show ? Object.keys(entries[0].show) : 'no show',
-        movieKeys: entries[0].movie ? Object.keys(entries[0].movie) : 'no movie',
-        sampleEntry: JSON.stringify(entries[0], null, 2).substring(0, 500) + '...'
-      });
     }
     
     // Filter by status if specified
     if (config.listType && config.listType !== 'ALL') {
       const targetStatus = this.mapAniListStatusToSimkl(config.listType);
-      console.log(`[Simkl] Filtering by status: ${config.listType} -> ${targetStatus}`);
       const beforeFilter = entries.length;
       entries = entries.filter(entry => (entry.status || entry._status) === targetStatus);
-      console.log(`[Simkl] After status filter: ${beforeFilter} -> ${entries.length} entries`);
+      
     }
     
-    console.log(`[Simkl] Final entries count: ${entries.length}`);
     
     // Transform entries with enhanced error handling
     const transformedEntries = [];
@@ -5243,7 +5296,6 @@ class SimklApi {
       }
     });
     
-    console.log(`[Simkl] Successfully transformed ${transformedEntries.length} entries`);
     
     return {
       MediaListCollection: {
@@ -5293,15 +5345,10 @@ class SimklApi {
   
   // FIXED: Added enhanced debugging and comprehensive data structure handling
   transformMedia(simklMedia, mediaType) {
-    console.log('[Simkl] DEBUG: transformMedia called with:', {
-      simklMedia: simklMedia,
-      mediaType: mediaType,
-      simklMediaType: typeof simklMedia,
-      simklMediaKeys: simklMedia ? Object.keys(simklMedia) : 'null'
-    });
+    
 
     if (!simklMedia) {
-      console.error('[Simkl] transformMedia: simklMedia is null/undefined');
+      
       return null;
     }
 
@@ -5310,31 +5357,24 @@ class SimklApi {
     
     // Case 1: Data is nested under 'show' (common in sync responses)
     if (simklMedia.show) {
-      console.log('[Simkl] DEBUG: Found nested show structure');
+      
       media = simklMedia.show;
       originalData = simklMedia; // Keep reference to full object
     }
     // Case 2: Data is nested under 'movie' (for movie responses)
     else if (simklMedia.movie) {
-      console.log('[Simkl] DEBUG: Found nested movie structure');
+      
       media = simklMedia.movie;
       originalData = simklMedia;
     }
     // Case 3: Data is directly in the root object
     else {
-      console.log('[Simkl] DEBUG: Using root object structure');
+      
       media = simklMedia;
       originalData = simklMedia;
     }
 
-    console.log('[Simkl] DEBUG: Extracted media object:', {
-      media: media,
-      mediaKeys: media ? Object.keys(media) : 'null',
-      hasTitle: 'title' in (media || {}),
-      hasName: 'name' in (media || {}),
-      titleValue: media?.title,
-      nameValue: media?.name
-    });
+    
 
     const ids = media.ids || originalData.ids || {};
     
@@ -5400,7 +5440,7 @@ class SimklApi {
       _rawData: originalData // Keep for debugging
     };
 
-    console.log('[Simkl] DEBUG: Final transformed result:', transformedResult);
+    
     return transformedResult;
   }
 
@@ -5468,7 +5508,7 @@ class SimklApi {
       posterUrl = `https://simkl.in/posters/${ids.simkl}_m.jpg`;
     }
 
-    console.log(`[Simkl] Poster URL extraction result: "${posterUrl}"`);
+    
     return posterUrl;
   }
 
@@ -5489,25 +5529,19 @@ class SimklApi {
         ).map(g => g.trim());
         
         if (validGenres.length > 0) {
-          console.log(`[Simkl] Genres extracted: [${validGenres.join(', ')}]`);
+          
           return validGenres;
         }
       }
     }
 
-    console.log(`[Simkl] No genres found, returning empty array`);
+    
     return [];
   }
 
   // FIXED: Completely rewritten comprehensive title extraction method with deep debugging
   extractTitle(media, originalData) {
-    console.log('[Simkl] DEBUG: Starting title extraction with data:', {
-      media: media,
-      originalData: originalData,
-      mediaKeys: media ? Object.keys(media) : 'null',
-      originalKeys: originalData ? Object.keys(originalData) : 'null'
-    });
-
+    
     // CRITICAL FIX: Try ALL possible nested structures and field names
     const allPossibleTitleSources = [
       // Direct media object fields
@@ -5585,7 +5619,7 @@ class SimklApi {
       String(media?.id || originalData?.id || '').replace(/[^a-zA-Z0-9\s]/g, ' ')
     ];
 
-    console.log('[Simkl] DEBUG: All title candidates:', allPossibleTitleSources.map(t => `"${t}"`));
+    
 
     // Find the first valid title
     const primaryTitle = allPossibleTitleSources.find(title => 
@@ -5596,18 +5630,14 @@ class SimklApi {
       title.toLowerCase() !== 'undefined'
     );
 
-    console.log('[Simkl] DEBUG: Primary title found:', `"${primaryTitle}"`);
+    
 
     if (!primaryTitle || primaryTitle === 'Unknown Title') {
-      console.error('[Simkl] CRITICAL: No valid title found in any field! Raw data dump:', {
-        fullMedia: JSON.stringify(media, null, 2),
-        fullOriginal: JSON.stringify(originalData, null, 2)
-      });
+      
       
       // Emergency fallback: try to construct title from any available data
       const emergencyTitle = this.constructEmergencyTitle(media, originalData);
       if (emergencyTitle) {
-        console.log('[Simkl] Using emergency constructed title:', emergencyTitle);
         return {
           romaji: emergencyTitle,
           english: emergencyTitle,
@@ -5669,7 +5699,7 @@ class SimklApi {
       native: nativeTitle
     };
 
-    console.log('[Simkl] Final title extraction result:', result);
+    
     return result;
   }
 
@@ -5803,12 +5833,12 @@ class SimklApi {
   // =================== UPDATE METHODS (Following MAL pattern) ===================
 
   async updateMediaListEntry(mediaId, updates) {
-    console.log('[Simkl] Starting update for media:', mediaId, 'with updates:', updates);
+    
     
     try {
       return await this.executeUpdate(mediaId, updates);
     } catch (error) {
-      console.error('[Simkl] Update failed:', error.message);
+      
       throw this.createUserFriendlyError(error);
     }
   }
@@ -5836,7 +5866,6 @@ class SimklApi {
     this.cache.invalidateByMedia(mediaId);
     this.cache.invalidateScope('userData');
     
-    console.log('[Simkl] Update successful for media:', mediaId);
     
     // Return AniList-compatible response
     return {
@@ -5900,7 +5929,7 @@ class SimklApi {
       this.cache.invalidateByMedia(mediaId);
       this.cache.invalidateScope('userData');
     } catch (error) {
-      console.error('[Simkl] Remove failed:', error);
+      
       throw this.createUserFriendlyError(error);
     }
   }
@@ -5970,7 +5999,7 @@ class SimklApi {
       const response = await this.fetchSimklData(config);
       return response.MediaList !== null;
     } catch (error) {
-      console.warn('[Simkl] Media check failed:', error.message);
+      
       return false;
     }
   }
@@ -5992,7 +6021,7 @@ class SimklApi {
       return result.MediaList; // null if not in list, entry if in list
       
     } catch (error) {
-      console.warn('[Simkl] getUserEntryForMedia failed:', error.message);
+      
       return null;
     }
   }
@@ -6292,7 +6321,7 @@ class SimklApi {
       applyFallbacks(animeEntries, user?.statistics?.anime);
 
     } catch (err) {
-      console.warn('[Simkl] attachSimklDistributions failed:', err);
+      
     }
   }
 
@@ -10039,53 +10068,79 @@ class ConnectedNotes {
     this.currentMediaType = null; // Store current media type for code block generation
   }
 
-  /**
-   * Extract search IDs from media entry based on API source
-   */
-  extractSearchIds(media, entry, source) {
-    const ids = {};
+ /**
+ * Extract search IDs from media entry based on API source
+ */
+extractSearchIds(media, entry, source) {
+  const ids = {};
+  
+  // mal_id is STANDARD for all anime/manga regardless of source
+  if (source === 'mal') {
+    ids.mal_id = media.id;
+  } else if (source === 'anilist') {
+    // Primary: use idMal if available, Fallback: use anilist id
+    if (media.idMal) {
+      ids.mal_id = media.idMal;
+    }
+    // Always add anilist_id as backup
+    ids.anilist_id = media.id;
+  } else if (source === 'simkl') {
+    ids.simkl_id = media.id;
     
-    // mal_id is STANDARD for all anime/manga regardless of source
-    if (source === 'mal') {
-      ids.mal_id = media.id;
-    } else if (source === 'anilist') {
-      // Primary: use idMal if available, Fallback: use anilist id
-      if (media.idMal) {
-        ids.mal_id = media.idMal;
-      }
-      // Always add anilist_id as backup
-      ids.anilist_id = media.id;
-    } else if (source === 'simkl') {
-      ids.simkl_id = media.id;
-      if (media.idMal) ids.mal_id = media.idMal; // anime MAL bridge
-      if (media.idImdb) ids.imdb_id = media.idImdb; // movies/TV IMDb bridge
+    // Get media type for SIMKL backup strategy
+    const mediaType = this.plugin.apiHelper ? 
+      this.plugin.apiHelper.detectMediaType(entry, {}, media) : 
+      (entry?._zoroMeta?.mediaType || 'ANIME');
+    
+    // For ANIME: use MAL as standard backup (like AniList)
+    if (mediaType === 'ANIME' && media.idMal) {
+      ids.mal_id = media.idMal;
     }
     
-    return ids;
+    // For Movies/TV/other media types: use IMDB as backup
+    if (mediaType !== 'ANIME' && media.idImdb) {
+      ids.imdb_id = media.idImdb;
+    }
   }
+  
+  return ids;
+}
 
-  /**
-   * Build URLs array for current media to match against
-   */
-  buildCurrentUrls(media, mediaType) {
-    const urls = [];
+/**
+ * Build URLs array for current media to match against
+ */
+buildCurrentUrls(media, mediaType, source) {
+  const urls = [];
+  
+  // Build source-specific URL first
+  if (source === 'simkl') {
+    // Build SIMKL URL
+    urls.push(`https://simkl.com/${mediaType.toLowerCase()}/${media.id}`);
     
+    // For ANIME: Add MAL URL as backup
+    if (mediaType === 'ANIME' && media.idMal) {
+      urls.push(`https://myanimelist.net/${mediaType.toLowerCase()}/${media.idMal}`);
+    }
+    
+    // For Movies/TV/other: Add IMDB URL as backup
+    if (mediaType !== 'ANIME' && media.idImdb) {
+      urls.push(`https://www.imdb.com/title/${media.idImdb}/`);
+    }
+    
+  } else {
     // Build MAL URL if MAL ID exists
     if (media.idMal) {
       urls.push(`https://myanimelist.net/${mediaType.toLowerCase()}/${media.idMal}`);
     }
-
-    // Build IMDb URL for movies/TV if available
-    if (media.idImdb) {
-      urls.push(`https://www.imdb.com/title/${media.idImdb}/`);
+    
+    // Build AniList URL for non-SIMKL sources
+    if (source !== 'simkl') {
+      urls.push(`https://anilist.co/${mediaType.toLowerCase()}/${media.id}`);
     }
-    
-    // Always build AniList URL
-    urls.push(`https://anilist.co/${mediaType.toLowerCase()}/${media.id}`);
-    
-    return urls;
   }
-
+  
+  return urls;
+}
   /**
    * Check if any URL in the array matches the current media URLs
    */
@@ -10831,45 +10886,44 @@ class ConnectedNotes {
     
     return notesBtn;
   }
-
   /**
-   * Handle connected notes button click
-   */
-  async handleConnectedNotesClick(e, media, entry, config) {
-    e.preventDefault();
-    e.stopPropagation();
+ * Handle connected notes button click
+ */
+async handleConnectedNotesClick(e, media, entry, config) {
+  e.preventDefault();
+  e.stopPropagation();
+  
+  try {
+    // Extract source and media type
+    const source = this.plugin.apiHelper ? 
+      this.plugin.apiHelper.detectSource(entry, config) : 
+      (entry?._zoroMeta?.source || config?.source || 'anilist');
     
-    try {
-      // Extract source and media type
-      const source = this.plugin.apiHelper ? 
-        this.plugin.apiHelper.detectSource(entry, config) : 
-        (entry?._zoroMeta?.source || config?.source || 'anilist');
-      
-      const mediaType = this.plugin.apiHelper ? 
-        this.plugin.apiHelper.detectMediaType(entry, config, media) : 
-        (entry?._zoroMeta?.mediaType || config?.mediaType || 'ANIME');
-      
-      // Store current media for filename generation (PREFER ENGLISH TITLE)
-      this.currentMedia = media;
-      
-      // Store current source and media type for code block generation
-      this.currentSource = source;
-      this.currentMediaType = mediaType;
-      
-      // Build URLs array for current media
-      this.currentUrls = this.buildCurrentUrls(media, mediaType);
-      
-      // Extract search IDs
-      const searchIds = this.extractSearchIds(media, entry, source);
-      
-      // Show connected notes
-      await this.showConnectedNotes(searchIds, mediaType);
-      
-    } catch (error) {
-      console.error('[ConnectedNotes] Button click error:', error);
-      new Notice('Failed to open connected notes');
-    }
+    const mediaType = this.plugin.apiHelper ? 
+      this.plugin.apiHelper.detectMediaType(entry, config, media) : 
+      (entry?._zoroMeta?.mediaType || config?.mediaType || 'ANIME');
+    
+    // Store current media for filename generation (PREFER ENGLISH TITLE)
+    this.currentMedia = media;
+    
+    // Store current source and media type for code block generation
+    this.currentSource = source;
+    this.currentMediaType = mediaType;
+    
+    // Build URLs array for current media (NOW PASSES SOURCE)
+    this.currentUrls = this.buildCurrentUrls(media, mediaType, source);
+    
+    // Extract search IDs
+    const searchIds = this.extractSearchIds(media, entry, source);
+    
+    // Show connected notes
+    await this.showConnectedNotes(searchIds, mediaType);
+    
+  } catch (error) {
+    console.error('[ConnectedNotes] Button click error:', error);
+    new Notice('Failed to open connected notes');
   }
+}
 }
 
 class DetailPanelSource {

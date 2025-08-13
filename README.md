@@ -15,6 +15,7 @@
 - [Installation](#-installation)
 - [Guides](#-guides)
 - [Supported Platforms](#-supported-platforms)
+- [Code Block](#-code-block)
 - [Usage Guide](#-usage-guide)
 - [Layout Options](#-layout-options)
 - [Single Media](#-single-media)
@@ -113,6 +114,46 @@ Export and migrate data between platforms
 | AniList | ✅ Full | All features including favorites |
 | MyAnimeList | ✅ Full | Progress tracking, updates |
 | Simkl | ✅ Beta | |
+
+---
+
+## 🧑‍💻 Code block
+
+| Parameter | Aliases | Description | Possible Values | Default Value | Required For | Example Usage |
+|-----------|---------|-------------|-----------------|---------------|--------------|---------------|
+| **type** | - | Operation type to perform | `stats`, `search`, `single`, `list`, `trending` | `list` | All operations | `type: stats` |
+| **source** | `api` | API source to use | `anilist`, `mal`, `simkl` | Plugin default or `anilist` | All operations | `source: mal` |
+| **username** | `user` | Username for user-specific operations | Any valid username or authenticated user | Plugin default or authenticated user | `stats`, `list` operations | `username: YourUsername` |
+| **mediaType** | `media-type`, `media_type`, `mediatype` | Type of media to work with | `ANIME`, `MANGA` | `ANIME` | All operations | `mediaType: MANGA` |
+| **listType** | `list-type`, `list_type`, `listtype` | Status filter for user lists | `CURRENT`, `COMPLETED`, `PAUSED`, `DROPPED`, `PLANNING`, `ALL`, `REPEATING`* | `CURRENT` | `list` operations | `listType: COMPLETED` |
+| **layout** | - | Display layout style | `card`, `table`, `compact` | Plugin default or `card` | All display operations | `layout: table` |
+| **mediaId** | `media-id`, `media_id`, `mediaid`, `id` | Specific media ID for single media operations | Any valid numeric ID | None | `single` operations | `mediaId: 21` |
+| **search** | `query` | Search query for search operations | Any search string | None | `search` operations | `search: Attack on Titan` |
+| **page** | - | Page number for paginated results | Positive integer | `1` | `search`, paginated operations | `page: 2` |
+| **perPage** | `per-page`, `per_page`, `perpage`, `limit` | Number of results per page | Positive integer (typically 1-50) | Varies by operation | Optional for paginated operations | `perPage: 10` |
+
+**Note:** `REPEATING` status is only supported on AniList.
+
+## Key Features:
+
+1. **Multiple Aliases**: Most parameters support multiple naming conventions (e.g., `mediaType`, `media-type`, `media_type`, `mediatype`)
+2. **Five Operation Types**: `stats`, `search`, `single`, `list`, and `trending`
+3. **Three API Sources**: AniList, MyAnimeList (MAL), and Simkl
+4. **Flexible Layouts**: Card, table, and compact display options
+5. **Smart Defaults**: The plugin uses sensible defaults when parameters are omitted
+
+## Source-Specific Limitations:
+
+| Feature/Status | AniList | MyAnimeList | Simkl |
+|----------------|---------|-------------|-------|
+| **ANIME** | ✅ | ✅ | ✅ |
+| **MANGA** | ✅ | ✅ | ❌ |
+| **REPEATING** status | ✅ | ❌ | ❌ |
+| **Authentication Required** | Optional* | Required | Required |
+
+*AniList works without authentication for public data, but authentication is required for user-specific operations.
+
+The configuration system is very flexible and user-friendly, supporting various naming conventions and providing helpful error messages for invalid configurations.
 
 ---
 

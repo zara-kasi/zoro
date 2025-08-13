@@ -7719,10 +7719,37 @@ class SearchRenderer {
   render(el, config) {
     el.empty();
     el.className = 'zoro-search-container';
+    const sourceLower = (config.source || '').toLowerCase();
+    let selectedType = config.mediaType || (sourceLower === 'simkl' ? 'TV' : 'ANIME');
+    let localConfig = { ...config, mediaType: selectedType };
+
+    // Optional tabs for Simkl TV/Movies
+    if (sourceLower === 'simkl') {
+      const tabs = el.createDiv({ cls: 'zoro-search-tabs' });
+      const makeTab = (label, type) => {
+        const btn = tabs.createEl('button', { text: label, cls: 'zoro-search-tab' });
+        if (String(selectedType).toUpperCase() === type) btn.classList.add('active');
+        btn.onclick = () => {
+          selectedType = type;
+          localConfig = { ...config, mediaType: type };
+          input.placeholder = type === 'MOVIE' ? 'Search movies…' : 'Search TV shows…';
+          Array.from(tabs.children).forEach(ch => ch.classList.remove('active'));
+          btn.classList.add('active');
+          if ((input.value || '').trim().length >= 3) doSearch();
+        };
+        return btn;
+      };
+      makeTab('TV', 'TV');
+      makeTab('Movies', 'MOVIE');
+    }
 
     const searchDiv = el.createDiv({ cls: 'zoro-search-input-container' });
     const input = searchDiv.createEl('input', { type: 'text', cls: 'zoro-search-input' });
-    input.placeholder = config.mediaType === 'ANIME' ? 'Search anime…' : 'Search manga…';
+    if (sourceLower === 'simkl') {
+      input.placeholder = String(selectedType).toUpperCase() === 'MOVIE' ? '🔍 Search movies…' : '🔍 Search TV shows…';
+    } else {
+      input.placeholder = config.mediaType === 'ANIME' ? '🔍 Search anime…' : '🔍 Search manga…';
+    }
 
     const resultsDiv = el.createDiv({ cls: 'zoro-search-results' });
     let timeout;
@@ -7738,10 +7765,10 @@ class SearchRenderer {
         resultsDiv.innerHTML = '';
         resultsDiv.appendChild(DOMHelper.createListSkeleton(5));
         
-        const data = await this.apiHelper.fetchSearchData(config, term);
+        const data = await this.apiHelper.fetchSearchData(localConfig, term);
         
         resultsDiv.innerHTML = '';
-        this.renderSearchResults(resultsDiv, data.Page.media, config);
+        this.renderSearchResults(resultsDiv, data.Page.media, localConfig);
       } catch (e) {
         this.plugin.renderError(resultsDiv, e.message);
       }

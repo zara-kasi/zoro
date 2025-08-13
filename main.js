@@ -14952,7 +14952,7 @@ class ZoroSettingTab extends PluginSettingTab {
     
     new Setting(More)
   .setName('🔍 Quick External Search')
-  .setDesc('Set up quick links to external sites. Adds a search button that instantly takes you to the media on Crunchyroll, Netflix, or any site you configure.')
+  .setDesc('Adds a external link button on more details panel that instantly takes you to the media on any site you configure.')
   .addText(text => text
     .setPlaceholder('Anime Search URLs')
     .setValue(this.plugin.settings.customSearchUrls?.ANIME || '')

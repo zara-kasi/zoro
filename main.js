@@ -4989,31 +4989,47 @@ class SimklApi {
     };
   }
 
-  buildEndpointUrl(config) {
-    const simklMediaType = this.getSimklMediaType(config.mediaType);
-    
-    switch (config.type) {
-      case 'stats':
-        return `${this.baseUrl}/users/settings`;
-      case 'list':
-        return `${this.baseUrl}/sync/all-items/${simklMediaType}`;
-      case 'single':
-        // For single items, we need to get the user's list and filter
-        return `${this.baseUrl}/sync/all-items/${simklMediaType}`;
-      case 'search':
-        return `${this.baseUrl}/search/${simklMediaType}`;
-      default:
-        throw new Error(`Unknown request type: ${config.type}`);
-    }
+buildEndpointUrl(config) {
+  const simklMediaType = this.getSimklMediaType(config.mediaType);
+  
+  switch (config.type) {
+    case 'stats':
+      return `${this.baseUrl}/users/settings`;
+    case 'list':
+      return `${this.baseUrl}/sync/all-items/${simklMediaType}`;
+    case 'single':
+      // For single items, we need to get the user's list and filter
+      return `${this.baseUrl}/sync/all-items/${simklMediaType}`;
+    case 'search':
+      if (simklMediaType === 'movies') {
+        return `${this.baseUrl}/search/movie`; // Note: singular 'movie', not 'movies'
+      } else if (simklMediaType === 'anime') {
+        return `${this.baseUrl}/search/anime`; // Use anime endpoint for anime
+      } else {
+        return `${this.baseUrl}/search/tv`; // Default to TV for shows
+      }
+    default:
+      throw new Error(`Unknown request type: ${config.type}`);
   }
+}
 
-  // FIXED: Proper media type conversion for Simkl API
-  getSimklMediaType(mediaType) {
-    if (!mediaType) return 'anime'; // default
-    
-    const upperType = String(mediaType).toUpperCase();
-    return this.mediaTypeMap[upperType] || 'anime';
+// ALSO NEED TO FIX: getSimklMediaType method for consistency
+getSimklMediaType(mediaType) {
+  if (!mediaType) return 'anime'; // default
+  
+  const upperType = String(mediaType).toUpperCase();
+  
+  // FIXED: More precise mapping for search endpoints
+  if (upperType === 'MOVIE' || upperType === 'MOVIES') {
+    return 'movies'; // Keep as 'movies' for internal logic
+  } else if (upperType === 'ANIME') {
+    return 'anime';
+  } else if (upperType === 'TV') {
+    return 'tv';
   }
+  
+  return this.mediaTypeMap[upperType] || 'anime';
+}
 
   buildQueryParams(config) {
     const params = {};
@@ -5121,11 +5137,34 @@ class SimklApi {
   }
 
   transformSearchResponse(data, config) {
-    const mediaList = Array.isArray(data) ? data : [];
+    const simklType = this.getSimklMediaType(config.mediaType);
+
+    let items = [];
+    if (Array.isArray(data)) {
+      items = data;
+    } else if (data && typeof data === 'object') {
+      // Direct key match
+      if (Array.isArray(data[simklType])) {
+        items = data[simklType];
+      } else {
+        // Common alternative keys
+        const altKeys = ['movies', 'tv', 'anime', 'shows', 'results', 'items'];
+        for (const key of altKeys) {
+          if (Array.isArray(data[key])) {
+            items = data[key];
+            break;
+          }
+        }
+        // Single node fallbacks
+        if (items.length === 0 && (data.movie || data.show)) {
+          items = [data];
+        }
+      }
+    }
     
     return {
       Page: {
-        media: mediaList.map(item => this.transformMedia(item, config.mediaType))
+        media: items.map(item => this.transformMedia(item, config.mediaType)).filter(Boolean)
       }
     };
   }
@@ -7429,7 +7468,10 @@ class CardRenderer {
     }
     
     const needsOverlay = (!isSearch && entry && this.plugin.settings.showProgress) || 
-                        (this.plugin.settings.showRatings && ((isSearch && media.averageScore != null) || (!isSearch && entry?.score != null)));
+                       (this.plugin.settings.showRatings && (
+                          (isSearch && (media.averageScore != null || media._rawData?.rating != null || media.rating != null)) ||
+                          (!isSearch && entry?.score != null)
+                        ));
                         
     if (needsOverlay) {
       const overlay = this.createCoverOverlay(media, entry, isSearch);
@@ -7463,7 +7505,8 @@ class CardRenderer {
     
     // Rating indicator
     if (this.plugin.settings.showRatings) {
-      const score = isSearch ? media.averageScore : entry?.score;
+      const publicScore = isSearch ? (media.averageScore ?? media._rawData?.rating ?? media.rating ?? null) : null;
+      const score = isSearch ? publicScore : entry?.score;
       if (score != null) {
         const rating = document.createElement('span');
         rating.className = 'score';
@@ -7719,36 +7762,15 @@ class SearchRenderer {
   render(el, config) {
     el.empty();
     el.className = 'zoro-search-container';
-    const sourceLower = (config.source || '').toLowerCase();
-    let selectedType = config.mediaType || (sourceLower === 'simkl' ? 'TV' : 'ANIME');
-    let localConfig = { ...config, mediaType: selectedType };
-
-    // Optional tabs for Simkl TV/Movies
-    if (sourceLower === 'simkl') {
-      const tabs = el.createDiv({ cls: 'zoro-search-tabs' });
-      const makeTab = (label, type) => {
-        const btn = tabs.createEl('button', { text: label, cls: 'zoro-search-tab' });
-        if (String(selectedType).toUpperCase() === type) btn.classList.add('active');
-        btn.onclick = () => {
-          selectedType = type;
-          localConfig = { ...config, mediaType: type };
-          input.placeholder = type === 'MOVIE' ? 'Search movies…' : 'Search TV shows…';
-          Array.from(tabs.children).forEach(ch => ch.classList.remove('active'));
-          btn.classList.add('active');
-          if ((input.value || '').trim().length >= 3) doSearch();
-        };
-        return btn;
-      };
-      makeTab('TV', 'TV');
-      makeTab('Movies', 'MOVIE');
-    }
-
+    
     const searchDiv = el.createDiv({ cls: 'zoro-search-input-container' });
     const input = searchDiv.createEl('input', { type: 'text', cls: 'zoro-search-input' });
-    if (sourceLower === 'simkl') {
-      input.placeholder = String(selectedType).toUpperCase() === 'MOVIE' ? '🔍 Search movies…' : '🔍 Search TV shows…';
+    const mt = String(config.mediaType || 'ANIME').toUpperCase();
+    const src = String(config.source || '').toLowerCase();
+    if (src === 'simkl') {
+      input.placeholder = mt === 'MOVIE' || mt === 'MOVIES' ? '🔍 Search movies…' : '🔍 Search TV shows…';
     } else {
-      input.placeholder = config.mediaType === 'ANIME' ? '🔍 Search anime…' : '🔍 Search manga…';
+      input.placeholder = mt === 'ANIME' ? '🔍 Search anime…' : '🔍 Search manga…';
     }
 
     const resultsDiv = el.createDiv({ cls: 'zoro-search-results' });
@@ -7765,10 +7787,10 @@ class SearchRenderer {
         resultsDiv.innerHTML = '';
         resultsDiv.appendChild(DOMHelper.createListSkeleton(5));
         
-        const data = await this.apiHelper.fetchSearchData(localConfig, term);
+        const data = await this.apiHelper.fetchSearchData(config, term);
         
         resultsDiv.innerHTML = '';
-        this.renderSearchResults(resultsDiv, data.Page.media, localConfig);
+        this.renderSearchResults(resultsDiv, data.Page.media, config);
       } catch (e) {
         this.plugin.renderError(resultsDiv, e.message);
       }

@@ -14824,9 +14824,9 @@ class ZoroSettingTab extends PluginSettingTab {
 
     const Account = section('👤 Account');
     const Setup = section('🧭 Setup');
+    const Note = section('🗒️ Note');
     const Display = section('📺 Display');
     const Theme = section('🌓 Theme');
-    const Note = section('🗒️ Note');
     const More = section('✨  More');
     const Data = section('💾 Data');
     const Cache = section('🔁 Cache');
@@ -14894,32 +14894,6 @@ class ZoroSettingTab extends PluginSettingTab {
           window.open('https://github.com/zara-kasi/zoro/blob/8d432f1b3d648e1f9ddc1698676f21483472a427/Docs/mal-auth-setup.md', '_blank');
         }));
         
-
-    new Setting(Display)
-      .setName('🧊 Layout')
-      .setDesc('Choose the default layout for media lists')
-      .addDropdown(dropdown => dropdown
-        .addOption('card', 'Card Layout')
-        .addOption('table', 'Table Layout')
-        .setValue(this.plugin.settings.defaultLayout)
-        .onChange(async (value) => {
-          this.plugin.settings.defaultLayout = value;
-          await this.plugin.saveSettings();
-        }));
-
-    new Setting(Display)
-      .setName('🔲 Grid Columns')
-      .setDesc('Number of columns in card grid layout')
-      .addSlider(slider => slider
-        .setLimits(1, 6, 1)
-        .setValue(this.plugin.settings.gridColumns)
-        .setDynamicTooltip()
-        .onChange(async (value) => {
-          this.plugin.settings.gridColumns = value;
-          await this.plugin.saveSettings();
-          this.updateGridColumns(value);
-        }));
-        
         new Setting(Note)
       .setName('🗂️ Note path')
       .setDesc('Folder path where new connected notes will be created')
@@ -14948,6 +14922,33 @@ class ZoroSettingTab extends PluginSettingTab {
       this.plugin.settings.insertCodeBlockOnNote = value;
       await this.plugin.saveSettings();
     }));
+        
+
+    new Setting(Display)
+      .setName('🧊 Layout')
+      .setDesc('Choose the default layout for media lists')
+      .addDropdown(dropdown => dropdown
+        .addOption('card', 'Card Layout')
+        .addOption('table', 'Table Layout')
+        .setValue(this.plugin.settings.defaultLayout)
+        .onChange(async (value) => {
+          this.plugin.settings.defaultLayout = value;
+          await this.plugin.saveSettings();
+        }));
+
+    new Setting(Display)
+      .setName('🔲 Grid Columns')
+      .setDesc('Number of columns in card grid layout')
+      .addSlider(slider => slider
+        .setLimits(1, 6, 1)
+        .setValue(this.plugin.settings.gridColumns)
+        .setDynamicTooltip()
+        .onChange(async (value) => {
+          this.plugin.settings.gridColumns = value;
+          await this.plugin.saveSettings();
+          this.updateGridColumns(value);
+        }));
+        
     
     new Setting(More)
   .setName('🔍 Quick External Search')

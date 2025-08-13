@@ -5846,25 +5846,25 @@ class SimklApi {
 
   // =================== UPDATE METHODS (Following MAL pattern) ===================
 
-  async updateMediaListEntry(mediaId, updates) {
+  async updateMediaListEntry(mediaId, updates, mediaType) {
     
     
     try {
-      return await this.executeUpdate(mediaId, updates);
+      return await this.executeUpdate(mediaId, updates, mediaType);
     } catch (error) {
       
       throw this.createUserFriendlyError(error);
     }
   }
 
-  async executeUpdate(mediaId, updates) {
+  async executeUpdate(mediaId, updates, mediaType) {
     this.validateMediaId(mediaId);
     this.validateUpdates(updates);
     
     await this.ensureValidToken();
     
     // Build update payload
-    const updatePayload = this.buildUpdatePayload(mediaId, updates);
+    const updatePayload = this.buildUpdatePayload(mediaId, updates, mediaType);
     
     const requestParams = {
       url: `${this.baseUrl}/sync/add-to-list`,
@@ -5890,44 +5890,50 @@ class SimklApi {
     };
   }
 
-  buildUpdatePayload(mediaId, updates) {
-    // Simkl expects specific payload structure
-    const payload = {
-      shows: [{
-        ids: { simkl: parseInt(mediaId) }
-      }]
-    };
-    
-    const showItem = payload.shows[0];
+  buildUpdatePayload(mediaId, updates, mediaType) {
+    const typeUpper = (mediaType || '').toString().toUpperCase();
+    const isMovie = typeUpper === 'MOVIE' || typeUpper === 'MOVIES';
+
+    // Simkl expects different container keys per type
+    const containerKey = isMovie ? 'movies' : 'shows';
+    const payload = { [containerKey]: [{ ids: { simkl: parseInt(mediaId) } }] };
+
+    const item = payload[containerKey][0];
     
     // Add status
     if (updates.status !== undefined) {
-      showItem.status = this.mapAniListStatusToSimkl(updates.status);
+      item.status = this.mapAniListStatusToSimkl(updates.status);
     }
-    
     // Add rating (Simkl uses 1-10 scale)
     if (updates.score !== undefined && updates.score !== null) {
       const score = Math.max(0, Math.min(10, Math.round(updates.score)));
       if (score > 0) {
-        showItem.rating = score;
+        item.rating = score;
       }
     }
     
     // Add progress
     if (updates.progress !== undefined) {
-      showItem.watched_episodes = parseInt(updates.progress) || 0;
+      if (isMovie) {
+        // movies don't have episodes; treat any progress > 0 as watched flag
+        item.watched = (parseInt(updates.progress) || 0) > 0;
+      } else {
+        item.watched_episodes = parseInt(updates.progress) || 0;
+      }
     }
     
     return payload;
   }
 
   // Remove media from user's Simkl list
-  async removeMediaListEntry(mediaId) {
+  async removeMediaListEntry(mediaId, mediaType) {
     this.validateMediaId(mediaId);
     await this.ensureValidToken();
-
+    const typeUpper = (mediaType || '').toString().toUpperCase();
+    const isMovie = typeUpper === 'MOVIE' || typeUpper === 'MOVIES';
+    const containerKey = isMovie ? 'movies' : 'shows';
     const payload = {
-      shows: [{ ids: { simkl: parseInt(mediaId) } }]
+      [containerKey]: [{ ids: { simkl: parseInt(mediaId) } }]
     };
 
     const requestParams = {
@@ -9945,8 +9951,8 @@ class SimklEditModal {
   async updateEntry(entry, updates, onSave) {
     const mediaId = entry.media?.id || entry.mediaId;
     if (!mediaId) throw new Error('Media ID not found');
-
-    await this.plugin.simklApi.updateMediaListEntry(mediaId, updates);
+   const mediaType = entry.media?.format === 'MOVIE' ? 'MOVIE' : (entry._zoroMeta?.mediaType || 'ANIME');
+    await this.plugin.simklApi.updateMediaListEntry(mediaId, updates, mediaType);
     await onSave(updates);
     Object.assign(entry, updates);
     return entry;
@@ -9955,8 +9961,8 @@ class SimklEditModal {
   async removeEntry(entry) {
     const mediaId = entry.media?.id || entry.mediaId;
     if (!mediaId) throw new Error('Media ID not found');
-
-    await this.plugin.simklApi.removeMediaListEntry(mediaId);
+    const mediaType = entry.media?.format === 'MOVIE' ? 'MOVIE' : (entry._zoroMeta?.mediaType || 'ANIME');
+    await this.plugin.simklApi.removeMediaListEntry(mediaId, mediaType);
   }
 
   invalidateCache(entry) {

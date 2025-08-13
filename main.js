@@ -5309,7 +5309,12 @@ class SimklApi {
   transformStatsResponse(data) {
     // Simkl user stats structure is different, adapt as needed
     const user = data.user || data;
-    
+     const simklStats = user.stats || {};
+
+    // Normalize categories for Simkl: anime, tv, movies
+    const animeStats = simklStats.anime || {};
+    const tvStats = simklStats.tv || simklStats.shows || {};
+    const movieStats = simklStats.movies || simklStats.films || {};
     return {
       User: {
         id: user.id || null,
@@ -5320,18 +5325,24 @@ class SimklApi {
         },
         statistics: {
           anime: {
-            count: user.stats?.anime?.total || 0,
-            meanScore: user.stats?.anime?.rating || 0,
+            count: animeStats.total || 0,
+            meanScore: animeStats.rating || 0,
             standardDeviation: 0,
-            episodesWatched: user.stats?.anime?.episodes || 0,
-            minutesWatched: user.stats?.anime?.minutes || 0
+            episodesWatched: animeStats.episodes || 0,
+            minutesWatched: animeStats.minutes || 0
           },
-          manga: {
-            count: 0,
-            meanScore: 0,
+          tv: {
+            count: tvStats.total || 0,
+            meanScore: tvStats.rating || 0,
             standardDeviation: 0,
-            chaptersRead: 0,
-            volumesRead: 0
+            episodesWatched: tvStats.episodes || 0,
+            minutesWatched: tvStats.minutes || 0
+          },
+          movie: {
+            count: movieStats.total || 0,
+            meanScore: movieStats.rating || 0,
+            standardDeviation: 0,
+            minutesWatched: movieStats.minutes || 0
           }
         },
         mediaListOptions: {
@@ -6296,11 +6307,23 @@ class SimklApi {
 
   async attachSimklDistributions(user) {
     try {
-      const animeEntries = await this.fetchUserListEntries('ANIME');
+      const [animeEntries, tvEntries, movieEntries] = await Promise.all([
+        this.fetchUserListEntries('ANIME'),
+        this.fetchUserListEntries('TV'),
+        this.fetchUserListEntries('MOVIE')
+      ]);
       const animeAgg = this.aggregateDistributionsFromEntries(animeEntries, 'anime');
+      const tvAgg = this.aggregateDistributionsFromEntries(tvEntries, 'tv');
+      const movieAgg = this.aggregateDistributionsFromEntries(movieEntries, 'movie');
 
       if (user?.statistics?.anime) {
         Object.assign(user.statistics.anime, animeAgg);
+      }
+      if (user?.statistics?.tv) {
+        Object.assign(user.statistics.tv, tvAgg);
+      }
+      if (user?.statistics?.movie) {
+        Object.assign(user.statistics.movie, movieAgg);
       }
 
       // Apply fallback values similar to MAL implementation
@@ -6319,6 +6342,8 @@ class SimklApi {
       };
 
       applyFallbacks(animeEntries, user?.statistics?.anime);
+      applyFallbacks(tvEntries, user?.statistics?.tv);
+      applyFallbacks(movieEntries, user?.statistics?.movie);
 
     } catch (err) {
       
@@ -7996,13 +8021,18 @@ class StatsRenderer {
     // Make the user name clickable
     userName.style.cursor = 'pointer';
     userName.addEventListener('click', () => {
-      const source = user?._zoroMeta?.source || 'anilist';
-const url = source === 'mal'
-  ? `https://myanimelist.net/profile/${encodeURIComponent(user.name)}`
-  : `https://anilist.co/user/${encodeURIComponent(user.name)}`;
-window.open(url, '_blank');
-    });
-
+  const source = user?._zoroMeta?.source || 'anilist';
+  let url = '';
+  if (source === 'mal') {
+    url = `https://myanimelist.net/profile/${encodeURIComponent(user.name)}`;
+  } else if (source === 'simkl') {
+    const simklId = this.plugin.settings?.simklUserInfo?.account?.id;
+    url = simklId ? `https://simkl.com/${encodeURIComponent(simklId)}/` : `https://simkl.com/`;
+  } else {
+    url = `https://anilist.co/user/${encodeURIComponent(user.name)}`;
+  }
+  window.open(url, '_blank');
+});
     userName.addEventListener('mouseenter', () => {
       userName.style.textDecoration = 'underline';
     });
@@ -8020,20 +8050,33 @@ window.open(url, '_blank');
 
     // Anime stats
     const animeStats = user.statistics.anime;
+       // Extended: Simkl TV and Movie stats
+    const tvStats = user.statistics.tv;
+    const movieStats = user.statistics.movie;
 
-    // Manga stats  
+    // Manga stats (AniList/MAL)
+   
     const mangaStats = user.statistics.manga;
-    const showAnime = String(mediaType).toUpperCase() === 'ANIME';
-const showManga = String(mediaType).toUpperCase() === 'MANGA';
+   const upperType = String(mediaType).toUpperCase();
+    const showAnime = upperType === 'ANIME';
+    const showManga = upperType === 'MANGA';
+    const showTv = upperType === 'TV';
+    const showMovie = upperType === 'MOVIE' || upperType === 'MOVIES';
 
-if (showAnime && animeStats && animeStats.count > 0) {
-  this.renderMediaTypeCard(statsGrid, 'anime', animeStats, user.mediaListOptions);
-}
-if (showManga && mangaStats && mangaStats.count > 0) {
+    if (showAnime && animeStats && animeStats.count > 0) {
+      this.renderMediaTypeCard(statsGrid, 'anime', animeStats, user.mediaListOptions);
+    }
+    if (showManga && mangaStats && mangaStats.count > 0) {
       this.renderMediaTypeCard(statsGrid, 'manga', mangaStats, user.mediaListOptions);
     }
+    if (showTv && tvStats && tvStats.count > 0) {
+      this.renderMediaTypeCard(statsGrid, 'tv', tvStats, user.mediaListOptions);
+    }
+    if (showMovie && movieStats && movieStats.count > 0) {
+      this.renderMediaTypeCard(statsGrid, 'movie', movieStats, user.mediaListOptions);
+    }
 
-     if (showAnime && showManga && animeStats?.count > 0 && mangaStats?.count > 0 && showComparisons) {
+    if (showAnime && showManga && animeStats?.count > 0 && mangaStats?.count > 0 && showComparisons) {
       this.renderComparisonCard(statsGrid, animeStats, mangaStats);
     }
   }
@@ -8172,7 +8215,8 @@ if (showManga && mangaStats && mangaStats.count > 0) {
 
   renderBreakdowns(fragment, user, mediaType) {
     const type = mediaType.toLowerCase();
-    const stats = user.statistics[type];
+    const normalizedType = (type === 'movies') ? 'movie' : type;
+    const stats = user.statistics[normalizedType];
     
     if (!stats || stats.count === 0) return;
 
@@ -8216,7 +8260,8 @@ if (showManga && mangaStats && mangaStats.count > 0) {
 
   renderInsights(fragment, user, mediaType) {
     const type = mediaType.toLowerCase();
-    const stats = user.statistics[type];
+    const normalizedType = (type === 'movies') ? 'movie' : type;
+    const stats = user.statistics[normalizedType];
     
     if (!stats) return;
 

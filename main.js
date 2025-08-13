@@ -5132,56 +5132,123 @@ class SimklApi {
     };
   }
 
-  // FIXED: Complete rewrite of list response transformation
+  // FIXED: Complete rewrite of list response transformation with comprehensive debugging
   transformListResponse(data, config) {
     let entries = [];
+    
+    console.log('[Simkl] DEBUG: transformListResponse called with config:', config);
+    console.log('[Simkl] DEBUG: Raw API response structure:', {
+      dataType: typeof data,
+      dataKeys: data ? Object.keys(data) : 'null',
+      isArray: Array.isArray(data),
+      fullData: JSON.stringify(data, null, 2).substring(0, 1000) + '...' // Truncated for readability
+    });
     
     // FIXED: Use the correct media type key from the response
     const simklMediaType = this.getSimklMediaType(config.mediaType);
     const raw = data || {};
 
-    console.log(`[Simkl] Looking for '${simklMediaType}' data in response:`, Object.keys(raw));
+    console.log(`[Simkl] Looking for '${simklMediaType}' data in response keys:`, Object.keys(raw));
     
-    // Try to get the correct array based on the requested media type
+    // CRITICAL FIX: Try multiple possible data structure patterns
+    
+    // Pattern 1: Direct array under media type key
     if (Array.isArray(raw[simklMediaType])) {
       entries = raw[simklMediaType];
-      console.log(`[Simkl] Found ${entries.length} entries in ${simklMediaType} array`);
-    } else if (Array.isArray(raw)) {
+      console.log(`[Simkl] Pattern 1: Found ${entries.length} entries in ${simklMediaType} array`);
+    }
+    // Pattern 2: Root is an array (search results)
+    else if (Array.isArray(raw)) {
       entries = raw;
-      console.log(`[Simkl] Using raw array with ${entries.length} entries`);
-    } else if (raw[simklMediaType] && typeof raw[simklMediaType] === 'object') {
-      // Handle grouped data (by status)
+      console.log(`[Simkl] Pattern 2: Using root array with ${entries.length} entries`);
+    }
+    // Pattern 3: Grouped data by status (e.g., {watching: [], completed: []})
+    else if (raw[simklMediaType] && typeof raw[simklMediaType] === 'object') {
       const grouped = raw[simklMediaType];
+      console.log(`[Simkl] Pattern 3: Found grouped data under ${simklMediaType}:`, Object.keys(grouped));
       Object.keys(grouped).forEach(statusKey => {
         const arr = grouped[statusKey];
         if (Array.isArray(arr)) {
+          console.log(`[Simkl] Adding ${arr.length} entries from status '${statusKey}'`);
           arr.forEach(item => entries.push({ ...item, _status: statusKey }));
         }
       });
-      console.log(`[Simkl] Found ${entries.length} entries from grouped data`);
-    } else {
-      // Fallback: try all possible keys
-      console.log(`[Simkl] No direct match for '${simklMediaType}', trying fallback`);
-      Object.keys(raw).forEach(key => {
-        if (Array.isArray(raw[key])) {
-          console.log(`[Simkl] Adding ${raw[key].length} entries from '${key}' key`);
-          raw[key].forEach(item => entries.push(item));
+    }
+    // Pattern 4: Try alternative media type keys (fallback)
+    else {
+      console.log(`[Simkl] Pattern 4: No direct match for '${simklMediaType}', trying all available keys`);
+      
+      // Try common alternative keys
+      const alternativeKeys = ['anime', 'movies', 'tv', 'shows', 'items', 'results'];
+      let found = false;
+      
+      for (const key of alternativeKeys) {
+        if (raw[key] && Array.isArray(raw[key]) && raw[key].length > 0) {
+          console.log(`[Simkl] Found data under alternative key '${key}' with ${raw[key].length} items`);
+          entries = raw[key];
+          found = true;
+          break;
         }
+      }
+      
+      // Last resort: try any array in the response
+      if (!found) {
+        console.log(`[Simkl] Last resort: searching for any arrays in response`);
+        Object.keys(raw).forEach(key => {
+          if (Array.isArray(raw[key]) && raw[key].length > 0) {
+            console.log(`[Simkl] Found array under '${key}' with ${raw[key].length} items`);
+            entries = entries.concat(raw[key]);
+          }
+        });
+      }
+    }
+    
+    console.log(`[Simkl] Pre-filter entries count: ${entries.length}`);
+    
+    // Sample the first entry to understand structure
+    if (entries.length > 0) {
+      console.log('[Simkl] Sample entry structure:', {
+        keys: Object.keys(entries[0]),
+        hasShow: 'show' in entries[0],
+        hasMovie: 'movie' in entries[0],
+        showKeys: entries[0].show ? Object.keys(entries[0].show) : 'no show',
+        movieKeys: entries[0].movie ? Object.keys(entries[0].movie) : 'no movie',
+        sampleEntry: JSON.stringify(entries[0], null, 2).substring(0, 500) + '...'
       });
     }
     
     // Filter by status if specified
     if (config.listType && config.listType !== 'ALL') {
       const targetStatus = this.mapAniListStatusToSimkl(config.listType);
+      console.log(`[Simkl] Filtering by status: ${config.listType} -> ${targetStatus}`);
+      const beforeFilter = entries.length;
       entries = entries.filter(entry => (entry.status || entry._status) === targetStatus);
+      console.log(`[Simkl] After status filter: ${beforeFilter} -> ${entries.length} entries`);
     }
     
     console.log(`[Simkl] Final entries count: ${entries.length}`);
     
+    // Transform entries with enhanced error handling
+    const transformedEntries = [];
+    entries.forEach((entry, index) => {
+      try {
+        const transformed = this.transformListEntry(entry, config.mediaType);
+        if (transformed) {
+          transformedEntries.push(transformed);
+        } else {
+          console.warn(`[Simkl] Entry ${index} transformed to null`);
+        }
+      } catch (error) {
+        console.error(`[Simkl] Error transforming entry ${index}:`, error, entry);
+      }
+    });
+    
+    console.log(`[Simkl] Successfully transformed ${transformedEntries.length} entries`);
+    
     return {
       MediaListCollection: {
         lists: [{
-          entries: entries.map(entry => this.transformListEntry(entry, config.mediaType))
+          entries: transformedEntries
         }]
       }
     };
@@ -5224,44 +5291,64 @@ class SimklApi {
 
   // =================== MEDIA TRANSFORMATION (Fixed structure) ===================
   
-  // FIXED: Added mediaType parameter and better movie detection + title extraction
+  // FIXED: Added enhanced debugging and comprehensive data structure handling
   transformMedia(simklMedia, mediaType) {
-    if (!simklMedia) return null;
+    console.log('[Simkl] DEBUG: transformMedia called with:', {
+      simklMedia: simklMedia,
+      mediaType: mediaType,
+      simklMediaType: typeof simklMedia,
+      simklMediaKeys: simklMedia ? Object.keys(simklMedia) : 'null'
+    });
+
+    if (!simklMedia) {
+      console.error('[Simkl] transformMedia: simklMedia is null/undefined');
+      return null;
+    }
+
+    // CRITICAL FIX: Handle multiple possible data structures from Simkl
+    let media, originalData;
     
-    const media = simklMedia.show || simklMedia;
-    const ids = media.ids || {};
-    const poster = media.poster || media.image || media.cover || media.images?.poster || media.images?.poster_small || null;
-
-    let posterUrl = null;
-    if (poster) {
-      if (typeof poster === 'object') {
-        posterUrl = poster.full || poster.large || poster.medium || poster.url || poster.path || Object.values(poster).find(v => typeof v === 'string');
-      } else if (typeof poster === 'string') {
-        posterUrl = poster.trim();
-      }
-      
-      if (posterUrl) {
-        if (posterUrl.startsWith('//')) {
-          posterUrl = 'https:' + posterUrl;
-        } else if (posterUrl.startsWith('/')) {
-          posterUrl = 'https://simkl.in' + posterUrl;
-        } else if (!posterUrl.match(/^https?:\/\//i)) {
-          posterUrl = `https://simkl.in/posters/${posterUrl}_m.jpg`;
-        }
-      }
+    // Case 1: Data is nested under 'show' (common in sync responses)
+    if (simklMedia.show) {
+      console.log('[Simkl] DEBUG: Found nested show structure');
+      media = simklMedia.show;
+      originalData = simklMedia; // Keep reference to full object
+    }
+    // Case 2: Data is nested under 'movie' (for movie responses)
+    else if (simklMedia.movie) {
+      console.log('[Simkl] DEBUG: Found nested movie structure');
+      media = simklMedia.movie;
+      originalData = simklMedia;
+    }
+    // Case 3: Data is directly in the root object
+    else {
+      console.log('[Simkl] DEBUG: Using root object structure');
+      media = simklMedia;
+      originalData = simklMedia;
     }
 
-    if (!posterUrl && ids && ids.simkl) {
-      posterUrl = `https://simkl.in/posters/${ids.simkl}_m.jpg`;
-    }
+    console.log('[Simkl] DEBUG: Extracted media object:', {
+      media: media,
+      mediaKeys: media ? Object.keys(media) : 'null',
+      hasTitle: 'title' in (media || {}),
+      hasName: 'name' in (media || {}),
+      titleValue: media?.title,
+      nameValue: media?.name
+    });
 
-    const posterUrlFinal = posterUrl || null;
-
+    const ids = media.ids || originalData.ids || {};
+    
+    // FIXED: Enhanced poster extraction for movies
+    const posterUrl = this.extractPosterUrl(media, originalData, ids);
+    
     // FIXED: Better movie detection using mediaType and API response
     const isMovie = this.isMovieType(mediaType, media);
     
-    // FIXED: Comprehensive title extraction logic
-    const extractedTitle = this.extractTitle(media, simklMedia);
+    // FIXED: Comprehensive title extraction logic with full debugging
+    const extractedTitle = this.extractTitle(media, originalData);
+    
+    // FIXED: Enhanced genres extraction
+    const genres = this.extractGenres(media, originalData);
     
     const episodes = (() => {
       // For movies, always return 1
@@ -5272,8 +5359,12 @@ class SimklApi {
       const candidates = [
         media.total_episodes_count,
         media.total_episodes,
-        media.episodes
+        media.episodes,
+        originalData.total_episodes_count,
+        originalData.total_episodes,
+        originalData.episodes
       ];
+      
       for (const cand of candidates) {
         if (cand !== undefined && cand !== null && cand !== '') {
           const n = Number(cand);
@@ -5283,85 +5374,342 @@ class SimklApi {
       return null;
     })();
     
-    return {
-      id: ids.simkl || ids.id || media.id,
+    const transformedResult = {
+      id: ids.simkl || ids.id || media.id || originalData.id,
       title: extractedTitle,
       coverImage: {
-        large: posterUrlFinal,
-        medium: posterUrlFinal,
-        _raw: poster,
-        _normalized: posterUrlFinal
+        large: posterUrl,
+        medium: posterUrl,
+        _raw: media.poster || media.image || media.cover,
+        _normalized: posterUrl
       },
-      format: this.mapSimklFormat(media.type || media.kind || 'tv', mediaType),
+      format: this.mapSimklFormat(media.type || media.kind || originalData.type || 'tv', mediaType),
       averageScore: media.rating ? Math.round((media.rating > 10 ? media.rating : media.rating * 10)) : null,
       status: media.status ? media.status.toUpperCase() : null,
-      genres: media.genres || [],
+      genres: genres,
       episodes: episodes,
       chapters: null,
       isFavourite: false,
-      startDate: this.parseDate(media.first_aired),
-      endDate: this.parseDate(media.last_aired)
+      startDate: this.parseDate(media.first_aired || originalData.first_aired),
+      endDate: this.parseDate(media.last_aired || originalData.last_aired),
+      // FIXED: Add movie-specific metadata for rendering
+      _isMovie: isMovie,
+      _mediaType: mediaType,
+      _rawData: originalData // Keep for debugging
     };
+
+    console.log('[Simkl] DEBUG: Final transformed result:', transformedResult);
+    return transformedResult;
   }
 
-  // FIXED: New comprehensive title extraction method
+  // FIXED: Enhanced poster URL extraction method
+  extractPosterUrl(media, originalData, ids) {
+    // Try multiple poster field variations that Simkl uses for different content types
+    const posterCandidates = [
+      // Standard fields
+      media.poster,
+      media.image,
+      media.cover,
+      
+      // Image object variations
+      media.images?.poster,
+      media.images?.poster_small,
+      media.images?.poster_large,
+      media.images?.movie_poster,
+      media.images?.cover,
+      media.images?.fanart,
+      
+      // Original data fallbacks
+      originalData?.poster,
+      originalData?.image,
+      originalData?.cover,
+      originalData?.images?.poster,
+      originalData?.images?.movie_poster
+    ];
+
+    let posterUrl = null;
+    
+    for (const candidate of posterCandidates) {
+      if (candidate) {
+        if (typeof candidate === 'object') {
+          posterUrl = candidate.full || candidate.large || candidate.medium || 
+                     candidate.url || candidate.path || 
+                     Object.values(candidate).find(v => typeof v === 'string' && v.trim());
+        } else if (typeof candidate === 'string' && candidate.trim()) {
+          posterUrl = candidate.trim();
+        }
+        
+        if (posterUrl) break;
+      }
+    }
+    
+    // Process the found poster URL
+    if (posterUrl) {
+      if (posterUrl.startsWith('//')) {
+        posterUrl = 'https:' + posterUrl;
+      } else if (posterUrl.startsWith('/')) {
+        posterUrl = 'https://simkl.in' + posterUrl;
+      } else if (!posterUrl.match(/^https?:\/\//i)) {
+        // Check if it looks like a direct filename or needs Simkl CDN path
+        if (posterUrl.includes('.jpg') || posterUrl.includes('.png') || posterUrl.includes('.webp')) {
+          // If it's already a filename, use Simkl CDN
+          posterUrl = `https://simkl.in/posters/${posterUrl.replace(/\.(jpg|png|webp)$/i, '')}_m.jpg`;
+        } else {
+          // Use the ID-based fallback
+          posterUrl = `https://simkl.in/posters/${posterUrl}_m.jpg`;
+        }
+      }
+    }
+
+    // Final fallback using media ID
+    if (!posterUrl && ids && ids.simkl) {
+      posterUrl = `https://simkl.in/posters/${ids.simkl}_m.jpg`;
+    }
+
+    console.log(`[Simkl] Poster URL extraction result: "${posterUrl}"`);
+    return posterUrl;
+  }
+
+  // FIXED: Enhanced genres extraction method
+  extractGenres(media, originalData) {
+    const genreCandidates = [
+      media.genres,
+      media.genre,
+      originalData?.genres,
+      originalData?.genre
+    ];
+
+    for (const candidate of genreCandidates) {
+      if (Array.isArray(candidate) && candidate.length > 0) {
+        // Filter out empty/invalid genres
+        const validGenres = candidate.filter(g => 
+          g && typeof g === 'string' && g.trim()
+        ).map(g => g.trim());
+        
+        if (validGenres.length > 0) {
+          console.log(`[Simkl] Genres extracted: [${validGenres.join(', ')}]`);
+          return validGenres;
+        }
+      }
+    }
+
+    console.log(`[Simkl] No genres found, returning empty array`);
+    return [];
+  }
+
+  // FIXED: Completely rewritten comprehensive title extraction method with deep debugging
   extractTitle(media, originalData) {
-    // Try multiple title field variations that Simkl uses
-    const titleCandidates = [
-      media.title,
-      media.name, 
-      media.en_title,
-      media.original_title,
-      media.title_en,
-      media.title_english,
+    console.log('[Simkl] DEBUG: Starting title extraction with data:', {
+      media: media,
+      originalData: originalData,
+      mediaKeys: media ? Object.keys(media) : 'null',
+      originalKeys: originalData ? Object.keys(originalData) : 'null'
+    });
+
+    // CRITICAL FIX: Try ALL possible nested structures and field names
+    const allPossibleTitleSources = [
+      // Direct media object fields
+      media?.title,
+      media?.name,
+      media?.en_title,
+      media?.original_title,
+      media?.title_en,
+      media?.title_english,
+      media?.english_name,
+      media?.romaji,
+      media?.english,
+      media?.native,
+      
+      // Nested title objects (common in many APIs)
+      media?.title?.english,
+      media?.title?.romaji,
+      media?.title?.native,
+      media?.title?.en,
+      media?.title?.original,
+      
+      // Original/root data fields
       originalData?.title,
       originalData?.name,
       originalData?.en_title,
-      originalData?.original_title
+      originalData?.original_title,
+      originalData?.title_en,
+      originalData?.title_english,
+      originalData?.english_name,
+      
+      // Nested in original data
+      originalData?.title?.english,
+      originalData?.title?.romaji,
+      originalData?.title?.native,
+      originalData?.title?.en,
+      originalData?.title?.original,
+      
+      // Show object nested fields (critical for Simkl sync responses)
+      originalData?.show?.title,
+      originalData?.show?.name,
+      originalData?.show?.en_title,
+      originalData?.show?.original_title,
+      originalData?.show?.title_en,
+      originalData?.show?.title_english,
+      
+      // Nested show title objects
+      originalData?.show?.title?.english,
+      originalData?.show?.title?.romaji,
+      originalData?.show?.title?.native,
+      originalData?.show?.title?.en,
+      
+      // Movie-specific nested fields
+      originalData?.movie?.title,
+      originalData?.movie?.name,
+      originalData?.movie?.en_title,
+      originalData?.movie?.original_title,
+      
+      // Alternative nested structures
+      media?.show?.title,
+      media?.show?.name,
+      media?.movie?.title,
+      media?.movie?.name,
+      
+      // International title variations
+      media?.titles?.en,
+      media?.titles?.english,
+      media?.titles?.original,
+      originalData?.titles?.en,
+      originalData?.titles?.english,
+      originalData?.titles?.original,
+      
+      // Last resort - use ID or any string field
+      media?.slug,
+      originalData?.slug,
+      String(media?.id || originalData?.id || '').replace(/[^a-zA-Z0-9\s]/g, ' ')
     ];
 
-    // Find the first valid title
-    const primaryTitle = titleCandidates.find(title => 
-      title && typeof title === 'string' && title.trim() !== ''
-    ) || 'Unknown Title';
+    console.log('[Simkl] DEBUG: All title candidates:', allPossibleTitleSources.map(t => `"${t}"`));
 
-    // For different title variants, try to extract English and native titles
-    const englishTitle = [
-      media.en_title,
-      media.title_en,
-      media.title_english,
+    // Find the first valid title
+    const primaryTitle = allPossibleTitleSources.find(title => 
+      title && 
+      typeof title === 'string' && 
+      title.trim() !== '' && 
+      title.toLowerCase() !== 'null' &&
+      title.toLowerCase() !== 'undefined'
+    );
+
+    console.log('[Simkl] DEBUG: Primary title found:', `"${primaryTitle}"`);
+
+    if (!primaryTitle || primaryTitle === 'Unknown Title') {
+      console.error('[Simkl] CRITICAL: No valid title found in any field! Raw data dump:', {
+        fullMedia: JSON.stringify(media, null, 2),
+        fullOriginal: JSON.stringify(originalData, null, 2)
+      });
+      
+      // Emergency fallback: try to construct title from any available data
+      const emergencyTitle = this.constructEmergencyTitle(media, originalData);
+      if (emergencyTitle) {
+        console.log('[Simkl] Using emergency constructed title:', emergencyTitle);
+        return {
+          romaji: emergencyTitle,
+          english: emergencyTitle,
+          native: emergencyTitle
+        };
+      }
+    }
+
+    // Now find specific variants for English and native titles
+    const englishCandidates = [
+      media?.en_title,
+      media?.title_en,
+      media?.title_english,
+      media?.english_name,
+      media?.title?.english,
+      media?.title?.en,
       originalData?.en_title,
       originalData?.title_en,
       originalData?.title_english,
-      primaryTitle // fallback to primary
-    ].find(title => title && typeof title === 'string' && title.trim() !== '') || primaryTitle;
+      originalData?.show?.en_title,
+      originalData?.show?.title?.english,
+      originalData?.movie?.en_title,
+      primaryTitle // fallback
+    ];
 
-    const nativeTitle = [
-      media.original_title,
-      media.title_original,
+    const nativeCandidates = [
+      media?.original_title,
+      media?.title_original,
+      media?.native,
+      media?.title?.native,
+      media?.title?.original,
       originalData?.original_title,
       originalData?.title_original,
-      primaryTitle // fallback to primary
-    ].find(title => title && typeof title === 'string' && title.trim() !== '') || primaryTitle;
+      originalData?.show?.original_title,
+      originalData?.show?.title?.native,
+      originalData?.movie?.original_title,
+      primaryTitle // fallback
+    ];
 
-    // If we have different English and native titles, use them appropriately
-    let romajiTitle = primaryTitle;
-    
-    // If the primary title looks like it might be romanized (contains Latin characters)
-    // and we have a different native title, use the primary as romaji
+    const englishTitle = englishCandidates.find(title => 
+      title && typeof title === 'string' && title.trim() !== ''
+    ) || primaryTitle || 'Unknown Title';
+
+    const nativeTitle = nativeCandidates.find(title => 
+      title && typeof title === 'string' && title.trim() !== ''
+    ) || primaryTitle || 'Unknown Title';
+
+    // Smart romaji detection
+    let romajiTitle = primaryTitle || 'Unknown Title';
     if (primaryTitle !== nativeTitle && /[a-zA-Z]/.test(primaryTitle)) {
       romajiTitle = primaryTitle;
-    } else {
+    } else if (englishTitle !== primaryTitle) {
       romajiTitle = englishTitle;
     }
 
-    console.log(`[Simkl] Title extraction - Primary: "${primaryTitle}", English: "${englishTitle}", Native: "${nativeTitle}", Romaji: "${romajiTitle}"`);
-
-    return {
+    const result = {
       romaji: romajiTitle,
       english: englishTitle,
       native: nativeTitle
     };
+
+    console.log('[Simkl] Final title extraction result:', result);
+    return result;
+  }
+
+  // NEW: Emergency title construction when all standard fields fail
+  constructEmergencyTitle(media, originalData) {
+    // Try to build a title from any available string data
+    const possibleSources = [
+      // Try any field that might contain a readable name
+      media?.slug?.replace(/[-_]/g, ' '),
+      originalData?.slug?.replace(/[-_]/g, ' '),
+      
+      // Check if there are any string fields that might be titles
+      ...Object.values(media || {}).filter(val => 
+        typeof val === 'string' && 
+        val.length > 2 && 
+        val.length < 100 &&
+        !/^https?:\/\//.test(val) && // not a URL
+        !/^\d+$/.test(val) && // not just numbers
+        !/^[a-f0-9-]{20,}$/.test(val) // not a hash/ID
+      ),
+      
+      ...Object.values(originalData || {}).filter(val => 
+        typeof val === 'string' && 
+        val.length > 2 && 
+        val.length < 100 &&
+        !/^https?:\/\//.test(val) &&
+        !/^\d+$/.test(val) &&
+        !/^[a-f0-9-]{20,}$/.test(val)
+      )
+    ];
+
+    const emergencyTitle = possibleSources[0];
+    if (emergencyTitle) {
+      // Clean it up
+      return emergencyTitle
+        .replace(/[-_]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .replace(/\b\w/g, l => l.toUpperCase()); // Title case
+    }
+
+    return null;
   }
 
   // FIXED: Enhanced list entry transformation with proper movie handling

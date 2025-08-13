@@ -10160,11 +10160,15 @@ buildCurrentUrls(media, mediaType, source) {
   // Build source-specific URL first
   if (source === 'simkl') {
     // Build SIMKL URL
-    urls.push(`https://simkl.com/${mediaType.toLowerCase()}/${media.id}`);
+    const simklMediaType = (mediaType === 'ANIME' || mediaType.toLowerCase() === 'anime') ? 'anime' : 
+                      (mediaType.toLowerCase() === 'movie') ? 'movies' :  // Note: "movies" not "movie"
+                      mediaType.toLowerCase();
+urls.push(`https://simkl.com/${simklMediaType}/${media.id}`);
     
     // For ANIME: Add MAL URL as backup
     if (mediaType === 'ANIME' && media.idMal) {
-      urls.push(`https://myanimelist.net/${mediaType.toLowerCase()}/${media.idMal}`);
+      const malMediaType = (mediaType.toLowerCase() === 'movie') ? 'anime' : mediaType.toLowerCase();
+urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
     }
     
     // For Movies/TV/other: Add IMDB URL as backup
@@ -10175,7 +10179,8 @@ buildCurrentUrls(media, mediaType, source) {
   } else {
     // Build MAL URL if MAL ID exists
     if (media.idMal) {
-      urls.push(`https://myanimelist.net/${mediaType.toLowerCase()}/${media.idMal}`);
+      const malMediaType = (mediaType.toLowerCase() === 'movie') ? 'anime' : mediaType.toLowerCase();
+urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
     }
     
     // Build AniList URL for non-SIMKL sources

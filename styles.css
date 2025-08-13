@@ -1700,6 +1700,49 @@ transparent 70%
   box-shadow: 0 8px 20px rgba(46, 81, 162, 0.3);
 }
 
+.zoro-custom-external-btn {
+  background: linear-gradient(135deg, var(--interactive-accent), var(--interactive-accent-hover));
+  color: var(--text-on-accent);
+  padding: 12px 20px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  overflow: hidden;
+}
+
+.zoro-custom-external-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s ease;
+}
+
+.zoro-custom-external-btn:hover::before {
+  left: 100%;
+}
+
+.zoro-custom-external-btn:hover {
+  background: linear-gradient(135deg, var(--interactive-accent-hover), var(--interactive-accent));
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(var(--interactive-accent-rgb), 0.3);
+}
+
+.zoro-custom-external-btn:active {
+  transform: translateY(0);
+}
+
 /* Synopsis section */
 .synopsis-content {
   color: var(--panel-text-secondary);

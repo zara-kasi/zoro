@@ -4889,6 +4889,15 @@ class SimklApi {
       'PLANNING': 'plantowatch'
     };
 
+    // Media type mapping for API endpoints and data parsing
+    this.mediaTypeMap = {
+      'ANIME': 'anime',
+      'MANGA': 'anime', // Simkl doesn't have manga, fallback to anime
+      'TV': 'tv',
+      'MOVIE': 'movies',
+      'MOVIES': 'movies'
+    };
+
     this.metrics = { requests: 0, cached: 0, errors: 0 };
   }
 
@@ -4926,7 +4935,16 @@ class SimklApi {
     // Build and execute request
     const requestParams = this.buildRequestParams(normalizedConfig);
     const rawResponse = await this.makeRequest(requestParams);
-    const transformedData = this.transformResponse(rawResponse, normalizedConfig);
+    let transformedData = this.transformResponse(rawResponse, normalizedConfig);
+    
+    // If stats requested, enrich with distributions computed from user lists
+    if (normalizedConfig.type === 'stats' && transformedData?.User) {
+      try {
+        await this.attachSimklDistributions(transformedData.User);
+      } catch (e) {
+        console.warn('[Simkl] Failed to enrich stats with distributions:', e);
+      }
+    }
     
     // Cache successful results
     if (transformedData && !normalizedConfig.nocache) {
@@ -4953,19 +4971,29 @@ class SimklApi {
   }
 
   buildEndpointUrl(config) {
+    const simklMediaType = this.getSimklMediaType(config.mediaType);
+    
     switch (config.type) {
       case 'stats':
         return `${this.baseUrl}/users/settings`;
       case 'list':
-        return `${this.baseUrl}/sync/all-items/${config.mediaType?.toLowerCase() || 'anime'}`;
+        return `${this.baseUrl}/sync/all-items/${simklMediaType}`;
       case 'single':
         // For single items, we need to get the user's list and filter
-        return `${this.baseUrl}/sync/all-items/${config.mediaType?.toLowerCase() || 'anime'}`;
+        return `${this.baseUrl}/sync/all-items/${simklMediaType}`;
       case 'search':
-        return `${this.baseUrl}/search/${config.mediaType?.toLowerCase() || 'anime'}`;
+        return `${this.baseUrl}/search/${simklMediaType}`;
       default:
         throw new Error(`Unknown request type: ${config.type}`);
     }
+  }
+
+  // FIXED: Proper media type conversion for Simkl API
+  getSimklMediaType(mediaType) {
+    if (!mediaType) return 'anime'; // default
+    
+    const upperType = String(mediaType).toUpperCase();
+    return this.mediaTypeMap[upperType] || 'anime';
   }
 
   buildQueryParams(config) {
@@ -5006,8 +5034,9 @@ class SimklApi {
     };
     
     if (this.plugin.settings.simklClientId) {
-  headers['simkl-api-key'] = this.plugin.settings.simklClientId;
-}
+      headers['simkl-api-key'] = this.plugin.settings.simklClientId;
+    }
+    
     // Add auth token for user-specific requests
     if (this.requiresAuth(config.type) && this.plugin.settings.simklAccessToken) {
       headers['Authorization'] = `Bearer ${this.plugin.settings.simklAccessToken}`;
@@ -5035,7 +5064,6 @@ class SimklApi {
       });
 
       if (!response?.json) {
-        
         throw new Error('Empty response from Simkl');
       }
 
@@ -5057,7 +5085,7 @@ class SimklApi {
   // =================== DATA TRANSFORMATION (Fixed to match expected structure) ===================
 
   transformResponse(data, config) {
-    console.log(`[Simkl] Transforming response for type: ${config.type}`);
+    console.log(`[Simkl] Transforming response for type: ${config.type}, mediaType: ${config.mediaType}`);
     
     switch (config.type) {
       case 'search':
@@ -5078,7 +5106,7 @@ class SimklApi {
     
     return {
       Page: {
-        media: mediaList.map(item => this.transformMedia(item))
+        media: mediaList.map(item => this.transformMedia(item, config.mediaType))
       }
     };
   }
@@ -5087,9 +5115,9 @@ class SimklApi {
     const targetMediaId = parseInt(config.mediaId);
     let targetEntry = null;
     
-    // Look through the appropriate media type array
-    const mediaType = config.mediaType?.toLowerCase() || 'anime';
-    const mediaArray = data[mediaType] || data.anime || [];
+    // FIXED: Use the actual media type being requested
+    const simklMediaType = this.getSimklMediaType(config.mediaType);
+    const mediaArray = data[simklMediaType] || [];
     
     if (Array.isArray(mediaArray)) {
       targetEntry = mediaArray.find(entry => {
@@ -5100,35 +5128,47 @@ class SimklApi {
     }
     
     return {
-      MediaList: targetEntry ? this.transformListEntry(targetEntry) : null
+      MediaList: targetEntry ? this.transformListEntry(targetEntry, config.mediaType) : null
     };
   }
 
+  // FIXED: Complete rewrite of list response transformation
   transformListResponse(data, config) {
     let entries = [];
     
-    const mediaType = (config.mediaType?.toLowerCase() || 'anime');
-const raw = data || {};
+    // FIXED: Use the correct media type key from the response
+    const simklMediaType = this.getSimklMediaType(config.mediaType);
+    const raw = data || {};
 
-if (Array.isArray(raw[mediaType])) {
-  entries = raw[mediaType];
-} else if (Array.isArray(raw)) {
-  entries = raw;
-} else if (raw[mediaType] && typeof raw[mediaType] === 'object') {
-  const grouped = raw[mediaType];
-  Object.keys(grouped).forEach(statusKey => {
-    const arr = grouped[statusKey];
-    if (Array.isArray(arr)) {
-      arr.forEach(item => entries.push({ ...item, _status: statusKey }));
+    console.log(`[Simkl] Looking for '${simklMediaType}' data in response:`, Object.keys(raw));
+    
+    // Try to get the correct array based on the requested media type
+    if (Array.isArray(raw[simklMediaType])) {
+      entries = raw[simklMediaType];
+      console.log(`[Simkl] Found ${entries.length} entries in ${simklMediaType} array`);
+    } else if (Array.isArray(raw)) {
+      entries = raw;
+      console.log(`[Simkl] Using raw array with ${entries.length} entries`);
+    } else if (raw[simklMediaType] && typeof raw[simklMediaType] === 'object') {
+      // Handle grouped data (by status)
+      const grouped = raw[simklMediaType];
+      Object.keys(grouped).forEach(statusKey => {
+        const arr = grouped[statusKey];
+        if (Array.isArray(arr)) {
+          arr.forEach(item => entries.push({ ...item, _status: statusKey }));
+        }
+      });
+      console.log(`[Simkl] Found ${entries.length} entries from grouped data`);
+    } else {
+      // Fallback: try all possible keys
+      console.log(`[Simkl] No direct match for '${simklMediaType}', trying fallback`);
+      Object.keys(raw).forEach(key => {
+        if (Array.isArray(raw[key])) {
+          console.log(`[Simkl] Adding ${raw[key].length} entries from '${key}' key`);
+          raw[key].forEach(item => entries.push(item));
+        }
+      });
     }
-  });
-} else {
-  Object.keys(raw).forEach(key => {
-    if (Array.isArray(raw[key])) {
-      raw[key].forEach(item => entries.push(item));
-    }
-  });
-}
     
     // Filter by status if specified
     if (config.listType && config.listType !== 'ALL') {
@@ -5136,10 +5176,12 @@ if (Array.isArray(raw[mediaType])) {
       entries = entries.filter(entry => (entry.status || entry._status) === targetStatus);
     }
     
+    console.log(`[Simkl] Final entries count: ${entries.length}`);
+    
     return {
       MediaListCollection: {
         lists: [{
-          entries: entries.map(entry => this.transformListEntry(entry, mediaType))
+          entries: entries.map(entry => this.transformListEntry(entry, config.mediaType))
         }]
       }
     };
@@ -5181,128 +5223,232 @@ if (Array.isArray(raw[mediaType])) {
   }
 
   // =================== MEDIA TRANSFORMATION (Fixed structure) ===================
-  transformMedia(simklMedia) {
-  if (!simklMedia) return null;
   
-  const media = simklMedia.show || simklMedia;
-  const ids = media.ids || {};
-  const poster = media.poster || media.image || media.cover || media.images?.poster || media.images?.poster_small || null;
+  // FIXED: Added mediaType parameter and better movie detection + title extraction
+  transformMedia(simklMedia, mediaType) {
+    if (!simklMedia) return null;
+    
+    const media = simklMedia.show || simklMedia;
+    const ids = media.ids || {};
+    const poster = media.poster || media.image || media.cover || media.images?.poster || media.images?.poster_small || null;
 
-  let posterUrl = null;
-  if (poster) {
-    if (typeof poster === 'object') {
-      posterUrl = poster.full || poster.large || poster.medium || poster.url || poster.path || Object.values(poster).find(v => typeof v === 'string');
-    } else if (typeof poster === 'string') {
-      posterUrl = poster.trim();
+    let posterUrl = null;
+    if (poster) {
+      if (typeof poster === 'object') {
+        posterUrl = poster.full || poster.large || poster.medium || poster.url || poster.path || Object.values(poster).find(v => typeof v === 'string');
+      } else if (typeof poster === 'string') {
+        posterUrl = poster.trim();
+      }
+      
+      if (posterUrl) {
+        if (posterUrl.startsWith('//')) {
+          posterUrl = 'https:' + posterUrl;
+        } else if (posterUrl.startsWith('/')) {
+          posterUrl = 'https://simkl.in' + posterUrl;
+        } else if (!posterUrl.match(/^https?:\/\//i)) {
+          posterUrl = `https://simkl.in/posters/${posterUrl}_m.jpg`;
+        }
+      }
+    }
+
+    if (!posterUrl && ids && ids.simkl) {
+      posterUrl = `https://simkl.in/posters/${ids.simkl}_m.jpg`;
+    }
+
+    const posterUrlFinal = posterUrl || null;
+
+    // FIXED: Better movie detection using mediaType and API response
+    const isMovie = this.isMovieType(mediaType, media);
+    
+    // FIXED: Comprehensive title extraction logic
+    const extractedTitle = this.extractTitle(media, simklMedia);
+    
+    const episodes = (() => {
+      // For movies, always return 1
+      if (isMovie) {
+        return 1;
+      }
+      
+      const candidates = [
+        media.total_episodes_count,
+        media.total_episodes,
+        media.episodes
+      ];
+      for (const cand of candidates) {
+        if (cand !== undefined && cand !== null && cand !== '') {
+          const n = Number(cand);
+          if (!isNaN(n)) return n;
+        }
+      }
+      return null;
+    })();
+    
+    return {
+      id: ids.simkl || ids.id || media.id,
+      title: extractedTitle,
+      coverImage: {
+        large: posterUrlFinal,
+        medium: posterUrlFinal,
+        _raw: poster,
+        _normalized: posterUrlFinal
+      },
+      format: this.mapSimklFormat(media.type || media.kind || 'tv', mediaType),
+      averageScore: media.rating ? Math.round((media.rating > 10 ? media.rating : media.rating * 10)) : null,
+      status: media.status ? media.status.toUpperCase() : null,
+      genres: media.genres || [],
+      episodes: episodes,
+      chapters: null,
+      isFavourite: false,
+      startDate: this.parseDate(media.first_aired),
+      endDate: this.parseDate(media.last_aired)
+    };
+  }
+
+  // FIXED: New comprehensive title extraction method
+  extractTitle(media, originalData) {
+    // Try multiple title field variations that Simkl uses
+    const titleCandidates = [
+      media.title,
+      media.name, 
+      media.en_title,
+      media.original_title,
+      media.title_en,
+      media.title_english,
+      originalData?.title,
+      originalData?.name,
+      originalData?.en_title,
+      originalData?.original_title
+    ];
+
+    // Find the first valid title
+    const primaryTitle = titleCandidates.find(title => 
+      title && typeof title === 'string' && title.trim() !== ''
+    ) || 'Unknown Title';
+
+    // For different title variants, try to extract English and native titles
+    const englishTitle = [
+      media.en_title,
+      media.title_en,
+      media.title_english,
+      originalData?.en_title,
+      originalData?.title_en,
+      originalData?.title_english,
+      primaryTitle // fallback to primary
+    ].find(title => title && typeof title === 'string' && title.trim() !== '') || primaryTitle;
+
+    const nativeTitle = [
+      media.original_title,
+      media.title_original,
+      originalData?.original_title,
+      originalData?.title_original,
+      primaryTitle // fallback to primary
+    ].find(title => title && typeof title === 'string' && title.trim() !== '') || primaryTitle;
+
+    // If we have different English and native titles, use them appropriately
+    let romajiTitle = primaryTitle;
+    
+    // If the primary title looks like it might be romanized (contains Latin characters)
+    // and we have a different native title, use the primary as romaji
+    if (primaryTitle !== nativeTitle && /[a-zA-Z]/.test(primaryTitle)) {
+      romajiTitle = primaryTitle;
+    } else {
+      romajiTitle = englishTitle;
+    }
+
+    console.log(`[Simkl] Title extraction - Primary: "${primaryTitle}", English: "${englishTitle}", Native: "${nativeTitle}", Romaji: "${romajiTitle}"`);
+
+    return {
+      romaji: romajiTitle,
+      english: englishTitle,
+      native: nativeTitle
+    };
+  }
+
+  // FIXED: Enhanced list entry transformation with proper movie handling
+  transformListEntry(simklEntry, mediaType) {
+    if (!simklEntry) return null;
+    
+    const show = simklEntry.show || simklEntry;
+    const statusRaw = simklEntry.status || simklEntry._status || show.status || null;
+
+    // Check if this is a movie
+    const isMovie = this.isMovieType(mediaType, show);
+
+    let progress = 0;
+    const watchedCandidates = [
+      simklEntry.watched_episodes_count,
+      simklEntry.watched_episodes,
+      simklEntry.episodes_watched,
+      show.watched_episodes_count,
+      show.watched_episodes
+    ];
+    
+    for (const w of watchedCandidates) {
+      if (w !== undefined && w !== null && w !== '') {
+        const n = Number(w);
+        if (!isNaN(n)) { 
+          progress = n; 
+          break; 
+        }
+      }
+    }
+
+    // FIXED: Movie-specific progress handling
+    if (isMovie) {
+      // For movies, progress is either 0 or 1
+      if (progress > 0) {
+        progress = 1;
+      } else {
+        // Check if status indicates movie was watched
+        const watchedStatuses = ['completed', 'watching'];
+        if (watchedStatuses.includes(String(statusRaw).toLowerCase())) {
+          progress = 1;
+        }
+      }
+    } else {
+      // Handle TV shows with seasons (existing logic)
+      if ((!progress || progress === 0) && typeof simklEntry.seasons_watched === 'number') {
+        const totalEpisodes = (simklEntry.total_episodes_count ?? show.total_episodes_count ?? show.total_episodes ?? show.episodes) || 0;
+        const totalSeasons = show.seasons || 1;
+        if (totalEpisodes && totalSeasons) {
+          const perSeason = totalEpisodes / totalSeasons;
+          progress = Math.floor(simklEntry.seasons_watched * perSeason);
+        }
+      }
+    }
+
+    const mergedShow = Object.assign({}, show, {
+      total_episodes_count: simklEntry.total_episodes_count ?? show.total_episodes_count ?? show.total_episodes,
+      total_episodes: simklEntry.total_episodes_count ?? show.total_episodes
+    });
+    
+    return {
+      id: null, 
+      status: this.mapSimklStatusToAniList(statusRaw),
+      score: simklEntry.user_rating ?? simklEntry.rating ?? show.rating ?? 0,
+      progress: progress || 0,
+      media: this.transformMedia(mergedShow, mediaType)
+    };
+  }
+
+  // FIXED: New helper method to properly detect movies
+  isMovieType(mediaType, mediaData) {
+    // First check the requested mediaType
+    if (mediaType) {
+      const upperType = String(mediaType).toUpperCase();
+      if (upperType === 'MOVIE' || upperType === 'MOVIES') {
+        return true;
+      }
     }
     
-    if (posterUrl) {
-      if (posterUrl.startsWith('//')) {
-        posterUrl = 'https:' + posterUrl;
-      } else if (posterUrl.startsWith('/')) {
-        posterUrl = 'https://simkl.in' + posterUrl;
-      } else if (!posterUrl.match(/^https?:\/\//i)) {
-        posterUrl = `https://simkl.in/posters/${posterUrl}_m.jpg`;
-      }
+    // Then check the media data itself
+    if (mediaData) {
+      const type = String(mediaData.type || mediaData.kind || '').toLowerCase();
+      return type === 'movie' || type === 'film' || type.includes('movie');
     }
+    
+    return false;
   }
-
-  if (!posterUrl && ids && ids.simkl) {
-    posterUrl = `https://simkl.in/posters/${ids.simkl}_m.jpg`;
-  }
-
-  const posterUrlFinal = posterUrl || null;
-
-  const episodes = (() => {
-    const candidates = [
-      media.total_episodes_count,
-      media.total_episodes,
-      media.episodes
-    ];
-    for (const cand of candidates) {
-      if (cand !== undefined && cand !== null && cand !== '') {
-        const n = Number(cand);
-        if (!isNaN(n)) return n;
-      }
-    }
-    return (String(media.type || '').toLowerCase() === 'movie') ? 1 : null;
-  })();
-  
-  return {
-    id: ids.simkl || ids.id || media.id,
-    title: {
-      romaji: media.title || 'Unknown Title',
-      english: media.title || 'Unknown Title',
-      native: media.title || 'Unknown Title'
-    },
-    coverImage: {
-      large: posterUrlFinal,
-      medium: posterUrlFinal,
-      _raw: poster,
-      _normalized: posterUrlFinal
-    },
-    format: this.mapSimklFormat((media.type || media.kind || 'tv')),
-    averageScore: media.rating ? Math.round((media.rating > 10 ? media.rating : media.rating * 10)) : null,
-    status: media.status ? media.status.toUpperCase() : null,
-    genres: media.genres || [],
-    episodes: episodes,
-    chapters: null,
-    isFavourite: false,
-    startDate: this.parseDate(media.first_aired),
-    endDate: this.parseDate(media.last_aired)
-  };
-}
-transformListEntry(simklEntry, mediaTypeHint) {
-  if (!simklEntry) return null;
-  
-  const show = simklEntry.show || simklEntry;
-  const statusRaw = simklEntry.status || simklEntry._status || show.status || null;
-
-  let progress = 0;
-  const watchedCandidates = [
-    simklEntry.watched_episodes_count,
-    simklEntry.watched_episodes,
-    simklEntry.episodes_watched,
-    show.watched_episodes_count,
-    show.watched_episodes
-  ];
-  
-  for (const w of watchedCandidates) {
-    if (w !== undefined && w !== null && w !== '') {
-      const n = Number(w);
-      if (!isNaN(n)) { 
-        progress = n; 
-        break; 
-      }
-    }
-  }
-
-  if ((!progress || progress === 0) && ((show.type || mediaTypeHint) && String(show.type || mediaTypeHint).toLowerCase().includes('movie'))) {
-    progress = (String(statusRaw).toLowerCase() === 'completed') ? 1 : (progress || 0);
-  }
-
-  if ((!progress || progress === 0) && typeof simklEntry.seasons_watched === 'number') {
-    const totalEpisodes = (simklEntry.total_episodes_count ?? show.total_episodes_count ?? show.total_episodes ?? show.episodes) || 0;
-    const totalSeasons = show.seasons || 1;
-    if (totalEpisodes && totalSeasons) {
-      const perSeason = totalEpisodes / totalSeasons;
-      progress = Math.floor(simklEntry.seasons_watched * perSeason);
-    }
-  }
-
-  const mergedShow = Object.assign({}, show, {
-    total_episodes_count: simklEntry.total_episodes_count ?? show.total_episodes_count ?? show.total_episodes,
-    total_episodes: simklEntry.total_episodes_count ?? show.total_episodes
-  });
-  
-  return {
-    id: null, 
-    status: this.mapSimklStatusToAniList(statusRaw),
-    score: simklEntry.user_rating ?? simklEntry.rating ?? show.rating ?? 0,
-    progress: progress || 0,
-    media: this.transformMedia(mergedShow)
-  };
-}
 
   // =================== UPDATE METHODS (Following MAL pattern) ===================
 
@@ -5380,6 +5526,33 @@ transformListEntry(simklEntry, mediaTypeHint) {
     }
     
     return payload;
+  }
+
+  // Remove media from user's Simkl list
+  async removeMediaListEntry(mediaId) {
+    this.validateMediaId(mediaId);
+    await this.ensureValidToken();
+
+    const payload = {
+      shows: [{ ids: { simkl: parseInt(mediaId) } }]
+    };
+
+    const requestParams = {
+      url: `${this.baseUrl}/sync/remove-from-list`,
+      method: 'POST',
+      headers: this.getHeaders({ type: 'update' }),
+      body: JSON.stringify(payload),
+      priority: 'high'
+    };
+
+    try {
+      await this.makeRequest(requestParams);
+      this.cache.invalidateByMedia(mediaId);
+      this.cache.invalidateScope('userData');
+    } catch (error) {
+      console.error('[Simkl] Remove failed:', error);
+      throw this.createUserFriendlyError(error);
+    }
   }
 
   // =================== AUTH METHODS (Following MAL pattern) ===================
@@ -5484,18 +5657,35 @@ transformListEntry(simklEntry, mediaTypeHint) {
     return this.simklToAniListStatus[status] || status?.toUpperCase();
   }
 
-  mapSimklFormat(type) {
-    if (!type) return 'TV';
+  // FIXED: Enhanced format mapping with mediaType context
+  mapSimklFormat(type, mediaType) {
+    if (!type) {
+      // Use mediaType as fallback
+      if (mediaType) {
+        const upperType = String(mediaType).toUpperCase();
+        if (upperType === 'MOVIE' || upperType === 'MOVIES') return 'MOVIE';
+        if (upperType === 'TV') return 'TV';
+        if (upperType === 'ANIME') return 'TV';
+      }
+      return 'TV';
+    }
     
     const formatMap = {
       'tv': 'TV',
       'movie': 'MOVIE',
+      'film': 'MOVIE',
       'special': 'SPECIAL',
       'ova': 'OVA',
       'ona': 'ONA',
       'anime': 'TV'
     };
-    return formatMap[type.toLowerCase()] || 'TV';
+    
+    const lowerType = String(type).toLowerCase();
+    if (lowerType.includes('movie') || lowerType.includes('film')) {
+      return 'MOVIE';
+    }
+    
+    return formatMap[lowerType] || 'TV';
   }
 
   parseDate(dateString) {
@@ -5587,8 +5777,15 @@ transformListEntry(simklEntry, mediaTypeHint) {
     try {
       this.validateMediaId(mediaId);
       const typeUpper = (mediaType || 'ANIME').toString().toUpperCase();
-const segment = typeUpper === 'ANIME' ? 'anime' : (typeUpper === 'MOVIE' || typeUpper === 'MOVIES') ? 'movies' : 'tv';
-return `https://simkl.com/${segment}/${mediaId}`;
+      
+      let segment = 'tv'; // default
+      if (typeUpper === 'ANIME') {
+        segment = 'anime';
+      } else if (typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper.includes('MOVIE')) {
+        segment = 'movies';
+      }
+      
+      return `https://simkl.com/${segment}/${mediaId}`;
     } catch (error) {
       throw error;
     }
@@ -5646,12 +5843,116 @@ return `https://simkl.com/${segment}/${mediaId}`;
     return { ...this.metrics };
   }
 
+  // Fetch entries for computing distributions
+  async fetchUserListEntries(mediaType = 'ANIME') {
+    const resp = await this.fetchSimklData({ type: 'list', mediaType });
+    const entries = resp?.MediaListCollection?.lists?.flatMap(l => l.entries) || [];
+    return entries;
+  }
+
+  // Compute distributions from entries (replicated from MAL logic for parity)
+  aggregateDistributionsFromEntries(entries, typeLower) {
+    const result = {
+      statuses: [],
+      scores: [],
+      formats: [],
+      releaseYears: [],
+      genres: []
+    };
+  
+    const statusCounts = new Map();
+    const scoreCounts = new Map();
+    const formatCounts = new Map();
+    const yearCounts = new Map();
+    const genreSet = new Set();
+  
+    for (const entry of entries) {
+      const status = entry?.status;
+      if (status) {
+        statusCounts.set(status, (statusCounts.get(status) || 0) + 1);
+      }
+  
+      const rawScore = entry?.score;
+      if (typeof rawScore === 'number' && rawScore > 0) {
+        const scaled = Math.round(rawScore * 10);
+        scoreCounts.set(scaled, (scoreCounts.get(scaled) || 0) + 1);
+      }
+  
+      const format = entry?.media?.format;
+      if (format) {
+        formatCounts.set(format, (formatCounts.get(format) || 0) + 1);
+      }
+  
+      const year = entry?.media?.startDate?.year;
+      if (typeof year === 'number' && year > 0) {
+        yearCounts.set(year, (yearCounts.get(year) || 0) + 1);
+      }
+  
+      const genres = entry?.media?.genres || [];
+      for (const g of genres) {
+        if (typeof g === 'string' && g.trim()) genreSet.add(g);
+      }
+    }
+  
+    result.statuses = Array.from(statusCounts.entries())
+      .map(([status, count]) => ({ status, count }))
+      .sort((a, b) => b.count - a.count);
+  
+    result.scores = Array.from(scoreCounts.entries())
+      .map(([score, count]) => ({ score, count }))
+      .sort((a, b) => a.score - b.score);
+  
+    result.formats = Array.from(formatCounts.entries())
+      .map(([format, count]) => ({ format, count }))
+      .sort((a, b) => b.count - a.count);
+  
+    result.releaseYears = Array.from(yearCounts.entries())
+      .map(([releaseYear, count]) => ({ releaseYear, count }))
+      .sort((a, b) => b.releaseYear - a.releaseYear);
+  
+    result.genres = Array.from(genreSet);
+  
+    return result;
+  }
+
+  async attachSimklDistributions(user) {
+    try {
+      const animeEntries = await this.fetchUserListEntries('ANIME');
+      const animeAgg = this.aggregateDistributionsFromEntries(animeEntries, 'anime');
+
+      if (user?.statistics?.anime) {
+        Object.assign(user.statistics.anime, animeAgg);
+      }
+
+      // Apply fallback values similar to MAL implementation
+      const applyFallbacks = (entries, statsObj) => {
+        if (!statsObj) return;
+        if (!statsObj.count || statsObj.count === 0) {
+          statsObj.count = Array.isArray(entries) ? entries.length : 0;
+        }
+        if ((!statsObj.meanScore || statsObj.meanScore === 0) && Array.isArray(entries) && entries.length) {
+          const rated = entries.filter(e => typeof e.score === 'number' && e.score > 0);
+          if (rated.length) {
+            const avg10 = rated.reduce((sum, e) => sum + e.score, 0) / rated.length;
+            statsObj.meanScore = Math.round(avg10 * 10) / 10;
+          }
+        }
+      };
+
+      applyFallbacks(animeEntries, user?.statistics?.anime);
+
+    } catch (err) {
+      console.warn('[Simkl] attachSimklDistributions failed:', err);
+    }
+  }
+
   // =================== MEDIA TYPE DETECTION (Following MAL pattern) ===================
 
   async getMediaType(mediaId) {
-    // Simkl primarily deals with anime/TV shows
-    // We'll default to anime since that's most common
-    return 'anime';
+    // For Simkl, we need to determine if it's anime, TV, or movie
+    // Since we don't have a direct way to detect this from ID alone,
+    // we'll need to search across different types or use context
+    return 'anime'; // Default fallback
   }
 
   // =================== DEBUGGING (Simplified) ===================
@@ -9378,7 +9679,6 @@ class SupportEditModal {
     }
   }
 }
-
 class ConnectedNotes {
   constructor(plugin) {
     this.plugin = plugin;
@@ -9764,7 +10064,6 @@ class ConnectedNotes {
     return false;
   }
 }
-
   /**
    * Show connected notes in a single dedicated side panel
    */
@@ -11039,6 +11338,74 @@ class Trending {
     }
   }
 
+  // Fetch Simkl trending (popular) items
+  async fetchSimklTrending(mediaType = 'ANIME', limit = 20) {
+    const typeLower = mediaType.toLowerCase();
+    const cacheKey = this.getTrendingCacheKey('simkl', mediaType, limit);
+
+    const cached = this.plugin.cache.get(cacheKey, {
+      scope: 'mediaData',
+      source: 'simkl'
+    });
+    if (cached) return cached;
+
+    const category = typeLower === 'anime' ? 'anime' : 'tv';
+    const url = `https://api.simkl.com/lists/${category}/trending?limit=${limit}`;
+
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'Accept': 'application/json',
+          'simkl-api-key': this.plugin.settings.simklClientId || ''
+        }
+      });
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[Trending] Simkl error response:', errorText);
+        throw new Error(`Simkl API error: ${response.status} - ${errorText}`);
+      }
+      const data = await response.json();
+      const items = Array.isArray(data) ? data : [];
+
+      const normalized = items
+        .map(item => this.plugin.simklApi.transformMedia(item))
+        .filter(Boolean)
+        .map(media => ({
+          id: media.id,
+          title: media.title,
+          coverImage: media.coverImage,
+          format: media.format,
+          averageScore: media.averageScore,
+          genres: media.genres,
+          episodes: media.episodes,
+          status: media.status,
+          _zoroMeta: {
+            source: 'simkl',
+            mediaType: mediaType.toUpperCase(),
+            fetchedAt: Date.now()
+          }
+        }));
+
+      this.plugin.cache.set(cacheKey, normalized, {
+        scope: 'mediaData',
+        source: 'simkl',
+        ttl: 24 * 60 * 60 * 1000,
+        tags: ['trending', category, 'simkl']
+      });
+
+      return normalized;
+    } catch (error) {
+      console.error('[Trending] Simkl fetch failed:', error);
+      const staleData = this.plugin.cache.get(cacheKey, {
+        scope: 'mediaData',
+        source: 'simkl',
+        ttl: Infinity
+      });
+      if (staleData) return staleData;
+      throw error;
+    }
+  }
+
   async fetchJikanTrending(mediaType = 'anime', limit = 20) {
     const type = mediaType.toLowerCase();
     const cacheKey = this.getTrendingCacheKey('mal', mediaType, limit);
@@ -11145,6 +11512,8 @@ class Trending {
     switch (source) {
       case 'mal':
         return await this.fetchJikanTrending(mediaType, limit);
+      case 'simkl':
+        return await this.fetchSimklTrending(mediaType, limit);
       case 'anilist':
       default:
         return await this.fetchAniListTrending(mediaType, limit);
@@ -12073,7 +12442,6 @@ class SimklAuthentication {
     return this.plugin.settings.simklUserInfo; 
   }
 }
-
 class SimklPinModal extends Modal {
   constructor(app, deviceData, onCancel) {
     super(app);

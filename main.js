@@ -14920,7 +14920,7 @@ class ZoroSettingTab extends PluginSettingTab {
       .setDesc(this.plugin.manifest.version);
     new Setting(About)
       .setName('Privacy')
-      .setDesc('Zoro only talks to the AniList API to fetch & update your media data. Nothing else is sent or shared—your data stays local.');
+      .setDesc('Zoro only talks to the APIs to fetch & update your media data. Nothing else is sent or shared—your data stays local.');
 
     new Setting(About)
       .setName('GitHub')

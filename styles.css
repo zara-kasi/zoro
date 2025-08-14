@@ -1743,6 +1743,43 @@ transparent 70%
   transform: translateY(0);
 }
 
+.url-input-container {
+  display: flex;
+  position: relative;
+  align-items: center;
+}
+
+.custom-url-input {
+  flex: 1;
+  padding-right: 35px; /* Space for the remove button */
+}
+
+.url-remove-button-inside {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-60%);
+  background: transparent !important;
+  border: none;
+  width: 0px;
+  height: 0px;
+  color: var(--panel-text-primary);
+  font-size: 20px;
+  font-weight: normal;
+  cursor: pointer;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+
+}
+
+.url-remove-button-inside:hover {
+  background: var(--panel-button-hover);
+  transform: scale(1.1);
+}
+
 /* Synopsis section */
 .synopsis-content {
   color: var(--panel-text-secondary);

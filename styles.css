@@ -1969,7 +1969,6 @@ The panel will automatically adapt to the user's system theme preference:
   max-height: 80vh;
   max-width: 90vw;
   width: 600px;
-  user-select: text !important;
 }
 
 

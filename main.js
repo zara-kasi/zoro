@@ -42,8 +42,8 @@ simklAccessToken: '',
 simklUserInfo: null,
   debugMode: false,
   customSearchUrls: {
-    ANIME: 'https://www.crunchyroll.com/search?q=,https://www.netflix.com/search?q=',
-    MANGA: 'https://mangaplus.shueisha.co.jp/search_result?keyword=,https://www.viz.com/search?search='
+    ANIME: [],
+    MANGA: []
   },
 };
 
@@ -6603,9 +6603,11 @@ this.emojiMapper.init({ patchSettings:true, patchCreateEl:true, patchNotice:true
     simklUserInfo: settings?.simklUserInfo === null || typeof settings?.simklUserInfo === 'object' ? settings.simklUserInfo : null,
     debugMode: typeof settings?.debugMode === 'boolean' ? settings.debugMode : false,
     customSearchUrls: {
-      ANIME: typeof settings?.customSearchUrls?.ANIME === 'string' ? settings.customSearchUrls.ANIME : 'https://www.crunchyroll.com/search?q=,https://www.netflix.com/search?q=',
-      MANGA: typeof settings?.customSearchUrls?.MANGA === 'string' ? settings.customSearchUrls.MANGA : 'https://mangaplus.shueisha.co.jp/search_result?keyword=,https://www.viz.com/search?search='
-    },
+  ANIME: Array.isArray(settings?.customSearchUrls?.ANIME) ? 
+    settings.customSearchUrls.ANIME.filter(url => typeof url === 'string' && url.trim() !== '') : [],
+  MANGA: Array.isArray(settings?.customSearchUrls?.MANGA) ? 
+    settings.customSearchUrls.MANGA.filter(url => typeof url === 'string' && url.trim() !== '') : []
+},
   };
 }
 
@@ -11347,10 +11349,145 @@ class OpenDetailPanel {
     }
   }
 }
+class CustomExternalURL {
+  constructor(plugin) {
+    this.plugin = plugin;
+  }
+
+  // Auto-format URL - removes everything after equals sign
+  formatSearchUrl(url) {
+    if (!url || !url.trim()) return '';
+    
+    const trimmedUrl = url.trim();
+    const equalsIndex = trimmedUrl.indexOf('=');
+    
+    if (equalsIndex !== -1) {
+      return trimmedUrl.substring(0, equalsIndex + 1);
+    }
+    
+    // If no equals sign, add common search parameter
+    if (trimmedUrl.includes('?')) {
+      return trimmedUrl + (trimmedUrl.endsWith('?') ? 'q=' : '&q=');
+    } else {
+      return trimmedUrl + '?q=';
+    }
+  }
+
+  // Validate if URL has proper search format
+  isValidSearchUrl(url) {
+    if (!url || !url.trim()) return false;
+    
+    try {
+      new URL(url);
+      return url.includes('=');
+    } catch (e) {
+      return false;
+    }
+  }
+
+  // Extract clean domain name for button text
+  extractDomainName(url) {
+    try {
+      const urlObj = new URL(url);
+      let domain = urlObj.hostname;
+      domain = domain.replace(/^www\./, '');
+      const parts = domain.split('.');
+      if (parts.length >= 2) {
+        domain = parts[parts.length - 2];
+      }
+      return domain.charAt(0).toUpperCase() + domain.slice(1).toLowerCase();
+    } catch (e) {
+      return 'Search';
+    }
+  }
+
+  // Get best title from media object
+  getBestTitle(media) {
+    return media.title?.english || 
+           media.title?.romaji || 
+           media.title?.native || 
+           'Unknown Title';
+  }
+
+  // Build search URL with encoded title
+  buildSearchUrl(template, title) {
+    try {
+      const encodedTitle = encodeURIComponent(title);
+      return template + encodedTitle;
+    } catch (e) {
+      return template + title.replace(/[^a-zA-Z0-9\s]/g, '').replace(/\s+/g, '+');
+    }
+  }
+
+  // Add new URL to settings
+  async addUrl(mediaType, url = '') {
+    if (!this.plugin.settings.customSearchUrls[mediaType]) {
+      this.plugin.settings.customSearchUrls[mediaType] = [];
+    }
+    
+    const formattedUrl = this.formatSearchUrl(url);
+    this.plugin.settings.customSearchUrls[mediaType].push(formattedUrl);
+    await this.plugin.saveSettings();
+    return formattedUrl;
+  }
+
+  // Remove URL from settings
+  async removeUrl(mediaType, index) {
+    if (this.plugin.settings.customSearchUrls[mediaType]) {
+      this.plugin.settings.customSearchUrls[mediaType].splice(index, 1);
+      await this.plugin.saveSettings();
+    }
+  }
+
+  // Update URL in settings
+  async updateUrl(mediaType, index, newUrl) {
+    if (this.plugin.settings.customSearchUrls[mediaType] && 
+        this.plugin.settings.customSearchUrls[mediaType][index] !== undefined) {
+      const formattedUrl = this.formatSearchUrl(newUrl);
+      this.plugin.settings.customSearchUrls[mediaType][index] = formattedUrl;
+      await this.plugin.saveSettings();
+      return formattedUrl;
+    }
+  }
+
+  // Get URLs for specific media type
+  getUrls(mediaType) {
+    return this.plugin.settings.customSearchUrls?.[mediaType] || [];
+  }
+
+  // Create search buttons for panel
+  createSearchButtons(media, container) {
+    const customUrls = this.getUrls(media.type);
+    if (!customUrls || customUrls.length === 0) return;
+
+    const mediaTitle = this.getBestTitle(media);
+    
+    customUrls.forEach(url => {
+      if (url && url.trim() !== '') {
+        const domainName = this.extractDomainName(url);
+        const searchBtn = document.createElement('button');
+        searchBtn.className = 'external-link-btn zoro-custom-external-btn';
+        searchBtn.innerHTML = `🔍 ${domainName}`;
+        searchBtn.onclick = (e) => {
+          e.stopPropagation();
+          try {
+            const searchUrl = this.buildSearchUrl(url, mediaTitle);
+            window.open(searchUrl, '_blank');
+          } catch (error) {
+            console.error('Failed to open search URL:', error);
+          }
+        };
+        container.appendChild(searchBtn);
+      }
+    });
+  }
+}
 class MoreDetailsPanel {
   constructor(plugin) {
     this.plugin = plugin;
     this.openDetailPanel = new OpenDetailPanel(plugin);
+       this.customExternalURL = new CustomExternalURL(plugin);
+  
   }
 
   async showPanel(media, entry = null, triggerElement) {
@@ -11714,8 +11851,7 @@ class RenderDetailPanel {
 
     return section;
   }
-
-  createExternalLinksSection(media) {
+createExternalLinksSection(media) {
   const section = document.createElement('div');
   section.className = 'panel-section external-links-section';
 
@@ -11737,6 +11873,7 @@ class RenderDetailPanel {
     window.open(url, '_blank');
   };
   linksContainer.appendChild(anilistBtn);
+
   // Existing MAL button
   if (media.idMal) {
     const malBtn = document.createElement('button');
@@ -11750,34 +11887,12 @@ class RenderDetailPanel {
     linksContainer.appendChild(malBtn);
   }
 
-  // NEW: Custom Search Buttons
-  const customUrls = this.plugin.settings.customSearchUrls?.[media.type];
-  if (customUrls) {
-    const urls = this.parseSearchUrls(customUrls);
-    const title = this.getBestTitle(media);
-    
-    urls.forEach(url => {
-      const domainName = this.extractDomainName(url);
-      const searchBtn = document.createElement('button');
-      searchBtn.className = 'external-link-btn zoro-custom-external-btn';
-      searchBtn.innerHTML = `🔍 ${domainName}`;
-      searchBtn.onclick = (e) => {
-        e.stopPropagation();
-        try {
-          const searchUrl = this.buildSearchUrl(url, title);
-          window.open(searchUrl, '_blank');
-        } catch (error) {
-          new Notice(`Failed to open search URL: ${error.message}`, 3000);
-        }
-      };
-      linksContainer.appendChild(searchBtn);
-    });
-  }
+  // NEW: Custom Search Buttons using the CustomExternalURL class
+  this.plugin.moreDetailsPanel.customExternalURL.createSearchButtons(media, linksContainer);
 
   section.appendChild(linksContainer);
   return section;
 }
-
   
   extractDomainName(url) {
   try {
@@ -14949,42 +15064,36 @@ class ZoroSettingTab extends PluginSettingTab {
           this.updateGridColumns(value);
         }));
         
-    
-    new Setting(More)
+new Setting(More)
   .setName('🔍 Quick External Search')
   .setDesc('Adds a external link button on more details panel that instantly takes you to the media on any site you configure.')
-  .addText(text => text
-    .setPlaceholder('Anime Search URLs')
-    .setValue(this.plugin.settings.customSearchUrls?.ANIME || '')
-    .onChange(async (value) => {
-      const cleanValue = value.trim();
-      const validationResult = this.validateSearchUrls(cleanValue);
-      
-      if (validationResult.isValid || cleanValue === '') {
-        this.plugin.settings.customSearchUrls = this.plugin.settings.customSearchUrls || {};
-        this.plugin.settings.customSearchUrls.ANIME = cleanValue;
-        await this.plugin.saveSettings();
-      } else {
-        new Notice(`Invalid anime search URL: ${validationResult.error}`, 5000);
-      }
+  .addButton(button => button
+    .setButtonText('Add Anime URL')
+    .setClass('mod-cta')
+    .onClick(async () => {
+      await this.plugin.moreDetailsPanel.customExternalURL.addUrl('ANIME');
+      this.refreshCustomUrlSettings();
     }));
-    
-      new Setting(More)
-  .addText(text => text
-    .setPlaceholder('Manga Search URLs')
-    .setValue(this.plugin.settings.customSearchUrls?.MANGA || '')
-    .onChange(async (value) => {
-      const cleanValue = value.trim();
-      const validationResult = this.validateSearchUrls(cleanValue);
-      
-      if (validationResult.isValid || cleanValue === '') {
-        this.plugin.settings.customSearchUrls = this.plugin.settings.customSearchUrls || {};
-        this.plugin.settings.customSearchUrls.MANGA = cleanValue;
-        await this.plugin.saveSettings();
-      } else {
-        new Notice(`Invalid manga search URL: ${validationResult.error}`, 5000);
-      }
+
+// Create container for anime URLs
+const animeUrlContainer = More.createDiv('custom-url-container');
+animeUrlContainer.setAttribute('data-media-type', 'ANIME');
+this.renderCustomUrls(animeUrlContainer, 'ANIME');
+
+new Setting(More)
+  .addButton(button => button
+    .setButtonText('Add Manga URL')
+    .setClass('mod-cta')
+    .onClick(async () => {
+      await this.plugin.moreDetailsPanel.customExternalURL.addUrl('MANGA');
+      this.refreshCustomUrlSettings();
     }));
+
+// Create container for manga URLs
+const mangaUrlContainer = More.createDiv('custom-url-container');
+mangaUrlContainer.setAttribute('data-media-type', 'MANGA');
+this.renderCustomUrls(mangaUrlContainer, 'MANGA');
+      
         
         new Setting(More)
       .setName('⏳ Loading Icon')
@@ -15433,35 +15542,71 @@ class ZoroSettingTab extends PluginSettingTab {
   });
 }
 
-validateSearchUrls(urlString) {
-  if (!urlString || urlString.trim() === '') {
-    return { isValid: true };
-  }
-
-  const urls = urlString.split(',').map(url => url.trim()).filter(url => url.length > 0);
+renderCustomUrls(container, mediaType) {
+  container.empty();
+  const urls = this.plugin.settings.customSearchUrls?.[mediaType] || [];
   
-  for (const url of urls) {
-    try {
-      const urlObj = new URL(url);
-      
-      // Check if URL has search parameters and ends with =
-      const searchParams = ['?q=', '?search=', '?query=', '?keyword=', '?s='];
-      const hasValidSearchParam = searchParams.some(param => url.includes(param));
-      
-      if (!hasValidSearchParam || !url.endsWith('=')) {
-        return { 
-          isValid: false, 
-          error: `URL must contain a search parameter (?q=, ?search=, etc.) and end with = - ${url}` 
-        };
-      }
-    } catch (e) {
-      return { 
-        isValid: false, 
-        error: `Invalid URL format - ${url}` 
-      };
+  urls.forEach((url, index) => {
+    this.createUrlSetting(container, mediaType, url, index);
+  });
+}
+
+createUrlSetting(container, mediaType, url, index) {
+  const urlDiv = container.createDiv('url-setting-item');
+  
+  // Input container with flexbox layout
+  const inputContainer = urlDiv.createDiv('url-input-container');
+  
+  const input = inputContainer.createEl('input', {
+    type: 'text',
+    placeholder: 'https://example.com/search?q=',
+    value: url,
+    cls: 'custom-url-input'
+  });
+  
+  // Remove button inside the input container
+  const removeBtn = inputContainer.createEl('button', {
+    text: '×',
+    cls: 'url-remove-button-inside'
+  });
+  
+  // Auto-format on input
+  input.addEventListener('input', async (e) => {
+    const newValue = e.target.value;
+    const formatted = this.plugin.moreDetailsPanel.customExternalURL.formatSearchUrl(newValue);
+    const updated = await this.plugin.moreDetailsPanel.customExternalURL.updateUrl(mediaType, index, newValue);
+    
+    // Show formatted URL as placeholder if different
+    if (formatted !== newValue && formatted) {
+      input.title = `Auto-formatted: ${formatted}`;
     }
+  });
+  
+  removeBtn.addEventListener('click', async () => {
+    await this.plugin.moreDetailsPanel.customExternalURL.removeUrl(mediaType, index);
+    this.refreshCustomUrlSettings();
+  });
+  
+  // Preview domain name
+  if (url && url.trim()) {
+    const preview = urlDiv.createDiv('url-preview');
+    const domainName = this.plugin.moreDetailsPanel.customExternalURL.extractDomainName(url);
+    preview.textContent = `Preview: ${domainName}`;
   }
-  return { isValid: true };
+}
+
+refreshCustomUrlSettings() {
+  // Refresh anime URLs
+  const animeContainer = this.containerEl.querySelector('[data-media-type="ANIME"]');
+  if (animeContainer) {
+    this.renderCustomUrls(animeContainer, 'ANIME');
+  }
+  
+  // Refresh manga URLs  
+  const mangaContainer = this.containerEl.querySelector('[data-media-type="MANGA"]');
+  if (mangaContainer) {
+    this.renderCustomUrls(mangaContainer, 'MANGA');
+  }
 }
 }
 

@@ -11196,10 +11196,19 @@ class DetailPanelSource {
         throw new Error(`Could not convert MAL ID ${mediaId} to AniList ID`);
       }
       targetId = conversionResult.id;
-      this._noticeCache = this._noticeCache || { malConversion: new Set(), missingMalId: new Set() };
-      if (!this._noticeCache.malConversion.has(String(mediaId))) {
-        try { new Notice('Using AniList data via MAL→AniList ID conversion'); } catch {}
-        this._noticeCache.malConversion.add(String(mediaId));
+    } else if (source === 'simkl' && resolvedMediaType === 'ANIME') {
+      // For Simkl anime entries, use the exact same mechanism as MAL entries
+      if (typeof entryOrSource === 'object' && entryOrSource?.media?.idMal) {
+        originalMalId = entryOrSource.media.idMal;
+        const conversionResult = await this.convertMalToAnilistId(entryOrSource.media.idMal, resolvedMediaType);
+        if (!conversionResult || !conversionResult.id) {
+          throw new Error(`Could not convert MAL ID ${entryOrSource.media.idMal} to AniList ID for Simkl anime`);
+        }
+        targetId = conversionResult.id;
+      } else {
+        // If no MAL ID found, just return null without showing annoying notice
+        console.log('[DetailPanel] Simkl anime entry missing MAL ID, skipping detailed data');
+        return null;
       }
     }
 
@@ -11275,15 +11284,15 @@ class DetailPanelSource {
     }
 
     try {
-      const detailedMedia = await this.fetchDetailedData(mediaId, source, mediaType);
-      const malId = source === 'mal' ? (detailedMedia.originalMalId || mediaId) : detailedMedia.idMal;
-      if (!malId && source !== 'mal') {
-        this._noticeCache = this._noticeCache || { malConversion: new Set(), missingMalId: new Set() };
-        if (!this._noticeCache.missingMalId.has(String(detailedMedia.id))) {
-          try { new Notice('No MAL ID mapping found on AniList for this title'); } catch {}
-          this._noticeCache.missingMalId.add(String(detailedMedia.id));
-        }
+      const detailedMedia = await this.fetchDetailedData(mediaId, entryOrSource, mediaType);
+      
+      // Handle case where fetchDetailedData returns null (e.g., Simkl anime without MAL ID)
+      if (!detailedMedia) {
+        console.log('[DetailPanel] No detailed data available for this entry');
+        return;
       }
+      
+      const malId = source === 'mal' ? (detailedMedia.originalMalId || mediaId) : detailedMedia.idMal;
       let malDataPromise = null;
       if (malId) malDataPromise = this.fetchMALData(malId, detailedMedia.type);
       if (this.hasMoreData(detailedMedia)) callback(detailedMedia, null);
@@ -11595,6 +11604,15 @@ class RenderDetailPanel {
       if (existingStats) {
         const newStats = this.createStatisticsSection(media, malData);
         content.replaceChild(newStats, existingStats);
+      } else {
+        // Add statistics section if it doesn't exist (for Simkl entries)
+        const newStats = this.createStatisticsSection(media, malData);
+        const synopsisSection = content.querySelector('.synopsis-section');
+        if (synopsisSection) {
+          content.insertBefore(newStats, synopsisSection);
+        } else {
+          content.appendChild(newStats);
+        }
       }
     }
   }

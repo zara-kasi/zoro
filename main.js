@@ -5483,7 +5483,7 @@ getSimklMediaType(mediaType) {
   media.type || media.kind || originalData.type || (mediaType || '').toString().toLowerCase(),
   mediaType
 ),
-      averageScore: media.rating ? Math.round((media.rating > 10 ? media.rating : media.rating * 10)) : null,
+      averageScore: null, // Simkl ratings not needed for detail panel
       status: media.status ? media.status.toUpperCase() : null,
       genres: genres,
       episodes: episodes,
@@ -5491,6 +5491,10 @@ getSimklMediaType(mediaType) {
       isFavourite: false,
       startDate: this.parseDate(media.first_aired || originalData.first_aired),
       endDate: this.parseDate(media.last_aired || originalData.last_aired),
+      // Simkl does not provide airing data in their API
+      nextAiringEpisode: null,
+      // Map Simkl overview to description for detail panel
+      description: media.overview || originalData.overview || null,
       // FIXED: Add movie-specific metadata for rendering
       _isMovie: isMovie,
       _mediaType: mediaType,
@@ -5568,6 +5572,8 @@ getSimklMediaType(mediaType) {
     
     return posterUrl;
   }
+
+
 
   // FIXED: Enhanced genres extraction method
   extractGenres(media, originalData) {
@@ -11205,11 +11211,33 @@ class DetailPanelSource {
           throw new Error(`Could not convert MAL ID ${entryOrSource.media.idMal} to AniList ID for Simkl anime`);
         }
         targetId = conversionResult.id;
-      } else {
-        // If no MAL ID found, just return null without showing annoying notice
-        console.log('[DetailPanel] Simkl anime entry missing MAL ID, skipping detailed data');
-        return null;
-      }
+              } else {
+          // If no MAL ID found, just return null without showing annoying notice
+          return null;
+        }
+    } else if (source === 'simkl' && (resolvedMediaType === 'MOVIE' || resolvedMediaType === 'TV')) {
+      // For Simkl movies and TV shows, fetch detailed data from Simkl API
+      if (typeof entryOrSource === 'object' && entryOrSource?.media?.id) {
+        const detailedSimklData = await this.fetchSimklDetailedData(entryOrSource.media.id, resolvedMediaType);
+        if (detailedSimklData) {
+          // Merge the detailed data with the original media data
+          return {
+            ...entryOrSource.media,
+            ...detailedSimklData,
+            // Ensure we keep the original ID and other essential fields
+            id: entryOrSource.media.id,
+            idImdb: entryOrSource.media.idImdb || detailedSimklData.ids?.imdb || null,
+            // Map Simkl overview to description
+            description: detailedSimklData.overview || entryOrSource.media.overview || null,
+            // Simkl does not provide airing data in their API
+            nextAiringEpisode: null
+          };
+        }
+        // Fallback to original media data if detailed fetch fails
+        return entryOrSource.media;
+              } else {
+          return null;
+        }
     }
 
     const stableCacheKey = this.plugin.cache.structuredKey('details', 'stable', targetId);
@@ -11251,17 +11279,157 @@ class DetailPanelSource {
 
   async fetchMALData(malId, mediaType) {
     if (!malId) return null;
-    const cacheKey = this.plugin.cache.structuredKey('mal', 'details', `${malId}_${mediaType}`);
-    const cached = this.plugin.cache.get(cacheKey, { scope: 'mediaData', source: 'mal' });
-    if (cached) return cached;
+    
+    // Use stable/dynamic caching system like AniList
+    const stableCacheKey = this.plugin.cache.structuredKey('mal', 'stable', `${malId}_${mediaType}`);
+    const dynamicCacheKey = this.plugin.cache.structuredKey('mal', 'airing', `${malId}_${mediaType}`);
+    
+    let stableData = this.plugin.cache.get(stableCacheKey, { scope: 'mediaData', source: 'mal' });
+    let airingData = this.plugin.cache.get(dynamicCacheKey, { scope: 'mediaData', source: 'mal' });
+    
+    if (stableData) {
+      const combinedData = { ...stableData };
+      if (airingData?.nextAiringEpisode) combinedData.nextAiringEpisode = airingData.nextAiringEpisode;
+      return combinedData;
+    }
 
     try {
       const type = mediaType === 'MANGA' ? 'manga' : 'anime';
       const response = await fetch(`https://api.jikan.moe/v4/${type}/${malId}`);
       if (!response.ok) throw new Error(`Jikan API error: ${response.status}`);
       const data = (await response.json())?.data;
-      this.plugin.cache.set(cacheKey, data, { scope: 'mediaData', source: 'mal', ttl: 7 * 24 * 60 * 60 * 1000, tags: ['mal', 'details', type] });
-      return data;
+      
+      if (data) {
+        // Separate stable and dynamic data
+        const { nextAiringEpisode, ...stableDataOnly } = data;
+        
+        // Cache stable data for 30 days (synopsis, ratings, genres, etc.)
+        this.plugin.cache.set(stableCacheKey, stableDataOnly, { 
+          scope: 'mediaData', 
+          source: 'mal', 
+          ttl: 30 * 24 * 60 * 60 * 1000, 
+          tags: ['mal', 'details', 'stable', type] 
+        });
+        
+        // Cache airing data for 1 hour (changes frequently)
+        if (nextAiringEpisode) {
+          this.plugin.cache.set(dynamicCacheKey, { nextAiringEpisode }, { 
+            scope: 'mediaData', 
+            source: 'mal', 
+            ttl: 60 * 60 * 1000, 
+            tags: ['mal', 'details', 'airing', type] 
+          });
+        }
+        
+        return data;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+  async fetchSimklDetailedData(simklId, mediaType) {
+    if (!simklId) return null;
+    
+    // Use stable caching system (Simkl doesn't have airing data)
+    const stableCacheKey = this.plugin.cache.structuredKey('simkl', 'stable', `${simklId}_${mediaType}`);
+    const cached = this.plugin.cache.get(stableCacheKey, { scope: 'mediaData', source: 'simkl' });
+    if (cached) return cached;
+
+    try {
+      // Use correct Simkl API endpoints for detailed data
+      const endpoint = mediaType === 'MOVIE' ? 'movies' : 'tv';
+      const url = `https://api.simkl.com/${endpoint}/${simklId}?extended=full&client_id=${this.plugin.settings.simklClientId}`;
+      
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Simkl API error: ${response.status}`);
+      const data = await response.json();
+      
+      if (data) {
+        // Simkl does not provide airing data in their API
+        // Remove any next_episode field if it exists (it shouldn't)
+        if (data.next_episode) {
+          delete data.next_episode;
+        }
+        
+        // Cache stable data for 30 days (synopsis, genres, etc.)
+        this.plugin.cache.set(stableCacheKey, data, { 
+          scope: 'mediaData', 
+          source: 'simkl', 
+          ttl: 30 * 24 * 60 * 60 * 1000, 
+          tags: ['simkl', 'details', 'stable', endpoint] 
+        });
+        
+        return data;
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
+
+
+
+
+  async fetchIMDBData(imdbId, mediaType, simklData = null) {
+    if (!imdbId) return null;
+    
+    // First, check if Simkl already provides IMDB rating data
+    if (simklData && simklData._rawData) {
+      const rawData = simklData._rawData;
+      // Check if Simkl provides IMDB rating data directly
+      if (rawData.imdb_rating || rawData.imdb_score || rawData.imdb_votes) {
+        const imdbData = {
+          score: rawData.imdb_rating || rawData.imdb_score || null,
+          scored_by: rawData.imdb_votes || null,
+          rank: null,
+          imdbID: imdbId
+        };
+        return imdbData;
+      }
+    }
+    
+    // Fallback to OMDB API if Simkl doesn't provide IMDB rating data
+    const stableCacheKey = this.plugin.cache.structuredKey('imdb', 'stable', `${imdbId}_${mediaType}`);
+    const cached = this.plugin.cache.get(stableCacheKey, { scope: 'mediaData', source: 'imdb' });
+    if (cached) return cached;
+
+    try {
+      // Use OMDB API to get IMDB data (free and reliable)
+      const response = await fetch(`https://www.omdbapi.com/?i=${imdbId}&apikey=fc1fef96`);
+      if (!response.ok) throw new Error(`OMDB API error: ${response.status}`);
+      const data = await response.json();
+      
+      if (data.Response === 'True') {
+        // Transform OMDB data to match our expected format
+        const transformedData = {
+          score: parseFloat(data.imdbRating) || null,
+          scored_by: data.imdbVotes ? parseInt(data.imdbVotes.replace(/,/g, '')) : null,
+          rank: null, // OMDB doesn't provide rank
+          title: data.Title,
+          year: data.Year,
+          plot: data.Plot,
+          director: data.Director,
+          actors: data.Actors,
+          genre: data.Genre,
+          runtime: data.Runtime,
+          awards: data.Awards,
+          imdbID: data.imdbID
+        };
+        
+        // Cache stable data for 30 days (ratings, plot, etc.)
+        this.plugin.cache.set(stableCacheKey, transformedData, { 
+          scope: 'mediaData', 
+          source: 'imdb', 
+          ttl: 30 * 24 * 60 * 60 * 1000, 
+          tags: ['imdb', 'details', 'stable'] 
+        });
+        
+        return transformedData;
+      }
+      return null;
     } catch {
       return null;
     }
@@ -11284,22 +11452,62 @@ class DetailPanelSource {
     }
 
     try {
+      // Check for cached detail panel data first
+      const detailPanelCacheKey = this.plugin.cache.structuredKey('detailPanel', 'combined', `${source}_${mediaId}_${mediaType}`);
+      const cachedDetailPanel = this.plugin.cache.get(detailPanelCacheKey, { scope: 'mediaData', source: 'detailPanel' });
+      
+      if (cachedDetailPanel) {
+        // Use cached data if available
+        const { detailedMedia, malData, imdbData } = cachedDetailPanel;
+        if (this.hasMoreData(detailedMedia)) callback(detailedMedia, null, null);
+        if (malData) callback(detailedMedia, malData, null);
+        if (imdbData) callback(detailedMedia, null, imdbData);
+        return;
+      }
+
       const detailedMedia = await this.fetchDetailedData(mediaId, entryOrSource, mediaType);
       
       // Handle case where fetchDetailedData returns null (e.g., Simkl anime without MAL ID)
       if (!detailedMedia) {
-        console.log('[DetailPanel] No detailed data available for this entry');
         return;
       }
       
       const malId = source === 'mal' ? (detailedMedia.originalMalId || mediaId) : detailedMedia.idMal;
       let malDataPromise = null;
+      let imdbDataPromise = null;
+      
       if (malId) malDataPromise = this.fetchMALData(malId, detailedMedia.type);
-      if (this.hasMoreData(detailedMedia)) callback(detailedMedia, null);
-      if (malDataPromise) {
-        const malData = await malDataPromise;
-        if (malData) callback(detailedMedia, malData);
+      
+      // For Simkl movies/TV, fetch IMDB data
+      if (source === 'simkl' && (mediaType === 'MOVIE' || mediaType === 'TV') && detailedMedia.idImdb) {
+        imdbDataPromise = this.fetchIMDBData(detailedMedia.idImdb, detailedMedia.type, detailedMedia);
       }
+      
+      // Collect all data
+      let malData = null;
+      let imdbData = null;
+      
+      if (malDataPromise) {
+        malData = await malDataPromise;
+      }
+      
+      if (imdbDataPromise) {
+        imdbData = await imdbDataPromise;
+      }
+      
+      // Cache the combined detail panel data for 1 hour (includes airing data)
+      const combinedData = { detailedMedia, malData, imdbData };
+      this.plugin.cache.set(detailPanelCacheKey, combinedData, { 
+        scope: 'mediaData', 
+        source: 'detailPanel', 
+        ttl: 60 * 60 * 1000, 
+        tags: ['detailPanel', 'combined', source, mediaType] 
+      });
+      
+      // Call callbacks with data
+      if (this.hasMoreData(detailedMedia)) callback(detailedMedia, null, null);
+      if (malData) callback(detailedMedia, malData, null);
+      if (imdbData) callback(detailedMedia, null, imdbData);
     } catch (error) {
       console.error('fetchAndUpdateData failed:', error);
     }
@@ -11336,8 +11544,8 @@ class OpenDetailPanel {
     this.plugin.requestQueue.showGlobalLoader();
 
     if (this.dataSource.shouldFetchDetailedData(media)) {
-      this.dataSource.fetchAndUpdateData(media.id, entry, (detailedMedia, malData) => {
-        if (this.currentPanel === panel) this.renderer.updatePanelContent(panel, detailedMedia, malData);
+      this.dataSource.fetchAndUpdateData(media.id, entry, (detailedMedia, malData, imdbData) => {
+        if (this.currentPanel === panel) this.renderer.updatePanelContent(panel, detailedMedia, malData, imdbData);
       }).finally(() => this.plugin.requestQueue.hideGlobalLoader());
     } else {
       this.plugin.requestQueue.hideGlobalLoader();
@@ -11530,10 +11738,10 @@ class RenderDetailPanel {
     sections.push(this.createHeaderSection(media));
     sections.push(this.createMetadataSection(media, entry));
 
-    if (media.type === 'ANIME' && media.nextAiringEpisode) {
-      sections.push(this.createAiringSection(media.nextAiringEpisode));
-    }
+    // Simkl does not provide airing data, so no airing section for Simkl entries
+    // Airing sections only work for AniList and MAL entries that have airing data
 
+    // Statistics section only for AniList/MAL entries with scores
     if (media.averageScore > 0) {
       sections.push(this.createStatisticsSection(media));
     }
@@ -11557,21 +11765,10 @@ class RenderDetailPanel {
     return panel;
   }
 
-  updatePanelContent(panel, media, malData = null) {
+  updatePanelContent(panel, media, malData = null, imdbData = null) {
     const content = panel.querySelector('.panel-content');
     
-    if (media.type === 'ANIME' && media.nextAiringEpisode && !content.querySelector('.airing-section')) {
-      const airingSection = this.createAiringSection(media.nextAiringEpisode);
-      const metadataSection = content.querySelector('.metadata-section');
-      if (metadataSection) {
-        metadataSection.insertAdjacentElement('afterend', airingSection);
-      } else {
-        const headerSection = content.querySelector('.panel-header');
-        if (headerSection) {
-          headerSection.insertAdjacentElement('afterend', airingSection);
-        }
-      }
-    }
+    // Simkl does not provide airing data, so no airing section updates for Simkl entries
     
     if (media.description) {
       const existingSynopsis = content.querySelector('.synopsis-section');
@@ -11599,14 +11796,14 @@ class RenderDetailPanel {
       }
     }
 
-    if (media.averageScore > 0 || malData) {
+    if (media.averageScore > 0 || malData || imdbData) {
       const existingStats = content.querySelector('.stats-section');
       if (existingStats) {
-        const newStats = this.createStatisticsSection(media, malData);
+        const newStats = this.createStatisticsSection(media, malData, imdbData);
         content.replaceChild(newStats, existingStats);
       } else {
         // Add statistics section if it doesn't exist (for Simkl entries)
-        const newStats = this.createStatisticsSection(media, malData);
+        const newStats = this.createStatisticsSection(media, malData, imdbData);
         const synopsisSection = content.querySelector('.synopsis-section');
         if (synopsisSection) {
           content.insertBefore(newStats, synopsisSection);
@@ -11618,6 +11815,11 @@ class RenderDetailPanel {
   }
 
   createAiringSection(nextAiringEpisode) {
+    // Validate airing data structure
+    if (!nextAiringEpisode || !nextAiringEpisode.airingAt || !nextAiringEpisode.episode) {
+      return null;
+    }
+
     const section = document.createElement('div');
     section.className = 'panel-section airing-section';
 
@@ -11769,7 +11971,7 @@ class RenderDetailPanel {
     return section;
   }
 
-  createStatisticsSection(media, malData = null) {
+  createStatisticsSection(media, malData = null, imdbData = null) {
     const section = document.createElement('div');
     section.className = 'panel-section stats-section';
 
@@ -11781,11 +11983,15 @@ class RenderDetailPanel {
     const statsGrid = document.createElement('div');
     statsGrid.className = 'stats-grid';
 
+
+
+    // AniList rating (for anime)
     if (media.averageScore > 0) {
       const scoreOutOf10 = (media.averageScore / 10).toFixed(1);
       this.addStatItem(statsGrid, 'AniList Score', `${scoreOutOf10}`, 'score-stat anilist-stat');
     }
 
+    // MAL data (for anime)
     if (malData) {
       if (malData.score) {
         this.addStatItem(statsGrid, 'MAL Score', `${malData.score}`, 'score-stat mal-stat');
@@ -11799,6 +12005,19 @@ class RenderDetailPanel {
         this.addStatItem(statsGrid, 'MAL Rank', `#${malData.rank}`, 'rank-stat');
       }
     }
+
+    // IMDB data (for movies/TV)
+    if (imdbData) {
+      if (imdbData.score) {
+        this.addStatItem(statsGrid, 'IMDB Score', `${imdbData.score}`, 'score-stat imdb-stat');
+      }
+      
+      if (imdbData.scored_by) {
+        this.addStatItem(statsGrid, 'IMDB Ratings', imdbData.scored_by.toLocaleString(), 'count-stat');
+      }
+    }
+
+
 
     section.appendChild(statsGrid);
     return section;
@@ -11869,48 +12088,76 @@ class RenderDetailPanel {
 
     return section;
   }
-createExternalLinksSection(media) {
-  const section = document.createElement('div');
-  section.className = 'panel-section external-links-section';
+  createExternalLinksSection(media) {
+    const section = document.createElement('div');
+    section.className = 'panel-section external-links-section';
 
-  const title = document.createElement('h3');
-  title.className = 'section-title';
-  title.textContent = 'External Links';
-  section.appendChild(title);
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'External Links';
+    section.appendChild(title);
 
-  const linksContainer = document.createElement('div');
-  linksContainer.className = 'external-links-container';
+    const linksContainer = document.createElement('div');
+    linksContainer.className = 'external-links-container';
 
-  // Existing AniList button
-  const anilistBtn = document.createElement('button');
-  anilistBtn.className = 'external-link-btn anilist-btn';
-  anilistBtn.innerHTML = '🔗 View on AniList';
-  anilistBtn.onclick = (e) => {
-    e.stopPropagation();
-    const url = this.plugin.getAniListUrl ? this.plugin.getAniListUrl(media.id, media.type) : `https://anilist.co/${media.type.toLowerCase()}/${media.id}`;
-    window.open(url, '_blank');
-  };
-  linksContainer.appendChild(anilistBtn);
+    // AniList button (for anime)
+    if (media.type === 'ANIME' || media.type === 'MANGA') {
+      const anilistBtn = document.createElement('button');
+      anilistBtn.className = 'external-link-btn anilist-btn';
+      anilistBtn.innerHTML = '🔗 View on AniList';
+      anilistBtn.onclick = (e) => {
+        e.stopPropagation();
+        const url = this.plugin.getAniListUrl ? this.plugin.getAniListUrl(media.id, media.type) : `https://anilist.co/${media.type.toLowerCase()}/${media.id}`;
+        window.open(url, '_blank');
+      };
+      linksContainer.appendChild(anilistBtn);
+    }
 
-  // Existing MAL button
-  if (media.idMal) {
-    const malBtn = document.createElement('button');
-    malBtn.className = 'external-link-btn mal-btn';
-    malBtn.innerHTML = '🔗 View on MAL';
-    malBtn.onclick = (e) => {
-      e.stopPropagation();
-      const type = media.type === 'MANGA' ? 'manga' : 'anime';
-      window.open(`https://myanimelist.net/${type}/${media.idMal}`, '_blank');
-    };
-    linksContainer.appendChild(malBtn);
+    // MAL button (for anime)
+    if (media.idMal) {
+      const malBtn = document.createElement('button');
+      malBtn.className = 'external-link-btn mal-btn';
+      malBtn.innerHTML = '🔗 View on MAL';
+      malBtn.onclick = (e) => {
+        e.stopPropagation();
+        const type = media.type === 'MANGA' ? 'manga' : 'anime';
+        window.open(`https://myanimelist.net/${type}/${media.idMal}`, '_blank');
+      };
+      linksContainer.appendChild(malBtn);
+    }
+
+    // Simkl button (for movies and TV only, not anime)
+    if (media.id && media.type !== 'ANIME') {
+      const simklBtn = document.createElement('button');
+      simklBtn.className = 'external-link-btn simkl-btn';
+      simklBtn.innerHTML = '🔗 View on Simkl';
+      simklBtn.onclick = (e) => {
+        e.stopPropagation();
+        const mediaType = media.type === 'MOVIE' ? 'movies' : 'tv';
+        const url = `https://simkl.com/${mediaType}/${media.id}`;
+        window.open(url, '_blank');
+      };
+      linksContainer.appendChild(simklBtn);
+    }
+
+    // IMDB button (for movies/TV)
+    if (media.idImdb) {
+      const imdbBtn = document.createElement('button');
+      imdbBtn.className = 'external-link-btn imdb-btn';
+      imdbBtn.innerHTML = '🔗 View on IMDB';
+      imdbBtn.onclick = (e) => {
+        e.stopPropagation();
+        window.open(`https://www.imdb.com/title/${media.idImdb}/`, '_blank');
+      };
+      linksContainer.appendChild(imdbBtn);
+    }
+
+    // NEW: Custom Search Buttons using the CustomExternalURL class
+    this.plugin.moreDetailsPanel.customExternalURL.createSearchButtons(media, linksContainer);
+
+    section.appendChild(linksContainer);
+    return section;
   }
-
-  // NEW: Custom Search Buttons using the CustomExternalURL class
-  this.plugin.moreDetailsPanel.customExternalURL.createSearchButtons(media, linksContainer);
-
-  section.appendChild(linksContainer);
-  return section;
-}
   
   extractDomainName(url) {
   try {

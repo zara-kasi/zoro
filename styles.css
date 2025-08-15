@@ -1604,6 +1604,10 @@ transparent 70%
   color: #2e51a2;
 }
 
+.score-stat.imdb-stat .stat-value {
+  color: #f5c518;
+}
+
 .rank-stat .stat-value {
   color: #fbbf24;
 }
@@ -1698,6 +1702,29 @@ transparent 70%
   background: linear-gradient(135deg, #1e3a72, #1e40af);
   transform: translateY(-2px);
   box-shadow: 0 8px 20px rgba(46, 81, 162, 0.3);
+}
+/* SIMKL Button - Based on SIMKL's black and white/grayscale brand colors */
+.simkl-btn {
+  background: linear-gradient(135deg, #2c2c2c, #1a1a1a);
+  color: white;
+}
+
+.simkl-btn:hover {
+  background: linear-gradient(135deg, #1a1a1a, #000000);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(44, 44, 44, 0.4);
+}
+
+/* IMDb Button - Based on IMDb's golden yellow brand color */
+.imdb-btn {
+  background: linear-gradient(135deg, #f5c518, #f9a825);
+  color: #000000;
+}
+
+.imdb-btn:hover {
+  background: linear-gradient(135deg, #f9a825, #ff8f00);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(245, 197, 24, 0.3);
 }
 
 .zoro-custom-external-btn {

@@ -12104,10 +12104,10 @@ class RenderDetailPanel {
     sections.push(this.createHeaderSection(media));
     sections.push(this.createMetadataSection(media, entry));
 
-    // Simkl does not provide airing data, so no airing section for Simkl entries
-    // Airing sections only work for AniList and MAL entries that have airing data
-
-    // Statistics section only for AniList/MAL entries with scores
+   if (media.type === 'ANIME' && media.nextAiringEpisode) {
+      sections.push(this.createAiringSection(media.nextAiringEpisode));
+    }
+    
     if (media.averageScore > 0) {
       sections.push(this.createStatisticsSection(media));
     }
@@ -12134,7 +12134,18 @@ class RenderDetailPanel {
   updatePanelContent(panel, media, malData = null, imdbData = null) {
     const content = panel.querySelector('.panel-content');
     
-    // Simkl does not provide airing data, so no airing section updates for Simkl entries
+   if (media.type === 'ANIME' && media.nextAiringEpisode && !content.querySelector('.airing-section')) {
+      const airingSection = this.createAiringSection(media.nextAiringEpisode);
+      const metadataSection = content.querySelector('.metadata-section');
+      if (metadataSection) {
+        metadataSection.insertAdjacentElement('afterend', airingSection);
+      } else {
+        const headerSection = content.querySelector('.panel-header');
+        if (headerSection) {
+          headerSection.insertAdjacentElement('afterend', airingSection);
+        }
+      }
+    }
     
     if (media.description) {
       const existingSynopsis = content.querySelector('.synopsis-section');

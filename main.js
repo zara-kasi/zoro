@@ -4941,9 +4941,14 @@ class SimklApi {
     // Build and execute request
     let transformedData = null;
     try {
-      const requestParams = this.buildRequestParams(normalizedConfig);
-      const rawResponse = await this.makeRequest(requestParams);
-      transformedData = this.transformResponse(rawResponse, normalizedConfig);
+      if (normalizedConfig.type === 'search') {
+        // Use robust search with endpoint fallbacks
+        transformedData = await this.performSearchWithFallbacks(normalizedConfig);
+      } else {
+        const requestParams = this.buildRequestParams(normalizedConfig);
+        const rawResponse = await this.makeRequest(requestParams);
+        transformedData = this.transformResponse(rawResponse, normalizedConfig);
+      }
     } catch (err) {
       if (normalizedConfig.type !== 'single') {
         throw err;
@@ -5050,8 +5055,9 @@ getSimklMediaType(mediaType) {
         if (config.search || config.query) {
           params.q = (config.search || config.query).trim();
         }
-        params.limit = Math.min(config.perPage || 25, 50);
-        params.page = config.page || 1;
+        // Simkl defaults: try conservative page/limit
+        params.limit = Math.max(1, Math.min(config.perPage || 10, 20));
+        params.page = Math.max(1, config.page || 1);
         break;
         
       case 'list':
@@ -5121,6 +5127,58 @@ getSimklMediaType(mediaType) {
       
       throw error;
     }
+  }
+
+  // Robust search executor with endpoint fallbacks
+  async performSearchWithFallbacks(config) {
+    const term = (config.search || config.query || '').trim();
+    if (!term) {
+      return { Page: { media: [] } };
+    }
+
+    // Try primary endpoint based on requested mediaType
+    const primaryParams = this.buildRequestParams({ ...config, type: 'search' });
+    try {
+      const primaryRaw = await this.makeRequest(primaryParams);
+      const primaryTransformed = this.transformSearchResponse(primaryRaw, config);
+      if (primaryTransformed?.Page?.media?.length) return primaryTransformed;
+    } catch {}
+
+    // Fallback matrix: try all three categories to be safe
+    const candidates = [
+      { type: 'ANIME', endpoint: `${this.baseUrl}/search/anime` },
+      { type: 'TV', endpoint: `${this.baseUrl}/search/tv` },
+      { type: 'MOVIE', endpoint: `${this.baseUrl}/search/movie` } // singular according to API
+    ];
+
+    const aggregated = [];
+    for (const c of candidates) {
+      try {
+        const qp = {
+          q: term,
+          limit: Math.max(1, Math.min(config.perPage || 10, 20)),
+          page: Math.max(1, config.page || 1)
+        };
+        if (this.plugin.settings.simklClientId) {
+          qp.client_id = this.plugin.settings.simklClientId;
+        }
+        const url = this.buildFullUrl(c.endpoint, qp);
+        const raw = await this.makeRequest({ url, method: 'GET', headers: this.getHeaders({ type: 'search' }), priority: 'normal' });
+        const key = this.getSimklMediaType(c.type);
+        let items;
+        if (Array.isArray(raw)) items = raw;
+        else if (Array.isArray(raw[key])) items = raw[key];
+        else if (Array.isArray(raw.results)) items = raw.results;
+        else if (raw.movie || raw.show) items = [raw];
+        else items = [];
+        for (const item of items) {
+          const mapped = this.transformMedia(item, c.type);
+          if (mapped) aggregated.push(mapped);
+        }
+      } catch {}
+    }
+
+    return { Page: { media: aggregated } };
   }
 
   // =================== DATA TRANSFORMATION (Fixed to match expected structure) ===================
@@ -5235,12 +5293,13 @@ getSimklMediaType(mediaType) {
     if (!match) return { MediaList: null };
 
     const node = match.movie || match.show || match;
+    const transformedMedia = this.transformMedia(node, mediaType);
     const entry = {
       id: null,
       status: null,
       score: null,
       progress: this.isMovieType(mediaType, node) ? 0 : 0,
-      media: this.transformMedia(node, mediaType)
+      media: transformedMedia
     };
 
     return { MediaList: entry };
@@ -5470,8 +5529,11 @@ getSimklMediaType(mediaType) {
       return null;
     })();
     
+    const numericId = Number(ids.simkl || ids.id || media.id || originalData.id);
+    const finalId = Number.isFinite(numericId) && numericId > 0 ? numericId : (media.ids?.simkl || media.ids?.id || originalData?.ids?.simkl || originalData?.ids?.id || null);
+
     const transformedResult = {
-      id: ids.simkl || ids.id || media.id || originalData.id,
+      id: finalId || 0,
       idMal: ids.mal || null,
       idImdb: ids.imdb || null,
       title: extractedTitle,
@@ -7404,6 +7466,10 @@ class CardRenderer {
     const isSearch = options.isSearch || false;
     const isCompact = config.layout === 'compact';
     const media = isSearch ? data : data.media;
+    // Ensure we have a usable numeric id for card actions
+    if (!media.id || Number.isNaN(Number(media.id))) {
+      media.id = Number(media?.idImdb || media?.idMal || media?.ids?.simkl || media?.ids?.id || 0) || 0;
+    }
     // For search/trending items, synthesize a lightweight entry carrying metadata for proper source/mediaType detection
     const entry = isSearch
       ? {
@@ -7414,7 +7480,7 @@ class CardRenderer {
               data?._zoroMeta?.source ||
               this.apiHelper.detectFromDataStructure({ media }) ||
               this.apiHelper.getFallbackSource(),
-            mediaType: config?.mediaType || (media?.episodes ? 'ANIME' : 'MANGA')
+            mediaType: config?.mediaType || (media?.format === 'MOVIE' ? 'MOVIE' : (media?.episodes ? 'ANIME' : 'TV'))
           }
         }
       : data;
@@ -7423,7 +7489,7 @@ class CardRenderer {
     
     const card = document.createElement('div');
     card.className = `zoro-card ${isCompact ? 'compact' : ''}`;
-    card.dataset.mediaId = media.id;
+    card.dataset.mediaId = String(Number(media.id) || 0);
 
     // Create cover image if enabled
     if (this.plugin.settings.showCoverImages && media.coverImage?.large) {
@@ -7619,9 +7685,16 @@ class CardRenderer {
       const mediaType = this.apiHelper.detectMediaType(entry, config, media);
       
       // Use the proper URL method based on available plugin methods
-      titleLink.href = this.plugin.getSourceSpecificUrl 
-        ? this.apiHelper.getSourceSpecificUrl(media.id, mediaType, source)
-        : this.apiHelper.getSourceUrl(media.id, mediaType, source);
+      const safeId = Number(media.id) || 0;
+      if (source === 'simkl' && safeId <= 0) {
+        // Fallback: open Simkl on-site search when we lack a stable id from search results
+        const q = encodeURIComponent(this.formatter.formatTitle(media));
+        titleLink.href = `https://simkl.com/search/?q=${q}`;
+      } else {
+        titleLink.href = this.plugin.getSourceSpecificUrl 
+          ? this.apiHelper.getSourceSpecificUrl(safeId, mediaType, source)
+          : this.apiHelper.getSourceUrl(safeId, mediaType, source);
+      }
       
       titleLink.target = '_blank';
       titleLink.textContent = this.formatter.formatTitle(media);
@@ -7727,9 +7800,14 @@ class CardRenderer {
     editBtn.style.pointerEvents = 'none';
 
     try {
-      console.log(`[Zoro] Checking user entry for media ${media.id} via ${entrySource}`);
+      const numericId = Number(media.id) || 0;
+      if (entrySource === 'simkl' && numericId <= 0) {
+        new Notice('⚠️ Simkl search result missing an ID. Open details and use external links instead.', 4000);
+        throw new Error('Invalid media ID: ' + media.id);
+      }
+      console.log(`[Zoro] Checking user entry for media ${numericId} via ${entrySource}`);
       
-      const existingEntry = await this.apiHelper.getUserEntryForMedia(media.id, entryMediaType, entrySource);
+      const existingEntry = await this.apiHelper.getUserEntryForMedia(numericId, entryMediaType, entrySource);
       console.log(`[Zoro] User entry result:`, existingEntry ? 'Found existing entry' : 'Not in user list');
       
       const entryToEdit = existingEntry || {
@@ -7833,7 +7911,9 @@ class SearchRenderer {
     const mt = String(config.mediaType || 'ANIME').toUpperCase();
     const src = String(config.source || '').toLowerCase();
     if (src === 'simkl') {
-      input.placeholder = mt === 'MOVIE' || mt === 'MOVIES' ? '🔍 Search movies…' : '🔍 Search TV shows…';
+      if (mt === 'ANIME') input.placeholder = '🔍 Search anime…';
+      else if (mt === 'MOVIE' || mt === 'MOVIES') input.placeholder = '🔍 Search movies…';
+      else input.placeholder = '🔍 Search TV shows…';
     } else {
       input.placeholder = mt === 'ANIME' ? '🔍 Search anime…' : '🔍 Search manga…';
     }

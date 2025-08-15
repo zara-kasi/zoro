@@ -11243,8 +11243,8 @@ class DetailPanelSource {
     const stableCacheKey = this.plugin.cache.structuredKey('details', 'stable', targetId);
     const dynamicCacheKey = this.plugin.cache.structuredKey('details', 'airing', targetId);
 
-    let stableData = this.plugin.cache.get(stableCacheKey, { scope: 'mediaData', source: 'anilist' });
-    let airingData = this.plugin.cache.get(dynamicCacheKey, { scope: 'mediaData', source: 'anilist' });
+    let stableData = this.plugin.cache.get(stableCacheKey, { scope: 'mediaDetails', source: 'anilist' });
+    let airingData = this.plugin.cache.get(dynamicCacheKey, { scope: 'mediaDetails', source: 'anilist' });
 
     if (stableData && (stableData.type !== 'ANIME' || airingData)) {
       const combinedData = { ...stableData };
@@ -11270,9 +11270,9 @@ class DetailPanelSource {
     if (originalMalId) data.originalMalId = originalMalId;
 
     const { nextAiringEpisode, ...stableDataOnly } = data;
-    this.plugin.cache.set(stableCacheKey, stableDataOnly, { scope: 'mediaData', source: 'anilist', ttl: 30 * 24 * 60 * 60 * 1000, tags: ['details', 'stable', data.type?.toLowerCase()] });
+    this.plugin.cache.set(stableCacheKey, stableDataOnly, { scope: 'mediaDetails', source: 'anilist', tags: ['details', 'stable', data.type?.toLowerCase()] });
     if (data.type === 'ANIME' && nextAiringEpisode) {
-      this.plugin.cache.set(dynamicCacheKey, { nextAiringEpisode }, { scope: 'mediaData', source: 'anilist', ttl: 60 * 60 * 1000, tags: ['details', 'airing', 'anime'] });
+      this.plugin.cache.set(dynamicCacheKey, { nextAiringEpisode }, { scope: 'mediaDetails', source: 'anilist', tags: ['details', 'airing', 'anime'] });
     }
     return data;
   }
@@ -11284,8 +11284,8 @@ class DetailPanelSource {
     const stableCacheKey = this.plugin.cache.structuredKey('mal', 'stable', `${malId}_${mediaType}`);
     const dynamicCacheKey = this.plugin.cache.structuredKey('mal', 'airing', `${malId}_${mediaType}`);
     
-    let stableData = this.plugin.cache.get(stableCacheKey, { scope: 'mediaData', source: 'mal' });
-    let airingData = this.plugin.cache.get(dynamicCacheKey, { scope: 'mediaData', source: 'mal' });
+    let stableData = this.plugin.cache.get(stableCacheKey, { scope: 'mediaDetails', source: 'mal' });
+    let airingData = this.plugin.cache.get(dynamicCacheKey, { scope: 'mediaDetails', source: 'mal' });
     
     if (stableData) {
       const combinedData = { ...stableData };
@@ -11303,20 +11303,18 @@ class DetailPanelSource {
         // Separate stable and dynamic data
         const { nextAiringEpisode, ...stableDataOnly } = data;
         
-        // Cache stable data for 30 days (synopsis, ratings, genres, etc.)
+        // Cache stable data using cache class TTL
         this.plugin.cache.set(stableCacheKey, stableDataOnly, { 
-          scope: 'mediaData', 
+          scope: 'mediaDetails', 
           source: 'mal', 
-          ttl: 30 * 24 * 60 * 60 * 1000, 
           tags: ['mal', 'details', 'stable', type] 
         });
         
-        // Cache airing data for 1 hour (changes frequently)
+        // Cache airing data using cache class TTL
         if (nextAiringEpisode) {
           this.plugin.cache.set(dynamicCacheKey, { nextAiringEpisode }, { 
-            scope: 'mediaData', 
+            scope: 'mediaDetails', 
             source: 'mal', 
-            ttl: 60 * 60 * 1000, 
             tags: ['mal', 'details', 'airing', type] 
           });
         }
@@ -11334,7 +11332,7 @@ class DetailPanelSource {
     
     // Use stable caching system (Simkl doesn't have airing data)
     const stableCacheKey = this.plugin.cache.structuredKey('simkl', 'stable', `${simklId}_${mediaType}`);
-    const cached = this.plugin.cache.get(stableCacheKey, { scope: 'mediaData', source: 'simkl' });
+    const cached = this.plugin.cache.get(stableCacheKey, { scope: 'mediaDetails', source: 'simkl' });
     if (cached) return cached;
 
     try {
@@ -11353,11 +11351,10 @@ class DetailPanelSource {
           delete data.next_episode;
         }
         
-        // Cache stable data for 30 days (synopsis, genres, etc.)
+        // Cache stable data using cache class TTL
         this.plugin.cache.set(stableCacheKey, data, { 
-          scope: 'mediaData', 
+          scope: 'mediaDetails', 
           source: 'simkl', 
-          ttl: 30 * 24 * 60 * 60 * 1000, 
           tags: ['simkl', 'details', 'stable', endpoint] 
         });
         
@@ -11393,7 +11390,7 @@ class DetailPanelSource {
     
     // Fallback to OMDB API if Simkl doesn't provide IMDB rating data
     const stableCacheKey = this.plugin.cache.structuredKey('imdb', 'stable', `${imdbId}_${mediaType}`);
-    const cached = this.plugin.cache.get(stableCacheKey, { scope: 'mediaData', source: 'imdb' });
+    const cached = this.plugin.cache.get(stableCacheKey, { scope: 'mediaDetails', source: 'imdb' });
     if (cached) return cached;
 
     try {
@@ -11419,11 +11416,10 @@ class DetailPanelSource {
           imdbID: data.imdbID
         };
         
-        // Cache stable data for 30 days (ratings, plot, etc.)
+        // Cache stable data using cache class TTL
         this.plugin.cache.set(stableCacheKey, transformedData, { 
-          scope: 'mediaData', 
+          scope: 'mediaDetails', 
           source: 'imdb', 
-          ttl: 30 * 24 * 60 * 60 * 1000, 
           tags: ['imdb', 'details', 'stable'] 
         });
         
@@ -11454,7 +11450,7 @@ class DetailPanelSource {
     try {
       // Check for cached detail panel data first
       const detailPanelCacheKey = this.plugin.cache.structuredKey('detailPanel', 'combined', `${source}_${mediaId}_${mediaType}`);
-      const cachedDetailPanel = this.plugin.cache.get(detailPanelCacheKey, { scope: 'mediaData', source: 'detailPanel' });
+      const cachedDetailPanel = this.plugin.cache.get(detailPanelCacheKey, { scope: 'mediaDetails', source: 'detailPanel' });
       
       if (cachedDetailPanel) {
         // Use cached data if available
@@ -11495,12 +11491,11 @@ class DetailPanelSource {
         imdbData = await imdbDataPromise;
       }
       
-      // Cache the combined detail panel data for 1 hour (includes airing data)
+      // Cache the combined detail panel data using cache class TTL
       const combinedData = { detailedMedia, malData, imdbData };
       this.plugin.cache.set(detailPanelCacheKey, combinedData, { 
-        scope: 'mediaData', 
+        scope: 'mediaDetails', 
         source: 'detailPanel', 
-        ttl: 60 * 60 * 1000, 
         tags: ['detailPanel', 'combined', source, mediaType] 
       });
       

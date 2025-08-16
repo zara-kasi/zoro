@@ -4855,6 +4855,9 @@ aggregateDistributionsFromEntries(entries, typeLower) {
 }
 }
 class SimklApi {
+  // Focused in-memory error buffer for Simkl edit feature
+  editErrorBuffer = [];
+  maxEditErrors = 200;
   constructor(plugin) {
     this.plugin = plugin;
     this.requestQueue = plugin.requestQueue;
@@ -5041,7 +5044,6 @@ getSimklMediaType(mediaType) {
   
   return this.mediaTypeMap[upperType] || 'anime';
 }
-
   buildQueryParams(config) {
     const params = {};
     
@@ -5080,21 +5082,59 @@ getSimklMediaType(mediaType) {
       'User-Agent': `Zoro-Plugin/${this.plugin.manifest?.version || '1.0.0'}`
     };
     
-    if (this.plugin.settings.simklClientId) {
-      headers['simkl-api-key'] = this.plugin.settings.simklClientId;
+          if (this.plugin.settings.simklClientId) {
+        headers['simkl-api-key'] = this.plugin.settings.simklClientId;
+      }
+      
+      // Add auth token for user-specific requests
+      if (this.requiresAuth(config.type) && this.plugin.settings.simklAccessToken) {
+        headers['Authorization'] = `Bearer ${this.plugin.settings.simklAccessToken}`;
+      }
+      
+      // Some endpoints are picky without a Referer
+      headers['Referer'] = 'https://simkl.com/';
+      
+      return headers;
     }
-    
-    // Add auth token for user-specific requests
-    if (this.requiresAuth(config.type) && this.plugin.settings.simklAccessToken) {
-      headers['Authorization'] = `Bearer ${this.plugin.settings.simklAccessToken}`;
-    }
-    
-    return headers;
+
+  // Append a focused error entry (only for edit-related requests)
+  appendEditError(message, data) {
+    try {
+      const entry = {
+        timestamp: new Date().toISOString(),
+        message,
+        data
+      };
+      this.editErrorBuffer.push(entry);
+      if (this.editErrorBuffer.length > this.maxEditErrors) {
+        this.editErrorBuffer.shift();
+      }
+    } catch {}
   }
 
-  // =================== HTTP REQUEST EXECUTION (Following MAL pattern) ===================
-
-  async makeRequest(requestParams) {
+  // Format buffered edit errors to markdown
+  getEditErrorsMarkdown() {
+    if (!this.editErrorBuffer.length) {
+      return '# Simkl Edit Errors\n\nNo errors recorded.';
+    }
+    let md = '# Simkl Edit Errors\n\n';
+    md += `Generated at: ${new Date().toISOString()}\n\n`;
+    this.editErrorBuffer.forEach((e, idx) => {
+      md += `## Error ${idx + 1}\n\n`;
+      md += `**Timestamp:** ${e.timestamp}\n\n`;
+      md += `**Message:** ${e.message}\n\n`;
+      if (e.data !== undefined) {
+        const json = typeof e.data === 'string' ? e.data : JSON.stringify(e.data, null, 2);
+        md += `**Data:**\n\`\`\`json\n${json}\n\`\`\`\n\n`;
+      }
+      md += '---\n\n';
+    });
+    return md;
+  }
+ 
+   // =================== HTTP REQUEST EXECUTION (Following MAL pattern) ===================
+ 
+   async makeRequest(requestParams) {
     this.metrics.requests++;
     
     const requestFn = () => requestUrl({
@@ -5110,27 +5150,71 @@ getSimklMediaType(mediaType) {
         timeout: 30000
       });
 
-      if (!response?.json) {
+      // Focus on edit flows only
+      const isSimklEdit = (requestParams?.url || '').includes('/sync/ratings') ||
+                          (requestParams?.url || '').includes('/sync/watchlist') ||
+                          (requestParams?.url || '').includes('/sync/history');
+      if (isSimklEdit) {
+        this.appendEditError('REQUEST URL', requestParams.url);
+        this.appendEditError('REQUEST METHOD', requestParams.method || 'GET');
+        this.appendEditError('REQUEST HEADERS', requestParams.headers || {});
+        this.appendEditError('REQUEST BODY', requestParams.body || null);
+        this.appendEditError('RESPONSE STATUS', response?.status);
+        if (response?.json) this.appendEditError('RESPONSE JSON', response.json);
+        if (response?.text) this.appendEditError('RESPONSE TEXT', response.text);
+      }
+
+      if (!response) {
+        console.log('[Simkl][HTTP] Empty response object');
         throw new Error('Empty response from Simkl');
       }
 
       // Handle Simkl error responses
-      if (response.json.error) {
-        
-        throw new Error(response.json.error_description || response.json.error);
+      if (response.status && (response.status < 200 || response.status >= 300)) {
+        const errMsg = response.json?.error_description || response.json?.error || `HTTP ${response.status}`;
+        console.log('[Simkl][HTTP] Non-200', errMsg);
+        throw new Error(errMsg);
       }
 
-      
+      if (!response.json) {
+        // Accept empty success body (Simkl may return 200 with no body)
+        if (response.text === null || response.text === undefined || String(response.text).trim() === '') {
+          if (isSimklEdit) this.appendEditError('EMPTY BODY TREATED AS SUCCESS', { status: response.status });
+          return { ok: true };
+        }
+        try {
+          const parsed = JSON.parse(response.text);
+          return parsed;
+        } catch (e) {
+          if (isSimklEdit) this.appendEditError('PARSE FAILED', e?.message || String(e));
+          // Fallback to success since status was 2xx
+          return { ok: true };
+        }
+      }
+
       return response.json;
 
     } catch (error) {
-      
+      const isSimklEdit = (requestParams?.url || '').includes('/sync/ratings') ||
+                          (requestParams?.url || '').includes('/sync/watchlist') ||
+                          (requestParams?.url || '').includes('/sync/history');
+      if (isSimklEdit) {
+        this.appendEditError('REQUEST FAILED', {
+          message: error.message,
+          status: error.status,
+          headers: error.headers,
+          data: error.data,
+          text: error.text,
+          body: error.body
+        });
+      }
+      console.log('[Simkl][HTTP] request failed', error);
       throw error;
     }
   }
 
   // Robust search executor with endpoint fallbacks
-  async performSearchWithFallbacks(config) {
+  async performSearchWithFallbacks(config) { console.log('[Simkl][Search] performSearchWithFallbacks start', config);
     const term = (config.search || config.query || '').trim();
     if (!term) {
       return { Page: { media: [] } };
@@ -5140,9 +5224,11 @@ getSimklMediaType(mediaType) {
     const primaryParams = this.buildRequestParams({ ...config, type: 'search' });
     try {
       const primaryRaw = await this.makeRequest(primaryParams);
+      console.log('[Simkl][Search] primaryRaw', primaryRaw);
       const primaryTransformed = this.transformSearchResponse(primaryRaw, config);
+      console.log('[Simkl][Search] primaryTransformed', primaryTransformed);
       if (primaryTransformed?.Page?.media?.length) return primaryTransformed;
-    } catch {}
+    } catch (e) { console.log('[Simkl][Search] primary failed', e); }
 
     // Fallback matrix: try all three categories to be safe
     const candidates = [
@@ -5163,7 +5249,9 @@ getSimklMediaType(mediaType) {
           qp.client_id = this.plugin.settings.simklClientId;
         }
         const url = this.buildFullUrl(c.endpoint, qp);
+        console.log('[Simkl][Search][Fallback] url', url);
         const raw = await this.makeRequest({ url, method: 'GET', headers: this.getHeaders({ type: 'search' }), priority: 'normal' });
+        console.log('[Simkl][Search][Fallback] raw', raw);
         const key = this.getSimklMediaType(c.type);
         let items;
         if (Array.isArray(raw)) items = raw;
@@ -5171,14 +5259,49 @@ getSimklMediaType(mediaType) {
         else if (Array.isArray(raw.results)) items = raw.results;
         else if (raw.movie || raw.show) items = [raw];
         else items = [];
+        console.log('[Simkl][Search][Fallback] items', items?.length);
         for (const item of items) {
           const mapped = this.transformMedia(item, c.type);
+          console.log('[Simkl][Search][Fallback] mapped item', mapped?.id, mapped?.title);
           if (mapped) aggregated.push(mapped);
         }
       } catch {}
     }
 
     return { Page: { media: aggregated } };
+  }
+
+  // Resolve a Simkl ID by title for edit operations when search results lack ids
+  async resolveSimklIdByTitle(title, mediaType) {
+    if (!title || typeof title !== 'string') return null;
+    const term = title.trim();
+    if (!term) return null;
+
+    // Prefer specific endpoint by mediaType
+    const typeUpper = String(mediaType || '').toUpperCase();
+    const endpoints = [];
+    if (typeUpper === 'MOVIE' || typeUpper === 'MOVIES') endpoints.push(`${this.baseUrl}/search/movie`);
+    else if (typeUpper === 'ANIME') endpoints.push(`${this.baseUrl}/search/anime`);
+    else if (typeUpper === 'TV') endpoints.push(`${this.baseUrl}/search/tv`);
+    // Add generic fallbacks
+    endpoints.push(`${this.baseUrl}/search/anime`, `${this.baseUrl}/search/tv`, `${this.baseUrl}/search/movie`);
+
+    for (const ep of endpoints) {
+      try {
+        const qp = { q: term, limit: 5, page: 1 };
+        if (this.plugin.settings.simklClientId) qp.client_id = this.plugin.settings.simklClientId;
+        const url = this.buildFullUrl(ep, qp);
+        const raw = await this.makeRequest({ url, method: 'GET', headers: this.getHeaders({ type: 'search' }), priority: 'normal' });
+        const items = Array.isArray(raw) ? raw : (raw.results || raw.anime || raw.tv || raw.movies || []);
+        for (const it of items) {
+          const node = it.movie || it.show || it;
+          const ids = node?.ids || node;
+          const id = Number(ids?.simkl || ids?.id);
+          if (id > 0) return id;
+        }
+      } catch {}
+    }
+    return null;
   }
 
   // =================== DATA TRANSFORMATION (Fixed to match expected structure) ===================
@@ -5971,24 +6094,75 @@ getSimklMediaType(mediaType) {
   }
 
   async executeUpdate(mediaId, updates, mediaType) {
-    this.validateMediaId(mediaId);
+    const normalizedId = this.normalizeSimklId(mediaId);
+    console.log('[Simkl][Update] executeUpdate', { rawId: mediaId, normalizedId, updates, mediaType });
+    this.validateMediaId(normalizedId);
     this.validateUpdates(updates);
     
     await this.ensureValidToken();
-    
+    console.log('[Simkl][Update] token ensured');
    const typeUpper = (mediaType || '').toString().toUpperCase();
     const isMovie = typeUpper === 'MOVIE' || typeUpper === 'MOVIES';
 
-    // 1) Status -> add-to-list
+    // 1) Status -> watchlist + enforce via ratings mapping
     if (updates.status !== undefined) {
-      const listPayload = this.buildUpdatePayload(mediaId, { status: updates.status }, mediaType);
+      const containerKey = isMovie ? 'movies' : 'shows';
+      const statusMapped = this.mapAniListStatusToSimkl(updates.status);
+      const statusPayload = { [containerKey]: [{ ids: { simkl: parseInt(normalizedId) }, status: statusMapped }] };
+      console.log('[Simkl][Update] watchlist status payload', statusPayload);
       await this.makeRequest({
-        url: `${this.baseUrl}/sync/add-to-list`,
+        url: `${this.baseUrl}/sync/watchlist`,
         method: 'POST',
         headers: this.getHeaders({ type: 'update' }),
-        body: JSON.stringify(listPayload),
+        body: JSON.stringify(statusPayload),
         priority: 'high'
       });
+      // Enforce status via ratings if no explicit score was provided
+      if (updates.score === undefined || updates.score === null) {
+        const statusToRating = { watching: 8, completed: 9, hold: 6, dropped: 3, plantowatch: 1 };
+        const derived = statusToRating[statusMapped];
+        if (derived) {
+          const ratingsPayload = { [containerKey]: [{ ids: { simkl: parseInt(normalizedId) }, rating: derived }] };
+          console.log('[Simkl][Update] derived ratings payload for status', ratingsPayload);
+          await this.makeRequest({
+            url: `${this.baseUrl}/sync/ratings`,
+            method: 'POST',
+            headers: this.getHeaders({ type: 'update' }),
+            body: JSON.stringify(ratingsPayload),
+            priority: 'high'
+          });
+        }
+      }
+      // If marking a show as completed without progress, push remaining episodes to history
+      if (!isMovie && String(updates.status).toUpperCase() === 'COMPLETED' && updates.progress === undefined) {
+        try {
+          let prevProgress = 0;
+          let totalEpisodes = 0;
+          const existing = await this.getUserEntryForMedia(normalizedId, mediaType);
+          prevProgress = Math.max(0, parseInt(existing?.progress) || 0);
+          // Try to detect total episodes from existing media data
+          const media = existing?.media;
+          totalEpisodes = Math.max(0, parseInt(media?.episodes) || 0);
+          if (!totalEpisodes) {
+            const single = await this.fetchSimklData({ type: 'single', mediaType, mediaId: normalizedId, nocache: true });
+            totalEpisodes = Math.max(0, parseInt(single?.MediaList?.media?.episodes) || 0);
+          }
+          if (totalEpisodes && totalEpisodes > prevProgress) {
+            const episodes = [];
+            for (let i = prevProgress + 1; i <= totalEpisodes && episodes.length < 1000; i++) episodes.push({ number: i });
+            if (episodes.length) {
+              const payload = { shows: [{ ids: { simkl: parseInt(normalizedId) }, episodes }] };
+              await this.makeRequest({
+                url: `${this.baseUrl}/sync/history`,
+                method: 'POST',
+                headers: this.getHeaders({ type: 'update' }),
+                body: JSON.stringify(payload),
+                priority: 'high'
+              });
+            }
+          }
+        } catch {}
+      }
     }
 
     // 2) Score -> ratings
@@ -5996,7 +6170,8 @@ getSimklMediaType(mediaType) {
       const rating = Math.max(0, Math.min(10, Math.round(updates.score)));
       if (rating > 0) {
         const containerKey = isMovie ? 'movies' : 'shows';
-        const ratingsPayload = { [containerKey]: [{ ids: { simkl: parseInt(mediaId) }, rating }] };
+        const ratingsPayload = { [containerKey]: [{ ids: { simkl: parseInt(normalizedId) }, rating }] };
+        console.log('[Simkl][Update] ratings payload', ratingsPayload);
         await this.makeRequest({
           url: `${this.baseUrl}/sync/ratings` ,
           method: 'POST',
@@ -6007,12 +6182,13 @@ getSimklMediaType(mediaType) {
       }
     }
 
-    // 3) Progress -> history (movies only); shows keep watched_episodes via add-to-list payload
+    // 3) Progress -> history (movies only); shows keep watched_episodes via watchlist payload
     if (updates.progress !== undefined) {
       if (isMovie) {
         const watched = (parseInt(updates.progress) || 0) > 0;
         const containerKey = 'movies';
-        const historyPayload = { [containerKey]: [{ ids: { simkl: parseInt(mediaId) } }] };
+        const historyPayload = { [containerKey]: [{ ids: { simkl: parseInt(normalizedId) } }] };
+        console.log('[Simkl][Update] history payload', historyPayload);
         await this.makeRequest({
           url: `${this.baseUrl}/sync/history${watched ? '' : '/remove'}`,
           method: 'POST',
@@ -6021,15 +6197,49 @@ getSimklMediaType(mediaType) {
           priority: 'high'
         });
       } else {
-        // For shows, keep watched_episodes within add-to-list
-        const listPayload = this.buildUpdatePayload(mediaId, { progress: updates.progress }, mediaType);
-        await this.makeRequest({
-          url: `${this.baseUrl}/sync/add-to-list`,
-          method: 'POST',
-          headers: this.getHeaders({ type: 'update' }),
-          body: JSON.stringify(listPayload),
-          priority: 'high'
-        });
+        // For shows, update progress via history episodes (incremental add/remove)
+        let prevProgress = 0;
+        let totalEpisodes = 0;
+        let airedEpisodes = 0;
+        try {
+          const existing = await this.getUserEntryForMedia(normalizedId, mediaType);
+          prevProgress = Math.max(0, parseInt(existing?.progress) || 0);
+          totalEpisodes = Math.max(0, parseInt(existing?.media?.episodes) || 0);
+          const raw = existing?.media?._rawData || {};
+          const airedCandidates = [raw.aired_episodes_count, raw.aired_episodes, raw.show?.aired_episodes_count, raw.show?.aired_episodes];
+          for (const cand of airedCandidates) {
+            const n = Number(cand);
+            if (Number.isFinite(n) && n > 0) { airedEpisodes = n; break; }
+          }
+        } catch {}
+        const requestedProgress = Math.max(0, parseInt(updates.progress) || 0);
+        // Cap increases to the number of aired (or known total) episodes to match Simkl behavior
+        const cap = Math.max(0, (airedEpisodes || totalEpisodes || requestedProgress));
+        if (requestedProgress !== prevProgress) {
+          let from, to, remove;
+          if (requestedProgress > prevProgress) {
+            remove = false;
+            from = prevProgress + 1;
+            to = Math.min(requestedProgress, cap);
+          } else {
+            remove = true;
+            from = requestedProgress + 1;
+            to = prevProgress;
+          }
+          const episodes = [];
+          for (let i = from; i <= to && episodes.length < 1000; i++) episodes.push({ number: i });
+          if (episodes.length > 0) {
+            const payload = { shows: [{ ids: { simkl: parseInt(normalizedId) }, episodes }] };
+            const url = `${this.baseUrl}/sync/history${remove ? '/remove' : ''}`;
+            await this.makeRequest({
+              url,
+              method: 'POST',
+              headers: this.getHeaders({ type: 'update' }),
+              body: JSON.stringify(payload),
+              priority: 'high'
+            });
+          }
+        }
       }
     }
     
@@ -6047,7 +6257,7 @@ getSimklMediaType(mediaType) {
     };
   }
 
-  buildUpdatePayload(mediaId, updates, mediaType) {
+  buildUpdatePayload(mediaId, updates, mediaType) { console.log('[Simkl][Update] buildUpdatePayload', { mediaId, updates, mediaType });
     const typeUpper = (mediaType || '').toString().toUpperCase();
     const isMovie = typeUpper === 'MOVIE' || typeUpper === 'MOVIES';
 
@@ -6056,10 +6266,15 @@ getSimklMediaType(mediaType) {
     const payload = { [containerKey]: [{ ids: { simkl: parseInt(mediaId) } }] };
 
     const item = payload[containerKey][0];
+    console.log('[Simkl][Update] initial payload item', JSON.parse(JSON.stringify(item)));
     
     // Add status
     if (updates.status !== undefined) {
       item.status = this.mapAniListStatusToSimkl(updates.status);
+    } else if (!isMovie && updates.progress !== undefined) {
+      // Ensure status present when only progress is updated on shows
+      const prog = parseInt(updates.progress) || 0;
+      item.status = prog > 0 ? 'watching' : 'plantowatch';
     }
     // Add rating (Simkl uses 1-10 scale)
     if (updates.score !== undefined && updates.score !== null) {
@@ -6075,26 +6290,51 @@ getSimklMediaType(mediaType) {
         // movies don't have episodes; treat any progress > 0 as watched flag
         item.watched = (parseInt(updates.progress) || 0) > 0;
       } else {
-        item.watched_episodes = parseInt(updates.progress) || 0;
+        const prog = parseInt(updates.progress) || 0;
+        item.watched_episodes = prog;
+        // If status not provided for shows, set a sensible default to satisfy API
+        if (item.status === undefined) {
+          item.status = prog > 0 ? 'watching' : 'plantowatch';
+        }
       }
     }
     
+    console.log('[Simkl][Update] enriched item before cache', JSON.parse(JSON.stringify(item)));
+    // Enrich with optional identifiers if available from cache (helps matching on server)
+    try {
+      const cached = this.cache?.get(String(mediaId), { scope: 'mediaData' });
+      const media = cached?.media || cached;
+      if (media?.idImdb) {
+        item.ids.imdb = media.idImdb;
+      }
+      if (media?.idMal) {
+        item.ids.mal = media.idMal;
+      }
+      const title = media?.title?.english || media?.title?.romaji || media?.title?.native;
+      if (title) {
+        item.title = title;
+      }
+      console.log('[Simkl][Update] enriched item after cache', JSON.parse(JSON.stringify(item)));
+    } catch (e) { console.log('[Simkl][Update] cache enrich failed', e); }
+
+    console.log('[Simkl][Update] final payload', JSON.parse(JSON.stringify(payload)));
     return payload;
   }
 
   // Remove media from user's Simkl list
   async removeMediaListEntry(mediaId, mediaType) {
-    this.validateMediaId(mediaId);
+    const normalizedId = this.normalizeSimklId(mediaId);
+    this.validateMediaId(normalizedId);
     await this.ensureValidToken();
     const typeUpper = (mediaType || '').toString().toUpperCase();
     const isMovie = typeUpper === 'MOVIE' || typeUpper === 'MOVIES';
     const containerKey = isMovie ? 'movies' : 'shows';
     const payload = {
-      [containerKey]: [{ ids: { simkl: parseInt(mediaId) } }]
+      [containerKey]: [{ ids: { simkl: parseInt(normalizedId) } }]
     };
 
     const requestParams = {
-      url: `${this.baseUrl}/sync/remove-from-list`,
+      url: `${this.baseUrl}/sync/watchlist/remove`,
       method: 'POST',
       headers: this.getHeaders({ type: 'update' }),
       body: JSON.stringify(payload),
@@ -6173,7 +6413,9 @@ getSimklMediaType(mediaType) {
         mediaId: parseInt(mediaId),
         nocache: true 
       };
+      console.log('[Simkl][Check] fetchSimklData', config);
       const response = await this.fetchSimklData(config);
+      console.log('[Simkl][Check] response', response);
       return response.MediaList !== null;
     } catch (error) {
       
@@ -6194,7 +6436,9 @@ getSimklMediaType(mediaType) {
         nocache: true
       };
       
+      console.log('[Simkl][GetEntry] fetchSimklData', config);
       const result = await this.fetchSimklData(config);
+      console.log('[Simkl][GetEntry] result', result);
       return result.MediaList; // null if not in list, entry if in list
       
     } catch (error) {
@@ -6279,13 +6523,34 @@ getSimklMediaType(mediaType) {
     return normalized;
   }
 
+  normalizeSimklId(mediaId) {
+    if (typeof mediaId === 'number') {
+      return Number.isFinite(mediaId) && mediaId > 0 ? mediaId : 0;
+    }
+    if (!mediaId) return 0;
+    // Accept strings like "simkl:12345", "id=12345", or mixed forms, pick the first valid group of digits
+    const str = String(mediaId);
+    // Prefer exact simkl id if encoded like simkl:123 or simkl=123
+    const simklMatch = str.match(/simkl[^0-9]*([0-9]+)/i);
+    if (simklMatch && simklMatch[1]) {
+      const val = parseInt(simklMatch[1], 10);
+      return Number.isFinite(val) && val > 0 ? val : 0;
+    }
+    // Fallback: first standalone number
+    const anyMatch = str.match(/([0-9]{1,})/);
+    if (anyMatch && anyMatch[1]) {
+      const val = parseInt(anyMatch[1], 10);
+      return Number.isFinite(val) && val > 0 ? val : 0;
+    }
+    return 0;
+  }
+
   validateMediaId(mediaId) {
-    const id = parseInt(mediaId);
+    const id = this.normalizeSimklId(mediaId);
     if (!id || id <= 0) {
       throw new Error(`Invalid media ID: ${mediaId}`);
     }
   }
-
   validateUpdates(updates) {
     if (!updates || typeof updates !== 'object') {
       throw new Error('Updates must be an object');
@@ -6346,7 +6611,6 @@ getSimklMediaType(mediaType) {
       throw error;
     }
   }
-
   // =================== ERROR HANDLING (Simplified from original) ===================
 
   createUserFriendlyError(error) {
@@ -6632,6 +6896,23 @@ this.emojiMapper.init({ patchSettings:true, patchCreateEl:true, patchNotice:true
     this.registerMarkdownCodeBlockProcessor('zoro', this.processor.processZoroCodeBlock.bind(this.processor));
     this.addSettingTab(new ZoroSettingTab(this.app, this));
     
+    // Command: Export Simkl Edit Errors to markdown file with timestamped name
+    this.addCommand({
+      id: 'export-simkl-edit-errors',
+      name: 'Export Simkl Edit Errors',
+      callback: async () => {
+        try {
+          const md = this.simklApi.getEditErrorsMarkdown();
+          const now = new Date();
+          const pad = n => String(n).padStart(2, '0');
+          const fname = `error-${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}.md`;
+          const file = await this.app.vault.create(fname, md);
+          new Notice(`Exported errors to ${file.path}`, 4000);
+        } catch (e) {
+          new Notice(`Failed to export errors: ${e.message}`, 6000);
+        }
+      }
+    });
   }
 
   validateSettings(settings) {
@@ -7043,7 +7324,6 @@ async handleListOperation(api, config) {
 async handleTrendingOperation(api, config) {
   return { isTrendingOperation: true, config };
 }
-
   async renderData(el, data, config) {
     const { type } = config;
 
@@ -7801,13 +8081,22 @@ class CardRenderer {
 
     try {
       const numericId = Number(media.id) || 0;
-      if (entrySource === 'simkl' && numericId <= 0) {
-        new Notice('⚠️ Simkl search result missing an ID. Open details and use external links instead.', 4000);
-        throw new Error('Invalid media ID: ' + media.id);
+          const normalizedId = entrySource === 'simkl' ? this.plugin.simklApi.normalizeSimklId(numericId) : numericId;
+    console.log('[Zoro][Edit] entrySource', entrySource, 'entryMediaType', entryMediaType);
+    console.log('[Zoro][Edit] mediaTitle', this.formatter.formatTitle(media));
+    console.log(`[Zoro] Checking user entry for media ${normalizedId} via ${entrySource}`);
+    
+    let existingEntry = null;
+      if (normalizedId > 0) {
+        existingEntry = await this.apiHelper.getUserEntryForMedia(normalizedId, entryMediaType, entrySource);
+      } else if (entrySource === 'simkl') {
+        // Attempt to resolve a Simkl ID by title before editing
+        const guessId = await this.plugin.simklApi.resolveSimklIdByTitle(this.formatter.formatTitle(media), entryMediaType);
+        if (guessId > 0) {
+          media.id = guessId;
+          existingEntry = await this.apiHelper.getUserEntryForMedia(guessId, entryMediaType, entrySource);
+        }
       }
-      console.log(`[Zoro] Checking user entry for media ${numericId} via ${entrySource}`);
-      
-      const existingEntry = await this.apiHelper.getUserEntryForMedia(numericId, entryMediaType, entrySource);
       console.log(`[Zoro] User entry result:`, existingEntry ? 'Found existing entry' : 'Not in user list');
       
       const entryToEdit = existingEntry || {
@@ -7815,7 +8104,11 @@ class CardRenderer {
         status: 'PLANNING',
         progress: 0,
         score: null,
-        id: null
+        id: null,
+        _zoroMeta: {
+          source: entrySource,
+          mediaType: entryMediaType
+        }
       };
 
       const isNewEntry = !existingEntry;
@@ -7830,6 +8123,12 @@ class CardRenderer {
         entryToEdit,
         async (updates) => {
           try {
+            // Ensure we have a numeric id before attempting update
+            const updateId = Number(media.id) || 0;
+            if (entrySource === 'simkl' && updateId <= 0) {
+              const retryId = await this.plugin.simklApi.resolveSimklIdByTitle(this.formatter.formatTitle(media), entryMediaType);
+              if (retryId > 0) media.id = retryId;
+            }
             console.log(`[Zoro] Updating media ${media.id} with:`, updates);
             await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, this.apiHelper.detectMediaType(entry, config, media));
             
@@ -8877,8 +9176,11 @@ class APISourceHelper {
   }
 
   detectMediaType(entry, config, media) {
-    return entry?._zoroMeta?.mediaType || config.mediaType || 
-           (media?.episodes ? 'ANIME' : 'MANGA');
+    if (entry?._zoroMeta?.mediaType) return entry._zoroMeta.mediaType;
+    if (config?.mediaType) return config.mediaType;
+    if (media?.format === 'MOVIE') return 'MOVIE';
+    if (media?.episodes) return 'ANIME';
+    return 'TV';
   }
 }
 class FormatterHelper {
@@ -9487,10 +9789,10 @@ class Edit {
     this.anilistProvider = new AniListEditModal(plugin);
     this.malProvider = new MALEditModal(plugin);
     this.simklProvider = new SimklEditModal(plugin);
-    this.providers = {
+        this.providers = {
       'anilist': this.anilistProvider,
       'mal': this.malProvider,
-'simkl': this.simklProvider
+      'simkl': this.simklProvider
     };
   }
 
@@ -10146,20 +10448,29 @@ class SimklEditModal {
   }
 
   async updateEntry(entry, updates, onSave) {
+    console.log('[Simkl][Edit] updateEntry called', { entry, updates });
     const mediaId = entry.media?.id || entry.mediaId;
+    console.log('[Simkl][Edit] raw mediaId', mediaId);
     if (!mediaId) throw new Error('Media ID not found');
-   const mediaType = entry.media?.format === 'MOVIE' ? 'MOVIE' : (entry._zoroMeta?.mediaType || 'ANIME');
+    const mediaType = entry._zoroMeta?.mediaType || (entry.media?.format === 'MOVIE' ? 'MOVIE' : (entry.media?.episodes ? 'ANIME' : 'TV'));
+    console.log('[Simkl][Edit] mediaType', mediaType);
+    console.log('[Simkl][Edit] calling updateMediaListEntry', { mediaId, updates, mediaType });
     await this.plugin.simklApi.updateMediaListEntry(mediaId, updates, mediaType);
+    console.log('[Simkl][Edit] updateEntry done');
     await onSave(updates);
     Object.assign(entry, updates);
     return entry;
   }
 
   async removeEntry(entry) {
+    console.log('[Simkl][Edit] removeEntry called', entry);
     const mediaId = entry.media?.id || entry.mediaId;
+    console.log('[Simkl][Edit] raw mediaId', mediaId);
     if (!mediaId) throw new Error('Media ID not found');
-    const mediaType = entry.media?.format === 'MOVIE' ? 'MOVIE' : (entry._zoroMeta?.mediaType || 'ANIME');
+    const mediaType = entry._zoroMeta?.mediaType || (entry.media?.format === 'MOVIE' ? 'MOVIE' : (entry.media?.episodes ? 'ANIME' : 'TV'));
+    console.log('[Simkl][Edit] mediaType', mediaType);
     await this.plugin.simklApi.removeMediaListEntry(mediaId, mediaType);
+    console.log('[Simkl][Edit] removeEntry done');
   }
 
   invalidateCache(entry) {
@@ -10309,7 +10620,6 @@ class SupportEditModal {
     }
   }
 }
-
 class ConnectedNotes {
   constructor(plugin) {
     this.plugin = plugin;
@@ -11182,7 +11492,6 @@ async handleConnectedNotesClick(e, media, entry, config) {
   }
 }
 }
-
 class DetailPanelSource {
   constructor(plugin) {
     this.plugin = plugin;
@@ -12104,10 +12413,10 @@ class RenderDetailPanel {
     sections.push(this.createHeaderSection(media));
     sections.push(this.createMetadataSection(media, entry));
 
-   if (media.type === 'ANIME' && media.nextAiringEpisode) {
-      sections.push(this.createAiringSection(media.nextAiringEpisode));
-    }
-    
+    // Simkl does not provide airing data, so no airing section for Simkl entries
+    // Airing sections only work for AniList and MAL entries that have airing data
+
+    // Statistics section only for AniList/MAL entries with scores
     if (media.averageScore > 0) {
       sections.push(this.createStatisticsSection(media));
     }
@@ -12134,18 +12443,7 @@ class RenderDetailPanel {
   updatePanelContent(panel, media, malData = null, imdbData = null) {
     const content = panel.querySelector('.panel-content');
     
-   if (media.type === 'ANIME' && media.nextAiringEpisode && !content.querySelector('.airing-section')) {
-      const airingSection = this.createAiringSection(media.nextAiringEpisode);
-      const metadataSection = content.querySelector('.metadata-section');
-      if (metadataSection) {
-        metadataSection.insertAdjacentElement('afterend', airingSection);
-      } else {
-        const headerSection = content.querySelector('.panel-header');
-        if (headerSection) {
-          headerSection.insertAdjacentElement('afterend', airingSection);
-        }
-      }
-    }
+    // Simkl does not provide airing data, so no airing section updates for Simkl entries
     
     if (media.description) {
       const existingSynopsis = content.querySelector('.synopsis-section');
@@ -12611,7 +12909,6 @@ class RenderDetailPanel {
     });
   }
 }
-
 class Trending {
   constructor(plugin) { 
     this.plugin = plugin; 

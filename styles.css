@@ -1897,6 +1897,73 @@ transparent 70%
   }
 }
 
+/* Copy Functionality Styles for Detail Panel */
+.zoro-copy-container {
+  position: relative;
+}
+
+.zoro-copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: transparent !important;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.zoro-copy-btn:hover {
+  background: transparent !important;
+}
+
+.zoro-copy-container:hover .zoro-copy-btn {
+  opacity: 1;
+}
+
+.zoro-copy-btn.zoro-copied {
+  background: rgba(34, 197, 94, 0.8);
+  opacity: 1;
+}
+
+.zoro-copy-btn.zoro-copied:hover {
+  background: rgba(34, 197, 94, 0.9);
+}
+
+.title-section.zoro-copy-container {
+  padding-right: 40px;
+}
+
+.synopsis-section.zoro-copy-container .synopsis-content {
+  padding-right: 40px;
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 768px) {
+  .zoro-copy-btn {
+    top: 4px;
+    right: 4px;
+    padding: 3px 6px;
+    font-size: 11px;
+  }
+  
+  .title-section.zoro-copy-container {
+    padding-right: 32px;
+  }
+  
+  .synopsis-section.zoro-copy-container .synopsis-content {
+    padding-right: 32px;
+  }
+}
+
 /* 
 The panel will automatically adapt to the user's system theme preference:
 - Dark mode when system is set to dark

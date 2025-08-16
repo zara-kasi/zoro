@@ -6081,276 +6081,392 @@ getSimklMediaType(mediaType) {
   }
 
   // =================== UPDATE METHODS (Following MAL pattern) ===================
-
-  async updateMediaListEntry(mediaId, updates, mediaType) {
-    
-    
-    try {
-      return await this.executeUpdate(mediaId, updates, mediaType);
-    } catch (error) {
-      
-      throw this.createUserFriendlyError(error);
-    }
+ async updateMediaListEntry(mediaId, updates, mediaType) {
+  try {  
+    return await this.executeUpdate(mediaId, updates, mediaType);  
+  } catch (error) {  
+    throw this.createUserFriendlyError(error);  
   }
+}
 
-  async executeUpdate(mediaId, updates, mediaType) {
-    const normalizedId = this.normalizeSimklId(mediaId);
-    console.log('[Simkl][Update] executeUpdate', { rawId: mediaId, normalizedId, updates, mediaType });
-    this.validateMediaId(normalizedId);
-    this.validateUpdates(updates);
+async executeUpdate(mediaId, updates, mediaType) {
+  const normalizedId = this.normalizeSimklId(mediaId);
+  console.log('[Simkl][Update] executeUpdate', { rawId: mediaId, normalizedId, updates, mediaType });
+  this.validateMediaId(normalizedId);
+  this.validateUpdates(updates);
+
+  await this.ensureValidToken();  
+  console.log('[Simkl][Update] token ensured');
+
+  const typeUpper = (mediaType || '').toString().toUpperCase();
+  const isMovie = typeUpper === 'MOVIE' || typeUpper === 'MOVIES';
+
+  // 1) Status -> watchlist + enforce via ratings mapping  
+  if (updates.status !== undefined) {  
+    const statusPayload = this.buildUpdatePayload(normalizedId, { status: updates.status }, mediaType);  
+    console.log('[Simkl][Update] watchlist status payload', statusPayload);  
+    await this.makeRequest({  
+      url: `${this.baseUrl}/sync/add-to-list`,  
+      method: 'POST',  
+      headers: this.getHeaders({ type: 'update' }),  
+      body: JSON.stringify(statusPayload),  
+      priority: 'high'  
+    });  
+    // Best-effort mirror: some accounts accept anime updates only under 'shows'  
+    if (!isMovie && typeUpper === 'ANIME') {  
+      const mirrorPayload = this.buildUpdatePayload(normalizedId, { status: updates.status }, mediaType, 'shows');  
+      await this.makeRequest({  
+        url: `${this.baseUrl}/sync/add-to-list`,  
+        method: 'POST',  
+        headers: this.getHeaders({ type: 'update' }),  
+        body: JSON.stringify(mirrorPayload),  
+        priority: 'normal'  
+      });  
+    }  
+    // Enforce status via ratings if no explicit score was provided  
+    if (updates.score === undefined || updates.score === null) {  
+      const statusMapped = this.mapAniListStatusToSimkl(updates.status);  
+      const statusToRating = { watching: 8, completed: 9, hold: 6, dropped: 3, plantowatch: 1 };  
+      const derived = statusToRating[statusMapped];  
+      if (derived) {  
+        const ratingsPayload = this.buildUpdatePayload(normalizedId, { score: derived }, mediaType);  
+        console.log('[Simkl][Update] derived ratings payload for status', ratingsPayload);  
+        await this.makeRequest({  
+          url: `${this.baseUrl}/sync/ratings`,  
+          method: 'POST',  
+          headers: this.getHeaders({ type: 'update' }),  
+          body: JSON.stringify(ratingsPayload),  
+          priority: 'high'  
+        });  
+      }  
+    }  
+    // If marking a show as completed without progress, push remaining episodes to history  
+    if (!isMovie && String(updates.status).toUpperCase() === 'COMPLETED' && updates.progress === undefined) {  
+      try {  
+        let prevProgress = 0;  
+        let totalEpisodes = 0;  
+        const existing = await this.getUserEntryForMedia(normalizedId, mediaType);  
+        prevProgress = Math.max(0, parseInt(existing?.progress) || 0);  
+        // Try to detect total episodes from existing media data  
+        const media = existing?.media;  
+        totalEpisodes = Math.max(0, parseInt(media?.episodes) || 0);  
+        if (!totalEpisodes) {  
+          const single = await this.fetchSimklData({ type: 'single', mediaType, mediaId: normalizedId, nocache: true });  
+          totalEpisodes = Math.max(0, parseInt(single?.MediaList?.media?.episodes) || 0);  
+        }  
+        if (totalEpisodes && totalEpisodes > prevProgress) {  
+          const episodes = [];  
+          for (let i = prevProgress + 1; i <= totalEpisodes && episodes.length < 1000; i++) episodes.push({ number: i });  
+          if (episodes.length) {  
+            const payload = { shows: [{ ids: { simkl: parseInt(normalizedId) }, episodes }] };  
+            await this.makeRequest({  
+              url: `${this.baseUrl}/sync/history`,  
+              method: 'POST',  
+              headers: this.getHeaders({ type: 'update' }),  
+              body: JSON.stringify(payload),  
+              priority: 'high'  
+            });  
+          }  
+        }  
+      } catch {}  
+    }  
+  }  
+
+  // 2) Score -> ratings  
+  if (updates.score !== undefined && updates.score !== null) {  
+    const rating = Math.max(0, Math.min(10, Math.round(updates.score)));  
+    if (rating > 0) {  
+      const ratingsPayload = this.buildUpdatePayload(normalizedId, { score: rating }, mediaType);  
+      console.log('[Simkl][Update] ratings payload', ratingsPayload);  
+      await this.makeRequest({  
+        url: `${this.baseUrl}/sync/ratings` ,  
+        method: 'POST',  
+        headers: this.getHeaders({ type: 'update' }),  
+        body: JSON.stringify(ratingsPayload),  
+        priority: 'high'  
+      });  
+      // Mirror ratings under 'shows' for anime as a fallback  
+      if (!isMovie && typeUpper === 'ANIME') {  
+        const mirrorRatings = this.buildUpdatePayload(normalizedId, { score: rating }, mediaType, 'shows');  
+        await this.makeRequest({  
+          url: `${this.baseUrl}/sync/ratings` ,  
+          method: 'POST',  
+          headers: this.getHeaders({ type: 'update' }),  
+          body: JSON.stringify(mirrorRatings),  
+          priority: 'normal'  
+        });  
+      }  
+    }  
+  }  
+
+  // 3) Progress -> history (movies only); shows keep watched_episodes via watchlist payload  
+  if (updates.progress !== undefined) {  
+    if (isMovie) {  
+      const watched = (parseInt(updates.progress) || 0) > 0;  
+      const containerKey = 'movies';  
+      const historyPayload = { [containerKey]: [{ ids: { simkl: parseInt(normalizedId) } }] };  
+      console.log('[Simkl][Update] history payload', historyPayload);  
+      await this.makeRequest({  
+        url: `${this.baseUrl}/sync/history${watched ? '' : '/remove'}`,  
+        method: 'POST',  
+        headers: this.getHeaders({ type: 'update' }),  
+        body: JSON.stringify(historyPayload),  
+        priority: 'high'  
+      });  
+    } else {  
+      // For shows, update progress via history episodes (incremental add/remove)  
+      let prevProgress = 0;  
+      let totalEpisodes = 0;  
+      let airedEpisodes = 0;  
+      try {  
+        const existing = await this.getUserEntryForMedia(normalizedId, mediaType);  
+        prevProgress = Math.max(0, parseInt(existing?.progress) || 0);  
+        totalEpisodes = Math.max(0, parseInt(existing?.media?.episodes) || 0);  
+        const raw = existing?.media?._rawData || {};  
+        const airedCandidates = [raw.aired_episodes_count, raw.aired_episodes, raw.show?.aired_episodes_count, raw.show?.aired_episodes];  
+        for (const cand of airedCandidates) {  
+          const n = Number(cand);  
+          if (Number.isFinite(n) && n > 0) { airedEpisodes = n; break; }  
+        }  
+      } catch {}  
+      const requestedProgress = Math.max(0, parseInt(updates.progress) || 0);  
+      // Cap increases to the number of aired (or known total) episodes to match Simkl behavior  
+      const cap = Math.max(0, (airedEpisodes || totalEpisodes || requestedProgress));  
+      if (requestedProgress !== prevProgress) {  
+        let from, to, remove;  
+        if (requestedProgress > prevProgress) {  
+          remove = false;  
+          from = prevProgress + 1;  
+          to = Math.min(requestedProgress, cap);  
+        } else {  
+          remove = true;  
+          from = requestedProgress + 1;  
+          to = prevProgress;  
+        }  
+        const episodes = [];  
+        for (let i = from; i <= to && episodes.length < 1000; i++) episodes.push({ number: i });  
+        if (episodes.length > 0) {  
+          const payload = { shows: [{ ids: { simkl: parseInt(normalizedId) }, episodes }] };  
+          const url = `${this.baseUrl}/sync/history${remove ? '/remove' : ''}`;  
+          await this.makeRequest({  
+            url,  
+            method: 'POST',  
+            headers: this.getHeaders({ type: 'update' }),  
+            body: JSON.stringify(payload),  
+            priority: 'high'  
+          });  
+        }  
+      }  
+    }  
+  }  
     
-    await this.ensureValidToken();
-    console.log('[Simkl][Update] token ensured');
-   const typeUpper = (mediaType || '').toString().toUpperCase();
-    const isMovie = typeUpper === 'MOVIE' || typeUpper === 'MOVIES';
-
-    // 1) Status -> watchlist + enforce via ratings mapping
-    if (updates.status !== undefined) {
-      const containerKey = isMovie ? 'movies' : 'shows';
-      const statusMapped = this.mapAniListStatusToSimkl(updates.status);
-      const statusPayload = { [containerKey]: [{ ids: { simkl: parseInt(normalizedId) }, status: statusMapped }] };
-      console.log('[Simkl][Update] watchlist status payload', statusPayload);
-      await this.makeRequest({
-        url: `${this.baseUrl}/sync/watchlist`,
-        method: 'POST',
-        headers: this.getHeaders({ type: 'update' }),
-        body: JSON.stringify(statusPayload),
-        priority: 'high'
-      });
-      // Enforce status via ratings if no explicit score was provided
-      if (updates.score === undefined || updates.score === null) {
-        const statusToRating = { watching: 8, completed: 9, hold: 6, dropped: 3, plantowatch: 1 };
-        const derived = statusToRating[statusMapped];
-        if (derived) {
-          const ratingsPayload = { [containerKey]: [{ ids: { simkl: parseInt(normalizedId) }, rating: derived }] };
-          console.log('[Simkl][Update] derived ratings payload for status', ratingsPayload);
-          await this.makeRequest({
-            url: `${this.baseUrl}/sync/ratings`,
-            method: 'POST',
-            headers: this.getHeaders({ type: 'update' }),
-            body: JSON.stringify(ratingsPayload),
-            priority: 'high'
-          });
-        }
-      }
-      // If marking a show as completed without progress, push remaining episodes to history
-      if (!isMovie && String(updates.status).toUpperCase() === 'COMPLETED' && updates.progress === undefined) {
-        try {
-          let prevProgress = 0;
-          let totalEpisodes = 0;
-          const existing = await this.getUserEntryForMedia(normalizedId, mediaType);
-          prevProgress = Math.max(0, parseInt(existing?.progress) || 0);
-          // Try to detect total episodes from existing media data
-          const media = existing?.media;
-          totalEpisodes = Math.max(0, parseInt(media?.episodes) || 0);
-          if (!totalEpisodes) {
-            const single = await this.fetchSimklData({ type: 'single', mediaType, mediaId: normalizedId, nocache: true });
-            totalEpisodes = Math.max(0, parseInt(single?.MediaList?.media?.episodes) || 0);
-          }
-          if (totalEpisodes && totalEpisodes > prevProgress) {
-            const episodes = [];
-            for (let i = prevProgress + 1; i <= totalEpisodes && episodes.length < 1000; i++) episodes.push({ number: i });
-            if (episodes.length) {
-              const payload = { shows: [{ ids: { simkl: parseInt(normalizedId) }, episodes }] };
-              await this.makeRequest({
-                url: `${this.baseUrl}/sync/history`,
-                method: 'POST',
-                headers: this.getHeaders({ type: 'update' }),
-                body: JSON.stringify(payload),
-                priority: 'high'
-              });
-            }
-          }
-        } catch {}
-      }
-    }
-
-    // 2) Score -> ratings
-    if (updates.score !== undefined && updates.score !== null) {
-      const rating = Math.max(0, Math.min(10, Math.round(updates.score)));
-      if (rating > 0) {
-        const containerKey = isMovie ? 'movies' : 'shows';
-        const ratingsPayload = { [containerKey]: [{ ids: { simkl: parseInt(normalizedId) }, rating }] };
-        console.log('[Simkl][Update] ratings payload', ratingsPayload);
-        await this.makeRequest({
-          url: `${this.baseUrl}/sync/ratings` ,
-          method: 'POST',
-          headers: this.getHeaders({ type: 'update' }),
-          body: JSON.stringify(ratingsPayload),
-          priority: 'high'
-        });
-      }
-    }
-
-    // 3) Progress -> history (movies only); shows keep watched_episodes via watchlist payload
-    if (updates.progress !== undefined) {
-      if (isMovie) {
-        const watched = (parseInt(updates.progress) || 0) > 0;
-        const containerKey = 'movies';
-        const historyPayload = { [containerKey]: [{ ids: { simkl: parseInt(normalizedId) } }] };
-        console.log('[Simkl][Update] history payload', historyPayload);
-        await this.makeRequest({
-          url: `${this.baseUrl}/sync/history${watched ? '' : '/remove'}`,
-          method: 'POST',
-          headers: this.getHeaders({ type: 'update' }),
-          body: JSON.stringify(historyPayload),
-          priority: 'high'
-        });
-      } else {
-        // For shows, update progress via history episodes (incremental add/remove)
-        let prevProgress = 0;
-        let totalEpisodes = 0;
-        let airedEpisodes = 0;
-        try {
-          const existing = await this.getUserEntryForMedia(normalizedId, mediaType);
-          prevProgress = Math.max(0, parseInt(existing?.progress) || 0);
-          totalEpisodes = Math.max(0, parseInt(existing?.media?.episodes) || 0);
-          const raw = existing?.media?._rawData || {};
-          const airedCandidates = [raw.aired_episodes_count, raw.aired_episodes, raw.show?.aired_episodes_count, raw.show?.aired_episodes];
-          for (const cand of airedCandidates) {
-            const n = Number(cand);
-            if (Number.isFinite(n) && n > 0) { airedEpisodes = n; break; }
-          }
-        } catch {}
-        const requestedProgress = Math.max(0, parseInt(updates.progress) || 0);
-        // Cap increases to the number of aired (or known total) episodes to match Simkl behavior
-        const cap = Math.max(0, (airedEpisodes || totalEpisodes || requestedProgress));
-        if (requestedProgress !== prevProgress) {
-          let from, to, remove;
-          if (requestedProgress > prevProgress) {
-            remove = false;
-            from = prevProgress + 1;
-            to = Math.min(requestedProgress, cap);
-          } else {
-            remove = true;
-            from = requestedProgress + 1;
-            to = prevProgress;
-          }
-          const episodes = [];
-          for (let i = from; i <= to && episodes.length < 1000; i++) episodes.push({ number: i });
-          if (episodes.length > 0) {
-            const payload = { shows: [{ ids: { simkl: parseInt(normalizedId) }, episodes }] };
-            const url = `${this.baseUrl}/sync/history${remove ? '/remove' : ''}`;
-            await this.makeRequest({
-              url,
-              method: 'POST',
-              headers: this.getHeaders({ type: 'update' }),
-              body: JSON.stringify(payload),
-              priority: 'high'
-            });
-          }
-        }
-      }
-    }
-    
-    // Invalidate cache
-    this.cache.invalidateByMedia(mediaId);
-    this.cache.invalidateScope('userData');
+  // Invalidate cache  
+  this.cache.invalidateByMedia(mediaId);  
+  this.cache.invalidateScope('userData');  
     
     
-    // Return AniList-compatible response
-    return {
-      id: null,
-      status: updates.status || null,
-      score: updates.score || 0,
-      progress: updates.progress || 0
-    };
-  }
+  // Return AniList-compatible response  
+  return {  
+    id: null,  
+    status: updates.status || null,  
+    score: updates.score || 0,  
+    progress: updates.progress || 0  
+  };
+}
 
-  buildUpdatePayload(mediaId, updates, mediaType) { console.log('[Simkl][Update] buildUpdatePayload', { mediaId, updates, mediaType });
-    const typeUpper = (mediaType || '').toString().toUpperCase();
-    const isMovie = typeUpper === 'MOVIE' || typeUpper === 'MOVIES';
+buildUpdatePayload(mediaId, updates, mediaType, forceContainerKey = null) { 
+  console.log('[Simkl][Update] buildUpdatePayload', { mediaId, updates, mediaType, forceContainerKey });
+  const typeUpper = (mediaType || '').toString().toUpperCase();
+  const isMovie = typeUpper === 'MOVIE' || typeUpper === 'MOVIES';
 
-    // Simkl expects different container keys per type
-    const containerKey = isMovie ? 'movies' : 'shows';
-    const payload = { [containerKey]: [{ ids: { simkl: parseInt(mediaId) } }] };
+  // Simkl expects container 'shows' for anime/TV and 'movies' for movies  
+  const containerKey = forceContainerKey || (isMovie ? 'movies' : 'shows');  
+  const payload = { [containerKey]: [{ ids: { simkl: parseInt(mediaId) } }] };  
 
+  const item = payload[containerKey][0];  
+  item.type = isMovie ? 'movie' : 'show';  
+  console.log('[Simkl][Update] initial payload item', JSON.parse(JSON.stringify(item)));  
+    
+  // Add status using 'to' key instead of 'status' for list operations
+  if (updates.status !== undefined) {  
+    item.to = this.mapAniListStatusToSimkl(updates.status);  
+  } else if (!isMovie && updates.progress !== undefined) {  
+    // Ensure status present when only progress is updated on shows  
+    const prog = parseInt(updates.progress) || 0;  
+    item.to = prog > 0 ? 'watching' : 'plantowatch';  
+  }  
+  
+  // Add rating (Simkl uses 1-10 scale)  
+  if (updates.score !== undefined && updates.score !== null) {  
+    const score = Math.max(0, Math.min(10, Math.round(updates.score)));  
+    if (score > 0) {  
+      item.rating = score;  
+    }  
+  }  
+    
+  // Add progress  
+  if (updates.progress !== undefined) {  
+    if (isMovie) {  
+      // movies don't have episodes; treat any progress > 0 as watched flag  
+      item.watched = (parseInt(updates.progress) || 0) > 0;  
+    } else {  
+      const prog = parseInt(updates.progress) || 0;  
+      item.watched_episodes = prog;  
+      // If status not provided for shows, set a sensible default to satisfy API  
+      if (item.to === undefined) {  
+        item.to = prog > 0 ? 'watching' : 'plantowatch';  
+      }  
+    }  
+  }  
+    
+  console.log('[Simkl][Update] enriched item before cache', JSON.parse(JSON.stringify(item)));  
+  // Enrich with optional identifiers if available from cache (helps matching on server)  
+  try {  
+    const cached = this.cache?.get(String(mediaId), { scope: 'mediaData' });  
+    const media = cached?.media || cached;  
+    if (media?.idImdb) {  
+      item.ids.imdb = media.idImdb;  
+    }  
+    if (media?.idMal) {  
+      item.ids.mal = media.idMal;  
+    }  
+    const title = media?.title?.english || media?.title?.romaji || media?.title?.native;  
+    if (title) {  
+      item.title = title;  
+    }  
+    console.log('[Simkl][Update] enriched item after cache', JSON.parse(JSON.stringify(item)));  
+  } catch (e) { console.log('[Simkl][Update] cache enrich failed', e); }  
+
+  console.log('[Simkl][Update] final payload', JSON.parse(JSON.stringify(payload)));  
+  return payload;
+}
+
+// Build minimal payload for remove operations (only container and IDs)
+buildRemovePayload(mediaId, mediaType, forceContainerKey = null) {
+  console.log('[Simkl][Remove] buildRemovePayload', { mediaId, mediaType, forceContainerKey });
+  const typeUpper = (mediaType || '').toString().toUpperCase();
+  const isMovie = typeUpper === 'MOVIE' || typeUpper === 'MOVIES';
+
+  // Simkl expects container 'shows' for anime/TV and 'movies' for movies  
+  const containerKey = forceContainerKey || (isMovie ? 'movies' : 'shows');  
+  const payload = { [containerKey]: [{ ids: { simkl: parseInt(mediaId) } }] };  
+
+  // Try to enrich with additional IDs from cache to improve matching
+  try {  
+    const cached = this.cache?.get(String(mediaId), { scope: 'mediaData' });  
+    const media = cached?.media || cached;  
     const item = payload[containerKey][0];
-    console.log('[Simkl][Update] initial payload item', JSON.parse(JSON.stringify(item)));
-    
-    // Add status
-    if (updates.status !== undefined) {
-      item.status = this.mapAniListStatusToSimkl(updates.status);
-    } else if (!isMovie && updates.progress !== undefined) {
-      // Ensure status present when only progress is updated on shows
-      const prog = parseInt(updates.progress) || 0;
-      item.status = prog > 0 ? 'watching' : 'plantowatch';
+    if (media?.idImdb) {  
+      item.ids.imdb = media.idImdb;  
+    }  
+    if (media?.idMal) {  
+      item.ids.mal = media.idMal;  
     }
-    // Add rating (Simkl uses 1-10 scale)
-    if (updates.score !== undefined && updates.score !== null) {
-      const score = Math.max(0, Math.min(10, Math.round(updates.score)));
-      if (score > 0) {
-        item.rating = score;
-      }
-    }
-    
-    // Add progress
-    if (updates.progress !== undefined) {
-      if (isMovie) {
-        // movies don't have episodes; treat any progress > 0 as watched flag
-        item.watched = (parseInt(updates.progress) || 0) > 0;
-      } else {
-        const prog = parseInt(updates.progress) || 0;
-        item.watched_episodes = prog;
-        // If status not provided for shows, set a sensible default to satisfy API
-        if (item.status === undefined) {
-          item.status = prog > 0 ? 'watching' : 'plantowatch';
-        }
-      }
-    }
-    
-    console.log('[Simkl][Update] enriched item before cache', JSON.parse(JSON.stringify(item)));
-    // Enrich with optional identifiers if available from cache (helps matching on server)
-    try {
-      const cached = this.cache?.get(String(mediaId), { scope: 'mediaData' });
-      const media = cached?.media || cached;
-      if (media?.idImdb) {
-        item.ids.imdb = media.idImdb;
-      }
-      if (media?.idMal) {
-        item.ids.mal = media.idMal;
-      }
-      const title = media?.title?.english || media?.title?.romaji || media?.title?.native;
-      if (title) {
-        item.title = title;
-      }
-      console.log('[Simkl][Update] enriched item after cache', JSON.parse(JSON.stringify(item)));
-    } catch (e) { console.log('[Simkl][Update] cache enrich failed', e); }
-
-    console.log('[Simkl][Update] final payload', JSON.parse(JSON.stringify(payload)));
-    return payload;
+    // Add title for better server-side matching
+    const title = media?.title?.english || media?.title?.romaji || media?.title?.native;  
+    if (title) {  
+      item.title = title;  
+    }  
+  } catch (e) { 
+    console.log('[Simkl][Remove] cache enrich failed', e); 
   }
 
-  // Remove media from user's Simkl list
-  async removeMediaListEntry(mediaId, mediaType) {
-    const normalizedId = this.normalizeSimklId(mediaId);
-    this.validateMediaId(normalizedId);
-    await this.ensureValidToken();
-    const typeUpper = (mediaType || '').toString().toUpperCase();
-    const isMovie = typeUpper === 'MOVIE' || typeUpper === 'MOVIES';
-    const containerKey = isMovie ? 'movies' : 'shows';
-    const payload = {
-      [containerKey]: [{ ids: { simkl: parseInt(normalizedId) } }]
-    };
+  console.log('[Simkl][Remove] minimal payload', JSON.parse(JSON.stringify(payload)));  
+  return payload;
+}
 
-    const requestParams = {
+// Remove media from user's Simkl list
+async removeMediaListEntry(mediaId, mediaType) {
+  const normalizedId = this.normalizeSimklId(mediaId);
+  this.validateMediaId(normalizedId);
+  await this.ensureValidToken();
+  const typeUpper = (mediaType || '').toString().toUpperCase();
+  const isMovie = typeUpper === 'MOVIE' || typeUpper === 'MOVIES';
+  
+  console.log('[Simkl][Remove] Starting removal for', { normalizedId, mediaType, isMovie });
+  
+  // Use minimal payload for remove operations
+  const payload = this.buildRemovePayload(normalizedId, mediaType);
+
+  const requestParams = {  
+    url: `${this.baseUrl}/sync/remove-from-list`,  
+    method: 'POST',  
+    headers: this.getHeaders({ type: 'update' }),  
+    body: JSON.stringify(payload),  
+    priority: 'high'  
+  };  
+
+  try {  
+    console.log('[Simkl][Remove] Making primary remove request', requestParams);
+    await this.makeRequest(requestParams);  
+    console.log('[Simkl][Remove] Primary remove request successful');
+  } catch (error) {  
+    console.error('[Simkl][Remove] Primary remove request failed', error);
+    throw this.createUserFriendlyError(error);  
+  }  
+
+  // Best-effort fallback: if anime removal silently fails, retry with 'shows' container  
+  try {  
+    if (!isMovie && typeUpper === 'ANIME') {  
+      console.log('[Simkl][Remove] Attempting anime fallback with shows container');
+      const fallback = this.buildRemovePayload(normalizedId, mediaType, 'shows');  
+      await this.makeRequest({  
+        url: `${this.baseUrl}/sync/remove-from-list`,  
+        method: 'POST',  
+        headers: this.getHeaders({ type: 'update' }),  
+        body: JSON.stringify(fallback),  
+        priority: 'normal'  
+      });  
+      console.log('[Simkl][Remove] Anime fallback completed');
+    }  
+  } catch (fallbackError) {
+    console.warn('[Simkl][Remove] Fallback attempt failed', fallbackError);
+  }
+
+  // Also try removing from watchlist and history as comprehensive cleanup
+  try {
+    console.log('[Simkl][Remove] Attempting comprehensive cleanup');
+    
+    // Remove from watchlist (different endpoint)
+    await this.makeRequest({
       url: `${this.baseUrl}/sync/watchlist/remove`,
       method: 'POST',
       headers: this.getHeaders({ type: 'update' }),
       body: JSON.stringify(payload),
-      priority: 'high'
-    };
-
-    try {
-      await this.makeRequest(requestParams);
-      this.cache.invalidateByMedia(mediaId);
-      this.cache.invalidateScope('userData');
-    } catch (error) {
-      
-      throw this.createUserFriendlyError(error);
-    }
+      priority: 'normal'
+    });
+    
+    // Remove from history
+    await this.makeRequest({
+      url: `${this.baseUrl}/sync/history/remove`,
+      method: 'POST',
+      headers: this.getHeaders({ type: 'update' }),
+      body: JSON.stringify(payload),
+      priority: 'normal'
+    });
+    
+    // Remove ratings
+    await this.makeRequest({
+      url: `${this.baseUrl}/sync/ratings/remove`,
+      method: 'POST',
+      headers: this.getHeaders({ type: 'update' }),
+      body: JSON.stringify(payload),
+      priority: 'normal'
+    });
+    
+    console.log('[Simkl][Remove] Comprehensive cleanup completed');
+  } catch (cleanupError) {
+    console.warn('[Simkl][Remove] Comprehensive cleanup failed', cleanupError);
+    // Don't throw here as the main removal might have worked
   }
 
+  // Invalidate cache after all operations
+  this.cache.invalidateByMedia(mediaId);  
+  this.cache.invalidateScope('userData');
+  
+  console.log('[Simkl][Remove] Removal process completed for', normalizedId);
+}
+  
   // =================== AUTH METHODS (Following MAL pattern) ===================
 
   async makeObsidianRequest(code, redirectUri) {
@@ -6456,7 +6572,6 @@ getSimklMediaType(mediaType) {
   mapSimklStatusToAniList(status) {
     return this.simklToAniListStatus[status] || status?.toUpperCase();
   }
-
   // FIXED: Enhanced format mapping with mediaType context
   mapSimklFormat(type, mediaType) {
     if (!type) {
@@ -7253,8 +7368,6 @@ injectMetadata(data, config) {
   
   return data;
 }
-
-
  async handleStatsOperation(api, config) {
   if (config.source === 'mal') {
     const response = await api.fetchMALData({ ...config, type: 'stats' });

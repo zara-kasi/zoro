@@ -9508,6 +9508,8 @@ class EmojiIconMapper {
       '🗂️': 'folder-open',
       '🔮': 'square-mouse-pointer',
       '🎴': 'file-input',
+      '🚪': 'door-open',
+      '📖': 'square-arrow-out-up-right',
       ...Object.fromEntries(opts.map || [])
     }));
     
@@ -15882,6 +15884,7 @@ class ZoroSettingTab extends PluginSettingTab {
     const Display = section('📺 Display');
     const Theme = section('🌓 Theme');
     const More = section('✨  More');
+    const Shortcut = section('🚪 Shortcut');
     const Data = section('💾 Data');
     const Cache = section('🔁 Cache');
     const Exp = section('🚧 Beta');
@@ -15899,28 +15902,50 @@ class ZoroSettingTab extends PluginSettingTab {
         }));
 
     const authSetting = new Setting(Account)
-      .setName('✳️ AniList')
-      .setDesc('Lets you peek at your private profile and actually change stuff.');
+  .setName('✳️ AniList')
+  .setDesc('Lets you peek at your private profile and actually change stuff.');
 
-    authSetting.addButton(button => {
-      this.authButton = button;
-      this.updateAuthButton();
-      button.onClick(async () => {
-        await this.handleAuthButtonClick();
-      });
-    });
+const authDescEl = authSetting.descEl;
+authDescEl.createEl('br');
+const authLinkEl = authDescEl.createEl('a', {
+  text: '📖 Guide',
+  href: 'https://github.com/zara-kasi/zoro/blob/main/Docs/anilist-auth-setup.md'
+});
+authLinkEl.setAttr('target', '_blank');
+authLinkEl.setAttr('rel', 'noopener noreferrer');
+authLinkEl.style.textDecoration = 'none';
+
+authSetting.addButton(button => {
+  this.authButton = button;
+  this.updateAuthButton();
+  button.onClick(async () => {
+    await this.handleAuthButtonClick();
+  });
+});
     
     const malAuthSetting = new Setting(Account)
-      .setName('🗾 MyAnimeList')
-      .setDesc('Lets you edit and view your MAL entries.');
+  .setName('🗾 MyAnimeList')
+  .setDesc('Lets you edit and view your MAL entries.');
 
-    malAuthSetting.addButton(btn => {
-      this.malAuthButton = btn;
-      this.updateMALAuthButton();
-      btn.onClick(async () => {
-        await this.handleMALAuthButtonClick();
-      });
-    });
+// Add the documentation link after the description
+const descEl = malAuthSetting.descEl;
+descEl.createEl('br');
+const linkEl = descEl.createEl('a', {
+  text: '📖 Guide',
+  href: 'https://github.com/zara-kasi/zoro/blob/main/Docs/mal-auth-setup.md'
+});
+linkEl.setAttr('target', '_blank');
+linkEl.setAttr('rel', 'noopener noreferrer');
+linkEl.style.textDecoration = 'none';
+
+malAuthSetting.addButton(btn => {  
+  this.malAuthButton = btn;  
+  this.updateMALAuthButton();  
+  btn.onClick(async () => {  
+    await this.handleMALAuthButtonClick();  
+  });  
+});
+    
     
     new Setting(Setup)
       .setName('⚡ Sample Folder')
@@ -15932,21 +15957,6 @@ class ZoroSettingTab extends PluginSettingTab {
             await this.plugin.sample.createSampleFolders();
           })
       );
-    
-    new Setting(Setup)
-      .setName('🗝️ Authentication ?')
-      .setDesc('Guide: Takes less than a minute—no typing, just copy and paste.')
-      .addButton(button => button
-        .setButtonText('AniList')
-        .onClick(() => {
-          window.open('https://github.com/zara-kasi/zoro/blob/main/Docs/anilist-auth-setup.md', '_blank');
-        }));
-        new Setting(Setup)
-        .addButton(button => button
-        .setButtonText('MAL')
-        .onClick(() => {
-          window.open('https://github.com/zara-kasi/zoro/blob/8d432f1b3d648e1f9ddc1698676f21483472a427/Docs/mal-auth-setup.md', '_blank');
-        }));
         
         new Setting(Note)
       .setName('🗂️ Note path')
@@ -16003,60 +16013,6 @@ class ZoroSettingTab extends PluginSettingTab {
           this.updateGridColumns(value);
         }));
         
-new Setting(More)
-  .setName('🔍 Quick External Search')
-  .setDesc('Adds a external link button on more details panel that instantly takes you to the media on any site you configure.')
-  .addButton(button => button
-    .setButtonText('Add Anime URL')
-    .setClass('mod-cta')
-    .onClick(async () => {
-      await this.plugin.moreDetailsPanel.customExternalURL.addUrl('ANIME');
-      this.refreshCustomUrlSettings();
-    }));
-
-// Create container for anime URLs
-const animeUrlContainer = More.createDiv('custom-url-container');
-animeUrlContainer.setAttribute('data-media-type', 'ANIME');
-this.renderCustomUrls(animeUrlContainer, 'ANIME');
-
-new Setting(More)
-  .addButton(button => button
-    .setButtonText('Add Manga URL')
-    .setClass('mod-cta')
-    .onClick(async () => {
-      await this.plugin.moreDetailsPanel.customExternalURL.addUrl('MANGA');
-      this.refreshCustomUrlSettings();
-    }));
-
-// Create container for manga URLs
-const mangaUrlContainer = More.createDiv('custom-url-container');
-mangaUrlContainer.setAttribute('data-media-type', 'MANGA');
-this.renderCustomUrls(mangaUrlContainer, 'MANGA');
-
-new Setting(More)
-  .addButton(button => button
-    .setButtonText('Add Movie/TV URL')
-    .setClass('mod-cta')
-    .onClick(async () => {
-      await this.plugin.moreDetailsPanel.customExternalURL.addUrl('MOVIE_TV');
-      this.refreshCustomUrlSettings();
-    }));
-
-// Create container for movie/TV URLs
-const movieTvUrlContainer = More.createDiv('custom-url-container');
-movieTvUrlContainer.setAttribute('data-media-type', 'MOVIE_TV');
-this.renderCustomUrls(movieTvUrlContainer, 'MOVIE_TV');
-
-new Setting(More)
-  .setName('🔧 Auto-Format Search URLs')
-  .setDesc('Automatically format URLs to search format. When disabled, URLs will be used exactly as entered.')
-  .addToggle(toggle => toggle
-    .setValue(this.plugin.settings.autoFormatSearchUrls)
-    .onChange(async (value) => {
-      this.plugin.settings.autoFormatSearchUrls = value;
-      await this.plugin.saveSettings();
-    }));
-      
         
         new Setting(More)
       .setName('⏳ Loading Icon')
@@ -16130,70 +16086,123 @@ new Setting(More)
             await this.plugin.auth.forceScoreFormat();
           }
         }));
+        
+        new Setting(Shortcut)
+  .setName(' Open on site')
+  .setDesc('Adds a customizable external-link button to the More Details panel that opens a site-specific search for the current title.')
+  .addButton(button => button
+    .setButtonText('Add Anime URL')
+    .setClass('mod-cta')
+    .onClick(async () => {
+      await this.plugin.moreDetailsPanel.customExternalURL.addUrl('ANIME');
+      this.refreshCustomUrlSettings();
+    }));
+
+// Create container for anime URLs
+const animeUrlContainer = Shortcut.createDiv('custom-url-container');
+animeUrlContainer.setAttribute('data-media-type', 'ANIME');
+this.renderCustomUrls(animeUrlContainer, 'ANIME');
+
+new Setting(Shortcut)
+  .addButton(button => button
+    .setButtonText('Add Manga URL')
+    .setClass('mod-cta')
+    .onClick(async () => {
+      await this.plugin.moreDetailsPanel.customExternalURL.addUrl('MANGA');
+      this.refreshCustomUrlSettings();
+    }));
+
+// Create container for manga URLs
+const mangaUrlContainer = Shortcut.createDiv('custom-url-container');
+mangaUrlContainer.setAttribute('data-media-type', 'MANGA');
+this.renderCustomUrls(mangaUrlContainer, 'MANGA');
+
+new Setting(Shortcut)
+  .addButton(button => button
+    .setButtonText('Add Movie/TV URL')
+    .setClass('mod-cta')
+    .onClick(async () => {
+      await this.plugin.moreDetailsPanel.customExternalURL.addUrl('MOVIE_TV');
+      this.refreshCustomUrlSettings();
+    }));
+
+// Create container for movie/TV URLs
+const movieTvUrlContainer = Shortcut.createDiv('custom-url-container');
+movieTvUrlContainer.setAttribute('data-media-type', 'MOVIE_TV');
+this.renderCustomUrls(movieTvUrlContainer, 'MOVIE_TV');
+
+new Setting(Shortcut)
+  .setName('🔧 Auto-Format Search URLs')
+  .setDesc('Automatically format URLs to search format. When disabled, URLs will be used exactly as entered.')
+  .addToggle(toggle => toggle
+    .setValue(this.plugin.settings.autoFormatSearchUrls)
+    .onChange(async (value) => {
+      this.plugin.settings.autoFormatSearchUrls = value;
+      await this.plugin.saveSettings();
+    }));
     
-    new Setting(Data)
-      .setName('📤 Export your data')
-      .setDesc("Everything you've watched, rated, and maybe ghosted — neatly exported into a CSV & standard export format from AniList, MAL and Simkl.")
-      .addButton(btn => btn
-        .setButtonText('AniList')
-        .setClass('mod-cta')
-        .onClick(async () => {
-          try {
-            await this.plugin.export.exportUnifiedListsToCSV();
-          } catch (err) {
-            new Notice(`❌ Export failed: ${err.message}`, 6000);
-          }
-        })
-      );
-      
-    new Setting(Data)
-      .addButton(btn => btn
-        .setButtonText('MAL')
-        .setClass('mod-cta')
-        .onClick(async () => {
-          try {
-            await this.plugin.export.exportMALListsToCSV();
-          } catch (err) {
-            new Notice(`❌ MAL export failed: ${err.message}`, 6000);
-          }
-        })
-      );
+    const exportSetting = new Setting(Data)
+  .setName('📥 Export your data')
+  .setDesc("Everything you've watched, rated, and maybe ghosted — neatly exported into a CSV & standard export format from AniList, MAL and Simkl.")
+  .addButton(btn => btn
+    .setButtonText('AniList')
+    .setClass('mod-cta')
+    .onClick(async () => {
+      try {
+        await this.plugin.export.exportUnifiedListsToCSV();
+      } catch (err) {
+        new Notice(`❌ Export failed: ${err.message}`, 6000);
+      }
+    })
+  );
+
+const exportDescEl = exportSetting.descEl;
+exportDescEl.createEl('br');
+const exportLinkEl = exportDescEl.createEl('a', {
+  text: '📖 Guide',
+  href: 'https://github.com/zara-kasi/zoro/blob/main/Docs/export-doc.md'
+});
+exportLinkEl.setAttr('target', '_blank');
+exportLinkEl.setAttr('rel', 'noopener noreferrer');
+exportLinkEl.style.textDecoration = 'none';
   
-    new Setting(Data)
-      .addButton(btn => btn
-        .setButtonText('SIMKL')
-        .setClass('mod-cta')
-        .onClick(async () => {
-          if (!this.plugin.simklAuth.isLoggedIn) {
-            new Notice('❌ Please authenticate with SIMKL first.', 4000);
-            return;
-          }
-          
-          btn.setDisabled(true);
-          btn.setButtonText('Exporting...');
-          
-          try {
-            await this.plugin.export.exportSimklListsToCSV();
-          } catch (err) {
-            new Notice(`❌ SIMKL export failed: ${err.message}`, 6000);
-          } finally {
-            btn.setDisabled(false);
-            btn.setButtonText('SIMKL');
-          }
-        })
-      );
+new Setting(Data)
+  .addButton(btn => btn
+    .setButtonText('MAL')
+    .setClass('mod-cta')
+    .onClick(async () => {
+      try {
+        await this.plugin.export.exportMALListsToCSV();
+      } catch (err) {
+        new Notice(`❌ MAL export failed: ${err.message}`, 6000);
+      }
+    })
+  );
+
+new Setting(Data)
+  .addButton(btn => btn
+    .setButtonText('SIMKL')
+    .setClass('mod-cta')
+    .onClick(async () => {
+      if (!this.plugin.simklAuth.isLoggedIn) {
+        new Notice('❌ Please authenticate with SIMKL first.', 4000);
+        return;
+      }
       
-      new Setting(Data)
-      .setName('🧾 Export Guide')
-      .setDesc('Export guide for AniList, MAL, and SIMKL data backup and migration. Creates CSV/XML files for cross-platform compatibility.')
-      .addButton(button =>
-        button
-          .setClass('mod-cta')
-          .setButtonText('Open')
-          .onClick(() => {
-            window.open('https://github.com/zara-kasi/zoro/blob/main/Docs/export-doc.md', '_blank');
-          })
-      );
+      btn.setDisabled(true);
+      btn.setButtonText('Exporting...');
+      
+      try {
+        await this.plugin.export.exportSimklListsToCSV();
+      } catch (err) {
+        new Notice(`❌ SIMKL export failed: ${err.message}`, 6000);
+      } finally {
+        btn.setDisabled(false);
+        btn.setButtonText('SIMKL');
+      }
+    })
+  );
+      
   
     new Setting(Theme)
       .setName('🎨 Apply')

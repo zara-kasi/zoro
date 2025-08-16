@@ -5173,7 +5173,14 @@ getSimklMediaType(mediaType) {
       if (response.status && (response.status < 200 || response.status >= 300)) {
         const errMsg = response.json?.error_description || response.json?.error || `HTTP ${response.status}`;
         console.log('[Simkl][HTTP] Non-200', errMsg);
-        throw new Error(errMsg);
+        const err = new Error(errMsg);
+        err.status = response.status;
+        err.headers = response.headers;
+        err.json = response.json;
+        err.text = response.text;
+        err.url = requestParams.url;
+        err.method = requestParams.method || 'GET';
+        throw err;
       }
 
       if (!response.json) {
@@ -6109,6 +6116,16 @@ getSimklMediaType(mediaType) {
       const containerKey = isMovie ? 'movies' : 'shows';
       const statusMapped = this.mapAniListStatusToSimkl(updates.status);
       const statusPayload = { [containerKey]: [{ ids: { simkl: parseInt(normalizedId) }, status: statusMapped }] };
+      // Enrich with minimal extra identifiers to help server match
+      try {
+        const cached = this.cache?.get(String(normalizedId), { scope: 'mediaData' });
+        const media = cached?.media || cached;
+        const item = statusPayload[containerKey][0];
+        if (media?.idImdb) item.ids.imdb = media.idImdb;
+        if (media?.idMal) item.ids.mal = media.idMal;
+        const title = media?.title?.english || media?.title?.romaji || media?.title?.native;
+        if (title) item.title = title;
+      } catch {}
       console.log('[Simkl][Update] watchlist status payload', statusPayload);
       await this.makeRequest({
         url: `${this.baseUrl}/sync/watchlist`,
@@ -6328,10 +6345,20 @@ getSimklMediaType(mediaType) {
     await this.ensureValidToken();
     const typeUpper = (mediaType || '').toString().toUpperCase();
     const isMovie = typeUpper === 'MOVIE' || typeUpper === 'MOVIES';
-    const containerKey = isMovie ? 'movies' : 'shows';
+    let containerKey = isMovie ? 'movies' : 'shows';
     const payload = {
       [containerKey]: [{ ids: { simkl: parseInt(normalizedId) } }]
     };
+    // Enrich remove payload with minimal extras when available
+    try {
+      const cached = this.cache?.get(String(normalizedId), { scope: 'mediaData' });
+      const media = cached?.media || cached;
+      const item = payload[containerKey][0];
+      if (media?.idImdb) item.ids.imdb = media.idImdb;
+      if (media?.idMal) item.ids.mal = media.idMal;
+      const title = media?.title?.english || media?.title?.romaji || media?.title?.native;
+      if (title) item.title = title;
+    } catch {}
 
     const requestParams = {
       url: `${this.baseUrl}/sync/watchlist/remove`,
@@ -6346,7 +6373,28 @@ getSimklMediaType(mediaType) {
       this.cache.invalidateByMedia(mediaId);
       this.cache.invalidateScope('userData');
     } catch (error) {
-      
+      // Attempt fallback by toggling container between shows/movies on 4xx
+      const status = error?.status || 0;
+      if (status >= 400 && status < 500) {
+        const altContainer = containerKey === 'shows' ? 'movies' : 'shows';
+        this.appendEditError('REMOVE FALLBACK ATTEMPT', { from: containerKey, to: altContainer, status });
+        const altPayload = { [altContainer]: [{ ids: { simkl: parseInt(normalizedId) } }] };
+        try {
+          await this.makeRequest({
+            url: `${this.baseUrl}/sync/watchlist/remove`,
+            method: 'POST',
+            headers: this.getHeaders({ type: 'update' }),
+            body: JSON.stringify(altPayload),
+            priority: 'high'
+          });
+          this.cache.invalidateByMedia(mediaId);
+          this.cache.invalidateScope('userData');
+          return;
+        } catch (fallbackError) {
+          this.appendEditError('REMOVE FALLBACK FAILED', { status: fallbackError?.status, message: fallbackError?.message });
+          throw this.createUserFriendlyError(fallbackError);
+        }
+      }
       throw this.createUserFriendlyError(error);
     }
   }
@@ -6456,7 +6504,6 @@ getSimklMediaType(mediaType) {
   mapSimklStatusToAniList(status) {
     return this.simklToAniListStatus[status] || status?.toUpperCase();
   }
-
   // FIXED: Enhanced format mapping with mediaType context
   mapSimklFormat(type, mediaType) {
     if (!type) {
@@ -7253,8 +7300,6 @@ injectMetadata(data, config) {
   
   return data;
 }
-
-
  async handleStatsOperation(api, config) {
   if (config.source === 'mal') {
     const response = await api.fetchMALData({ ...config, type: 'stats' });

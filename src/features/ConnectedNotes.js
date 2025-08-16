@@ -884,6 +884,23 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
    * Create the connected notes button for media cards
    */
   createConnectedNotesButton(media, entry, config) {
+    // Detect source and media type
+    const source = this.plugin.apiHelper ?
+      this.plugin.apiHelper.detectSource(entry, config) :
+      (entry?._zoroMeta?.source || config?.source || 'anilist');
+    const mediaType = this.plugin.apiHelper ?
+      this.plugin.apiHelper.detectMediaType(entry, config, media) :
+      (entry?._zoroMeta?.mediaType || config?.mediaType || 'ANIME');
+
+    // Hide for trending TMDb movie/TV items
+    const isTmdb = String(source || '').toLowerCase() === 'tmdb';
+    const mtUpper = String(mediaType || '').toUpperCase();
+    const isMovieTv = ['MOVIE','MOVIES','TV','SHOW','SHOWS'].includes(mtUpper);
+    const isTrending = Boolean(entry?._zoroMeta?.trending || media?._zoroMeta?.trending);
+    if (isTmdb && isMovieTv && isTrending) {
+      return null;
+    }
+
     const notesBtn = document.createElement('span');
     notesBtn.className = 'zoro-note-obsidian';
     notesBtn.createEl('span', { text: '🔮' });

@@ -47,6 +47,7 @@ simklUserInfo: null,
     MANGA: [],
     MOVIE_TV: []
   },
+  tmdbApiKey: '',
 };
 
 class ZoroError {
@@ -6798,6 +6799,7 @@ this.emojiMapper.init({ patchSettings:true, patchCreateEl:true, patchNotice:true
     MOVIE_TV: Array.isArray(settings?.customSearchUrls?.MOVIE_TV) ? 
       settings.customSearchUrls.MOVIE_TV.filter(url => typeof url === 'string' && url.trim() !== '') : []
 },
+    tmdbApiKey: typeof settings?.tmdbApiKey === 'string' ? settings.tmdbApiKey : '',
   };
 }
 
@@ -16339,6 +16341,29 @@ new Setting(Data)
           this.plugin.settings.defaultApiUserOverride = true;
           await this.plugin.saveSettings();
         }));
+        
+        new Setting(Exp)
+    .setName('TMDb API Key')
+    .setDesc(
+      createFragment((frag) => {
+        frag.appendText('Your The Movie Database (TMDb) API key for trending movies & TV shows. ');
+        const link = frag.createEl('a', {
+          text: 'Get one free at TMDb',
+          href: 'https://www.themoviedb.org/settings/api'
+        });
+        link.setAttr('target', '_blank');
+        frag.appendText('.');
+      })
+    )
+    .addText(text => text
+      .setPlaceholder('Enter your TMDb API key...')
+      .setValue(this.plugin.settings.tmdbApiKey)
+      .onChange(async (value) => {
+        this.plugin.settings.tmdbApiKey = value.trim();
+        await this.plugin.saveSettings();
+      })
+    );
+
   
     new Setting(Exp)
       .setName('Debug Mode')

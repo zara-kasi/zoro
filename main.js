@@ -4724,12 +4724,16 @@ buildEndpointUrl(config) {
       // For single items, we need to get the user's list and filter
       return `${this.baseUrl}/sync/all-items/${simklMediaType}`;
     case 'search':
+      // CRITICAL FIX: Map internal media types to correct Simkl search endpoints
       if (simklMediaType === 'movies') {
-        return `${this.baseUrl}/search/movie`; // Note: singular 'movie', not 'movies'
+        return `${this.baseUrl}/search/movie`; // Simkl uses singular 'movie'
       } else if (simklMediaType === 'anime') {
-        return `${this.baseUrl}/search/anime`; // Use anime endpoint for anime
+        return `${this.baseUrl}/search/anime`; // Simkl uses 'anime'
+      } else if (simklMediaType === 'tv') {
+        return `${this.baseUrl}/search/tv`; // Simkl uses 'tv'
       } else {
-        return `${this.baseUrl}/search/tv`; // Default to TV for shows
+        // Fallback to TV search for unknown types
+        return `${this.baseUrl}/search/tv`;
       }
     default:
       throw new Error(`Unknown request type: ${config.type}`);
@@ -4877,6 +4881,8 @@ getSimklMediaType(mediaType) {
         console.log('[Simkl][HTTP] Empty response object');
         throw new Error('Empty response from Simkl');
       }
+      
+
 
       // Handle Simkl error responses
       if (response.status && (response.status < 200 || response.status >= 300)) {
@@ -4923,7 +4929,7 @@ getSimklMediaType(mediaType) {
   }
 
   // Robust search executor with endpoint fallbacks
-  async performSearchWithFallbacks(config) { console.log('[Simkl][Search] performSearchWithFallbacks start', config);
+  async performSearchWithFallbacks(config) { 
     const term = (config.search || config.query || '').trim();
     if (!term) {
       return { Page: { media: [] } };
@@ -4931,13 +4937,22 @@ getSimklMediaType(mediaType) {
 
     // Try primary endpoint based on requested mediaType
     const primaryParams = this.buildRequestParams({ ...config, type: 'search' });
+    
     try {
       const primaryRaw = await this.makeRequest(primaryParams);
-      console.log('[Simkl][Search] primaryRaw', primaryRaw);
       const primaryTransformed = this.transformSearchResponse(primaryRaw, config);
-      console.log('[Simkl][Search] primaryTransformed', primaryTransformed);
-      if (primaryTransformed?.Page?.media?.length) return primaryTransformed;
-    } catch (e) { console.log('[Simkl][Search] primary failed', e); }
+      
+      // Check if we have any results at all
+      if (primaryTransformed?.Page?.media?.length) {
+        const itemsWithIds = primaryTransformed.Page.media.filter(item => item && item.id > 0);
+        
+        if (itemsWithIds.length > 0) {
+          return primaryTransformed;
+        }
+      }
+    } catch (e) { 
+      console.log('[Simkl][Search] primary failed', e);
+    }
 
     // Fallback matrix: try all three categories to be safe
     const candidates = [
@@ -4958,9 +4973,7 @@ getSimklMediaType(mediaType) {
           qp.client_id = this.plugin.settings.simklClientId;
         }
         const url = this.buildFullUrl(c.endpoint, qp);
-        console.log('[Simkl][Search][Fallback] url', url);
         const raw = await this.makeRequest({ url, method: 'GET', headers: this.getHeaders({ type: 'search' }), priority: 'normal' });
-        console.log('[Simkl][Search][Fallback] raw', raw);
         const key = this.getSimklMediaType(c.type);
         let items;
         if (Array.isArray(raw)) items = raw;
@@ -4968,11 +4981,14 @@ getSimklMediaType(mediaType) {
         else if (Array.isArray(raw.results)) items = raw.results;
         else if (raw.movie || raw.show) items = [raw];
         else items = [];
-        console.log('[Simkl][Search][Fallback] items', items?.length);
+        
         for (const item of items) {
           const mapped = this.transformMedia(item, c.type);
-          console.log('[Simkl][Search][Fallback] mapped item', mapped?.id, mapped?.title);
-          if (mapped) aggregated.push(mapped);
+          
+          // Only include items with valid IDs for editing operations
+          if (mapped && mapped.id > 0) {
+            aggregated.push(mapped);
+          }
         }
       } catch {}
     }
@@ -4980,13 +4996,13 @@ getSimklMediaType(mediaType) {
     return { Page: { media: aggregated } };
   }
 
-  // Resolve a Simkl ID by title for edit operations when search results lack ids
+  // Enhanced method to resolve a Simkl ID by title for edit operations when search results lack ids
   async resolveSimklIdByTitle(title, mediaType) {
     if (!title || typeof title !== 'string') return null;
     const term = title.trim();
     if (!term) return null;
 
-    // Prefer specific endpoint by mediaType
+    // Prefer specific endpoint by mediaType for more accurate results
     const typeUpper = String(mediaType || '').toUpperCase();
     const endpoints = [];
     if (typeUpper === 'MOVIE' || typeUpper === 'MOVIES') endpoints.push(`${this.baseUrl}/search/movie`);
@@ -4997,21 +5013,163 @@ getSimklMediaType(mediaType) {
 
     for (const ep of endpoints) {
       try {
-        const qp = { q: term, limit: 5, page: 1 };
+        const qp = { q: term, limit: 10, page: 1 }; // Increased limit for better matching
         if (this.plugin.settings.simklClientId) qp.client_id = this.plugin.settings.simklClientId;
         const url = this.buildFullUrl(ep, qp);
         const raw = await this.makeRequest({ url, method: 'GET', headers: this.getHeaders({ type: 'search' }), priority: 'normal' });
         const items = Array.isArray(raw) ? raw : (raw.results || raw.anime || raw.tv || raw.movies || []);
+        
+        // Try to find the best match by title similarity
+        let bestMatch = null;
+        let bestScore = 0;
+        
         for (const it of items) {
           const node = it.movie || it.show || it;
           const ids = node?.ids || node;
+          // Now that we normalize simkl_id to simkl, we can just use simkl
           const id = Number(ids?.simkl || ids?.id);
-          if (id > 0) return id;
+          
+          if (id > 0) {
+            // Calculate title similarity score
+            const itemTitle = (node.title || node.name || '').toLowerCase();
+            const searchTitle = term.toLowerCase();
+            
+            // Exact match gets highest score
+            if (itemTitle === searchTitle) {
+              return id;
+            }
+            
+            // Partial match scoring
+            const score = this.calculateTitleSimilarity(itemTitle, searchTitle);
+            if (score > bestScore) {
+              bestScore = score;
+              bestMatch = id;
+            }
+          }
+        }
+        
+        // Return best match if we found one with reasonable similarity
+        if (bestMatch && bestScore > 0.7) {
+          return bestMatch;
         }
       } catch {}
     }
     return null;
   }
+
+  // Helper method to calculate title similarity for better ID resolution
+  calculateTitleSimilarity(title1, title2) {
+    if (!title1 || !title2) return 0;
+    
+    const t1 = title1.toLowerCase().trim();
+    const t2 = title2.toLowerCase().trim();
+    
+    if (t1 === t2) return 1.0;
+    
+    // Check if one title contains the other
+    if (t1.includes(t2) || t2.includes(t1)) return 0.9;
+    
+    // Check for common variations (e.g., "Season 1", "S1", etc.)
+    const clean1 = t1.replace(/season\s*\d+|s\d+|\(.*?\)/gi, '').trim();
+    const clean2 = t2.replace(/season\s*\d+|s\d+|\(.*?\)/gi, '').trim();
+    
+    if (clean1 === clean2) return 0.8;
+    
+    // Simple word overlap scoring
+    const words1 = new Set(clean1.split(/\s+/));
+    const words2 = new Set(clean2.split(/\s+/));
+    
+    const intersection = new Set([...words1].filter(x => words2.has(x)));
+    const union = new Set([...words1, ...words2]);
+    
+    return intersection.size / union.size;
+  }
+
+  // Method to ensure search results have proper IDs for editing operations
+  async ensureSearchResultIds(searchResults, mediaType) {
+    if (!searchResults?.Page?.media?.length) return searchResults;
+    
+    const enhancedResults = [];
+    let resolvedCount = 0;
+    
+    for (const item of searchResults.Page.media) {
+      if (item && item.id > 0) {
+        // Item already has a valid ID
+        enhancedResults.push(item);
+      } else if (item && item.title) {
+        // Try to resolve ID by title
+        try {
+          console.log(`[Simkl] Resolving ID for search result: "${item.title}"`);
+          const resolvedId = await this.resolveSimklIdByTitle(item.title, mediaType);
+          if (resolvedId) {
+            item.id = resolvedId;
+            enhancedResults.push(item);
+            resolvedCount++;
+            console.log(`[Simkl] Successfully resolved ID ${resolvedId} for "${item.title}"`);
+          } else {
+            console.warn(`[Simkl] Could not resolve ID for "${item.title}"`);
+          }
+        } catch (error) {
+          console.warn(`[Simkl] Failed to resolve ID for "${item.title}":`, error);
+        }
+      }
+    }
+    
+    if (resolvedCount > 0) {
+      console.log(`[Simkl] Enhanced ${resolvedCount} search results with resolved IDs`);
+    }
+    
+    return {
+      Page: {
+        media: enhancedResults
+      }
+    };
+  }
+
+  // Method to get a single media item by ID, useful for resolving search result IDs
+  async getMediaById(mediaId, mediaType) {
+    if (!mediaId || !Number.isFinite(Number(mediaId))) return null;
+    
+    try {
+      const response = await this.fetchSingleByIdPublic(mediaId, mediaType);
+      if (response?.MediaList) {
+        return response.MediaList;
+      }
+    } catch (error) {
+      console.warn(`[Simkl] Failed to get media by ID ${mediaId}:`, error);
+    }
+    
+    return null;
+  }
+
+  // Method to validate and fix search result IDs before editing operations
+  async validateSearchResultForEditing(searchResult, mediaType) {
+    if (!searchResult) return null;
+    
+    // If it already has a valid ID, return as is
+    if (searchResult.id && Number.isFinite(Number(searchResult.id)) && Number(searchResult.id) > 0) {
+      return searchResult;
+    }
+    
+    // Try to resolve ID by title
+    if (searchResult.title) {
+      try {
+        const resolvedId = await this.resolveSimklIdByTitle(searchResult.title, mediaType);
+        if (resolvedId) {
+          searchResult.id = resolvedId;
+          console.log(`[Simkl] Resolved ID ${resolvedId} for editing: "${searchResult.title}"`);
+          return searchResult;
+        }
+      } catch (error) {
+        console.warn(`[Simkl] Failed to resolve ID for editing "${searchResult.title}":`, error);
+      }
+    }
+    
+    console.warn(`[Simkl] Cannot edit search result without valid ID: "${searchResult.title}"`);
+    return null;
+  }
+
+
 
   // =================== DATA TRANSFORMATION (Fixed to match expected structure) ===================
 
@@ -5036,31 +5194,36 @@ getSimklMediaType(mediaType) {
     const simklType = this.getSimklMediaType(config.mediaType);
 
     let items = [];
+    
+    // CRITICAL FIX: Simkl search responses are typically direct arrays
     if (Array.isArray(data)) {
       items = data;
     } else if (data && typeof data === 'object') {
-      // Direct key match
-      if (Array.isArray(data[simklType])) {
-        items = data[simklType];
-      } else {
-        // Common alternative keys
-        const altKeys = ['movies', 'tv', 'anime', 'shows', 'results', 'items'];
-        for (const key of altKeys) {
-          if (Array.isArray(data[key])) {
-            items = data[key];
-            break;
-          }
+      // Try to find items under various possible keys
+      const possibleKeys = [simklType, 'results', 'items', 'anime', 'tv', 'movies', 'shows'];
+      
+      for (const key of possibleKeys) {
+        if (Array.isArray(data[key])) {
+          items = data[key];
+          break;
         }
-        // Single node fallbacks
-        if (items.length === 0 && (data.movie || data.show)) {
+      }
+      
+      // If still no items, check if it's a single item response
+      if (items.length === 0) {
+        if (data.movie || data.show || data.anime) {
           items = [data];
         }
       }
     }
     
+    const transformedItems = items
+      .map(item => this.transformMedia(item, config.mediaType))
+      .filter(item => item && item.id > 0); // Only include items with valid IDs for editing operations
+    
     return {
       Page: {
-        media: items.map(item => this.transformMedia(item, config.mediaType)).filter(Boolean)
+        media: transformedItems
       }
     };
   }
@@ -5077,7 +5240,8 @@ getSimklMediaType(mediaType) {
       targetEntry = mediaArray.find(entry => {
         const show = entry.show || entry;
         const ids = show.ids || show;
-        return ids.simkl === targetMediaId || ids.id === targetMediaId;
+        // Now that we normalize simkl_id to simkl, we can just use simkl
+        return (ids.simkl === targetMediaId || ids.id === targetMediaId);
       });
     }
     
@@ -5119,6 +5283,7 @@ getSimklMediaType(mediaType) {
     const match = candidates.find(item => {
       const node = item.movie || item.show || item;
       const ids = node?.ids || node || {};
+      // Now that we normalize simkl_id to simkl, we can just use simkl
       return Number(ids.simkl || ids.id) === Number(targetId);
     }) || null;
 
@@ -5292,10 +5457,7 @@ getSimklMediaType(mediaType) {
   
   // FIXED: Added enhanced debugging and comprehensive data structure handling
   transformMedia(simklMedia, mediaType) {
-    
-
     if (!simklMedia) {
-      
       return null;
     }
 
@@ -5361,13 +5523,78 @@ getSimklMediaType(mediaType) {
       return null;
     })();
     
-    const numericId = Number(ids.simkl || ids.id || media.id || originalData.id);
-    const finalId = Number.isFinite(numericId) && numericId > 0 ? numericId : (media.ids?.simkl || media.ids?.id || originalData?.ids?.simkl || originalData?.ids?.id || null);
+    // Enhanced ID extraction for Simkl - normalize simkl_id to simkl for consistency
+    let finalId = null;
+    
+    // CRITICAL FIX: Normalize simkl_id to simkl for consistent ID handling
+    // First try to get the simkl ID from any available source
+    if (ids.simkl_id && Number.isFinite(Number(ids.simkl_id))) {
+      finalId = Number(ids.simkl_id);
+      // Normalize: also set the simkl field for consistency
+      ids.simkl = finalId;
+    }
+    // Fallback to other ID sources
+    else if (ids.simkl && Number.isFinite(Number(ids.simkl))) {
+      finalId = Number(ids.simkl);
+    }
+    else if (ids.id && Number.isFinite(Number(ids.id))) {
+      finalId = Number(ids.id);
+    }
+    else if (media.id && Number.isFinite(Number(media.id))) {
+      finalId = Number(media.id);
+    }
+    else if (originalData.id && Number.isFinite(Number(originalData.id))) {
+      finalId = Number(originalData.id);
+    }
+    
+    // If we still don't have an ID, try to extract from the media object itself
+    if (!finalId && media.ids) {
+      if (media.ids.simkl_id && Number.isFinite(Number(media.ids.simkl_id))) {
+        finalId = Number(media.ids.simkl_id);
+        // Normalize: also set the simkl field for consistency
+        media.ids.simkl = finalId;
+      } else if (media.ids.simkl && Number.isFinite(Number(media.ids.simkl))) {
+        finalId = Number(media.ids.simkl);
+      } else if (media.ids.id && Number.isFinite(Number(media.ids.id))) {
+        finalId = Number(media.ids.id);
+      }
+    }
+    
+    // Additional check: sometimes the ID is directly on the root object
+    if (!finalId && simklMedia.ids) {
+      if (simklMedia.ids.simkl_id && Number.isFinite(Number(simklMedia.ids.simkl_id))) {
+        finalId = Number(simklMedia.ids.simkl_id);
+        // Normalize: also set the simkl field for consistency
+        simklMedia.ids.simkl = finalId;
+      } else if (simklMedia.ids.simkl && Number.isFinite(Number(simklMedia.ids.simkl))) {
+        finalId = Number(simklMedia.ids.simkl);
+      } else if (simklMedia.ids.id && Number.isFinite(Number(simklMedia.ids.id))) {
+        finalId = Number(simklMedia.ids.id);
+      }
+    }
+    
+    // Final fallback - check if we have any numeric ID
+    if (!finalId) {
+      const allIds = [
+        ids.simkl_id, ids.simkl, ids.id, media.id, originalData.id,
+        media.ids?.simkl_id, media.ids?.simkl, media.ids?.id, 
+        originalData?.ids?.simkl_id, originalData?.ids?.simkl, originalData?.ids?.id,
+        simklMedia.ids?.simkl_id, simklMedia.ids?.simkl, simklMedia.ids?.id, simklMedia.id
+      ];
+      
+      for (const id of allIds) {
+        if (id && Number.isFinite(Number(id)) && Number(id) > 0) {
+          finalId = Number(id);
+          break;
+        }
+      }
+    }
 
     const transformedResult = {
       id: finalId || 0,
       idMal: ids.mal || null,
       idImdb: ids.imdb || null,
+      idTmdb: ids.tmdb || null,
       title: extractedTitle,
       coverImage: {
         large: posterUrl,
@@ -5761,12 +5988,14 @@ getSimklMediaType(mediaType) {
       total_episodes: simklEntry.total_episodes_count ?? show.total_episodes
     });
     
+    const transformedMedia = this.transformMedia(mergedShow, mediaType);
+    
     return {
-      id: null, 
+      id: transformedMedia?.id || null, 
       status: this.mapSimklStatusToAniList(statusRaw),
       score: simklEntry.user_rating ?? simklEntry.rating ?? show.rating ?? 0,
       progress: progress || 0,
-      media: this.transformMedia(mergedShow, mediaType)
+      media: transformedMedia
     };
   }
 
@@ -6491,7 +6720,14 @@ async removeMediaListEntry(mediaId, mediaType) {
   }
 
   async searchSimklMedia(config) {
-    return this.fetchSimklData({ ...config, type: 'search' });
+    const searchResults = await this.fetchSimklData({ ...config, type: 'search' });
+    
+    // Ensure search results have proper IDs for editing operations
+    if (config.ensureIds !== false) { // Default to true unless explicitly disabled
+      return await this.ensureSearchResultIds(searchResults, config.mediaType);
+    }
+    
+    return searchResults;
   }
 
   getMetrics() {
@@ -7594,7 +7830,7 @@ class CardRenderer {
               data?._zoroMeta?.source ||
               this.apiHelper.detectFromDataStructure({ media }) ||
               this.apiHelper.getFallbackSource(),
-            mediaType: config?.mediaType || (media?.format === 'MOVIE' ? 'MOVIE' : (media?.episodes ? 'ANIME' : 'TV'))
+            mediaType: config?.mediaType || (media?.format === 'MOVIE' ? 'MOVIE' : 'TV')
           }
         }
       : data;
@@ -9013,7 +9249,24 @@ class APISourceHelper {
     if (entry?._zoroMeta?.mediaType) return entry._zoroMeta.mediaType;
     if (config?.mediaType) return config.mediaType;
     if (media?.format === 'MOVIE') return 'MOVIE';
-    if (media?.episodes) return 'ANIME';
+    
+    // Better logic for distinguishing between ANIME and TV
+    // Check if it's explicitly marked as anime or has anime-specific properties
+    if (media?.format === 'TV' || media?.type === 'TV' || 
+        (media?.genres && media.genres.some(g => g.toLowerCase().includes('anime')))) {
+      return 'TV';
+    }
+    
+    // If it has episodes but no clear indication, check the source
+    if (media?.episodes) {
+      // For Simkl sources, check if it's in the anime category
+      if (entry?.show?.type === 'anime' || entry?.anime) {
+        return 'ANIME';
+      }
+      // Default to TV for shows with episodes unless explicitly anime
+      return 'TV';
+    }
+    
     return 'TV';
   }
 }
@@ -10071,7 +10324,7 @@ class AniListEditModal {
     try {
       let mediaType = favBtn.dataset.mediaType;
       if (!mediaType) {
-        mediaType = entry.media.type || (entry.media.episodes ? 'ANIME' : 'MANGA');
+        mediaType = entry.media.type || 'TV';
       }
       
       const isAnime = mediaType === 'ANIME';
@@ -10295,7 +10548,7 @@ class SimklEditModal {
     const mediaId = entry.media?.id || entry.mediaId;
     console.log('[Simkl][Edit] raw mediaId', mediaId);
     if (!mediaId) throw new Error('Media ID not found');
-    const mediaType = entry._zoroMeta?.mediaType || (entry.media?.format === 'MOVIE' ? 'MOVIE' : (entry.media?.episodes ? 'ANIME' : 'TV'));
+    const mediaType = entry._zoroMeta?.mediaType || (entry.media?.format === 'MOVIE' ? 'MOVIE' : 'TV');
     console.log('[Simkl][Edit] mediaType', mediaType);
     console.log('[Simkl][Edit] calling updateMediaListEntry', { mediaId, updates, mediaType });
     await this.plugin.simklApi.updateMediaListEntry(mediaId, updates, mediaType);
@@ -10310,7 +10563,7 @@ class SimklEditModal {
     const mediaId = entry.media?.id || entry.mediaId;
     console.log('[Simkl][Edit] raw mediaId', mediaId);
     if (!mediaId) throw new Error('Media ID not found');
-    const mediaType = entry._zoroMeta?.mediaType || (entry.media?.format === 'MOVIE' ? 'MOVIE' : (entry.media?.episodes ? 'ANIME' : 'TV'));
+    const mediaType = entry._zoroMeta?.mediaType || (entry.media?.format === 'MOVIE' ? 'MOVIE' : 'TV');
     console.log('[Simkl][Edit] mediaType', mediaType);
     await this.plugin.simklApi.removeMediaListEntry(mediaId, mediaType);
     console.log('[Simkl][Edit] removeEntry done');
@@ -10474,7 +10727,7 @@ class ConnectedNotes {
     this.currentMediaType = null; // Store current media type for code block generation
   }
 
- /**
+   /**
  * Extract search IDs from media entry based on API source
  */
 extractSearchIds(media, entry, source) {
@@ -10503,9 +10756,12 @@ extractSearchIds(media, entry, source) {
       ids.mal_id = media.idMal;
     }
     
-    // For Movies/TV/other media types: use IMDB as backup
+    // For Movies/TV/other media types: use IMDB and TMDB as backup
     if (mediaType !== 'ANIME' && media.idImdb) {
       ids.imdb_id = media.idImdb;
+    }
+    if (mediaType !== 'ANIME' && media.idTmdb) {
+      ids.tmdb_id = media.idTmdb;
     }
   } else if (source === 'tmdb') {
     if (media.idTmdb || media.id) ids.tmdb_id = media.idTmdb || media.id;
@@ -10535,9 +10791,13 @@ urls.push(`https://simkl.com/${simklMediaType}/${media.id}`);
 urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
     }
     
-    // For Movies/TV/other: Add IMDB URL as backup
+    // For Movies/TV/other: Add IMDB and TMDB URLs as backup
     if (mediaType !== 'ANIME' && media.idImdb) {
       urls.push(`https://www.imdb.com/title/${media.idImdb}/`);
+    }
+    if (mediaType !== 'ANIME' && media.idTmdb) {
+      const isMovie = (mediaType || '').toString().toUpperCase().includes('MOVIE');
+      urls.push(`https://www.themoviedb.org/${isMovie ? 'movie' : 'tv'}/${media.idTmdb}`);
     }
     
   } else if (source === 'tmdb') {
@@ -10794,6 +11054,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
                           existingFrontmatter.anilist_id || 
                           existingFrontmatter.simkl_id ||
                           existingFrontmatter.imdb_id ||
+                          existingFrontmatter.tmdb_id ||
                           existingFrontmatter.media_type ||
                           existingFrontmatter.url;
     
@@ -10901,6 +11162,8 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
     return false;
   }
 }
+
+
   /**
    * Show connected notes in a single dedicated side panel
    */
@@ -11001,6 +11264,8 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
     
     return connectInterface;
   }
+
+
 
   /**
    * Refresh the connected notes list without full re-render
@@ -11478,6 +11743,7 @@ class DetailPanelSource {
             // Ensure we keep the original ID and other essential fields
             id: entryOrSource.media.id,
             idImdb: entryOrSource.media.idImdb || detailedSimklData.ids?.imdb || null,
+            idTmdb: entryOrSource.media.idTmdb || detailedSimklData.ids?.tmdb || null,
             // Map Simkl overview to description
             description: detailedSimklData.overview || entryOrSource.media.overview || null,
             // Simkl does not provide airing data in their API
@@ -12789,6 +13055,19 @@ if (media.id && media.type !== 'ANIME' && media.type !== 'MANGA') {
         window.open(`https://www.imdb.com/title/${media.idImdb}/`, '_blank');
       };
       linksContainer.appendChild(imdbBtn);
+    }
+
+    // TMDB button (for movies/TV)
+    if (media.idTmdb) {
+      const tmdbBtn = document.createElement('button');
+      tmdbBtn.className = 'external-link-btn tmdb-btn';
+      tmdbBtn.innerHTML = '🔗 View on TMDB';
+      tmdbBtn.onclick = (e) => {
+        e.stopPropagation();
+        const mediaType = media.type === 'MOVIE' ? 'movie' : 'tv';
+        window.open(`https://www.themoviedb.org/${mediaType}/${media.idTmdb}`, '_blank');
+      };
+      linksContainer.appendChild(tmdbBtn);
     }
 
     // NEW: Custom Search Buttons using the CustomExternalURL class
@@ -16703,26 +16982,129 @@ createUrlSetting(container, mediaType, url, index) {
     const domainName = this.plugin.moreDetailsPanel.customExternalURL.extractDomainName(url);
     preview.textContent = `Preview: ${domainName}`;
   }
+  
+  }
+
+updateGridColumns(value) {
+const gridElements = document.querySelectorAll('.zoro-cards-grid');
+gridElements.forEach(grid => {
+  try {
+    grid.style.setProperty('--zoro-grid-columns', String(value));
+    grid.style.setProperty('--grid-cols', String(value));
+  } catch {}
+});
+}
+
+renderCustomUrls(container, mediaType) {
+container.empty();
+const urls = this.plugin.settings.customSearchUrls?.[mediaType] || [];
+
+urls.forEach((url, index) => {
+  this.createUrlSetting(container, mediaType, url, index);
+});
+}
+
+createUrlSetting(container, mediaType, url, index) {
+const urlDiv = container.createDiv('url-setting-item');
+
+// Input container with flexbox layout
+const inputContainer = urlDiv.createDiv('url-input-container');
+
+// Display URL or template data
+let displayValue = url;
+let placeholder = 'https://example.com/search?q=';
+
+// Check if this is a learned template
+if (url.startsWith('{') && url.endsWith('}')) {
+  try {
+    const templateData = JSON.parse(url);
+    if (templateData.originalUrl) {
+      displayValue = templateData.originalUrl;
+      placeholder = 'Learned template from example';
+    }
+  } catch (e) {
+    // If parsing fails, use original URL
+  }
+}
+
+const input = inputContainer.createEl('input', {
+  type: 'text',
+  placeholder: placeholder,
+  value: displayValue,
+  cls: 'custom-url-input'
+});
+
+// Remove button inside the input container
+const removeBtn = inputContainer.createEl('button', {
+  text: '×',
+  cls: 'url-remove-button-inside'
+});
+
+// Auto-format on input (only if enabled)
+input.addEventListener('input', async (e) => {
+  const newValue = e.target.value;
+  const updated = await this.plugin.moreDetailsPanel.customExternalURL.updateUrl(mediaType, index, newValue);
+  
+  // Show feedback based on auto-formatting setting
+  if (this.plugin.settings.autoFormatSearchUrls) {
+    const formatted = this.plugin.moreDetailsPanel.customExternalURL.formatSearchUrl(newValue);
+    if (formatted !== newValue && formatted) {
+      input.title = `Auto-formatted: ${formatted}`;
+    } else {
+      input.title = '';
+    }
+  } else {
+    // Check if this could be a template
+    if (newValue.toLowerCase().includes('zoro')) {
+      const template = this.plugin.moreDetailsPanel.customExternalURL.learnTemplateFromExample(newValue, 'zoro zoro');
+      if (template) {
+        input.title = `Template learned! Pattern: "${template.spacePattern}"`;
+      } else {
+        // Try basic template extraction
+        const basicTemplate = this.plugin.moreDetailsPanel.customExternalURL.extractBasicTemplate(newValue);
+        if (basicTemplate) {
+          input.title = `Basic template extracted! Pattern: "${basicTemplate.spacePattern}"`;
+        } else {
+          input.title = 'Auto-formatting disabled - using exact URL';
+        }
+      }
+    } else {
+      input.title = 'Auto-formatting disabled - using exact URL';
+    }
+  }
+});
+
+removeBtn.addEventListener('click', async () => {
+  await this.plugin.moreDetailsPanel.customExternalURL.removeUrl(mediaType, index);
+  this.refreshCustomUrlSettings();
+});
+
+// Preview domain name
+if (url && url.trim()) {
+  const preview = urlDiv.createDiv('url-preview');
+  const domainName = this.plugin.moreDetailsPanel.customExternalURL.extractDomainName(url);
+  preview.textContent = `Preview: ${domainName}`;
+}
 }
 
 refreshCustomUrlSettings() {
-  // Refresh anime URLs
-  const animeContainer = this.containerEl.querySelector('[data-media-type="ANIME"]');
-  if (animeContainer) {
-    this.renderCustomUrls(animeContainer, 'ANIME');
-  }
-  
-  // Refresh manga URLs  
-  const mangaContainer = this.containerEl.querySelector('[data-media-type="MANGA"]');
-  if (mangaContainer) {
-    this.renderCustomUrls(mangaContainer, 'MANGA');
-  }
-  
-  // Refresh movie/TV URLs
-  const movieTvContainer = this.containerEl.querySelector('[data-media-type="MOVIE_TV"]');
-  if (movieTvContainer) {
-    this.renderCustomUrls(movieTvContainer, 'MOVIE_TV');
-  }
+// Refresh anime URLs
+const animeContainer = this.containerEl.querySelector('[data-media-type="ANIME"]');
+if (animeContainer) {
+  this.renderCustomUrls(animeContainer, 'ANIME');
+}
+
+// Refresh manga URLs  
+const mangaContainer = this.containerEl.querySelector('[data-media-type="MANGA"]');
+if (mangaContainer) {
+  this.renderCustomUrls(mangaContainer, 'MANGA');
+}
+
+// Refresh movie/TV URLs
+const movieTvContainer = this.containerEl.querySelector('[data-media-type="MOVIE_TV"]');
+if (movieTvContainer) {
+  this.renderCustomUrls(movieTvContainer, 'MOVIE_TV');
+}
 }
 }
 

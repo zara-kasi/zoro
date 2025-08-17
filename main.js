@@ -2461,7 +2461,7 @@ class AnilistApi {
         duration: `${duration.toFixed(1)}ms`
       });
       
-      throw this.createUserFriendlyError(classifiedError);
+      throw this.createZoroError(classifiedError);
     }
   }
 
@@ -2536,7 +2536,7 @@ class AnilistApi {
       }
       
       if (!result.data) {
-        throw new ApiError('INVALID_RESPONSE', 'AniList returned no data');
+        throw new Error('AniList returned no data');
       }
       
       return result.data;
@@ -2557,7 +2557,7 @@ class AnilistApi {
       this.validateUpdates(updates);
       
       if (!this.plugin.settings.accessToken || !(await this.plugin.auth.ensureValidToken())) {
-        throw new ApiError('AUTH_REQUIRED', 'Authentication required to update entries');
+        throw new Error('Authentication required to update entries');
       }
 
       const mutation = `
@@ -2614,7 +2614,7 @@ class AnilistApi {
         duration: `${duration.toFixed(1)}ms`
       });
       
-      throw this.createUserFriendlyError(classifiedError);
+      throw this.createZoroError(classifiedError);
     }
   }
 
@@ -2622,54 +2622,58 @@ class AnilistApi {
 
   classifyError(error, context = {}) {
     if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
-      return { type: 'NETWORK_ERROR', message: error.message, severity: 'high', retryable: true };
+      return { type: 'NETWORK_ERROR', message: error.message, severity: 'error', retryable: true };
     }
     
     if (error.name === 'TimeoutError' || error.message.includes('timeout')) {
-      return { type: 'TIMEOUT', message: error.message, severity: 'medium', retryable: true };
+      return { type: 'TIMEOUT', message: error.message, severity: 'warn', retryable: true };
     }
     
     if (error.status === 429 || error.message.includes('rate limit')) {
-      return { type: 'RATE_LIMITED', message: error.message, severity: 'low', retryable: true };
+      return { type: 'RATE_LIMITED', message: error.message, severity: 'warn', retryable: true };
     }
     
     if (error.status === 401 || error.message.includes('Unauthorized')) {
-      return { type: 'AUTH_ERROR', message: error.message, severity: 'high', retryable: false };
+      return { type: 'AUTH_ERROR', message: error.message, severity: 'error', retryable: false };
     }
     
     if (error.status >= 500) {
-      return { type: 'SERVER_ERROR', message: error.message, severity: 'high', retryable: true };
+      return { type: 'SERVER_ERROR', message: error.message, severity: 'error', retryable: true };
     }
     
     if (error.message?.includes('Private') || error.message?.includes('permission')) {
-      return { type: 'PRIVATE_LIST', message: error.message, severity: 'low', retryable: false };
+      return { type: 'PRIVATE_LIST', message: error.message, severity: 'warn', retryable: false };
     }
     
     if (error.status >= 400 && error.status < 500) {
-      return { type: 'CLIENT_ERROR', message: error.message, severity: 'medium', retryable: false };
+      return { type: 'CLIENT_ERROR', message: error.message, severity: 'warn', retryable: false };
     }
     
-    return { type: 'UNKNOWN_ERROR', message: error.message, severity: 'medium', retryable: false };
+    return { type: 'UNKNOWN_ERROR', message: error.message, severity: 'error', retryable: false };
   }
 
-  createUserFriendlyError(classifiedError) {
+  createZoroError(classifiedError) {
     const errorMessages = {
-      'NETWORK_ERROR': '🌐 Connection issue. Please check your internet connection and try again.',
-      'TIMEOUT': '⏱️ Request timed out. Please try again.',
-      'RATE_LIMITED': '🚦 Too many requests. Please wait a moment and try again.',
-      'AUTH_ERROR': '🔑 Authentication expired. Please re-authenticate with AniList.',
-      'SERVER_ERROR': '🔧 AniList servers are experiencing issues. Please try again later.',
-      'PRIVATE_LIST': '🔒 This user\'s list is private.',
-      'CLIENT_ERROR': '⚠️ Invalid request. Please check your input.',
-      'UNKNOWN_ERROR': '❌ An unexpected error occurred. Please try again.'
+      'NETWORK_ERROR': 'Connection issue. Please check your internet connection and try again.',
+      'TIMEOUT': 'Request timed out. Please try again.',
+      'RATE_LIMITED': 'Too many requests. Please wait a moment and try again.',
+      'AUTH_ERROR': 'Authentication expired. Please re-authenticate with AniList.',
+      'SERVER_ERROR': 'AniList servers are experiencing issues. Please try again later.',
+      'PRIVATE_LIST': 'This user\'s list is private.',
+      'CLIENT_ERROR': 'Invalid request. Please check your input.',
+      'UNKNOWN_ERROR': 'An unexpected error occurred. Please try again.'
     };
     
     const userMessage = errorMessages[classifiedError.type] || errorMessages['UNKNOWN_ERROR'];
-    const error = new Error(userMessage);
+    
+    // Use ZoroError.notify for user feedback and create a proper Error object
+    ZoroError.notify(userMessage, classifiedError.severity);
+    
+    const error = new Error(classifiedError.message);
     error.type = classifiedError.type;
     error.severity = classifiedError.severity;
     error.retryable = classifiedError.retryable;
-    error.originalMessage = classifiedError.message;
+    error.userMessage = userMessage;
     
     return error;
   }
@@ -2687,38 +2691,38 @@ class AnilistApi {
 
   validateConfig(config) {
     if (!config || typeof config !== 'object') {
-      throw new ApiError('INVALID_CONFIG', 'Configuration must be an object');
+      throw new Error('Configuration must be an object');
     }
     
     if (config.type && !['stats', 'single', 'search', 'list'].includes(config.type)) {
-      throw new ApiError('INVALID_TYPE', `Invalid config type: ${config.type}`);
+      throw new Error(`Invalid config type: ${config.type}`);
     }
     
     if (config.mediaType && !['ANIME', 'MANGA'].includes(config.mediaType)) {
-      throw new ApiError('INVALID_MEDIA_TYPE', `Invalid media type: ${config.mediaType}`);
+      throw new Error(`Invalid media type: ${config.mediaType}`);
     }
   }
 
   validateMediaId(mediaId) {
     const id = parseInt(mediaId);
     if (!id || id <= 0) {
-      throw new ApiError('INVALID_MEDIA_ID', `Invalid media ID: ${mediaId}`);
+      throw new Error(`Invalid media ID: ${mediaId}`);
     }
   }
 
   validateUpdates(updates) {
     if (!updates || typeof updates !== 'object') {
-      throw new ApiError('INVALID_UPDATES', 'Updates must be an object');
+      throw new Error('Updates must be an object');
     }
     
     if (Object.keys(updates).length === 0) {
-      throw new ApiError('EMPTY_UPDATES', 'At least one field must be updated');
+      throw new Error('At least one field must be updated');
     }
   }
 
   validateResponse(response) {
     if (!response || typeof response !== 'object') {
-      throw new ApiError('INVALID_RESPONSE', 'Invalid response from AniList');
+      throw new Error('Invalid response from AniList');
     }
   }
 
@@ -2796,11 +2800,11 @@ class AnilistApi {
     
     try {
       if (!code || typeof code !== 'string') {
-        throw new ApiError('INVALID_CODE', 'Authorization code is required');
+        throw new Error('Authorization code is required');
       }
       
       if (!redirectUri || typeof redirectUri !== 'string') {
-        throw new ApiError('INVALID_REDIRECT_URI', 'Redirect URI is required');
+        throw new Error('Redirect URI is required');
       }
 
       const body = new URLSearchParams({
@@ -2831,7 +2835,7 @@ class AnilistApi {
       });
 
       if (!result || typeof result.json !== 'object') {
-        throw new ApiError('INVALID_AUTH_RESPONSE', 'Invalid response structure from AniList');
+        throw new Error('Invalid response structure from AniList');
       }
 
       const duration = performance.now() - startTime;
@@ -2848,20 +2852,17 @@ class AnilistApi {
         duration: `${duration.toFixed(1)}ms`
       });
 
-      throw this.createUserFriendlyError(classifiedError);
+      throw this.createZoroError(classifiedError);
     }
   }
 
   // =================== MEDIA CHECK METHODS ===================
 
   async checkIfMediaInList(mediaId, mediaType) {
-    try {
+    return await ZoroError.guard(async () => {
       const userEntry = await this.getUserEntryForMedia(mediaId, mediaType);
       return userEntry !== null;
-    } catch (error) {
-      console.warn('[AniList] Error in checkIfMediaInList:', error);
-      return false;
-    }
+    }, 'cache');
   }
 
   async getUserEntryForMedia(mediaId, mediaType) {
@@ -2972,7 +2973,6 @@ class AnilistApi {
     
     return { query, variables };
   }
-
   getMediaListQuery(layout = 'card') {
     const baseFields = `
       id
@@ -3493,7 +3493,7 @@ class MalApi {
         duration: `${duration.toFixed(1)}ms`
       });
       
-      throw this.createUserFriendlyError(classifiedError);
+      throw this.createZoroError(classifiedError);
     }
   }
 
@@ -3505,14 +3505,15 @@ class MalApi {
       ...requestParams.headers
     };
 
-    // Add authentication headers if required
+    // Always include MAL client id for public endpoints
+    if (this.plugin.settings.malClientId) {
+      headers['X-MAL-CLIENT-ID'] = this.plugin.settings.malClientId;
+    }
+
+    // Add authentication header only for non-search requests
     if (this.requiresAuth(requestParams.metadata?.type)) {
       if (this.plugin.settings.malAccessToken) {
         headers['Authorization'] = `Bearer ${this.plugin.settings.malAccessToken}`;
-      }
-      
-      if (this.plugin.settings.malClientId) {
-        headers['X-MAL-CLIENT-ID'] = this.plugin.settings.malClientId;
       }
     }
 
@@ -3527,17 +3528,29 @@ class MalApi {
     
     // Handle rate limiting
     if (response.status === 429) {
-      throw this.createRateLimitError(response);
+      const error = new Error('Rate limit exceeded');
+      error.status = 429;
+      error.type = 'RATE_LIMITED';
+      error.retryable = true;
+      throw error;
     }
     
     if (response.status >= 400) {
-      throw this.createHttpError(response);
+      const error = new Error(`HTTP ${response.status}: ${response.text || 'Unknown error'}`);
+      error.status = response.status;
+      error.type = 'HTTP_ERROR';
+      error.retryable = response.status >= 500;
+      throw error;
     }
     
     const result = response.json;
     
     if (result?.error) {
-      throw this.createApiError(result);
+      const error = new Error(result.message || 'MAL API error');
+      error.type = 'API_ERROR';
+      error.originalError = result.error;
+      error.retryable = false;
+      throw error;
     }
     
     return result;
@@ -3607,7 +3620,7 @@ class MalApi {
         duration: `${duration.toFixed(1)}ms`
       });
       
-      throw this.createUserFriendlyError(classifiedError);
+      throw this.createZoroError(classifiedError);
     }
   }
 
@@ -3674,37 +3687,37 @@ class MalApi {
 
   classifyError(error, context = {}) {
     if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
-      return { type: 'NETWORK_ERROR', message: error.message, severity: 'high', retryable: true };
+      return { type: 'NETWORK_ERROR', message: error.message, severity: 'error', retryable: true };
     }
     
     if (error.name === 'TimeoutError' || error.message.includes('timeout')) {
-      return { type: 'TIMEOUT', message: error.message, severity: 'medium', retryable: true };
+      return { type: 'TIMEOUT', message: error.message, severity: 'warn', retryable: true };
     }
     
     if (error.status === 429 || error.message.includes('rate limit')) {
-      return { type: 'RATE_LIMITED', message: error.message, severity: 'low', retryable: true };
+      return { type: 'RATE_LIMITED', message: error.message, severity: 'warn', retryable: true };
     }
     
     if (error.status === 401 || error.message.includes('Unauthorized') || error.message.includes('auth')) {
-      return { type: 'AUTH_ERROR', message: error.message, severity: 'high', retryable: false };
+      return { type: 'AUTH_ERROR', message: error.message, severity: 'error', retryable: false };
     }
     
     if (error.status >= 500) {
-      return { type: 'SERVER_ERROR', message: error.message, severity: 'high', retryable: true };
+      return { type: 'SERVER_ERROR', message: error.message, severity: 'error', retryable: true };
     }
     
     if (error.message?.includes('Private') || error.message?.includes('permission')) {
-      return { type: 'PRIVATE_LIST', message: error.message, severity: 'low', retryable: false };
+      return { type: 'PRIVATE_LIST', message: error.message, severity: 'warn', retryable: false };
     }
     
     if (error.status >= 400 && error.status < 500) {
-      return { type: 'CLIENT_ERROR', message: error.message, severity: 'medium', retryable: false };
+      return { type: 'CLIENT_ERROR', message: error.message, severity: 'warn', retryable: false };
     }
     
-    return { type: 'UNKNOWN_ERROR', message: error.message, severity: 'medium', retryable: false };
+    return { type: 'UNKNOWN_ERROR', message: error.message, severity: 'error', retryable: false };
   }
 
-  createUserFriendlyError(classifiedError) {
+  createZoroError(classifiedError) {
     const errorMessages = {
       'NETWORK_ERROR': 'Connection issue. Please check your internet connection and try again.',
       'TIMEOUT': 'Request timed out. Please try again.',
@@ -3717,36 +3730,16 @@ class MalApi {
     };
     
     const userMessage = errorMessages[classifiedError.type] || errorMessages['UNKNOWN_ERROR'];
-    const error = new Error(userMessage);
+    
+    // Use ZoroError.notify for user feedback and create a proper Error object
+    ZoroError.notify(userMessage, classifiedError.severity);
+    
+    const error = new Error(classifiedError.message);
     error.type = classifiedError.type;
     error.severity = classifiedError.severity;
     error.retryable = classifiedError.retryable;
-    error.originalMessage = classifiedError.message;
+    error.userMessage = userMessage;
     
-    return error;
-  }
-
-  createRateLimitError(response) {
-    const error = new Error('Rate limit exceeded');
-    error.status = 429;
-    error.type = 'RATE_LIMITED';
-    error.retryable = true;
-    return error;
-  }
-
-  createHttpError(response) {
-    const error = new Error(`HTTP ${response.status}: ${response.text || 'Unknown error'}`);
-    error.status = response.status;
-    error.type = 'HTTP_ERROR';
-    error.retryable = response.status >= 500;
-    return error;
-  }
-
-  createApiError(result) {
-    const error = new Error(result.message || 'MAL API error');
-    error.type = 'API_ERROR';
-    error.originalError = result.error;
-    error.retryable = false;
     return error;
   }
 
@@ -3898,20 +3891,17 @@ class MalApi {
         duration: `${duration.toFixed(1)}ms`
       });
 
-      throw this.createUserFriendlyError(classifiedError);
+      throw this.createZoroError(classifiedError);
     }
   }
 
   // =================== MEDIA CHECK METHODS ===================
 
   async checkIfMediaInList(mediaId, mediaType) {
-    try {
+    return await ZoroError.guard(async () => {
       const userEntry = await this.getUserEntryForMedia(mediaId, mediaType);
       return userEntry !== null;
-    } catch (error) {
-      console.warn('[MAL] Error in checkIfMediaInList:', error);
-      return false;
-    }
+    }, 'cache');
   }
 
   async getUserEntryForMedia(mediaId, mediaType) {
@@ -3989,8 +3979,12 @@ class MalApi {
         const mediaType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
         return `${this.baseUrl}/users/@me/${mediaType}list`;
       case 'search':
-        const searchType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
-        return `${this.baseUrl}/${searchType}`;
+        // Use proper MAL search endpoints
+        if (config.mediaType === 'ANIME') {
+          return `${this.baseUrl}/anime`; // GET /anime?q=...&limit=...
+        } else {
+          return `${this.baseUrl}/manga`; // GET /manga?q=...&limit=...
+        }
       case 'item':
         const itemType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
         return `${this.baseUrl}/${itemType}/${parseInt(config.mediaId)}`;
@@ -4020,8 +4014,8 @@ class MalApi {
       case 'search':
         params.q = (config.search || config.query || '').trim();
         params.limit = config.perPage || 25;
-        params.offset = ((config.page || 1) - 1) * (config.perPage || 25);
-        params.fields = this.getFieldsForLayout(config.layout || 'card', true);
+        // MAL search does not support offset param on v2 search; keep limit only
+        // fields are not accepted on search endpoints
         break;
       
       case 'item':
@@ -4148,7 +4142,6 @@ class MalApi {
       studios: media.studios ? { nodes: media.studios.map(s => ({ name: s.name })) } : null
     };
   }
-
   transformUser(malUser) {
     const animeStats = malUser?.anime_statistics || {};
     const mangaStats = malUser?.manga_statistics || {};
@@ -4470,7 +4463,7 @@ class MalApi {
   // =================== ADDITIONAL API METHODS ===================
 
   async getMALRecommendations(mediaId, mediaType = 'ANIME') {
-    try {
+    return await ZoroError.guard(async () => {
       const type = mediaType === 'ANIME' ? 'anime' : 'manga';
       
       const requestParams = {
@@ -4496,14 +4489,11 @@ class MalApi {
         num_recommendations: rec.num_recommendations
       })) || [];
       
-    } catch (error) {
-      console.warn('[MAL] getMALRecommendations failed:', error);
-      return [];
-    }
+    }, 'cache');
   }
 
   async getMALSeasonalAnime(year, season) {
-    try {
+    return await ZoroError.guard(async () => {
       const requestParams = {
         url: `${this.baseUrl}/anime/season/${year}/${season}?fields=${this.getFieldsForLayout('card', true)}`,
         method: 'GET',
@@ -4528,10 +4518,7 @@ class MalApi {
         }
       };
       
-    } catch (error) {
-      console.warn('[MAL] getMALSeasonalAnime failed:', error);
-      return { Page: { media: [] } };
-    }
+    }, 'cache');
   }
 
   // =================== LOGGING ===================
@@ -4853,9 +4840,9 @@ getSimklMediaType(mediaType) {
     });
     return md;
   }
- 
+  
    // =================== HTTP REQUEST EXECUTION (Following MAL pattern) ===================
- 
+  
    async makeRequest(requestParams) {
     this.metrics.requests++;
     
@@ -6003,10 +5990,21 @@ buildUpdatePayload(mediaId, updates, mediaType, forceContainerKey = null) {
 
   // Simkl expects container 'shows' for anime/TV and 'movies' for movies  
   const containerKey = forceContainerKey || (isMovie ? 'movies' : 'shows');  
-  const payload = { [containerKey]: [{ ids: { simkl: parseInt(mediaId) } }] };  
+  const payload = { [containerKey]: [{ ids: {} }] };  
 
   const item = payload[containerKey][0];  
   item.type = isMovie ? 'movie' : 'show';  
+  // Prefer TMDb/IMDb if present in cache
+  try {
+    const cached = this.cache?.get(String(mediaId), { scope: 'mediaData' });
+    const media = cached?.media || cached || {};
+    const tmdb = media.idTmdb || media.ids?.tmdb;
+    const imdb = media.idImdb || media.ids?.imdb;
+    if (tmdb) item.ids.tmdb = parseInt(tmdb);
+    if (imdb) item.ids.imdb = imdb;
+  } catch {}
+  if (!item.ids.tmdb && !item.ids.imdb) item.ids.simkl = parseInt(mediaId);
+  
   console.log('[Simkl][Update] initial payload item', JSON.parse(JSON.stringify(item)));  
     
   // Add status using 'to' key instead of 'status' for list operations
@@ -6071,19 +6069,17 @@ buildRemovePayload(mediaId, mediaType, forceContainerKey = null) {
 
   // Simkl expects container 'shows' for anime/TV and 'movies' for movies  
   const containerKey = forceContainerKey || (isMovie ? 'movies' : 'shows');  
-  const payload = { [containerKey]: [{ ids: { simkl: parseInt(mediaId) } }] };  
+  const payload = { [containerKey]: [{ ids: {} }] };  
 
-  // Try to enrich with additional IDs from cache to improve matching
+  // Try to enrich with TMDb/IMDb from cache; fallback to simkl id
   try {  
     const cached = this.cache?.get(String(mediaId), { scope: 'mediaData' });  
-    const media = cached?.media || cached;  
+    const media = cached?.media || cached || {};  
     const item = payload[containerKey][0];
-    if (media?.idImdb) {  
-      item.ids.imdb = media.idImdb;  
-    }  
-    if (media?.idMal) {  
-      item.ids.mal = media.idMal;  
-    }
+    const tmdb = media.idTmdb || media.ids?.tmdb;  
+    const imdb = media.idImdb || media.ids?.imdb;  
+    if (tmdb) item.ids.tmdb = parseInt(tmdb);  
+    if (imdb) item.ids.imdb = imdb;  
     // Add title for better server-side matching
     const title = media?.title?.english || media?.title?.romaji || media?.title?.native;  
     if (title) {  
@@ -6091,6 +6087,9 @@ buildRemovePayload(mediaId, mediaType, forceContainerKey = null) {
     }  
   } catch (e) { 
     console.log('[Simkl][Remove] cache enrich failed', e); 
+  }
+  if (!payload[containerKey][0].ids.tmdb && !payload[containerKey][0].ids.imdb) {
+    payload[containerKey][0].ids.simkl = parseInt(mediaId);
   }
 
   console.log('[Simkl][Remove] minimal payload', JSON.parse(JSON.stringify(payload)));  
@@ -6188,7 +6187,6 @@ async removeMediaListEntry(mediaId, mediaType) {
   
   console.log('[Simkl][Remove] Removal process completed for', normalizedId);
 }
-  
   // =================== AUTH METHODS (Following MAL pattern) ===================
 
   async makeObsidianRequest(code, redirectUri) {
@@ -7584,7 +7582,7 @@ class CardRenderer {
     const media = isSearch ? data : data.media;
     // Ensure we have a usable numeric id for card actions
     if (!media.id || Number.isNaN(Number(media.id))) {
-      media.id = Number(media?.idImdb || media?.idMal || media?.ids?.simkl || media?.ids?.id || 0) || 0;
+      media.id = Number(media?.id || media?.idTmdb || media?.idImdb || media?.idMal || media?.ids?.tmdb || media?.ids?.imdb || media?.ids?.simkl || media?.ids?.id || 0) || 0;
     }
     // For search/trending items, synthesize a lightweight entry carrying metadata for proper source/mediaType detection
     const entry = isSearch
@@ -9638,7 +9636,12 @@ class Edit {
 
   createEditModal(entry, onSave, onCancel, source = 'anilist') {
 
-  const actualSource = entry._zoroMeta?.source || source;
+  // Force TMDb movie/TV to use Simkl provider for editing
+  const isTmdb = (entry._zoroMeta?.source || source) === 'tmdb';
+  const mt = (entry._zoroMeta?.mediaType || '').toUpperCase();
+  const actualSource = (isTmdb && (mt === 'MOVIE' || mt === 'MOVIES' || mt === 'TV' || mt === 'SHOW' || mt === 'SHOWS'))
+    ? 'simkl'
+    : (entry._zoroMeta?.source || source);
   const provider = this.providers[actualSource];
   
   const modal = this.renderer.createModalStructure();
@@ -10504,6 +10507,9 @@ extractSearchIds(media, entry, source) {
     if (mediaType !== 'ANIME' && media.idImdb) {
       ids.imdb_id = media.idImdb;
     }
+  } else if (source === 'tmdb') {
+    if (media.idTmdb || media.id) ids.tmdb_id = media.idTmdb || media.id;
+    if (media.idImdb) ids.imdb_id = media.idImdb;
   }
   
   return ids;
@@ -10534,6 +10540,10 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
       urls.push(`https://www.imdb.com/title/${media.idImdb}/`);
     }
     
+  } else if (source === 'tmdb') {
+    const isMovie = (mediaType || '').toString().toUpperCase().includes('MOVIE');
+    urls.push(`https://www.themoviedb.org/${isMovie ? 'movie' : 'tv'}/${media.idTmdb || media.id}`);
+    if (media.idImdb) urls.push(`https://www.imdb.com/title/${media.idImdb}/`);
   } else {
     // Build MAL URL if MAL ID exists
     if (media.idMal) {
@@ -10731,10 +10741,16 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
    */
   generateCodeBlockContent() {
     if (!this.plugin.settings.insertCodeBlockOnNote) {
-    return ''; // Return empty if setting is disabled
-  }
+      return ''; // Return empty if setting is disabled
+    }
     if (!this.currentMedia || !this.currentSource || !this.currentMediaType) {
       return ''; // Return empty if missing required data
+    }
+    // Disable code block for TMDb trending (movies/TV) since single render is not supported
+    const src = String(this.currentSource || '').toLowerCase();
+    const typeUpper = String(this.currentMediaType || '').toUpperCase();
+    if (src === 'tmdb' && (typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper === 'SHOW' || typeUpper === 'SHOWS')) {
+      return '';
     }
 
     const codeBlockLines = [
@@ -11333,7 +11349,6 @@ async handleConnectedNotesClick(e, media, entry, config) {
   }
 }
 }
-
 class DetailPanelSource {
   constructor(plugin) {
     this.plugin = plugin;
@@ -12750,19 +12765,19 @@ class RenderDetailPanel {
       linksContainer.appendChild(malBtn);
     }
 
-    // Simkl button (for movies and TV only, not anime)
-    if (media.id && media.type !== 'ANIME') {
-      const simklBtn = document.createElement('button');
-      simklBtn.className = 'external-link-btn simkl-btn';
-      simklBtn.innerHTML = '🔗 View on Simkl';
-      simklBtn.onclick = (e) => {
-        e.stopPropagation();
-        const mediaType = media.type === 'MOVIE' ? 'movies' : 'tv';
-        const url = `https://simkl.com/${mediaType}/${media.id}`;
-        window.open(url, '_blank');
-      };
-      linksContainer.appendChild(simklBtn);
-    }
+    // Simkl button (for movies and TV only, not anime or manga)
+if (media.id && media.type !== 'ANIME' && media.type !== 'MANGA') {
+  const simklBtn = document.createElement('button');
+  simklBtn.className = 'external-link-btn simkl-btn';
+  simklBtn.innerHTML = '🔗 View on Simkl';
+  simklBtn.onclick = (e) => {
+    e.stopPropagation();
+    const mediaType = media.type === 'MOVIE' ? 'movies' : 'tv';
+    const url = `https://simkl.com/${mediaType}/${media.id}`;
+    window.open(url, '_blank');
+  };
+  linksContainer.appendChild(simklBtn);
+}
 
     // IMDB button (for movies/TV)
     if (media.idImdb) {
@@ -12990,7 +13005,6 @@ class Trending {
       throw error;
     }
   }
-
 // TMDb trending implementation
 async fetchTMDbTrending(mediaType = 'MOVIE', limit = 20) {
     // Get API key from settings
@@ -13002,7 +13016,7 @@ async fetchTMDbTrending(mediaType = 'MOVIE', limit = 20) {
     }
 
     const typeUpper = (mediaType || 'MOVIE').toUpperCase();
-    const cacheKey = this.getTrendingCacheKey(mediaType, limit);
+    const cacheKey = this.getTrendingCacheKey('tmdb', mediaType, limit);
 
     // Try cache first
     const cached = this.plugin.cache.get(cacheKey, {
@@ -13054,6 +13068,29 @@ async fetchTMDbTrending(mediaType = 'MOVIE', limit = 20) {
         .map(item => this.transformTMDbMedia(item, mediaType))
         .filter(Boolean); // Remove failed transformations
 
+      // Enrich with IMDb IDs where possible (best-effort)
+      try {
+        const idsToFetch = mediaList.map(m => m.idTmdb).filter(Boolean).slice(0, 20);
+        const fetches = idsToFetch.map(id => fetch(`https://api.themoviedb.org/3/${typeUpper.includes('MOVIE') ? 'movie' : 'tv'}/${id}/external_ids?api_key=${tmdbApiKey}`)
+          .then(r => r.ok ? r.json() : null)
+          .catch(() => null));
+        const results = await Promise.all(fetches);
+        const tmdbToImdb = new Map();
+        results.forEach((ext, idx) => {
+          if (ext && (ext.imdb_id || ext.imdb)) {
+            tmdbToImdb.set(idsToFetch[idx], ext.imdb_id || ext.imdb);
+          }
+        });
+        mediaList.forEach(m => {
+          const imdb = tmdbToImdb.get(m.idTmdb);
+          if (imdb) {
+            m.idImdb = imdb;
+            if (!m.ids) m.ids = {};
+            m.ids.imdb = imdb;
+          }
+        });
+      } catch {}
+
       // Cache the result with trending-specific tags and longer TTL
       this.plugin.cache.set(cacheKey, mediaList, {
         scope: 'mediaData',
@@ -13088,9 +13125,13 @@ transformTMDbMedia(item, mediaType) {
       const isMovie = mediaType.toUpperCase() === 'MOVIE' || mediaType.toUpperCase() === 'MOVIES';
       
       return {
-        id: `tmdb_${item.id}`, // Prefix to avoid ID conflicts
+        id: item.id,
         idTmdb: item.id,
-        idImdb: item.imdb_id || null, // Available in detailed calls
+        idImdb: null, // Will be enriched via external_ids call
+        ids: {
+          tmdb: item.id,
+          imdb: null
+        },
         title: {
           english: isMovie ? item.title : item.name,
           romaji: null,
@@ -13231,9 +13272,14 @@ transformTMDbMedia(item, mediaType) {
 
   // Unified method that works with any API source
   async fetchTrending(source, mediaType, limit = 20) {
-    
-    
-    switch (source) {
+    // For movies and TV, always use TMDb regardless of source
+    const typeUpper = String(mediaType || '').toUpperCase();
+    if (typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper === 'SHOW' || typeUpper === 'SHOWS') {
+      return await this.fetchTMDbTrending(typeUpper.includes('MOVIE') ? 'MOVIE' : 'TV', limit);
+    }
+
+    // For anime/manga, pick source
+    switch ((source || '').toLowerCase()) {
       case 'mal':
         return await this.fetchJikanTrending(mediaType, limit);
       case 'simkl':
@@ -13255,21 +13301,27 @@ transformTMDbMedia(item, mediaType) {
       const source = config.source || this.plugin.settings.defaultApiSource || 'anilist';
       const limit = config.limit || 20;
 
-      
+      // Normalize mediaType to route to TMDb for TV/MOVIE
+      const normalizedType = ['movie','movies','tv','show','shows'].includes(type) ? (type.includes('movie') ? 'MOVIE' : 'TV') : (type === 'manga' ? 'MANGA' : 'ANIME');
 
       // Use unified method with proper queue management
       const items = await this.plugin.requestQueue.add(() => 
-        this.fetchTrending(source, type === 'manga' ? 'MANGA' : 'ANIME', limit)
+        this.fetchTrending(source, normalizedType, limit)
       );
 
       // Ensure metadata is set for each item
       items.forEach(item => {
+        const isTmdb = ['MOVIE','MOVIES','TV','SHOW','SHOWS'].includes((config.mediaType || '').toUpperCase());
         if (!item._zoroMeta) {
           item._zoroMeta = {
-            source: source,
+            source: isTmdb ? 'tmdb' : source,
             mediaType: config.mediaType || 'ANIME',
             fetchedAt: Date.now()
           };
+        } else {
+          item._zoroMeta.source = isTmdb ? 'tmdb' : source;
+          item._zoroMeta.mediaType = config.mediaType || 'ANIME';
+          item._zoroMeta.fetchedAt = Date.now();
         }
       });
 
@@ -16620,7 +16672,7 @@ createUrlSetting(container, mediaType, url, index) {
         input.title = '';
       }
     } else {
-      // Check if this could be a template example
+      // Check if this could be a template
       if (newValue.toLowerCase().includes('zoro')) {
         const template = this.plugin.moreDetailsPanel.customExternalURL.learnTemplateFromExample(newValue, 'zoro zoro');
         if (template) {

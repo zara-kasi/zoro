@@ -335,7 +335,10 @@ class Cache {
 
   enableDebug(enabled = true) {
     this.flags.debugMode = enabled;
-    console.log(`[Zoro] Cache debug ${enabled ? 'ON' : 'OFF'}`);
+    // Only log when debug is enabled to avoid spam
+    if (enabled) {
+      console.log(`[Zoro] Cache debug ${enabled ? 'ON' : 'OFF'}`);
+    }
   }
 
   async initializeCache() {
@@ -1190,11 +1193,16 @@ class Cache {
 
   log(operation, scope, key, extra = '') {
     if (!this.flags.debugMode) return;
-    const truncated = key.length > 50 ? key.slice(0, 47) + '...' : key;
-    console.log(`[Cache] ${operation}: ${scope}:${truncated} ${extra}`);
+    // Only log errors and important operations, not all cache operations
+    if (operation.includes('ERROR') || operation.includes('FAIL') || operation.includes('DESTROY')) {
+      const truncated = key.length > 50 ? key.slice(0, 47) + '...' : key;
+      console.log(`[Cache] ${operation}: ${scope}:${truncated} ${extra}`);
+    }
   }
 
   debug() {
+    if (!this.flags.debugMode) return this;
+    
     console.group('[Cache] Debug Report');
     console.log('Stats:', this.getStats());
     console.log('State:', this.state);
@@ -1211,8 +1219,8 @@ class Cache {
   }
 
   enableDebug(enabled = true) {
-    this.flags.debugMode = enabled;
-    return this;
+    this.log('DEBUG_MODE_CHANGED', 'system', this.generateRequestId(), 
+      `Debug mode ${enabled ? 'enabled' : 'disabled'}`);
   }
 
   async destroy() {
@@ -4878,7 +4886,9 @@ getSimklMediaType(mediaType) {
       }
 
       if (!response) {
-        console.log('[Simkl][HTTP] Empty response object');
+        if (this.debugEnabled) {
+      console.log('[Simkl][HTTP] Empty response object');
+    }
         throw new Error('Empty response from Simkl');
       }
       
@@ -4887,7 +4897,9 @@ getSimklMediaType(mediaType) {
       // Handle Simkl error responses
       if (response.status && (response.status < 200 || response.status >= 300)) {
         const errMsg = response.json?.error_description || response.json?.error || `HTTP ${response.status}`;
-        console.log('[Simkl][HTTP] Non-200', errMsg);
+        if (this.debugEnabled) {
+      console.log('[Simkl][HTTP] Non-200', errMsg);
+    }
         throw new Error(errMsg);
       }
 
@@ -4923,7 +4935,9 @@ getSimklMediaType(mediaType) {
           body: error.body
         });
       }
+      if (this.debugEnabled) {
       console.log('[Simkl][HTTP] request failed', error);
+    }
       throw error;
     }
   }
@@ -4951,7 +4965,9 @@ getSimklMediaType(mediaType) {
         }
       }
     } catch (e) { 
+      if (this.debugEnabled) {
       console.log('[Simkl][Search] primary failed', e);
+    }
     }
 
     // Fallback matrix: try all three categories to be safe
@@ -5099,13 +5115,17 @@ getSimklMediaType(mediaType) {
       } else if (item && item.title) {
         // Try to resolve ID by title
         try {
-          console.log(`[Simkl] Resolving ID for search result: "${item.title}"`);
+          if (this.debugEnabled) {
+      console.log(`[Simkl] Resolving ID for search result: "${item.title}"`);
+    }
           const resolvedId = await this.resolveSimklIdByTitle(item.title, mediaType);
           if (resolvedId) {
             item.id = resolvedId;
             enhancedResults.push(item);
             resolvedCount++;
-            console.log(`[Simkl] Successfully resolved ID ${resolvedId} for "${item.title}"`);
+            if (this.debugEnabled) {
+      console.log(`[Simkl] Successfully resolved ID ${resolvedId} for "${item.title}"`);
+    }
           } else {
             console.warn(`[Simkl] Could not resolve ID for "${item.title}"`);
           }
@@ -5116,7 +5136,9 @@ getSimklMediaType(mediaType) {
     }
     
     if (resolvedCount > 0) {
+      if (this.debugEnabled) {
       console.log(`[Simkl] Enhanced ${resolvedCount} search results with resolved IDs`);
+    }
     }
     
     return {
@@ -5157,7 +5179,9 @@ getSimklMediaType(mediaType) {
         const resolvedId = await this.resolveSimklIdByTitle(searchResult.title, mediaType);
         if (resolvedId) {
           searchResult.id = resolvedId;
-          console.log(`[Simkl] Resolved ID ${resolvedId} for editing: "${searchResult.title}"`);
+          if (this.debugEnabled) {
+      console.log(`[Simkl] Resolved ID ${resolvedId} for editing: "${searchResult.title}"`);
+    }
           return searchResult;
         }
       } catch (error) {
@@ -5452,7 +5476,6 @@ getSimklMediaType(mediaType) {
       }
     };
   }
-
   // =================== MEDIA TRANSFORMATION (Fixed structure) ===================
   
   // FIXED: Added enhanced debugging and comprehensive data structure handling
@@ -6029,12 +6052,16 @@ getSimklMediaType(mediaType) {
 
 async executeUpdate(mediaId, updates, mediaType) {
   const normalizedId = this.normalizeSimklId(mediaId);
-  console.log('[Simkl][Update] executeUpdate', { rawId: mediaId, normalizedId, updates, mediaType });
+      if (this.debugEnabled) {
+      console.log('[Simkl][Update] executeUpdate', { rawId: mediaId, normalizedId, updates, mediaType });
+    }
   this.validateMediaId(normalizedId);
   this.validateUpdates(updates);
 
   await this.ensureValidToken();  
-  console.log('[Simkl][Update] token ensured');
+      if (this.debugEnabled) {
+      console.log('[Simkl][Update] token ensured');
+    }
 
   const typeUpper = (mediaType || '').toString().toUpperCase();
   const isMovie = typeUpper === 'MOVIE' || typeUpper === 'MOVIES';
@@ -6042,7 +6069,9 @@ async executeUpdate(mediaId, updates, mediaType) {
   // 1) Status -> watchlist + enforce via ratings mapping  
   if (updates.status !== undefined) {  
     const statusPayload = this.buildUpdatePayload(normalizedId, { status: updates.status }, mediaType);  
-    console.log('[Simkl][Update] watchlist status payload', statusPayload);  
+    if (this.debugEnabled) {
+      console.log('[Simkl][Update] watchlist status payload', statusPayload);
+    }  
     await this.makeRequest({  
       url: `${this.baseUrl}/sync/add-to-list`,  
       method: 'POST',  
@@ -6068,7 +6097,9 @@ async executeUpdate(mediaId, updates, mediaType) {
       const derived = statusToRating[statusMapped];  
       if (derived) {  
         const ratingsPayload = this.buildUpdatePayload(normalizedId, { score: derived }, mediaType);  
-        console.log('[Simkl][Update] derived ratings payload for status', ratingsPayload);  
+        if (this.debugEnabled) {
+      console.log('[Simkl][Update] derived ratings payload for status', ratingsPayload);
+    }  
         await this.makeRequest({  
           url: `${this.baseUrl}/sync/ratings`,  
           method: 'POST',  
@@ -6115,7 +6146,9 @@ async executeUpdate(mediaId, updates, mediaType) {
     const rating = Math.max(0, Math.min(10, Math.round(updates.score)));  
     if (rating > 0) {  
       const ratingsPayload = this.buildUpdatePayload(normalizedId, { score: rating }, mediaType);  
-      console.log('[Simkl][Update] ratings payload', ratingsPayload);  
+      if (this.debugEnabled) {
+      console.log('[Simkl][Update] ratings payload', ratingsPayload);
+    }  
       await this.makeRequest({  
         url: `${this.baseUrl}/sync/ratings` ,  
         method: 'POST',  
@@ -6143,7 +6176,9 @@ async executeUpdate(mediaId, updates, mediaType) {
       const watched = (parseInt(updates.progress) || 0) > 0;  
       const containerKey = 'movies';  
       const historyPayload = { [containerKey]: [{ ids: { simkl: parseInt(normalizedId) } }] };  
-      console.log('[Simkl][Update] history payload', historyPayload);  
+      if (this.debugEnabled) {
+      console.log('[Simkl][Update] history payload', historyPayload);
+    }  
       await this.makeRequest({  
         url: `${this.baseUrl}/sync/history${watched ? '' : '/remove'}`,  
         method: 'POST',  
@@ -6211,9 +6246,11 @@ async executeUpdate(mediaId, updates, mediaType) {
     progress: updates.progress || 0  
   };
 }
-
-buildUpdatePayload(mediaId, updates, mediaType, forceContainerKey = null) { 
-  console.log('[Simkl][Update] buildUpdatePayload', { mediaId, updates, mediaType, forceContainerKey });
+  buildUpdatePayload(mediaId, updates, mediaType, forceContainerKey = null) { 
+    // Only log in debug mode for important operations
+    if (this.debugEnabled) {
+      console.log('[Simkl][Update] buildUpdatePayload', { mediaId, updates, mediaType, forceContainerKey });
+    }
   const typeUpper = (mediaType || '').toString().toUpperCase();
   const isMovie = typeUpper === 'MOVIE' || typeUpper === 'MOVIES';
 
@@ -6234,7 +6271,9 @@ buildUpdatePayload(mediaId, updates, mediaType, forceContainerKey = null) {
   } catch {}
   if (!item.ids.tmdb && !item.ids.imdb) item.ids.simkl = parseInt(mediaId);
   
-  console.log('[Simkl][Update] initial payload item', JSON.parse(JSON.stringify(item)));  
+      if (this.debugEnabled) {
+      console.log('[Simkl][Update] initial payload item', JSON.parse(JSON.stringify(item)));
+    }  
     
   // Add status using 'to' key instead of 'status' for list operations
   if (updates.status !== undefined) {  
@@ -6268,7 +6307,9 @@ buildUpdatePayload(mediaId, updates, mediaType, forceContainerKey = null) {
     }  
   }  
     
-  console.log('[Simkl][Update] enriched item before cache', JSON.parse(JSON.stringify(item)));  
+      if (this.debugEnabled) {
+      console.log('[Simkl][Update] enriched item before cache', JSON.parse(JSON.stringify(item)));
+    }  
   // Enrich with optional identifiers if available from cache (helps matching on server)  
   try {  
     const cached = this.cache?.get(String(mediaId), { scope: 'mediaData' });  
@@ -6283,16 +6324,26 @@ buildUpdatePayload(mediaId, updates, mediaType, forceContainerKey = null) {
     if (title) {  
       item.title = title;  
     }  
-    console.log('[Simkl][Update] enriched item after cache', JSON.parse(JSON.stringify(item)));  
-  } catch (e) { console.log('[Simkl][Update] cache enrich failed', e); }  
+        if (this.debugEnabled) {
+      console.log('[Simkl][Update] enriched item after cache', JSON.parse(JSON.stringify(item)));
+    }
+    } catch (e) { 
+      if (this.debugEnabled) {
+        console.log('[Simkl][Update] cache enrich failed', e); 
+      }
+    }  
 
-  console.log('[Simkl][Update] final payload', JSON.parse(JSON.stringify(payload)));  
+      if (this.debugEnabled) {
+      console.log('[Simkl][Update] final payload', JSON.parse(JSON.stringify(payload)));
+    }  
   return payload;
 }
 
 // Build minimal payload for remove operations (only container and IDs)
 buildRemovePayload(mediaId, mediaType, forceContainerKey = null) {
-  console.log('[Simkl][Remove] buildRemovePayload', { mediaId, mediaType, forceContainerKey });
+      if (this.debugEnabled) {
+      console.log('[Simkl][Remove] buildRemovePayload', { mediaId, mediaType, forceContainerKey });
+    }
   const typeUpper = (mediaType || '').toString().toUpperCase();
   const isMovie = typeUpper === 'MOVIE' || typeUpper === 'MOVIES';
 
@@ -6321,7 +6372,9 @@ buildRemovePayload(mediaId, mediaType, forceContainerKey = null) {
     payload[containerKey][0].ids.simkl = parseInt(mediaId);
   }
 
-  console.log('[Simkl][Remove] minimal payload', JSON.parse(JSON.stringify(payload)));  
+      if (this.debugEnabled) {
+      console.log('[Simkl][Remove] minimal payload', JSON.parse(JSON.stringify(payload)));
+    }  
   return payload;
 }
 
@@ -6333,7 +6386,9 @@ async removeMediaListEntry(mediaId, mediaType) {
   const typeUpper = (mediaType || '').toString().toUpperCase();
   const isMovie = typeUpper === 'MOVIE' || typeUpper === 'MOVIES';
   
-  console.log('[Simkl][Remove] Starting removal for', { normalizedId, mediaType, isMovie });
+      if (this.debugEnabled) {
+      console.log('[Simkl][Remove] Starting removal for', { normalizedId, mediaType, isMovie });
+    }
   
   // Use minimal payload for remove operations
   const payload = this.buildRemovePayload(normalizedId, mediaType);
@@ -6347,9 +6402,13 @@ async removeMediaListEntry(mediaId, mediaType) {
   };  
 
   try {  
-    console.log('[Simkl][Remove] Making primary remove request', requestParams);
+    if (this.debugEnabled) {
+      console.log('[Simkl][Remove] Making primary remove request', requestParams);
+    }
     await this.makeRequest(requestParams);  
-    console.log('[Simkl][Remove] Primary remove request successful');
+    if (this.debugEnabled) {
+      console.log('[Simkl][Remove] Primary remove request successful');
+    }
   } catch (error) {  
     console.error('[Simkl][Remove] Primary remove request failed', error);
     throw this.createUserFriendlyError(error);  
@@ -6358,7 +6417,9 @@ async removeMediaListEntry(mediaId, mediaType) {
   // Best-effort fallback: if anime removal silently fails, retry with 'shows' container  
   try {  
     if (!isMovie && typeUpper === 'ANIME') {  
+      if (this.debugEnabled) {
       console.log('[Simkl][Remove] Attempting anime fallback with shows container');
+    }
       const fallback = this.buildRemovePayload(normalizedId, mediaType, 'shows');  
       await this.makeRequest({  
         url: `${this.baseUrl}/sync/remove-from-list`,  
@@ -6367,7 +6428,9 @@ async removeMediaListEntry(mediaId, mediaType) {
         body: JSON.stringify(fallback),  
         priority: 'normal'  
       });  
+      if (this.debugEnabled) {
       console.log('[Simkl][Remove] Anime fallback completed');
+    }
     }  
   } catch (fallbackError) {
     console.warn('[Simkl][Remove] Fallback attempt failed', fallbackError);
@@ -6375,7 +6438,9 @@ async removeMediaListEntry(mediaId, mediaType) {
 
   // Also try removing from watchlist and history as comprehensive cleanup
   try {
-    console.log('[Simkl][Remove] Attempting comprehensive cleanup');
+    if (this.debugEnabled) {
+      console.log('[Simkl][Remove] Attempting comprehensive cleanup');
+    }
     
     // Remove from watchlist (different endpoint)
     await this.makeRequest({
@@ -6404,7 +6469,9 @@ async removeMediaListEntry(mediaId, mediaType) {
       priority: 'normal'
     });
     
-    console.log('[Simkl][Remove] Comprehensive cleanup completed');
+    if (this.debugEnabled) {
+      console.log('[Simkl][Remove] Comprehensive cleanup completed');
+    }
   } catch (cleanupError) {
     console.warn('[Simkl][Remove] Comprehensive cleanup failed', cleanupError);
     // Don't throw here as the main removal might have worked
@@ -6414,7 +6481,9 @@ async removeMediaListEntry(mediaId, mediaType) {
   this.cache.invalidateByMedia(mediaId);  
   this.cache.invalidateScope('userData');
   
-  console.log('[Simkl][Remove] Removal process completed for', normalizedId);
+      if (this.debugEnabled) {
+      console.log('[Simkl][Remove] Removal process completed for', normalizedId);
+    }
 }
   // =================== AUTH METHODS (Following MAL pattern) ===================
 
@@ -6448,7 +6517,9 @@ async removeMediaListEntry(mediaId, mediaType) {
         throw new Error(response.json.error_description || response.json.error);
       }
 
+      if (this.debugEnabled) {
       console.log('[Simkl] Authentication successful');
+    }
       return response.json;
 
     } catch (error) {
@@ -6478,9 +6549,13 @@ async removeMediaListEntry(mediaId, mediaType) {
         mediaId: parseInt(mediaId),
         nocache: true 
       };
+      if (this.debugEnabled) {
       console.log('[Simkl][Check] fetchSimklData', config);
+    }
       const response = await this.fetchSimklData(config);
+      if (this.debugEnabled) {
       console.log('[Simkl][Check] response', response);
+    }
       return response.MediaList !== null;
     } catch (error) {
       
@@ -6501,9 +6576,13 @@ async removeMediaListEntry(mediaId, mediaType) {
         nocache: true
       };
       
+      if (this.debugEnabled) {
       console.log('[Simkl][GetEntry] fetchSimklData', config);
+    }
       const result = await this.fetchSimklData(config);
+      if (this.debugEnabled) {
       console.log('[Simkl][GetEntry] result', result);
+    }
       return result.MediaList; // null if not in list, entry if in list
       
     } catch (error) {
@@ -6864,7 +6943,10 @@ async removeMediaListEntry(mediaId, mediaType) {
 
   enableDebug(enabled = true) {
     this.debugEnabled = enabled;
-    console.log(`[Simkl] Debug mode ${enabled ? 'enabled' : 'disabled'}`);
+    // Only log when debug is enabled to avoid spam
+    if (enabled) {
+      console.log(`[Simkl] Debug mode ${enabled ? 'enabled' : 'disabled'}`);
+    }
   }
 }
 
@@ -6944,10 +7026,24 @@ async updateDefaultApiSourceBasedOnAuth() {
     this.emojiMapper = new EmojiIconMapper();
 this.emojiMapper.init({ patchSettings:true, patchCreateEl:true, patchNotice:true });
     this.connectedNotes = new ConnectedNotes(this);
+    
+    // Initialize console error interceptor for debug mode
+    this.consoleErrorBuffer = [];
+    this.maxConsoleErrors = 100;
+    
+    // Auto-cleanup logs after 24 hours
+    this._cleanupInterval = null;
+    this._setupAutoCleanup();
+    
     try {
       await this.loadSettings();
     } catch (err) {
       console.error('[Zoro] Failed to load settings:', err);
+    }
+    
+    // Setup console error interceptor if debug mode is enabled
+    if (this.settings.debugMode) {
+      this.setupConsoleErrorInterceptor();
     }
     
     await this.cache.loadFromDisk(); 
@@ -6967,22 +7063,26 @@ this.emojiMapper.init({ patchSettings:true, patchCreateEl:true, patchNotice:true
     this.registerMarkdownCodeBlockProcessor('zoro', this.processor.processZoroCodeBlock.bind(this.processor));
     this.addSettingTab(new ZoroSettingTab(this.app, this));
     
-    // Command: Export Simkl Edit Errors to markdown file with timestamped name
+
+
+        // Command: Export Console Logs to markdown file (only visible when debug mode is enabled)
     this.addCommand({
-      id: 'export-simkl-edit-errors',
-      name: 'Export Simkl Edit Errors',
+      id: 'export-console-logs',
+      name: 'Export Console Logs',
       callback: async () => {
         try {
-          const md = this.simklApi.getEditErrorsMarkdown();
+          const md = this.exportConsoleLogsToMarkdown();
           const now = new Date();
           const pad = n => String(n).padStart(2, '0');
-          const fname = `error-${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}.md`;
+          const fname = `console-logs-${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}.md`;
           const file = await this.app.vault.create(fname, md);
-          new Notice(`Exported errors to ${file.path}`, 4000);
+          new Notice(`Console logs exported to ${file.name}`, 3000);
         } catch (e) {
-          new Notice(`Failed to export errors: ${e.message}`, 6000);
+          new Notice(`Failed to export console logs: ${e.message}`, 3000);
         }
-      }
+      },
+      // Only show this command when debug mode is enabled
+      checkCallback: () => this.settings.debugMode
     });
   }
 
@@ -7024,6 +7124,8 @@ this.emojiMapper.init({ patchSettings:true, patchCreateEl:true, patchNotice:true
     simklAccessToken: typeof settings?.simklAccessToken === 'string' ? settings.simklAccessToken : '',
     simklUserInfo: settings?.simklUserInfo === null || typeof settings?.simklUserInfo === 'object' ? settings.simklUserInfo : null,
     debugMode: typeof settings?.debugMode === 'boolean' ? settings.debugMode : false,
+    captureConsoleLogs: typeof settings?.captureConsoleLogs === 'boolean' ? settings.captureConsoleLogs : false,
+    autoCleanupLogs: typeof settings?.autoCleanupLogs === 'boolean' ? settings.autoCleanupLogs : true,
     autoFormatSearchUrls: typeof settings?.autoFormatSearchUrls === 'boolean' ? settings.autoFormatSearchUrls : true,
     customSearchUrls: {
   ANIME: Array.isArray(settings?.customSearchUrls?.ANIME) ? 
@@ -7164,6 +7266,14 @@ this.emojiMapper.init({ patchSettings:true, patchCreateEl:true, patchNotice:true
   }
 
   onunload() {
+    // Remove console error interceptor
+    this.removeConsoleErrorInterceptor();
+    
+    // Clear cleanup interval
+    if (this._cleanupInterval) {
+      clearInterval(this._cleanupInterval);
+      this._cleanupInterval = null;
+    }
 
     this.cache.stopAutoPrune()
        .stopBackgroundRefresh()
@@ -7180,6 +7290,247 @@ this.emojiMapper.init({ patchSettings:true, patchCreateEl:true, patchNotice:true
     const loader = document.getElementById('zoro-global-loader');
     if (loader) loader.remove();
   }
+
+  // Export console logs to markdown format
+  exportConsoleLogsToMarkdown() {
+    const now = new Date();
+    const timestamp = now.toISOString();
+    
+    let md = `# Console Logs Export\n\n`;
+    md += `**Generated:** ${timestamp}\n\n`;
+    md += `**Debug Mode:** ${this.settings.debugMode ? 'Enabled' : 'Disabled'}\n`;
+    md += `**Console Log Capture:** ${this.settings.captureConsoleLogs ? 'Enabled (includes console.log)' : 'Disabled (errors/warnings only)'}\n`;
+    md += `**Auto-Cleanup:** ${this.settings.autoCleanupLogs !== false ? 'Enabled (logs removed after 24h)' : 'Disabled (logs accumulate)'}\n\n`;
+    
+    if (this.consoleErrorBuffer && this.consoleErrorBuffer.length > 0) {
+      md += `## Console Logs\n\n`;
+      md += `**Total:** ${this.consoleErrorBuffer.length}\n\n`;
+      
+      this.consoleErrorBuffer.forEach((entry, idx) => {
+        md += `### ${entry.level} ${idx + 1}\n\n`;
+        md += `**Time:** ${entry.timestamp}\n\n`;
+        md += `**Message:** ${entry.message}\n\n`;
+        if (entry.rawArgs && entry.rawArgs.length > 1) {
+          try {
+            const details = entry.rawArgs.slice(1).map(arg => 
+              typeof arg === 'string' ? arg : 
+              arg instanceof Error ? arg.stack || arg.message : 
+              JSON.stringify(arg, null, 2)
+            ).join('\n\n');
+            md += `**Details:**\n\`\`\`\n${details}\n\`\`\`\n\n`;
+          } catch (e) {
+            md += `**Details:** [Error serializing details: ${e.message}]\n\n`;
+          }
+        }
+        md += '---\n\n';
+      });
+    } else {
+      md += `## Console Logs\n\n`;
+      md += `No console logs captured yet.\n\n`;
+      md += `**Tip:** Check browser console (F12) for real-time logs.\n`;
+    }
+    
+    return md;
+  }
+
+  // Sanitize data for safe JSON stringification
+  sanitizeData(data) {
+    try {
+      if (typeof data === 'string') return data;
+      if (data === null || data === undefined) return data;
+      
+      // Handle circular references and complex objects
+      const seen = new WeakSet();
+      return JSON.parse(JSON.stringify(data, (key, value) => {
+        if (typeof value === 'object' && value !== null) {
+          if (seen.has(value)) {
+            return '[Circular Reference]';
+          }
+          seen.add(value);
+        }
+        return value;
+      }));
+    } catch (error) {
+      return `[Data serialization error: ${error.message}]`;
+    }
+  }
+
+  // Setup console error interceptor for debug mode
+  setupConsoleErrorInterceptor() {
+    if (this._consoleErrorInterceptor) return; // Already set up
+    
+    try {
+      const originalError = console.error;
+      const originalWarn = console.warn;
+      const originalLog = console.log;
+      
+      this._consoleErrorInterceptor = {
+        error: originalError,
+        warn: originalWarn,
+        log: originalLog
+      };
+      
+      // Intercept console.error
+      console.error = (...args) => {
+        this.addConsoleError('ERROR', args);
+        originalError.apply(console, args);
+      };
+      
+      // Intercept console.warn
+      console.warn = (...args) => {
+        this.addConsoleError('WARN', args);
+        originalWarn.apply(console, args);
+      };
+      
+      // Intercept console.log if enabled
+      if (this.settings.captureConsoleLogs) {
+        console.log = (...args) => {
+          this.addConsoleError('LOG', args);
+          originalLog.apply(console, args);
+        };
+      }
+      
+      console.log('[Zoro] Console error interceptor enabled for debug mode');
+    } catch (error) {
+      console.error('[Zoro] Failed to setup console error interceptor:', error);
+      this._consoleErrorInterceptor = null;
+    }
+  }
+
+  // Remove console error interceptor
+  removeConsoleErrorInterceptor() {
+    if (!this._consoleErrorInterceptor) return;
+    
+    try {
+      // Restore original console methods
+      console.error = this._consoleErrorInterceptor.error;
+      console.warn = this._consoleErrorInterceptor.warn;
+      console.log = this._consoleErrorInterceptor.log;
+      
+      this._consoleErrorInterceptor = null;
+      console.log('[Zoro] Console error interceptor disabled');
+    } catch (error) {
+      console.error('[Zoro] Failed to remove console error interceptor:', error);
+      this._consoleErrorInterceptor = null;
+    }
+  }
+
+  // Add console error to buffer
+  addConsoleError(level, args) {
+    if (!this.settings.debugMode) return;
+    
+    const message = args.map(arg => 
+      typeof arg === 'string' ? arg : 
+      arg instanceof Error ? arg.message : 
+      JSON.stringify(arg)
+    ).join(' ');
+    
+    const errorEntry = {
+      timestamp: new Date().toISOString(),
+      level: level,
+      message: message,
+      rawArgs: args
+    };
+    
+    this.consoleErrorBuffer.push(errorEntry);
+    
+    // Keep buffer size manageable
+    if (this.consoleErrorBuffer.length > this.maxConsoleErrors) {
+      this.consoleErrorBuffer.shift();
+    }
+  }
+
+  // Clear all debug logs
+  clearDebugLogs() {
+    // Clear console error buffer completely
+    this.consoleErrorBuffer = [];
+    
+    // Clear Simkl edit error buffer if available
+    if (this.simklApi && this.simklApi.editErrorBuffer) {
+      this.simklApi.editErrorBuffer = [];
+    }
+    
+    // Reset cache stats to zero
+    if (this.cache && this.cache.flags?.debugMode) {
+      this.cache.stats = { hits: 0, misses: 0, sets: 0, deletes: 0, compressions: 0 };
+    }
+    
+    console.log('[Zoro] All debug logs and console logs cleared');
+  }
+
+  // Check if there are any debug logs to export
+  hasDebugLogs() {
+    const hasConsoleErrors = this.consoleErrorBuffer && this.consoleErrorBuffer.length > 0;
+    const hasSimklErrors = this.simklApi && this.simklApi.editErrorBuffer && this.simklApi.editErrorBuffer.length > 0;
+    const hasCacheDebug = this.cache && this.cache.flags?.debugMode;
+    
+    return hasConsoleErrors || hasSimklErrors || hasCacheDebug;
+  }
+
+  // Get debug logs summary
+  getDebugLogsSummary() {
+    return {
+      consoleErrors: this.consoleErrorBuffer ? this.consoleErrorBuffer.length : 0,
+      simklErrors: this.simklApi && this.simklApi.editErrorBuffer ? this.simklApi.editErrorBuffer.length : 0,
+      cacheDebug: this.cache && this.cache.flags?.debugMode,
+      totalLogs: (this.consoleErrorBuffer ? this.consoleErrorBuffer.length : 0) + 
+                 (this.simklApi && this.simklApi.editErrorBuffer ? this.simklApi.editErrorBuffer.length : 0)
+    };
+  }
+
+  // Setup automatic cleanup of logs after 24 hours
+  _setupAutoCleanup() {
+    // Only setup auto-cleanup if enabled in settings
+    if (!this.settings.autoCleanupLogs) return;
+    
+    // Check for old logs every hour
+    this._cleanupInterval = setInterval(() => {
+      this._cleanupOldLogs();
+    }, 60 * 60 * 1000); // 1 hour
+    
+    // Also cleanup immediately to remove any logs older than 24 hours
+    this._cleanupOldLogs();
+  }
+
+  // Clean up logs older than 24 hours
+  _cleanupOldLogs() {
+    const now = Date.now();
+    const maxAge = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+    
+    // Clean console error buffer
+    if (this.consoleErrorBuffer && this.consoleErrorBuffer.length > 0) {
+      const originalLength = this.consoleErrorBuffer.length;
+      this.consoleErrorBuffer = this.consoleErrorBuffer.filter(entry => {
+        // Convert ISO string timestamp to milliseconds for comparison
+        const entryTime = new Date(entry.timestamp).getTime();
+        return (now - entryTime) < maxAge;
+      });
+      
+      const removedCount = originalLength - this.consoleErrorBuffer.length;
+      if (removedCount > 0) {
+        console.log(`[Zoro] Auto-cleaned ${removedCount} console logs older than 24 hours`);
+      }
+    }
+    
+    // Clean Simkl edit error buffer if available
+    if (this.simklApi && this.simklApi.editErrorBuffer && this.simklApi.editErrorBuffer.length > 0) {
+      const originalLength = this.simklApi.editErrorBuffer.length;
+      this.simklApi.editErrorBuffer = this.simklApi.editErrorBuffer.filter(entry => {
+        // Convert ISO string timestamp to milliseconds for comparison
+        const entryTime = new Date(entry.timestamp).getTime();
+        return (now - entryTime) < maxAge;
+      });
+      
+      const removedCount = originalLength - this.simklApi.editErrorBuffer.length;
+      if (removedCount > 0) {
+        console.log(`[Zoro] Auto-cleaned ${removedCount} Simkl edit logs older than 24 hours`);
+      }
+    }
+  }
+
+
+
+
 }
 class Processor {
   constructor(plugin) {
@@ -7609,7 +7960,6 @@ async handleTrendingOperation(api, config) {
     }
   }
 }
-
 class Render {
   constructor(plugin) {
     this.plugin = plugin;
@@ -8140,7 +8490,9 @@ class CardRenderer {
     const entryMediaType = this.apiHelper.detectMediaType(entry, config, media);
 
     if (!this.apiHelper.isAuthenticated(entrySource)) {
+      if (this.settings.debugMode) {
       console.log(`[Zoro] Not authenticated with ${entrySource}`);
+    }
       this.plugin.prompt.createAuthenticationPrompt(entrySource);
       return;
     }
@@ -8152,9 +8504,13 @@ class CardRenderer {
     try {
       const numericId = Number(media.id) || 0;
           const normalizedId = entrySource === 'simkl' ? this.plugin.simklApi.normalizeSimklId(numericId) : numericId;
-    console.log('[Zoro][Edit] entrySource', entrySource, 'entryMediaType', entryMediaType);
-    console.log('[Zoro][Edit] mediaTitle', this.formatter.formatTitle(media));
-    console.log(`[Zoro] Checking user entry for media ${normalizedId} via ${entrySource}`);
+    if (this.settings.debugMode) {
+      console.log('[Zoro][Edit] entrySource', entrySource, 'entryMediaType', entryMediaType);
+      console.log('[Zoro][Edit] mediaTitle', this.formatter.formatTitle(media));
+    }
+    if (this.settings.debugMode) {
+      console.log(`[Zoro] Checking user entry for media ${normalizedId} via ${entrySource}`);
+    }
     
     let existingEntry = null;
       if (normalizedId > 0) {
@@ -8167,7 +8523,9 @@ class CardRenderer {
           existingEntry = await this.apiHelper.getUserEntryForMedia(guessId, entryMediaType, entrySource);
         }
       }
+      if (this.settings.debugMode) {
       console.log(`[Zoro] User entry result:`, existingEntry ? 'Found existing entry' : 'Not in user list');
+    }
       
       const entryToEdit = existingEntry || {
         media: media,
@@ -8187,7 +8545,9 @@ class CardRenderer {
       editBtn.dataset.loading = 'false';
       editBtn.style.pointerEvents = 'auto';
 
+      if (this.settings.debugMode) {
       console.log(`[Zoro] Opening edit modal for ${isNewEntry ? 'new' : 'existing'} entry`);
+    }
 
       this.plugin.edit.createEditModal(
         entryToEdit,
@@ -8199,12 +8559,16 @@ class CardRenderer {
               const retryId = await this.plugin.simklApi.resolveSimklIdByTitle(this.formatter.formatTitle(media), entryMediaType);
               if (retryId > 0) media.id = retryId;
             }
-            console.log(`[Zoro] Updating media ${media.id} with:`, updates);
+            if (this.settings.debugMode) {
+      console.log(`[Zoro] Updating media ${media.id} with:`, updates);
+    }
             await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, this.apiHelper.detectMediaType(entry, config, media));
             
             const successMessage = isNewEntry ? '✅ Added to list!' : '✅ Updated!';
             new Notice(successMessage, 3000);
-            console.log(`[Zoro] ${successMessage}`);
+            if (this.settings.debugMode) {
+      console.log(`[Zoro] ${successMessage}`);
+    }
             
             editBtn.textContent = 'Edit';
             editBtn.className = 'status-badge status-edit clickable-status';
@@ -8217,7 +8581,9 @@ class CardRenderer {
           }
         },
         () => {
-          console.log('[Zoro] Edit modal cancelled');
+          if (this.settings.debugMode) {
+      console.log('[Zoro] Edit modal cancelled');
+    }
           editBtn.textContent = 'Edit';
           editBtn.className = 'status-badge status-edit clickable-status';
           editBtn.dataset.loading = 'false';
@@ -8256,7 +8622,9 @@ class CardRenderer {
           }
         },
         () => {
-          console.log('[Zoro] Fallback edit modal cancelled');
+          if (this.settings.debugMode) {
+      console.log('[Zoro] Fallback edit modal cancelled');
+    }
         },
         entrySource
       );
@@ -9848,7 +10216,6 @@ class EmojiIconMapper {
     };
   }
 }
-
 class Edit {
   constructor(plugin) {
     this.plugin = plugin;
@@ -10544,29 +10911,45 @@ class SimklEditModal {
   }
 
   async updateEntry(entry, updates, onSave) {
-    console.log('[Simkl][Edit] updateEntry called', { entry, updates });
+    if (this.debugEnabled) {
+      console.log('[Simkl][Edit] updateEntry called', { entry, updates });
+    }
     const mediaId = entry.media?.id || entry.mediaId;
-    console.log('[Simkl][Edit] raw mediaId', mediaId);
+    if (this.debugEnabled) {
+      console.log('[Simkl][Edit] raw mediaId', mediaId);
+    }
     if (!mediaId) throw new Error('Media ID not found');
     const mediaType = entry._zoroMeta?.mediaType || (entry.media?.format === 'MOVIE' ? 'MOVIE' : 'TV');
-    console.log('[Simkl][Edit] mediaType', mediaType);
-    console.log('[Simkl][Edit] calling updateMediaListEntry', { mediaId, updates, mediaType });
+    if (this.debugEnabled) {
+      console.log('[Simkl][Edit] mediaType', mediaType);
+      console.log('[Simkl][Edit] calling updateMediaListEntry', { mediaId, updates, mediaType });
+    }
     await this.plugin.simklApi.updateMediaListEntry(mediaId, updates, mediaType);
-    console.log('[Simkl][Edit] updateEntry done');
+    if (this.debugEnabled) {
+      console.log('[Simkl][Edit] updateEntry done');
+    }
     await onSave(updates);
     Object.assign(entry, updates);
     return entry;
   }
 
   async removeEntry(entry) {
-    console.log('[Simkl][Edit] removeEntry called', entry);
+    if (this.debugEnabled) {
+      console.log('[Simkl][Edit] removeEntry called', entry);
+    }
     const mediaId = entry.media?.id || entry.mediaId;
-    console.log('[Simkl][Edit] raw mediaId', mediaId);
+    if (this.debugEnabled) {
+      console.log('[Simkl][Edit] raw mediaId', mediaId);
+    }
     if (!mediaId) throw new Error('Media ID not found');
     const mediaType = entry._zoroMeta?.mediaType || (entry.media?.format === 'MOVIE' ? 'MOVIE' : 'TV');
-    console.log('[Simkl][Edit] mediaType', mediaType);
+    if (this.debugEnabled) {
+      console.log('[Simkl][Edit] mediaType', mediaType);
+    }
     await this.plugin.simklApi.removeMediaListEntry(mediaId, mediaType);
-    console.log('[Simkl][Edit] removeEntry done');
+    if (this.debugEnabled) {
+      console.log('[Simkl][Edit] removeEntry done');
+    }
   }
 
   invalidateCache(entry) {
@@ -11162,8 +11545,6 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
     return false;
   }
 }
-
-
   /**
    * Show connected notes in a single dedicated side panel
    */
@@ -16696,21 +17077,110 @@ new Setting(Data)
     );
 
   
+
+
     new Setting(Exp)
       .setName('Debug Mode')
-      .setDesc('Enable detailed console logs and performance metrics')
+      .setDesc('Enable console error and warning logging for troubleshooting')
       .addToggle(toggle => toggle
         .setValue(this.plugin.settings.debugMode || false)
         .onChange(async (value) => {
           this.plugin.settings.debugMode = value;
           await this.plugin.saveSettings();
           
-          // Enable/disable debug across components
-          this.plugin.api?.enableDebug?.(value);
-          this.plugin.cache?.enableDebug?.(value);
-          new Notice(`Debug mode ${value ? 'enabled' : 'disabled'}`, 2000);
+              // Enable/disable debug across components
+    this.plugin.api?.enableDebug?.(value);
+    this.plugin.cache?.enableDebug?.(value);
+    
+    // Setup console error interceptor when debug mode is enabled
+    if (value) {
+      this.setupConsoleErrorInterceptor();
+      new Notice(`Debug mode enabled! Console errors and warnings will be captured.`, 4000);
+    } else {
+      this.removeConsoleErrorInterceptor();
+      new Notice(`Debug mode disabled`, 2000);
+    }
+    
+    // Refresh settings tab to show/hide export button
+    this.display();
         })
       );
+
+    // Console Log Capture Setting (only visible when debug mode is enabled)
+    if (this.plugin.settings.debugMode) {
+      new Setting(Exp)
+        .setName('📝 Capture Console Logs')
+        .setDesc('Also capture regular console.log() statements in addition to errors and warnings')
+        .addToggle(toggle => toggle
+          .setValue(this.plugin.settings.captureConsoleLogs || false)
+          .onChange(async (value) => {
+            this.plugin.settings.captureConsoleLogs = value;
+            await this.plugin.saveSettings();
+            
+            // Refresh the console interceptor to apply the new setting
+            if (this.plugin.settings.debugMode) {
+              this.plugin.removeConsoleErrorInterceptor();
+              this.plugin.setupConsoleErrorInterceptor();
+              new Notice(`Console log capture ${value ? 'enabled' : 'disabled'}`, 2000);
+            }
+          })
+        );
+
+      new Setting(Exp)
+        .setName('🧹 Auto-Cleanup Logs')
+        .setDesc('Automatically remove logs older than 24 hours to prevent memory buildup')
+        .addToggle(toggle => toggle
+          .setValue(this.plugin.settings.autoCleanupLogs !== false) // Default to true
+          .onChange(async (value) => {
+            this.plugin.settings.autoCleanupLogs = value;
+            await this.plugin.saveSettings();
+            
+            // Refresh auto-cleanup based on new setting
+            if (this.plugin._cleanupInterval) {
+              clearInterval(this.plugin._cleanupInterval);
+              this.plugin._cleanupInterval = null;
+            }
+            
+            if (value) {
+              this.plugin._setupAutoCleanup();
+              new Notice('Auto-cleanup enabled - logs will be removed after 24 hours', 3000);
+            } else {
+              new Notice('Auto-cleanup disabled - logs will accumulate until manually cleared', 3000);
+            }
+          })
+        );
+    }
+
+    // Export Debug Logs button (only visible when debug mode is enabled)
+    if (this.plugin.settings.debugMode) {
+      const debugSummary = this.plugin.getDebugLogsSummary();
+      const hasLogs = this.plugin.hasDebugLogs();
+      
+      new Setting(Exp)
+        .setName('📝 Export Console Logs')
+        .setDesc(`Export captured console logs to a markdown note${hasLogs ? ` (${debugSummary.totalLogs} logs available)` : ' (no logs available)'}`)
+        .addButton(btn => btn
+          .setButtonText('Export to Markdown')
+          .setClass('mod-cta')
+          .setDisabled(!hasLogs)
+          .onClick(async () => {
+            try {
+                        const md = this.plugin.exportConsoleLogsToMarkdown();
+          const now = new Date();
+          const pad = n => String(n).padStart(2, '0');
+          const fname = `console-logs-${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}_${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}.md`;
+          const file = await this.plugin.app.vault.create(fname, md);
+              new Notice(`Console logs exported to ${file.name}`, 3000);
+            } catch (e) {
+              new Notice(`Failed to export console logs: ${e.message}`, 3000);
+            }
+          })
+        );
+
+
+
+
+    }
 
     new Setting(About)
       .setName('Author')

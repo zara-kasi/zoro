@@ -7031,10 +7031,6 @@ this.emojiMapper.init({ patchSettings:true, patchCreateEl:true, patchNotice:true
     this.consoleErrorBuffer = [];
     this.maxConsoleErrors = 100;
     
-    // Auto-cleanup logs after 24 hours
-    this._cleanupInterval = null;
-    this._setupAutoCleanup();
-    
     try {
       await this.loadSettings();
     } catch (err) {
@@ -7125,7 +7121,6 @@ this.emojiMapper.init({ patchSettings:true, patchCreateEl:true, patchNotice:true
     simklUserInfo: settings?.simklUserInfo === null || typeof settings?.simklUserInfo === 'object' ? settings.simklUserInfo : null,
     debugMode: typeof settings?.debugMode === 'boolean' ? settings.debugMode : false,
     captureConsoleLogs: typeof settings?.captureConsoleLogs === 'boolean' ? settings.captureConsoleLogs : false,
-    autoCleanupLogs: typeof settings?.autoCleanupLogs === 'boolean' ? settings.autoCleanupLogs : true,
     autoFormatSearchUrls: typeof settings?.autoFormatSearchUrls === 'boolean' ? settings.autoFormatSearchUrls : true,
     customSearchUrls: {
   ANIME: Array.isArray(settings?.customSearchUrls?.ANIME) ? 
@@ -7268,12 +7263,6 @@ this.emojiMapper.init({ patchSettings:true, patchCreateEl:true, patchNotice:true
   onunload() {
     // Remove console error interceptor
     this.removeConsoleErrorInterceptor();
-    
-    // Clear cleanup interval
-    if (this._cleanupInterval) {
-      clearInterval(this._cleanupInterval);
-      this._cleanupInterval = null;
-    }
 
     this.cache.stopAutoPrune()
        .stopBackgroundRefresh()
@@ -7299,8 +7288,7 @@ this.emojiMapper.init({ patchSettings:true, patchCreateEl:true, patchNotice:true
     let md = `# Console Logs Export\n\n`;
     md += `**Generated:** ${timestamp}\n\n`;
     md += `**Debug Mode:** ${this.settings.debugMode ? 'Enabled' : 'Disabled'}\n`;
-    md += `**Console Log Capture:** ${this.settings.captureConsoleLogs ? 'Enabled (includes console.log)' : 'Disabled (errors/warnings only)'}\n`;
-    md += `**Auto-Cleanup:** ${this.settings.autoCleanupLogs !== false ? 'Enabled (logs removed after 24h)' : 'Disabled (logs accumulate)'}\n\n`;
+    md += `**Console Log Capture:** ${this.settings.captureConsoleLogs ? 'Enabled (includes console.log)' : 'Disabled (errors/warnings only)'}\n\n`;
     
     if (this.consoleErrorBuffer && this.consoleErrorBuffer.length > 0) {
       md += `## Console Logs\n\n`;
@@ -7476,56 +7464,6 @@ this.emojiMapper.init({ patchSettings:true, patchCreateEl:true, patchNotice:true
       totalLogs: (this.consoleErrorBuffer ? this.consoleErrorBuffer.length : 0) + 
                  (this.simklApi && this.simklApi.editErrorBuffer ? this.simklApi.editErrorBuffer.length : 0)
     };
-  }
-
-  // Setup automatic cleanup of logs after 24 hours
-  _setupAutoCleanup() {
-    // Only setup auto-cleanup if enabled in settings
-    if (!this.settings.autoCleanupLogs) return;
-    
-    // Check for old logs every hour
-    this._cleanupInterval = setInterval(() => {
-      this._cleanupOldLogs();
-    }, 60 * 60 * 1000); // 1 hour
-    
-    // Also cleanup immediately to remove any logs older than 24 hours
-    this._cleanupOldLogs();
-  }
-
-  // Clean up logs older than 24 hours
-  _cleanupOldLogs() {
-    const now = Date.now();
-    const maxAge = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
-    
-    // Clean console error buffer
-    if (this.consoleErrorBuffer && this.consoleErrorBuffer.length > 0) {
-      const originalLength = this.consoleErrorBuffer.length;
-      this.consoleErrorBuffer = this.consoleErrorBuffer.filter(entry => {
-        // Convert ISO string timestamp to milliseconds for comparison
-        const entryTime = new Date(entry.timestamp).getTime();
-        return (now - entryTime) < maxAge;
-      });
-      
-      const removedCount = originalLength - this.consoleErrorBuffer.length;
-      if (removedCount > 0) {
-        console.log(`[Zoro] Auto-cleaned ${removedCount} console logs older than 24 hours`);
-      }
-    }
-    
-    // Clean Simkl edit error buffer if available
-    if (this.simklApi && this.simklApi.editErrorBuffer && this.simklApi.editErrorBuffer.length > 0) {
-      const originalLength = this.simklApi.editErrorBuffer.length;
-      this.simklApi.editErrorBuffer = this.simklApi.editErrorBuffer.filter(entry => {
-        // Convert ISO string timestamp to milliseconds for comparison
-        const entryTime = new Date(entry.timestamp).getTime();
-        return (now - entryTime) < maxAge;
-      });
-      
-      const removedCount = originalLength - this.simklApi.editErrorBuffer.length;
-      if (removedCount > 0) {
-        console.log(`[Zoro] Auto-cleaned ${removedCount} Simkl edit logs older than 24 hours`);
-      }
-    }
   }
 
 
@@ -17125,30 +17063,6 @@ new Setting(Data)
             }
           })
         );
-
-      new Setting(Exp)
-        .setName('🧹 Auto-Cleanup Logs')
-        .setDesc('Automatically remove logs older than 24 hours to prevent memory buildup')
-        .addToggle(toggle => toggle
-          .setValue(this.plugin.settings.autoCleanupLogs !== false) // Default to true
-          .onChange(async (value) => {
-            this.plugin.settings.autoCleanupLogs = value;
-            await this.plugin.saveSettings();
-            
-            // Refresh auto-cleanup based on new setting
-            if (this.plugin._cleanupInterval) {
-              clearInterval(this.plugin._cleanupInterval);
-              this.plugin._cleanupInterval = null;
-            }
-            
-            if (value) {
-              this.plugin._setupAutoCleanup();
-              new Notice('Auto-cleanup enabled - logs will be removed after 24 hours', 3000);
-            } else {
-              new Notice('Auto-cleanup disabled - logs will accumulate until manually cleared', 3000);
-            }
-          })
-        );
     }
 
     // Export Debug Logs button (only visible when debug mode is enabled)
@@ -17173,6 +17087,23 @@ new Setting(Data)
               new Notice(`Console logs exported to ${file.name}`, 3000);
             } catch (e) {
               new Notice(`Failed to export console logs: ${e.message}`, 3000);
+            }
+          })
+        );
+        
+        new Setting(Exp)
+        .setName('🗑️ Clear Debug Logs')
+        .setDesc(`Clear all captured debug logs and console errors${hasLogs ? ` (${debugSummary.totalLogs} logs)` : ' (no logs)'} `)
+        .addButton(btn => btn
+          .setButtonText('Clear Logs')
+          .setClass('mod-warning')
+          .setDisabled(!hasLogs)
+          .onClick(async () => {
+            if (confirm('Are you sure you want to clear all debug logs? This action cannot be undone.')) {
+              this.plugin.clearDebugLogs();
+              new Notice('✅ Debug logs cleared', 2000);
+              // Refresh the settings tab to update the button states
+              this.display();
             }
           })
         );

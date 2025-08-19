@@ -2920,3 +2920,18 @@ body.theme-light .zoro-heart.favorited::before {
   padding: 0;
   
 }
+
+.zoro-search-input-container { position: relative; display: flex; align-items: center; }
+.zoro-search-icon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+}
+.zoro-search-input { padding-left: 36px; }

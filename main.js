@@ -2834,67 +2834,6 @@ class AnilistApi {
     }
   }
 
-  // =================== MEDIA CHECK METHODS ===================
-
-  async checkIfMediaInList(mediaId, mediaType) {
-    return await ZoroError.guard(async () => {
-      const userEntry = await this.getUserEntryForMedia(mediaId, mediaType);
-      return userEntry !== null;
-    }, 'cache');
-  }
-
-  async getUserEntryForMedia(mediaId, mediaType) {
-    try {
-      if (!this.plugin.settings.accessToken) {
-        return null;
-      }
-      
-      const username = await this.plugin.auth.getAuthenticatedUsername();
-      if (!username) {
-        return null;
-      }
-      
-      const query = `
-        query ($username: String, $mediaId: Int, $type: MediaType) {
-          MediaList(userName: $username, mediaId: $mediaId, type: $type) {
-            id
-            status
-            score
-            progress
-            media {
-              id
-              idMal
-              title {
-                english
-                romaji
-              }
-              episodes
-              chapters
-              isFavourite
-            }
-          }
-        }
-      `;
-      
-      const variables = {
-        username: username,
-        mediaId: parseInt(mediaId),
-        type: mediaType
-      };
-      
-      const result = await this.makeRawRequest({
-        query,
-        variables,
-        config: { type: 'user_entry_check', nocache: true }
-      });
-      
-      return result.MediaList;
-      
-    } catch (error) {
-      console.warn('[AniList] getUserEntryForMedia failed:', error.message);
-      return null;
-    }
-  }
 
   getAniListUrl(mediaId, mediaType = 'ANIME') {
     try {
@@ -3869,48 +3808,6 @@ class MalApi {
       });
 
       throw this.createZoroError(classifiedError);
-    }
-  }
-
-  // =================== MEDIA CHECK METHODS ===================
-
-  async checkIfMediaInList(mediaId, mediaType) {
-    return await ZoroError.guard(async () => {
-      const userEntry = await this.getUserEntryForMedia(mediaId, mediaType);
-      return userEntry !== null;
-    }, 'cache');
-  }
-
-  async getUserEntryForMedia(mediaId, mediaType) {
-    try {
-      if (!this.plugin.settings.malAccessToken) {
-        return null;
-      }
-      
-      const type = mediaType === 'ANIME' ? 'anime' : 'manga';
-      const requestParams = {
-        url: `${this.baseUrl}/${type}/${parseInt(mediaId)}?fields=${this.getFieldsForLayout('card', false)}`,
-        method: 'GET',
-        requestId: this.generateRequestId(),
-        metadata: { type: 'user_entry_check' }
-      };
-      
-      const result = await this.requestQueue.add(() => this.makeRawRequest(requestParams), {
-        priority: 'normal',
-        timeout: this.config.requestTimeout,
-        retries: 1,
-        metadata: { 
-          type: 'user_entry_check',
-          nocache: true 
-        },
-        service: 'mal'
-      });
-      
-      return result?.list_status || null;
-      
-    } catch (error) {
-      console.warn('[MAL] getUserEntryForMedia failed:', error.message);
-      return null;
     }
   }
 
@@ -6001,7 +5898,6 @@ async executeUpdate(mediaId, updates, mediaType) {
       try {  
         let prevProgress = 0;  
         let totalEpisodes = 0;  
-        const existing = await this.getUserEntryForMedia(normalizedId, mediaType);  
         prevProgress = Math.max(0, parseInt(existing?.progress) || 0);  
         // Try to detect total episodes from existing media data  
         const media = existing?.media;  
@@ -6075,7 +5971,6 @@ async executeUpdate(mediaId, updates, mediaType) {
       let totalEpisodes = 0;  
       let airedEpisodes = 0;  
       try {  
-        const existing = await this.getUserEntryForMedia(normalizedId, mediaType);  
         prevProgress = Math.max(0, parseInt(existing?.progress) || 0);  
         totalEpisodes = Math.max(0, parseInt(existing?.media?.episodes) || 0);  
         const raw = existing?.media?._rawData || {};  
@@ -6391,51 +6286,6 @@ async removeMediaListEntry(mediaId, mediaType) {
     return true;
   }
 
-  // =================== UTILITY METHODS ===================
-
-  async checkIfMediaInList(mediaId, mediaType) {
-    if (!this.plugin.settings.simklAccessToken) return false;
-    
-    try {
-      const config = { 
-        type: 'single', 
-        mediaType, 
-        mediaId: parseInt(mediaId),
-        nocache: true 
-      };
-      console.log('[Simkl][Check] fetchSimklData', config);
-      const response = await this.fetchSimklData(config);
-      console.log('[Simkl][Check] response', response);
-      return response.MediaList !== null;
-    } catch (error) {
-      
-      return false;
-    }
-  }
-
-  async getUserEntryForMedia(mediaId, mediaType) {
-    try {
-      if (!this.plugin.settings.simklAccessToken) {
-        return null;
-      }
-      
-      const config = {
-        type: 'single',
-        mediaType,
-        mediaId: parseInt(mediaId),
-        nocache: true
-      };
-      
-      console.log('[Simkl][GetEntry] fetchSimklData', config);
-      const result = await this.fetchSimklData(config);
-      console.log('[Simkl][GetEntry] result', result);
-      return result.MediaList; // null if not in list, entry if in list
-      
-    } catch (error) {
-      
-      return null;
-    }
-  }
 
   // =================== MAPPING FUNCTIONS (Fixed) ===================
 
@@ -6922,8 +6772,15 @@ class ZoroPlugin extends Plugin {
     return this.simklApi.getSimklUrl(mediaId, mediaType);
   }
   
-  getSourceSpecificUrl(mediaId, mediaType, source) {
-  switch (source) {
+getSourceSpecificUrl(mediaId, mediaType, source) {
+  const type = String(mediaType || '').toUpperCase();
+  const numericId = Number(mediaId) || 0;
+
+  if ((type === 'MOVIE' || type === 'TV') && numericId > 0) {
+    return `https://www.themoviedb.org/${type === 'MOVIE' ? 'movie' : 'tv'}/${numericId}`;
+  }
+
+  switch ((source || '').toLowerCase()) {
     case 'mal':
       return this.getMALUrl(mediaId, mediaType);
     case 'simkl':
@@ -6931,7 +6788,6 @@ class ZoroPlugin extends Plugin {
     case 'anilist':
     default:
       return this.getAniListUrl(mediaId, mediaType);
-  
   }
 }
 
@@ -8131,8 +7987,6 @@ class CardRenderer {
       // For search and trending cards, show both Add and Edit
       const addBtn = this.createAddButton(media, entry, config);
       details.appendChild(addBtn);
-      const editBtn = this.createEditButton(media, entry, config);
-      details.appendChild(editBtn);
     }
 
     // CONNECTED NOTES BUTTON - ADD THIS
@@ -8165,14 +8019,15 @@ class CardRenderer {
   }
 
   createAddButton(media, entry, config) {
-    const addBtn = document.createElement('span');
-    addBtn.className = 'status-badge status-edit clickable-status';
-    addBtn.textContent = 'Add';
-    addBtn.dataset.loading = 'false';
-    addBtn.onclick = (e) => this.handleAddClick(e, media, entry, config, addBtn);
-    
-    return addBtn;
-  }
+  const addBtn = document.createElement('span');
+  addBtn.className = 'status-badge status-edit clickable-status';
+  addBtn.createEl('span', { text: '🔖' });
+  addBtn.dataset.loading = 'false';
+  addBtn.onclick = (e) => this.handleAddClick(e, media, entry, config, addBtn);
+  
+
+  return addBtn;
+}
 
 
 
@@ -8207,74 +8062,100 @@ class CardRenderer {
   }
 
   async handleAddClick(e, media, entry, config, addBtn) {
-    e.preventDefault();
-    e.stopPropagation();
-    
-    let entrySource = this.apiHelper.detectSource(entry, config);
-    const entryMediaType = this.apiHelper.detectMediaType(entry, config, media);
+  e.preventDefault(); e.stopPropagation();
 
-    // If this is a TMDb movie item, route add operation through Simkl
-    const isTmdbItem = (entry?._zoroMeta?.source || '').toLowerCase() === 'tmdb';
-    if (isTmdbItem) {
-      entrySource = 'simkl';
-      // Pre-cache media by its numeric id so Simkl payload can include tmdb/imdb ids
-      try {
-        const numericId = Number(media.id) || Number(media.idTmdb) || 0;
-        if (numericId > 0) {
-          this.plugin.cache.set(String(numericId), { media }, { scope: 'mediaData' });
-        }
-      } catch {}
+  let entrySource = this.apiHelper.detectSource(entry, config);
+  const entryMediaType = this.apiHelper.detectMediaType(entry, config, media);
+
+  const isTmdbItem = (entry?._zoroMeta?.source || '').toLowerCase() === 'tmdb';
+  if (isTmdbItem) {
+    entrySource = 'simkl';
+    try {
+      const numericId = Number(media.id) || Number(media.idTmdb) || 0;
+      if (numericId > 0) {
+        this.plugin.cache.set(String(numericId), { media }, { scope: 'mediaData' });
+      }
+    } catch {}
+  }
+
+  if (!this.apiHelper.isAuthenticated(entrySource)) {
+    console.log(`[Zoro] Not authenticated with ${entrySource}`);
+    this.plugin.prompt.createAuthenticationPrompt(entrySource);
+    return;
+  }
+
+  // show spinner
+  addBtn.dataset.loading = 'true';
+  addBtn.innerHTML = DOMHelper.createLoadingSpinner();
+  addBtn.style.pointerEvents = 'none';
+
+  try {
+    const typeUpper = String(entryMediaType || '').toUpperCase();
+    const isMovieOrTv = typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper.includes('SHOW');
+
+    const updates = (entrySource === 'simkl' && isMovieOrTv)
+      ? { status: 'PLANNING', score: 0 }
+      : { status: 'PLANNING', progress: 0 };
+
+    await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, entryMediaType);
+
+    // Success feedback
+    new Notice('✅ Added to planning!', 3000);
+    console.log(`[Zoro] Added ${media.id} to planning via add button`);
+
+    // ---- STOP SPINNER & SHOW SUCCESS ICON ----
+    addBtn.dataset.loading = 'false';
+
+    // remove spinner and all children (this is the key step)
+    if (typeof addBtn.replaceChildren === 'function') {
+      addBtn.replaceChildren();
+    } else {
+      addBtn.innerHTML = '';
     }
 
-    if (!this.apiHelper.isAuthenticated(entrySource)) {
-      console.log(`[Zoro] Not authenticated with ${entrySource}`);
-      this.plugin.prompt.createAuthenticationPrompt(entrySource);
-      return;
+    // Add success icon via mapper/createEl/fallback
+    const mapper = globalThis.__emojiIconMapper;
+    if (mapper) {
+      const frag = mapper.parseToFragment('📑');
+      if (frag) {
+        addBtn.appendChild(frag);
+      } else if (typeof addBtn.createEl === 'function') {
+        addBtn.createEl('span', { text: '📑' });
+      } else {
+        addBtn.textContent = '📑';
+      }
+    } else if (typeof setIcon === 'function') {
+      const span = document.createElement('span');
+      setIcon(span, 'bookmark'); // choose appropriate icon name
+      addBtn.appendChild(span);
+    } else {
+      addBtn.textContent = '📑';
     }
 
-    addBtn.dataset.loading = 'true';
-    addBtn.innerHTML = DOMHelper.createLoadingSpinner();
+    // update classes cleanly
+    addBtn.classList.remove('status-edit');
+    addBtn.classList.add('status-badge', 'status-completed', 'clickable-status');
+
+    // leave pointer events disabled so user can't re-add; change to 'auto' if you want clickable
     addBtn.style.pointerEvents = 'none';
 
-    try {
-      // Directly add to Planning; for movies avoid touching history and ratings
-      const typeUpper = String(entryMediaType || '').toUpperCase();
-      const isMovieOrTv = typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper.includes('SHOW');
-      let updates;
-      if (entrySource === 'simkl' && isMovieOrTv) {
-        // Fast path for Simkl movies/TV: avoid history/ratings side-effects
-        updates = { status: 'PLANNING', score: 0 };
-      } else {
-        // AniList/MAL (anime/manga): standard planning entry with zero progress
-        updates = { status: 'PLANNING', progress: 0 };
-      }
-      await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, entryMediaType);
-      
-      // Success feedback
-      new Notice('✅ Added to planning!', 3000);
-      console.log(`[Zoro] Added ${media.id} to planning via add button`);
-      
-      // Update button to show added state
-      addBtn.textContent = 'Added';
-      addBtn.className = 'status-badge status-completed clickable-status';
-      addBtn.dataset.loading = 'false';
-      addBtn.style.pointerEvents = 'none';
-      
-      // Refresh views
-      this.parent.refreshActiveViews();
-      
-    } catch (error) {
-      console.error('[Zoro] Add failed:', error);
-      
-      // Reset button on error
-      addBtn.textContent = 'Add';
-      addBtn.className = 'status-badge status-edit clickable-status';
-      addBtn.dataset.loading = 'false';
-      addBtn.style.pointerEvents = 'auto';
-      
-      new Notice(`❌ Failed to add: ${error.message}`, 5000);
-    }
+    // Refresh UI
+    this.parent.refreshActiveViews();
+
+  } catch (error) {
+    console.error('[Zoro] Add failed:', error);
+
+    // Reset button on error
+    addBtn.dataset.loading = 'false';
+    addBtn.innerHTML = '';
+    addBtn.classList.remove('status-completed');
+    addBtn.classList.add('status-badge', 'status-edit', 'clickable-status');
+    addBtn.textContent = 'Add';
+    addBtn.style.pointerEvents = 'auto';
+
+    new Notice(`❌ Failed to add: ${error.message}`, 5000);
   }
+}
 
   async handleEditClick(e, media, entry, config, editBtn) {
     e.preventDefault();
@@ -8302,13 +8183,11 @@ class CardRenderer {
     
     let existingEntry = null;
       if (normalizedId > 0) {
-        existingEntry = await this.apiHelper.getUserEntryForMedia(normalizedId, entryMediaType, entrySource);
       } else if (entrySource === 'simkl') {
         // Attempt to resolve a Simkl ID by title before editing
         const guessId = await this.plugin.simklApi.resolveSimklIdByTitle(this.formatter.formatTitle(media), entryMediaType);
         if (guessId > 0) {
           media.id = guessId;
-          existingEntry = await this.apiHelper.getUserEntryForMedia(guessId, entryMediaType, entrySource);
         }
       }
       console.log(`[Zoro] User entry result:`, existingEntry ? 'Found existing entry' : 'Not in user list');
@@ -8416,53 +8295,61 @@ class SearchRenderer {
   }
 
   render(el, config) {
-    el.empty();
-    el.className = 'zoro-search-container';
-    
-    const searchDiv = el.createDiv({ cls: 'zoro-search-input-container' });
-    const input = searchDiv.createEl('input', { type: 'text', cls: 'zoro-search-input' });
-    const mt = String(config.mediaType || 'ANIME').toUpperCase();
-    const src = String(config.source || '').toLowerCase();
-    if (src === 'simkl') {
-      if (mt === 'ANIME') input.placeholder = '🔍 Search anime…';
-      else if (mt === 'MOVIE' || mt === 'MOVIES') input.placeholder = '🔍 Search movies…';
-      else input.placeholder = '🔍 Search TV shows…';
-    } else {
-      input.placeholder = mt === 'ANIME' ? '🔍 Search anime…' : '🔍 Search manga…';
+  el.empty();
+  el.className = 'zoro-search-container';
+
+  const searchDiv = el.createDiv({ cls: 'zoro-search-input-container' });
+
+  // create icon BEFORE the input so createEl(text) is intercepted by mapper
+  const iconSpan = searchDiv.createEl('span', { cls: 'zoro-search-icon', text: '🔍' });
+
+  // create actual input
+  const input = searchDiv.createEl('input', { type: 'text', cls: 'zoro-search-input' });
+
+  const mt = String(config.mediaType || 'ANIME').toUpperCase();
+  const src = String(config.source || '').toLowerCase();
+
+  // Set plain-text placeholder (no emoji)
+  if (src === 'simkl') {
+    if (mt === 'ANIME') input.placeholder = '      Search anime…';
+    else if (mt === 'MOVIE' || mt === 'MOVIES') input.placeholder = '      Search movies…';
+    else input.placeholder = '      Search TV shows…';
+  } else {
+    input.placeholder = mt === 'ANIME' ? '      Search anime…' : '      Search manga…';
+  }
+
+  const resultsDiv = el.createDiv({ cls: 'zoro-search-results' });
+  let timeout;
+
+  const doSearch = async () => {
+    const term = input.value.trim();
+    if (term.length < 3) {
+      resultsDiv.innerHTML = DOMHelper.createErrorMessage('Type at least 3 characters…');
+      return;
     }
 
-    const resultsDiv = el.createDiv({ cls: 'zoro-search-results' });
-    let timeout;
+    try {
+      resultsDiv.innerHTML = '';
+      resultsDiv.appendChild(DOMHelper.createListSkeleton(5));
 
-    const doSearch = async () => {
-      const term = input.value.trim();
-      if (term.length < 3) {
-        resultsDiv.innerHTML = DOMHelper.createErrorMessage('Type at least 3 characters…');
-        return;
-      }
-      
-      try {
-        resultsDiv.innerHTML = '';
-        resultsDiv.appendChild(DOMHelper.createListSkeleton(5));
-        
-        const data = await this.apiHelper.fetchSearchData(config, term);
-        
-        resultsDiv.innerHTML = '';
-        this.renderSearchResults(resultsDiv, data.Page.media, config);
-      } catch (e) {
-        this.plugin.renderError(resultsDiv, e.message);
-      }
-    };
+      const data = await this.apiHelper.fetchSearchData(config, term);
 
-    input.addEventListener('input', () => { 
-      clearTimeout(timeout); 
-      timeout = setTimeout(doSearch, 300); 
-    });
-    
-    input.addEventListener('keypress', e => { 
-      if (e.key === 'Enter') doSearch(); 
-    });
-  }
+      resultsDiv.innerHTML = '';
+      this.renderSearchResults(resultsDiv, data.Page.media, config);
+    } catch (e) {
+      this.plugin.renderError(resultsDiv, e.message);
+    }
+  };
+
+  input.addEventListener('input', () => {
+    clearTimeout(timeout);
+    timeout = setTimeout(doSearch, 300);
+  });
+
+  input.addEventListener('keypress', e => {
+    if (e.key === 'Enter') doSearch();
+  });
+}
 
   renderSearchResults(el, media, config) {
     el.empty();
@@ -9294,18 +9181,7 @@ class APISourceHelper {
     }
   }
 
-  async getUserEntryForMedia(mediaId, mediaType, source) {
-    const normalizedSource = source?.toLowerCase();
-    
-    if (normalizedSource === 'mal') {
-      return await this.plugin.malApi.getUserEntryForMedia?.(mediaId, mediaType) || null;
-    } else if (normalizedSource === 'simkl') {
-      return await this.plugin.simklApi.getUserEntryForMedia?.(mediaId, mediaType) || null;
-    } else {
-      return await this.plugin.api.getUserEntryForMedia(mediaId, mediaType);
-    }
-  }
-
+  
   async updateMediaListEntry(mediaId, updates, source, mediaType) {
     const api = this.getAPI(source);
     if ((source || '').toLowerCase() === 'simkl') {
@@ -9743,6 +9619,8 @@ class EmojiIconMapper {
       '📖': 'square-arrow-out-up-right',
       '✅': 'check',
       '📋': 'clipboard-list',
+      '🔖': 'bookmark',
+      '📑': 'bookmark-check',
       ...Object.fromEntries(opts.map || [])
     }));
     
@@ -10871,90 +10749,8 @@ class SupportEditModal {
   }
 }
 
-class ZoroSidePanel {
+class ConnectedNotes {
   constructor(plugin) {
-    this.plugin = plugin;
-    this.app = plugin.app;
-    this.panelLeaf = null;
-    this.activeMode = null;
-  }
-
-  getOrCreatePanelLeaf() {
-    // Reuse cached leaf if still valid
-    if (this.panelLeaf && this.panelLeaf.view && this.panelLeaf.view.containerEl?.isConnected) {
-      return this.panelLeaf;
-    }
-
-    // Locate existing Zoro panel by title
-    let zoroLeaf = null;
-    this.app.workspace.iterateAllLeaves((leaf) => {
-      if (leaf.view?.titleEl && leaf.view.titleEl.textContent === 'Zoro') {
-        zoroLeaf = leaf;
-        return false;
-      }
-    });
-
-    // Create a new right-side leaf if none found
-    if (!zoroLeaf) {
-      zoroLeaf = this.app.workspace.getRightLeaf(false);
-    }
-
-    this.panelLeaf = zoroLeaf;
-    return zoroLeaf;
-  }
-
-  preparePanelView(view) {
-    const container = view.containerEl;
-    container.empty();
-    container.className = 'zoro-note-container';
-
-    if (view.titleEl) {
-      view.titleEl.setText('Zoro');
-    }
-
-    if (view.getDisplayText) {
-      view.getDisplayText = () => 'Zoro';
-    } else {
-      view.getDisplayText = () => 'Zoro';
-    }
-
-    if (view.getViewType) {
-      view.getViewType = () => 'zoro-panel';
-    } else {
-      view.getViewType = () => 'zoro-panel';
-    }
-
-    if (view.leaf) {
-      const leaf = view.leaf;
-      setTimeout(() => {
-        if (leaf.tabHeaderEl) {
-          const titleEl = leaf.tabHeaderEl.querySelector('.workspace-tab-header-inner-title');
-          if (titleEl) {
-            titleEl.textContent = 'Zoro';
-          }
-        }
-        leaf.updateHeader();
-      }, 10);
-    }
-
-    return container;
-  }
-
-  renderInPanel(renderFunction, modeKey = null) {
-    const leaf = this.getOrCreatePanelLeaf();
-    const view = leaf.view;
-    // Always re-render from scratch when called
-    this.activeMode = modeKey;
-    const container = this.preparePanelView(view);
-    const result = renderFunction(container, view);
-    this.app.workspace.revealLeaf(leaf);
-    return result;
-  }
-}
-
-class ConnectedNotes extends ZoroSidePanel {
-  constructor(plugin) {
-    super(plugin);
     this.plugin = plugin;
     this.app = plugin.app;
     this.currentMedia = null; // Store current media for filename generation
@@ -11405,10 +11201,29 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
    */
   async showConnectedNotes(searchIds, mediaType) {
     try {
+      // Search for connected notes
       const connectedNotes = await this.searchConnectedNotes(searchIds, mediaType);
-      this.renderInPanel((container, view) => {
-        this.renderConnectedNotesContent(container, connectedNotes, searchIds, mediaType);
-      }, 'connected-notes');
+
+      // Look for existing Zoro panel first
+      let zoroLeaf = null;
+      this.app.workspace.iterateAllLeaves((leaf) => {
+        if (leaf.view.titleEl && leaf.view.titleEl.textContent === 'Zoro') {
+          zoroLeaf = leaf;
+          return false; // Stop iteration
+        }
+      });
+
+      // If no existing Zoro panel, create new one
+      if (!zoroLeaf) {
+        zoroLeaf = this.app.workspace.getRightLeaf(false);
+      }
+
+      // Render content and set title
+      this.renderConnectedNotesInView(zoroLeaf.view, connectedNotes, searchIds, mediaType);
+      
+      // Ensure the side panel is visible
+      this.app.workspace.revealLeaf(zoroLeaf);
+      
     } catch (error) {
       console.error('[ConnectedNotes] Error showing connected notes:', error);
       new Notice('Failed to load connected notes');
@@ -11419,68 +11234,101 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
    * Render the connect existing notes interface
    */
   renderConnectExistingInterface(container, searchIds, mediaType) {
-    // Create search interface container
-    const connectInterface = container.createEl('div', { cls: 'zoro-note-connect-interface' });
-    
-    // Search input
-    const searchInput = connectInterface.createEl('input', { cls: 'zoro-note-search-input' });
-    searchInput.type = 'text';
-    searchInput.placeholder = ' Search notes to connect...';
-    
-    // Search results container
-    const resultsContainer = connectInterface.createEl('div', { cls: 'zoro-note-search-results' });
-    
-    // Search functionality with debounce
-    let searchTimeout;
-    searchInput.addEventListener('input', () => {
-      clearTimeout(searchTimeout);
-      searchTimeout = setTimeout(async () => {
-        const query = searchInput.value;
-        resultsContainer.empty();
-        
-        if (query.trim().length >= 2) {
-          const results = await this.findNotesToConnect(query, searchIds, mediaType);
-          
-          if (results.length === 0) {
-            const noResults = resultsContainer.createEl('div', { text: 'No notes found', cls: 'zoro-note-no-results' });
-          } else {
-            results.forEach(result => {
-              const resultItem = resultsContainer.createEl('div', { cls: 'zoro-note-search-result' });
-              
-              const noteTitle = resultItem.createEl('span', { text: result.title, cls: 'zoro-note-result-title' });
-              
-              const connectBtn = resultItem.createEl('button', { text: '➕', cls: 'zoro-note-connect-btn' });
-              connectBtn.title = 'Connect this note';
-              
-              connectBtn.onclick = async (e) => {
-                e.stopPropagation();
-                const success = await this.connectExistingNote(result.file, searchIds, mediaType);
-                if (success) {
-                  // Refresh the connected notes panel
-                  const connectedNotes = await this.searchConnectedNotes(searchIds, mediaType);
-                  this.refreshConnectedNotesList(container.querySelector('.zoro-note-panel-content'), connectedNotes);
-                  // Close search interface
-                  connectInterface.classList.add('zoro-note-hidden');
-                  searchInput.value = '';
-                  resultsContainer.empty();
-                }
-              };
-              
-              // Click on item to preview
-              resultItem.onclick = (e) => {
-                if (e.target !== connectBtn) {
-                  const mainLeaf = this.app.workspace.getLeaf('tab');
-                  mainLeaf.openFile(result.file);
-                }
-              };
-            });
-          }
-        }
-      }, 300); // 300ms debounce
-    });
-    
-    return connectInterface;
+  // Create search interface container
+  const connectInterface = container.createEl('div', { cls: 'zoro-note-connect-interface' });
+
+  // Use the same input container classes as your other search bar so CSS matches
+  const searchWrapper = connectInterface.createEl('div', { cls: 'zoro-search-input-container' });
+
+  // Create icon element (mapper will convert this emoji -> icon)
+  const iconSpan = searchWrapper.createEl('span', { cls: 'zoro-search-icon' });
+
+  // Ensure emoji mapper is initialized (idempotent)
+  try {
+    if (!globalThis.__emojiIconMapper) {
+      // If EmojiIconMapper is available in scope
+      if (typeof EmojiIconMapper === 'function') {
+        new EmojiIconMapper().init({ patchCreateEl: true });
+      }
+    } else {
+      // make sure it's patched (safe to call)
+      globalThis.__emojiIconMapper.init?.({ patchCreateEl: true });
+    }
+  } catch (e) {
+    // swallow — we'll fallback to raw emoji below
   }
+
+  // Render the icon via mapper if available, otherwise fallback to raw emoji
+  const mapper = globalThis.__emojiIconMapper;
+  if (mapper) {
+    const frag = mapper.parseToFragment('🔍');
+    if (frag) iconSpan.appendChild(frag);
+    else iconSpan.textContent = '🔍';
+  } else if (typeof iconSpan.createEl === 'function') {
+    // if createEl is patched but mapper not present, let patched createEl handle it
+    iconSpan.createEl('span', { text: '🔍' });
+  } else {
+    iconSpan.textContent = '🔍';
+  }
+
+  // Create actual input (reuse same class as other search bar)
+  const searchInput = searchWrapper.createEl('input', { cls: 'zoro-search-input' });
+  searchInput.type = 'text';
+  // plain-text placeholder (no emoji)
+  searchInput.placeholder = '      Search notes to connect...';
+
+  // Search results container
+  const resultsContainer = connectInterface.createEl('div', { cls: 'zoro-note-search-results' });
+
+  // Search functionality with debounce
+  let searchTimeout;
+  searchInput.addEventListener('input', () => {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(async () => {
+      const query = searchInput.value;
+      resultsContainer.empty();
+
+      if (query.trim().length >= 2) {
+        const results = await this.findNotesToConnect(query, searchIds, mediaType);
+
+        if (results.length === 0) {
+          resultsContainer.createEl('div', { text: 'No notes found', cls: 'zoro-note-no-results' });
+        } else {
+          results.forEach(result => {
+            const resultItem = resultsContainer.createEl('div', { cls: 'zoro-note-search-result' });
+
+            resultItem.createEl('span', { text: result.title, cls: 'zoro-note-result-title' });
+
+            const connectBtn = resultItem.createEl('button', { text: '➕', cls: 'zoro-note-connect-btn' });
+            connectBtn.title = 'Connect this note';
+
+            connectBtn.onclick = async (e) => {
+              e.stopPropagation();
+              const success = await this.connectExistingNote(result.file, searchIds, mediaType);
+              if (success) {
+                const connectedNotes = await this.searchConnectedNotes(searchIds, mediaType);
+                this.refreshConnectedNotesList(container.querySelector('.zoro-note-panel-content'), connectedNotes);
+                connectInterface.classList.add('zoro-note-hidden');
+                searchInput.value = '';
+                resultsContainer.empty();
+              }
+            };
+
+            // Click on item to preview
+            resultItem.onclick = (e) => {
+              if (e.target !== connectBtn) {
+                const mainLeaf = this.app.workspace.getLeaf('tab');
+                mainLeaf.openFile(result.file);
+              }
+            };
+          });
+        }
+      }
+    }, 300); // 300ms debounce
+  });
+
+  return connectInterface;
+}
 
 
 
@@ -11535,29 +11383,65 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
    * Render connected notes in the dedicated Zoro view
    */
   renderConnectedNotesInView(view, connectedNotes, searchIds, mediaType) {
-    // Kept for internal compatibility; delegate to content renderer after preparing view
-    const container = this.preparePanelView(view);
-    this.renderConnectedNotesContent(container, connectedNotes, searchIds, mediaType);
-  }
+    const container = view.containerEl;
+    container.empty();
+    container.className = 'zoro-note-container';
 
-  renderConnectedNotesContent(container, connectedNotes, searchIds, mediaType) {
+    // Set multiple title properties to ensure "Zoro" appears everywhere
+    if (view.titleEl) {
+      view.titleEl.setText('Zoro');
+    }
+    
+    // Set the view's display name
+    if (view.getDisplayText) {
+      view.getDisplayText = () => 'Zoro';
+    } else {
+      view.getDisplayText = () => 'Zoro';
+    }
+    
+    // Set view type if available
+    if (view.getViewType) {
+      view.getViewType = () => 'zoro-panel';
+    } else {
+      view.getViewType = () => 'zoro-panel';
+    }
+    
+    // Force update the leaf's tab header
+    if (view.leaf) {
+      const leaf = view.leaf;
+      setTimeout(() => {
+        if (leaf.tabHeaderEl) {
+          const titleEl = leaf.tabHeaderEl.querySelector('.workspace-tab-header-inner-title');
+          if (titleEl) {
+            titleEl.textContent = 'Zoro';
+          }
+        }
+        leaf.updateHeader();
+      }, 10);
+    }
+
     // Connect existing notes interface (initially hidden)
     const connectInterface = this.renderConnectExistingInterface(container, searchIds, mediaType);
-    connectInterface.classList.add('zoro-note-hidden');
+    connectInterface.classList.add('zoro-note-hidden'); // Initially hidden
 
+    // Main content area
     const mainContent = container.createEl('div', { cls: 'zoro-note-panel-content' });
 
+    // Notes list or empty state
     if (connectedNotes.length === 0) {
       const emptyState = mainContent.createEl('div', { cls: 'zoro-note-empty-state' });
       emptyState.createEl('div', { text: 'No notes linked yet ', cls: 'zoro-note-empty-message' });
     } else {
+      // Notes list
       const notesList = mainContent.createEl('div', { cls: 'zoro-note-notes-list' });
-
+      
       connectedNotes.forEach(note => {
         const noteItem = notesList.createEl('div', { cls: 'zoro-note-item' });
-
+        
+        // Note title
         const noteTitle = noteItem.createEl('div', { text: note.title, cls: 'zoro-note-title' });
-
+        
+        // Click handler for the entire item
         noteItem.onclick = (e) => {
           e.preventDefault();
           const mainLeaf = this.app.workspace.getLeaf('tab');
@@ -11565,8 +11449,9 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
           this.app.workspace.setActiveLeaf(mainLeaf);
         };
 
+        // Show matching indicators
         const indicators = noteItem.createEl('div', { cls: 'zoro-note-indicators' });
-
+        
         if (note.hasMatchingId) {
           const idIndicator = indicators.createEl('span', { text: '🔗', cls: 'zoro-note-id-indicator', title: 'Has matching ID' });
         }
@@ -11576,20 +11461,24 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
       });
     }
 
+    // Footer section at bottom
     const footer = container.createEl('div', { cls: 'zoro-note-panel-footer' });
-
+    
     const createButton = footer.createEl('button', { text: '📝', cls: 'zoro-note-create-btn' });
     createButton.onclick = () => this.createNewConnectedNote(searchIds, mediaType);
-
+    
+    // New connect existing button
     const connectButton = footer.createEl('button', { text: '⛓️', cls: 'zoro-note-connect-existing-btn' });
-
+    
     connectButton.onclick = () => {
       connectInterface.classList.toggle('zoro-note-hidden');
-
+      
       if (!connectInterface.classList.contains('zoro-note-hidden')) {
+        // Focus on search input when opened
         const searchInput = connectInterface.querySelector('.zoro-note-search-input');
         setTimeout(() => searchInput.focus(), 100);
       } else {
+        // Clear search when closed
         const searchInput = connectInterface.querySelector('.zoro-note-search-input');
         const resultsContainer = connectInterface.querySelector('.zoro-note-search-results');
         searchInput.value = '';
@@ -11744,7 +11633,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
   createConnectedNotesButton(media, entry, config) {
     const notesBtn = document.createElement('span');
     notesBtn.className = 'zoro-note-obsidian';
-    notesBtn.textContent = 'Obsidian'; // Placeholder - CSS will handle actual styling
+    notesBtn.createEl('span', { text: '🔮' });
     notesBtn.title = 'View connected notes';
     
     notesBtn.onclick = (e) => this.handleConnectedNotesClick(e, media, entry, config);
@@ -11790,6 +11679,7 @@ async handleConnectedNotesClick(e, media, entry, config) {
   }
 }
 }
+
 class DetailPanelSource {
   constructor(plugin) {
     this.plugin = plugin;

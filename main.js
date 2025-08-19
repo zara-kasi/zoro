@@ -7759,7 +7759,7 @@ class CardRenderer {
 
     // Create cover image if enabled
     if (this.plugin.settings.showCoverImages && media.coverImage?.large) {
-      const coverContainer = this.createCoverContainer(media, entry, isSearch, isCompact);
+      const coverContainer = this.createCoverContainer(media, entry, isSearch, isCompact, config);
       card.appendChild(coverContainer);
     }
 
@@ -7776,7 +7776,7 @@ class CardRenderer {
     return card;
   }
 
-  createCoverContainer(media, entry, isSearch, isCompact) {
+  createCoverContainer(media, entry, isSearch, isCompact, config) {
     const coverContainer = document.createElement('div');
     coverContainer.className = 'cover-container';
     
@@ -7863,6 +7863,11 @@ class CardRenderer {
       const formatBadge = this.createFormatBadgeForCover(media);
       coverContainer.appendChild(formatBadge);
     }
+    if (isSearch) {
+  // For search and trending cards, show both Add and Edit
+  const addBtn = this.createAddButton(media, entry, config);
+  coverContainer.appendChild(addBtn);
+}
     
     const needsOverlay = (!isSearch && entry && this.plugin.settings.showProgress) || 
                        (this.plugin.settings.showRatings && (
@@ -7983,12 +7988,6 @@ class CardRenderer {
       details.appendChild(statusBadge);
     }
 
-    if (isSearch) {
-      // For search and trending cards, show both Add and Edit
-      const addBtn = this.createAddButton(media, entry, config);
-      details.appendChild(addBtn);
-    }
-
     // CONNECTED NOTES BUTTON - ADD THIS
     const connectedNotesBtn = this.plugin.connectedNotes.createConnectedNotesButton(media, entry, config);
     details.appendChild(connectedNotesBtn);
@@ -8020,7 +8019,7 @@ class CardRenderer {
 
   createAddButton(media, entry, config) {
   const addBtn = document.createElement('span');
-  addBtn.className = 'status-badge status-edit clickable-status';
+  addBtn.classList.add('zoro-add-button-cover');
   addBtn.createEl('span', { text: '🔖' });
   addBtn.dataset.loading = 'false';
   addBtn.onclick = (e) => this.handleAddClick(e, media, entry, config, addBtn);
@@ -8028,7 +8027,6 @@ class CardRenderer {
 
   return addBtn;
 }
-
 
 
   createGenres(media) {
@@ -8133,8 +8131,8 @@ class CardRenderer {
     }
 
     // update classes cleanly
-    addBtn.classList.remove('status-edit');
-    addBtn.classList.add('status-badge', 'status-completed', 'clickable-status');
+    addBtn.classList.remove('zoro-add-button-cover');
+    addBtn.classList.add('zoro-add-button-cover');
 
     // leave pointer events disabled so user can't re-add; change to 'auto' if you want clickable
     addBtn.style.pointerEvents = 'none';
@@ -8148,8 +8146,8 @@ class CardRenderer {
     // Reset button on error
     addBtn.dataset.loading = 'false';
     addBtn.innerHTML = '';
-    addBtn.classList.remove('status-completed');
-    addBtn.classList.add('status-badge', 'status-edit', 'clickable-status');
+    addBtn.classList.remove('zoro-add-button-cover');
+    addBtn.classList.add('zoro-add-button-cover');
     addBtn.textContent = 'Add';
     addBtn.style.pointerEvents = 'auto';
 

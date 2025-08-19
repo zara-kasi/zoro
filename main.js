@@ -7884,7 +7884,13 @@ class CardRenderer {
               data?._zoroMeta?.source ||
               this.apiHelper.detectFromDataStructure({ media }) ||
               this.apiHelper.getFallbackSource(),
-            mediaType: config?.mediaType || (media?.format === 'MOVIE' ? 'MOVIE' : 'TV')
+            mediaType: (() => {
+              if (config?.mediaType) return config.mediaType;
+              const fmt = String(media?.format || '').toUpperCase();
+              if (fmt === 'MOVIE') return 'MOVIE';
+              if (fmt === 'MANGA' || fmt === 'NOVEL' || fmt === 'ONE_SHOT') return 'MANGA';
+              return 'ANIME';
+            })()
           }
         }
       : data;
@@ -8122,6 +8128,9 @@ class CardRenderer {
     }
 
     if (isSearch) {
+      // For search and trending cards, show both Add and Edit
+      const addBtn = this.createAddButton(media, entry, config);
+      details.appendChild(addBtn);
       const editBtn = this.createEditButton(media, entry, config);
       details.appendChild(editBtn);
     }
@@ -8145,16 +8154,27 @@ class CardRenderer {
     return statusBadge;
   }
 
-  createEditButton(media, entry, config) {
+    createEditButton(media, entry, config) {
     const editBtn = document.createElement('span');
     editBtn.className = 'status-badge status-edit clickable-status';
     editBtn.textContent = 'Edit';
     editBtn.dataset.loading = 'false';
-    
     editBtn.onclick = (e) => this.handleEditClick(e, media, entry, config, editBtn);
     
     return editBtn;
   }
+
+  createAddButton(media, entry, config) {
+    const addBtn = document.createElement('span');
+    addBtn.className = 'status-badge status-edit clickable-status';
+    addBtn.textContent = 'Add';
+    addBtn.dataset.loading = 'false';
+    addBtn.onclick = (e) => this.handleAddClick(e, media, entry, config, addBtn);
+    
+    return addBtn;
+  }
+
+
 
   createGenres(media) {
     const genres = document.createElement('div');
@@ -8184,6 +8204,76 @@ class CardRenderer {
     }
     
     this.plugin.handleEditClick(e, entry, badge, { source, mediaType });
+  }
+
+  async handleAddClick(e, media, entry, config, addBtn) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    let entrySource = this.apiHelper.detectSource(entry, config);
+    const entryMediaType = this.apiHelper.detectMediaType(entry, config, media);
+
+    // If this is a TMDb movie item, route add operation through Simkl
+    const isTmdbItem = (entry?._zoroMeta?.source || '').toLowerCase() === 'tmdb';
+    if (isTmdbItem) {
+      entrySource = 'simkl';
+      // Pre-cache media by its numeric id so Simkl payload can include tmdb/imdb ids
+      try {
+        const numericId = Number(media.id) || Number(media.idTmdb) || 0;
+        if (numericId > 0) {
+          this.plugin.cache.set(String(numericId), { media }, { scope: 'mediaData' });
+        }
+      } catch {}
+    }
+
+    if (!this.apiHelper.isAuthenticated(entrySource)) {
+      console.log(`[Zoro] Not authenticated with ${entrySource}`);
+      this.plugin.prompt.createAuthenticationPrompt(entrySource);
+      return;
+    }
+
+    addBtn.dataset.loading = 'true';
+    addBtn.innerHTML = DOMHelper.createLoadingSpinner();
+    addBtn.style.pointerEvents = 'none';
+
+    try {
+      // Directly add to Planning; for movies avoid touching history and ratings
+      const typeUpper = String(entryMediaType || '').toUpperCase();
+      const isMovieOrTv = typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper.includes('SHOW');
+      let updates;
+      if (entrySource === 'simkl' && isMovieOrTv) {
+        // Fast path for Simkl movies/TV: avoid history/ratings side-effects
+        updates = { status: 'PLANNING', score: 0 };
+      } else {
+        // AniList/MAL (anime/manga): standard planning entry with zero progress
+        updates = { status: 'PLANNING', progress: 0 };
+      }
+      await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, entryMediaType);
+      
+      // Success feedback
+      new Notice('✅ Added to planning!', 3000);
+      console.log(`[Zoro] Added ${media.id} to planning via add button`);
+      
+      // Update button to show added state
+      addBtn.textContent = 'Added';
+      addBtn.className = 'status-badge status-completed clickable-status';
+      addBtn.dataset.loading = 'false';
+      addBtn.style.pointerEvents = 'none';
+      
+      // Refresh views
+      this.parent.refreshActiveViews();
+      
+    } catch (error) {
+      console.error('[Zoro] Add failed:', error);
+      
+      // Reset button on error
+      addBtn.textContent = 'Add';
+      addBtn.className = 'status-badge status-edit clickable-status';
+      addBtn.dataset.loading = 'false';
+      addBtn.style.pointerEvents = 'auto';
+      
+      new Notice(`❌ Failed to add: ${error.message}`, 5000);
+    }
   }
 
   async handleEditClick(e, media, entry, config, editBtn) {

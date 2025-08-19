@@ -275,7 +275,6 @@
 .status-planning  { background: var(--color-purple); color: white; }
 .status-repeating { background: var(--color-cyan);   color: white; }
 .status-edit { background: #10b981; color: white; }
-.zoro-note-obsidian { background: hsl(var(--accent-h), var(--accent-s), var(--accent-l)); color: white; }
 
 
 
@@ -2916,6 +2915,19 @@ body.theme-light .zoro-heart.favorited::before {
   color: WHITE;
   text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
   filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.5));
+  border: none;
+  padding: 0;
+  
+}
+
+.zoro-add-button-cover {
+  position: absolute;
+  top: 5px;
+  left: 5px;
+  cursor: pointer;
+  color: WHITE;
+  background-color: 1px 1px 2px rgba(0, 0, 0, 0.8);
+  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.0));
   border: none;
   padding: 0;
   

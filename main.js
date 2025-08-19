@@ -7397,47 +7397,85 @@ async handleListOperation(api, config) {
 }
 
 async handleTrendingOperation(api, config) {
-  return { isTrendingOperation: true, config };
-}
-  async renderData(el, data, config) {
-    const { type } = config;
-
-    try {
-      switch (type) {
-        case 'stats':
-          this.plugin.render.renderUserStats(el, data, { mediaType: config.mediaType || 'ANIME', layout: config.layout || 'enhanced' });
-          break;
-
-        case 'search':
-          if (data.isSearchInterface) {
-            await this.plugin.render.renderSearchInterface(el, data.config);
-          } else {
-            this.plugin.render.renderSearchResults(el, data.Page?.media || [], config);
-          }
-          break;
-
-        case 'single':
-          this.plugin.render.renderSingleMedia(el, data, config);
-          break;
-
-        case 'list':
-          this.plugin.render.renderMediaList(el, data, config);
-          break;
-
-        case 'trending':
-          if (data.isTrendingOperation) {
-            const trending = new Trending(this.plugin);
-            await trending.renderTrendingBlock(el, data.config);
-          }
-          break;
-
-        default:
-          throw new Error(`❌ Unknown rendering type: ${type}`);
+  const trending = new Trending(this.plugin);
+  
+  const data = await trending.fetchTrending(
+    config.source, 
+    config.mediaType, 
+    config.limit || 40  // Changed from 20 to 40
+  );
+  
+  if (Array.isArray(data)) {
+    data.forEach(item => {
+      if (!item._zoroMeta) {
+        item._zoroMeta = {
+          source: config.source,
+          mediaType: config.mediaType,
+          fetchedAt: Date.now()
+        };
       }
-    } catch (error) {
-      throw new Error(`❌ Rendering failed: ${error.message}`);
-    }
+    });
   }
+  
+  return data;
+}
+
+async renderData(el, data, config) {
+  const { type } = config;
+
+  try {
+    switch (type) {
+      case 'stats':
+        this.plugin.render.renderUserStats(el, data, { 
+          mediaType: config.mediaType || 'ANIME', 
+          layout: config.layout || 'enhanced' 
+        });
+        break;
+
+      case 'search':
+        if (data.isSearchInterface) {
+          await this.plugin.render.renderSearchInterface(el, data.config);
+        } else {
+          this.plugin.render.renderSearchResults(el, data.Page?.media || [], config);
+        }
+        break;
+
+      case 'single':
+        this.plugin.render.renderSingleMedia(el, data, config);
+        break;
+
+      case 'list':
+        this.plugin.render.renderMediaList(el, data, config);
+        break;
+
+      case 'trending':
+        if (Array.isArray(data)) {
+          console.log(`[Processor] Rendering trending data: ${data.length} items`);
+          // Data is already fetched and formatted, just render it
+          this.plugin.render.renderSearchResults(el, data, {
+            layout: config.layout || 'card',
+            mediaType: config.mediaType || 'ANIME',
+            source: config.source
+          });
+        } else if (data && data.isTrendingOperation) {
+          // Fallback to the old render method if needed
+          console.log('[Processor] Using fallback trending render method');
+          const trending = new Trending(this.plugin);
+          await trending.renderTrendingBlock(el, data.config);
+        } else {
+          throw new Error('Invalid trending data format received');
+        }
+        break;
+
+      default:
+        throw new Error(`❌ Unknown rendering type: ${type}`);
+    }
+  } catch (error) {
+    console.error('[Processor] Render data failed:', error);
+    throw new Error(`❌ Rendering failed: ${error.message}`);
+  }
+}
+
 
   async processZoroCodeBlock(source, el, ctx) {
     let config;
@@ -7469,25 +7507,29 @@ async handleTrendingOperation(api, config) {
     }
   }
 
-  async executeProcessing(el, config, retryFn) {
-    try {
-      const resolvedConfig = await this.resolveAuthentication(config);
-      
-      if (config.type === 'trending') {
-        const data = await this.executeApiOperation(null, resolvedConfig);
-        await this.renderData(el, data, resolvedConfig);
-      } else {
-        const api = this.getApiInstance(resolvedConfig.source);
-        const data = await this.executeApiOperation(api, resolvedConfig);
-        await this.renderData(el, data, resolvedConfig);
-      }
-
-    } catch (error) {
-      el.empty();
-      this.plugin.renderError(el, error.message, 'Failed to load', retryFn);
-      throw error;
+async executeProcessing(el, config, retryFn) {
+  try {
+    const resolvedConfig = await this.resolveAuthentication(config);
+    
+    // Get API instance for non-trending operations
+    let api = null;
+    if (resolvedConfig.type !== 'trending') {
+      api = this.getApiInstance(resolvedConfig.source);
     }
+    
+    // Execute the operation
+    const data = await this.executeApiOperation(api, resolvedConfig);
+    
+    // Render the data
+    await this.renderData(el, data, resolvedConfig);
+
+  } catch (error) {
+    console.error('[Processor] Execute processing failed:', error);
+    el.empty();
+    this.plugin.renderError(el, error.message, 'Failed to load', retryFn);
+    throw error;
   }
+}
 
   parseCodeBlockConfig(source) {
     const config = {};
@@ -7556,50 +7598,57 @@ async handleTrendingOperation(api, config) {
   }
 
   applyConfigDefaults(config) {
-    if (!config.source) {
-      config.source = this.plugin.settings.defaultApiSource || 'anilist';
-    }
+  if (!config.source) {
+    config.source = this.plugin.settings.defaultApiSource || 'anilist';
+  }
 
-    if (config.type === 'trending') {
-      config.mediaType = config.mediaType || 'ANIME';
-      config.layout = config.layout || this.plugin.settings.defaultLayout || 'card';
-      return config;
-    }
-
-    if (config.source === 'mal' || config.source === 'simkl') {
-      if (!this.hasValidAuthForSource(config.source)) {
-        throw new Error(`❌ ${config.source.toUpperCase()} authentication required. Please authenticate in plugin settings.`);
-      }
-    } else {
-      if (!config.username) {
-        if (this.plugin.settings.defaultUsername) {
-          config.username = this.plugin.settings.defaultUsername;
-        } else if (this.hasValidAuthForSource(config.source)) {
-          config.useAuthenticatedUser = true;
-        } else {
-          throw new Error('❌ Username is required. Please set a default username in plugin settings, authenticate, or specify one in the code block.');
-        }
-      }
-    }
-
-    config.type = config.type || 'list';
+  if (config.type === 'trending') {
     config.mediaType = config.mediaType || 'ANIME';
     config.layout = config.layout || this.plugin.settings.defaultLayout || 'card';
+    config.limit = config.limit || config.perPage || 40;  // Changed from 20 to 40
     
-    if (!config.listType && config.type === 'list') {
-      config.listType = 'CURRENT';
+    if (config.mediaType.toUpperCase() === 'MANGA' && config.source === 'anilist') {
+      config.source = 'mal';
     }
     
-    if ((config.source === 'mal' || config.source === 'simkl') && config.listType === 'REPEATING') {
-      throw new Error('Repeating is supported only on AniList.');
-    }
-    
-    if (config.source === 'simkl' && config.mediaType === 'MANGA') {
-      throw new Error('Manga is supported only on AniList and MyAnimeList.');
-    }
-
     return config;
   }
+
+  // Existing authentication checks for other operations
+  if (config.source === 'mal' || config.source === 'simkl') {
+    if (!this.hasValidAuthForSource(config.source)) {
+      throw new Error(`❌ ${config.source.toUpperCase()} authentication required. Please authenticate in plugin settings.`);
+    }
+  } else {
+    if (!config.username) {
+      if (this.plugin.settings.defaultUsername) {
+        config.username = this.plugin.settings.defaultUsername;
+      } else if (this.hasValidAuthForSource(config.source)) {
+        config.useAuthenticatedUser = true;
+      } else {
+        throw new Error('❌ Username is required. Please set a default username in plugin settings, authenticate, or specify one in the code block.');
+      }
+    }
+  }
+
+  config.type = config.type || 'list';
+  config.mediaType = config.mediaType || 'ANIME';
+  config.layout = config.layout || this.plugin.settings.defaultLayout || 'card';
+  
+  if (!config.listType && config.type === 'list') {
+    config.listType = 'CURRENT';
+  }
+  
+  if ((config.source === 'mal' || config.source === 'simkl') && config.listType === 'REPEATING') {
+    throw new Error('Repeating is supported only on AniList.');
+  }
+  
+  if (config.source === 'simkl' && config.mediaType === 'MANGA') {
+    throw new Error('Manga is supported only on AniList and MyAnimeList.');
+  }
+
+  return config;
+}
 
   hasValidAuthForSource(source) {
     switch (source) {
@@ -13173,22 +13222,19 @@ class Trending {
     this.plugin = plugin; 
   }
 
-  // Generate cache key for trending data
   getTrendingCacheKey(source, mediaType, limit) {
     return this.plugin.cache.structuredKey('trending', 'trending', `${source}_${mediaType}_${limit}`);
   }
 
-  async fetchAniListTrending(mediaType = 'ANIME', limit = 20) {
+  async fetchAniListTrending(mediaType = 'ANIME', limit = 40) {
     const cacheKey = this.getTrendingCacheKey('anilist', mediaType, limit);
     
-    // Try cache first
     const cached = this.plugin.cache.get(cacheKey, {
       scope: 'mediaData',
       source: 'anilist'
     });
     
     if (cached) {
-      
       return cached;
     }
 
@@ -13228,8 +13274,6 @@ class Trending {
       perPage: limit
     };
 
-    
-
     try {
       const response = await fetch('https://graphql.anilist.co', {
         method: 'POST',
@@ -13239,8 +13283,6 @@ class Trending {
         body: JSON.stringify({ query, variables })
       });
 
-      
-
       if (!response.ok) {
         const errorText = await response.text();
         console.error('[Trending] AniList error response:', errorText);
@@ -13249,8 +13291,6 @@ class Trending {
 
       const data = await response.json();
       
-      
-
       if (data.errors) {
         console.error('[Trending] AniList GraphQL errors:', data.errors);
         throw new Error(`AniList GraphQL error: ${data.errors[0]?.message || 'Unknown error'}`);
@@ -13270,38 +13310,33 @@ class Trending {
         }
       }));
 
-      // Cache the result with trending-specific tags and longer TTL
       this.plugin.cache.set(cacheKey, mediaList, {
         scope: 'mediaData',
         source: 'anilist',
-        ttl: 24 * 60 * 60 * 1000, // 24 hours for trending data
+        ttl: 24 * 60 * 60 * 1000,
         tags: ['trending', mediaType.toLowerCase(), 'anilist']
       });
 
-      
       return mediaList;
 
     } catch (error) {
       console.error('[Trending] AniList fetch failed:', error);
       
-      // Try to return stale cache data as fallback
       const staleData = this.plugin.cache.get(cacheKey, {
         scope: 'mediaData',
         source: 'anilist',
-        ttl: Infinity // Accept any cached data as fallback
+        ttl: Infinity
       });
       
       if (staleData) {
-        
         return staleData;
       }
       
       throw error;
     }
   }
-// TMDb trending implementation
-async fetchTMDbTrending(mediaType = 'MOVIE', limit = 20) {
-    // Get API key from settings
+
+  async fetchTMDbTrending(mediaType = 'MOVIE', limit = 40) {
     const tmdbApiKey = this.plugin.settings.tmdbApiKey;
     
     if (!tmdbApiKey) {
@@ -13312,7 +13347,6 @@ async fetchTMDbTrending(mediaType = 'MOVIE', limit = 20) {
     const typeUpper = (mediaType || 'MOVIE').toUpperCase();
     const cacheKey = this.getTrendingCacheKey('tmdb', mediaType, limit);
 
-    // Try cache first
     const cached = this.plugin.cache.get(cacheKey, {
       scope: 'mediaData'
     });
@@ -13321,48 +13355,53 @@ async fetchTMDbTrending(mediaType = 'MOVIE', limit = 20) {
       return cached;
     }
 
-    // Map media types to TMDb endpoints
     let endpoint;
     if (typeUpper === 'MOVIE' || typeUpper === 'MOVIES') {
-      endpoint = 'trending/movie/day'; // or 'movie/popular'
+      endpoint = 'trending/movie/day';
     } else if (typeUpper === 'TV' || typeUpper === 'SHOW' || typeUpper === 'SHOWS') {
-      endpoint = 'trending/tv/day'; // or 'tv/popular'
+      endpoint = 'trending/tv/day';
     } else {
-      // Skip anime - let AniList handle it
       console.log('[Trending] TMDb skipping anime request - should use AniList');
       return [];
     }
 
-    const url = `https://api.themoviedb.org/3/${endpoint}?api_key=${tmdbApiKey}&page=1`;
+    const pages = Math.ceil(limit / 20);
+    const allResults = [];
 
     try {
-      const response = await fetch(url, {
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
+      for (let page = 1; page <= pages; page++) {
+        const url = `https://api.themoviedb.org/3/${endpoint}?api_key=${tmdbApiKey}&page=${page}`;
+        
+        const response = await fetch(url, {
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('[Trending] TMDb error response:', errorText);
+          throw new Error(`TMDb API error: ${response.status} - ${errorText}`);
         }
-      });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('[Trending] TMDb error response:', errorText);
-        throw new Error(`TMDb API error: ${response.status} - ${errorText}`);
+        const data = await response.json();
+        
+        if (!data.results || !Array.isArray(data.results)) {
+          console.error('[Trending] Invalid TMDb response format:', data);
+          throw new Error('Invalid response format from TMDb');
+        }
+
+        allResults.push(...data.results);
+        
+        if (allResults.length >= limit) break;
       }
 
-      const data = await response.json();
-      
-      if (!data.results || !Array.isArray(data.results)) {
-        console.error('[Trending] Invalid TMDb response format:', data);
-        throw new Error('Invalid response format from TMDb');
-      }
-
-      // Transform TMDb data to match your app's format
-      const mediaList = data.results
-        .slice(0, limit) // Apply limit
+      const mediaList = allResults
+        .slice(0, limit)
         .map(item => this.transformTMDbMedia(item, mediaType))
-        .filter(Boolean); // Remove failed transformations
+        .filter(Boolean);
 
-      // Enrich with IMDb IDs where possible (best-effort)
       try {
         const idsToFetch = mediaList.map(m => m.idTmdb).filter(Boolean).slice(0, 20);
         const fetches = idsToFetch.map(id => fetch(`https://api.themoviedb.org/3/${typeUpper.includes('MOVIE') ? 'movie' : 'tv'}/${id}/external_ids?api_key=${tmdbApiKey}`)
@@ -13385,43 +13424,38 @@ async fetchTMDbTrending(mediaType = 'MOVIE', limit = 20) {
         });
       } catch {}
 
-      // Cache the result with trending-specific tags and longer TTL
       this.plugin.cache.set(cacheKey, mediaList, {
         scope: 'mediaData',
-        ttl: 24 * 60 * 60 * 1000, // 24 hours for trending data
+        ttl: 24 * 60 * 60 * 1000,
         tags: ['trending', mediaType.toLowerCase()]
       });
 
-      console.log(`[Trending] TMDb ${mediaType} trending: ${mediaList.length} items fetched`);
       return mediaList;
 
     } catch (error) {
       console.error('[Trending] TMDb fetch failed:', error);
       
-      // Try to return stale cache data as fallback
       const staleData = this.plugin.cache.get(cacheKey, {
         scope: 'mediaData',
-        ttl: Infinity // Accept any cached data as fallback
+        ttl: Infinity
       });
       
       if (staleData) {
-        console.log('[Trending] Returning stale TMDb cache data');
         return staleData;
       }
       
       throw error;
     }
-}
+  }
 
-// Transform TMDb data to your AniList format
-transformTMDbMedia(item, mediaType) {
+  transformTMDbMedia(item, mediaType) {
     try {
       const isMovie = mediaType.toUpperCase() === 'MOVIE' || mediaType.toUpperCase() === 'MOVIES';
       
       return {
         id: item.id,
         idTmdb: item.id,
-        idImdb: null, // Will be enriched via external_ids call
+        idImdb: null,
         ids: {
           tmdb: item.id,
           imdb: null
@@ -13437,11 +13471,11 @@ transformTMDbMedia(item, mediaType) {
         },
         bannerImage: item.backdrop_path ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}` : null,
         format: isMovie ? 'MOVIE' : 'TV',
-        averageScore: item.vote_average ? Math.round(item.vote_average * 10) : null, // Convert 0-10 to 0-100 scale
+        averageScore: item.vote_average ? Math.round(item.vote_average * 10) : null,
         popularity: item.popularity,
-        genres: item.genre_ids || [], // These are IDs, would need genre mapping for names
-        episodes: null, // Not available in trending endpoint
-        status: null, // Not available in trending endpoint
+        genres: item.genre_ids || [],
+        episodes: null,
+        status: null,
         description: item.overview || null,
         startDate: {
           year: null,
@@ -13463,116 +13497,184 @@ transformTMDbMedia(item, mediaType) {
       console.error('[Trending] Failed to transform TMDb item:', item, error);
       return null;
     }
-}
+  }
 
-  async fetchJikanTrending(mediaType = 'anime', limit = 20) {
-    const type = mediaType.toLowerCase();
-    const cacheKey = this.getTrendingCacheKey('mal', mediaType, limit);
+  async fetchJikanTrending(mediaType = 'anime', limit = 40) {
+  const type = mediaType.toLowerCase();
+  const cacheKey = this.getTrendingCacheKey('mal', mediaType, limit);
+  
+  const cached = this.plugin.cache.get(cacheKey, {
+    scope: 'mediaData',
+    source: 'mal'
+  });
+  
+  if (cached) {
+    return cached;
+  }
+
+  let url;
+  let maxLimit = 25; // Jikan API limit for most endpoints
+  
+  if (type === 'manga') {
+    // Use top manga by publishing (currently ongoing) for better trending
+    url = `https://api.jikan.moe/v4/top/manga?filter=publishing&limit=${Math.min(limit, 25)}`;
+  } else {
+    // Back to original anime trending (airing filter)
+    url = `https://api.jikan.moe/v4/top/${type}?filter=airing&limit=${Math.min(limit, 25)}`;
+  }
+
+  try {
+    const response = await fetch(url);
     
-    // Try cache first
-    const cached = this.plugin.cache.get(cacheKey, {
-      scope: 'mediaData',
-      source: 'mal'
-    });
-    
-    if (cached) {
-      
-      return cached;
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('[Trending] Jikan error response:', errorText);
+      throw new Error(`Jikan API error: ${response.status} - ${errorText}`);
     }
 
-    const url = `https://api.jikan.moe/v4/top/${type}?filter=airing&limit=${limit}`;
+    const data = await response.json();
     
+    let items = [];
     
-
-    try {
-      const response = await fetch(url);
-      
-      
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('[Trending] Jikan error response:', errorText);
-        throw new Error(`Jikan API error: ${response.status} - ${errorText}`);
-      }
-
-      const data = await response.json();
-      
-      
-      
+    if (type === 'manga') {
+      // Handle regular top manga response (same as anime)
       const unique = [];
       const seen = new Set();
       
       (data.data || []).forEach(item => {
         if (!seen.has(item.mal_id)) {
           seen.add(item.mal_id);
+          
+          // Filter out finished manga - only keep ongoing/publishing manga
+          const status = item.status?.toLowerCase() || '';
+          const isFinished = status.includes('finished') || 
+                           status.includes('completed') || 
+                           status.includes('complete') ||
+                           item.publishing === false; // Not currently publishing
+          
+          if (isFinished) {
+            return; // Skip finished manga
+          }
+          
           unique.push({
             id: item.mal_id,
             malId: item.mal_id,
             title: {
               romaji: item.title || '',
-              english: item.title_english || '',
-              native: item.title_japanese || ''
+              english: item.title_english || item.titles?.find(t => t.type === 'English')?.title || '',
+              native: item.title_japanese || item.titles?.find(t => t.type === 'Japanese')?.title || ''
             },
             coverImage: {
-              large: item.images?.jpg?.large_image_url,
-              medium: item.images?.jpg?.image_url
+              large: item.images?.jpg?.large_image_url || item.images?.webp?.large_image_url,
+              medium: item.images?.jpg?.image_url || item.images?.webp?.image_url
+            },
+            format: item.type,
+            averageScore: item.score ? Math.round(item.score * 10) : null,
+            genres: item.genres?.map(g => g.name) || [],
+            chapters: item.chapters,
+            volumes: item.volumes,
+            status: item.status,
+            published: item.published ? {
+              from: item.published.from,
+              to: item.published.to
+            } : null,
+            publishing: item.publishing,
+            serializations: item.serializations?.map(s => s.name) || [],
+            authors: item.authors?.map(a => a.name) || [],
+            themes: item.themes?.map(t => t.name) || [],
+            demographics: item.demographics?.map(d => d.name) || [],
+            popularity: item.popularity,
+            members: item.members,
+            favorites: item.favorites,
+            _zoroMeta: {
+              source: 'mal',
+              mediaType: 'MANGA',
+              fetchedAt: Date.now(),
+              trendingMethod: 'publishing_ongoing',
+              apiEndpoint: 'top/manga'
+            }
+          });
+        }
+      });
+      
+      items = unique.slice(0, limit);
+    } else {
+      // Handle regular top anime response
+      const unique = [];
+      const seen = new Set();
+      
+      (data.data || []).forEach(item => {
+        if (!seen.has(item.mal_id)) {
+          seen.add(item.mal_id);
+          
+          unique.push({
+            id: item.mal_id,
+            malId: item.mal_id,
+            title: {
+              romaji: item.title || '',
+              english: item.title_english || item.titles?.find(t => t.type === 'English')?.title || '',
+              native: item.title_japanese || item.titles?.find(t => t.type === 'Japanese')?.title || ''
+            },
+            coverImage: {
+              large: item.images?.jpg?.large_image_url || item.images?.webp?.large_image_url,
+              medium: item.images?.jpg?.image_url || item.images?.webp?.image_url
             },
             format: item.type,
             averageScore: item.score ? Math.round(item.score * 10) : null,
             genres: item.genres?.map(g => g.name) || [],
             episodes: item.episodes,
-            chapters: type === 'manga' ? item.chapters : undefined,
             status: item.status,
+            popularity: item.popularity,
+            members: item.members,
+            favorites: item.favorites,
             _zoroMeta: {
               source: 'mal',
-              mediaType: type === 'manga' ? 'MANGA' : 'ANIME',
-              fetchedAt: Date.now()
+              mediaType: 'ANIME',
+              fetchedAt: Date.now(),
+              trendingMethod: 'airing',
+              apiEndpoint: 'top/anime'
             }
           });
         }
       });
-
-      const result = unique.slice(0, limit);
       
-      // Cache the result with trending-specific tags and longer TTL
-      this.plugin.cache.set(cacheKey, result, {
-        scope: 'mediaData',
-        source: 'mal',
-        ttl: 24 * 60 * 60 * 1000, // 24 hours for trending data
-        tags: ['trending', type, 'mal']
-      });
-
-      
-      return result;
-
-    } catch (error) {
-      console.error('[Trending] Jikan fetch failed:', error);
-      
-      // Try to return stale cache data as fallback
-      const staleData = this.plugin.cache.get(cacheKey, {
-        scope: 'mediaData',
-        source: 'mal',
-        ttl: Infinity // Accept any cached data as fallback
-      });
-      
-      if (staleData) {
-        
-        return staleData;
-      }
-      
-      throw error;
+      items = unique.slice(0, limit);
     }
-  }
 
-  // Unified method that works with any API source
-  async fetchTrending(source, mediaType, limit = 20) {
-    // For movies and TV, always use TMDb regardless of source
+    this.plugin.cache.set(cacheKey, items, {
+      scope: 'mediaData',
+      source: 'mal',
+      ttl: 24 * 60 * 60 * 1000,
+      tags: ['trending', type, 'mal']
+    });
+
+    console.log(`[Trending] Jikan ${type} trending: ${items.length} items fetched using ${type === 'manga' ? 'recommendations' : 'airing'} method`);
+    return items;
+
+  } catch (error) {
+    console.error('[Trending] Jikan fetch failed:', error);
+    
+    const staleData = this.plugin.cache.get(cacheKey, {
+      scope: 'mediaData',
+      source: 'mal',
+      ttl: Infinity
+    });
+    
+    if (staleData) {
+      console.log('[Trending] Returning stale Jikan cache data');
+      return staleData;
+    }
+    
+    throw error;
+  }
+}
+
+  async fetchTrending(source, mediaType, limit = 40) {
     const typeUpper = String(mediaType || '').toUpperCase();
     if (typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper === 'SHOW' || typeUpper === 'SHOWS') {
       return await this.fetchTMDbTrending(typeUpper.includes('MOVIE') ? 'MOVIE' : 'TV', limit);
     }
 
-    // For anime/manga, pick source
     switch ((source || '').toLowerCase()) {
       case 'mal':
         return await this.fetchJikanTrending(mediaType, limit);
@@ -13585,25 +13687,20 @@ transformTMDbMedia(item, mediaType) {
   }
 
   async renderTrendingBlock(el, config) {
-    
-    
     el.empty();
     el.appendChild(this.plugin.render.createListSkeleton(10));
 
     try {
       const type = (config.mediaType || 'ANIME').toLowerCase();
       const source = config.source || this.plugin.settings.defaultApiSource || 'anilist';
-      const limit = config.limit || 20;
+      const limit = config.limit || 40;
 
-      // Normalize mediaType to route to TMDb for TV/MOVIE
       const normalizedType = ['movie','movies','tv','show','shows'].includes(type) ? (type.includes('movie') ? 'MOVIE' : 'TV') : (type === 'manga' ? 'MANGA' : 'ANIME');
 
-      // Use unified method with proper queue management
       const items = await this.plugin.requestQueue.add(() => 
         this.fetchTrending(source, normalizedType, limit)
       );
 
-      // Ensure metadata is set for each item
       items.forEach(item => {
         const isTmdb = ['MOVIE','MOVIES','TV','SHOW','SHOWS'].includes((config.mediaType || '').toUpperCase());
         if (!item._zoroMeta) {
@@ -13619,16 +13716,12 @@ transformTMDbMedia(item, mediaType) {
         }
       });
 
-      
-
       el.empty();
       this.plugin.render.renderSearchResults(el, items, {
         layout: config.layout || 'card',
         mediaType: config.mediaType || 'ANIME',
         source: source
       });
-
-      
 
     } catch (err) {
       console.error('[Trending] Error in renderTrendingBlock:', err);
@@ -13637,34 +13730,22 @@ transformTMDbMedia(item, mediaType) {
     }
   }
 
-  // Utility methods for cache management
   invalidateTrendingCache(source = null, mediaType = null) {
     if (source && mediaType) {
-      // Invalidate specific trending cache
-      const cacheKey = this.getTrendingCacheKey(source, mediaType, 20); // assuming default limit
+      const cacheKey = this.getTrendingCacheKey(source, mediaType, 40);
       this.plugin.cache.delete(cacheKey, { scope: 'mediaData', source });
     } else if (source) {
-      // Invalidate all trending for a source
       this.plugin.cache.invalidateByTag('trending', { source });
     } else {
-      // Invalidate all trending cache
       this.plugin.cache.invalidateByTag('trending');
     }
-    
   }
 
-  // Force refresh trending data
-  async refreshTrending(source, mediaType, limit = 20) {
-    
-    
-    // Clear existing cache
+  async refreshTrending(source, mediaType, limit = 40) {
     this.invalidateTrendingCache(source, mediaType);
-    
-    // Fetch fresh data
     return await this.fetchTrending(source, mediaType, limit);
   }
 
-  // Get cache stats for trending data
   getTrendingCacheStats() {
     const stats = this.plugin.cache.getStats();
     return {

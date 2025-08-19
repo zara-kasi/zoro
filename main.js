@@ -10871,8 +10871,90 @@ class SupportEditModal {
   }
 }
 
-class ConnectedNotes {
+class ZoroSidePanel {
   constructor(plugin) {
+    this.plugin = plugin;
+    this.app = plugin.app;
+    this.panelLeaf = null;
+    this.activeMode = null;
+  }
+
+  getOrCreatePanelLeaf() {
+    // Reuse cached leaf if still valid
+    if (this.panelLeaf && this.panelLeaf.view && this.panelLeaf.view.containerEl?.isConnected) {
+      return this.panelLeaf;
+    }
+
+    // Locate existing Zoro panel by title
+    let zoroLeaf = null;
+    this.app.workspace.iterateAllLeaves((leaf) => {
+      if (leaf.view?.titleEl && leaf.view.titleEl.textContent === 'Zoro') {
+        zoroLeaf = leaf;
+        return false;
+      }
+    });
+
+    // Create a new right-side leaf if none found
+    if (!zoroLeaf) {
+      zoroLeaf = this.app.workspace.getRightLeaf(false);
+    }
+
+    this.panelLeaf = zoroLeaf;
+    return zoroLeaf;
+  }
+
+  preparePanelView(view) {
+    const container = view.containerEl;
+    container.empty();
+    container.className = 'zoro-note-container';
+
+    if (view.titleEl) {
+      view.titleEl.setText('Zoro');
+    }
+
+    if (view.getDisplayText) {
+      view.getDisplayText = () => 'Zoro';
+    } else {
+      view.getDisplayText = () => 'Zoro';
+    }
+
+    if (view.getViewType) {
+      view.getViewType = () => 'zoro-panel';
+    } else {
+      view.getViewType = () => 'zoro-panel';
+    }
+
+    if (view.leaf) {
+      const leaf = view.leaf;
+      setTimeout(() => {
+        if (leaf.tabHeaderEl) {
+          const titleEl = leaf.tabHeaderEl.querySelector('.workspace-tab-header-inner-title');
+          if (titleEl) {
+            titleEl.textContent = 'Zoro';
+          }
+        }
+        leaf.updateHeader();
+      }, 10);
+    }
+
+    return container;
+  }
+
+  renderInPanel(renderFunction, modeKey = null) {
+    const leaf = this.getOrCreatePanelLeaf();
+    const view = leaf.view;
+    // Always re-render from scratch when called
+    this.activeMode = modeKey;
+    const container = this.preparePanelView(view);
+    const result = renderFunction(container, view);
+    this.app.workspace.revealLeaf(leaf);
+    return result;
+  }
+}
+
+class ConnectedNotes extends ZoroSidePanel {
+  constructor(plugin) {
+    super(plugin);
     this.plugin = plugin;
     this.app = plugin.app;
     this.currentMedia = null; // Store current media for filename generation
@@ -11323,29 +11405,10 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
    */
   async showConnectedNotes(searchIds, mediaType) {
     try {
-      // Search for connected notes
       const connectedNotes = await this.searchConnectedNotes(searchIds, mediaType);
-
-      // Look for existing Zoro panel first
-      let zoroLeaf = null;
-      this.app.workspace.iterateAllLeaves((leaf) => {
-        if (leaf.view.titleEl && leaf.view.titleEl.textContent === 'Zoro') {
-          zoroLeaf = leaf;
-          return false; // Stop iteration
-        }
-      });
-
-      // If no existing Zoro panel, create new one
-      if (!zoroLeaf) {
-        zoroLeaf = this.app.workspace.getRightLeaf(false);
-      }
-
-      // Render content and set title
-      this.renderConnectedNotesInView(zoroLeaf.view, connectedNotes, searchIds, mediaType);
-      
-      // Ensure the side panel is visible
-      this.app.workspace.revealLeaf(zoroLeaf);
-      
+      this.renderInPanel((container, view) => {
+        this.renderConnectedNotesContent(container, connectedNotes, searchIds, mediaType);
+      }, 'connected-notes');
     } catch (error) {
       console.error('[ConnectedNotes] Error showing connected notes:', error);
       new Notice('Failed to load connected notes');
@@ -11472,65 +11535,29 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
    * Render connected notes in the dedicated Zoro view
    */
   renderConnectedNotesInView(view, connectedNotes, searchIds, mediaType) {
-    const container = view.containerEl;
-    container.empty();
-    container.className = 'zoro-note-container';
+    // Kept for internal compatibility; delegate to content renderer after preparing view
+    const container = this.preparePanelView(view);
+    this.renderConnectedNotesContent(container, connectedNotes, searchIds, mediaType);
+  }
 
-    // Set multiple title properties to ensure "Zoro" appears everywhere
-    if (view.titleEl) {
-      view.titleEl.setText('Zoro');
-    }
-    
-    // Set the view's display name
-    if (view.getDisplayText) {
-      view.getDisplayText = () => 'Zoro';
-    } else {
-      view.getDisplayText = () => 'Zoro';
-    }
-    
-    // Set view type if available
-    if (view.getViewType) {
-      view.getViewType = () => 'zoro-panel';
-    } else {
-      view.getViewType = () => 'zoro-panel';
-    }
-    
-    // Force update the leaf's tab header
-    if (view.leaf) {
-      const leaf = view.leaf;
-      setTimeout(() => {
-        if (leaf.tabHeaderEl) {
-          const titleEl = leaf.tabHeaderEl.querySelector('.workspace-tab-header-inner-title');
-          if (titleEl) {
-            titleEl.textContent = 'Zoro';
-          }
-        }
-        leaf.updateHeader();
-      }, 10);
-    }
-
+  renderConnectedNotesContent(container, connectedNotes, searchIds, mediaType) {
     // Connect existing notes interface (initially hidden)
     const connectInterface = this.renderConnectExistingInterface(container, searchIds, mediaType);
-    connectInterface.classList.add('zoro-note-hidden'); // Initially hidden
+    connectInterface.classList.add('zoro-note-hidden');
 
-    // Main content area
     const mainContent = container.createEl('div', { cls: 'zoro-note-panel-content' });
 
-    // Notes list or empty state
     if (connectedNotes.length === 0) {
       const emptyState = mainContent.createEl('div', { cls: 'zoro-note-empty-state' });
       emptyState.createEl('div', { text: 'No notes linked yet ', cls: 'zoro-note-empty-message' });
     } else {
-      // Notes list
       const notesList = mainContent.createEl('div', { cls: 'zoro-note-notes-list' });
-      
+
       connectedNotes.forEach(note => {
         const noteItem = notesList.createEl('div', { cls: 'zoro-note-item' });
-        
-        // Note title
+
         const noteTitle = noteItem.createEl('div', { text: note.title, cls: 'zoro-note-title' });
-        
-        // Click handler for the entire item
+
         noteItem.onclick = (e) => {
           e.preventDefault();
           const mainLeaf = this.app.workspace.getLeaf('tab');
@@ -11538,9 +11565,8 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
           this.app.workspace.setActiveLeaf(mainLeaf);
         };
 
-        // Show matching indicators
         const indicators = noteItem.createEl('div', { cls: 'zoro-note-indicators' });
-        
+
         if (note.hasMatchingId) {
           const idIndicator = indicators.createEl('span', { text: '🔗', cls: 'zoro-note-id-indicator', title: 'Has matching ID' });
         }
@@ -11550,24 +11576,20 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
       });
     }
 
-    // Footer section at bottom
     const footer = container.createEl('div', { cls: 'zoro-note-panel-footer' });
-    
+
     const createButton = footer.createEl('button', { text: '📝', cls: 'zoro-note-create-btn' });
     createButton.onclick = () => this.createNewConnectedNote(searchIds, mediaType);
-    
-    // New connect existing button
+
     const connectButton = footer.createEl('button', { text: '⛓️', cls: 'zoro-note-connect-existing-btn' });
-    
+
     connectButton.onclick = () => {
       connectInterface.classList.toggle('zoro-note-hidden');
-      
+
       if (!connectInterface.classList.contains('zoro-note-hidden')) {
-        // Focus on search input when opened
         const searchInput = connectInterface.querySelector('.zoro-note-search-input');
         setTimeout(() => searchInput.focus(), 100);
       } else {
-        // Clear search when closed
         const searchInput = connectInterface.querySelector('.zoro-note-search-input');
         const resultsContainer = connectInterface.querySelector('.zoro-note-search-results');
         searchInput.value = '';

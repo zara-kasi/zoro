@@ -1,3 +1,5 @@
+const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+
 class SimklRequest {
   constructor(config, plugin) {
     this.config = config;

@@ -71,4 +71,4 @@ class Sample {
     }
 }
 
-export { Sample };
+module.exports = { Sample };

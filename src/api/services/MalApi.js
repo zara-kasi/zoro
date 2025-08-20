@@ -1,3 +1,5 @@
+const { requestUrl } = require('obsidian');
+
 class MalApi {
   constructor(plugin) {
     this.plugin = plugin;
@@ -1139,4 +1141,4 @@ class MalApi {
   }
 }
 
-export { MalApi };
+module.exports = { MalApi };

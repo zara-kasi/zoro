@@ -569,4 +569,4 @@ class StatsRenderer {
   }
 }
 
-export { StatsRenderer };
+module.exports = { StatsRenderer };

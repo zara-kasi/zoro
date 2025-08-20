@@ -1,3 +1,6 @@
+const { Notice } = require('obsidian');
+
+
 class ZoroError {
   static instance(plugin) {
     if (!ZoroError._singleton) ZoroError._singleton = new ZoroError(plugin);
@@ -220,4 +223,4 @@ class ZoroError {
   }
 }
 
-export { ZoroError };
+module.exports = { ZoroError };

@@ -43,3 +43,6 @@ class OpenDetailPanel {
     }
   }
 }
+
+
+module.exports = { OpenDetailPanel };

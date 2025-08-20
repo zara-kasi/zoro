@@ -1,4 +1,4 @@
-const { Modal } = require('obsidian');
+const { Notice, Modal } = require('obsidian');
 
 class SimklPinModal extends Modal {
   constructor(app, deviceData, onCancel) {
@@ -103,4 +103,4 @@ class SimklPinModal extends Modal {
   }
 }
 
-export { SimklPinModal };
+module.exports = { SimklPinModal };

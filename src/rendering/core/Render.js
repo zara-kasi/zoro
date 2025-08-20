@@ -196,4 +196,4 @@ class Render {
   }
 }
 
-export { Render };
+module.exports = { Render };

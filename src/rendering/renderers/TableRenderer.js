@@ -73,4 +73,4 @@ class TableRenderer {
   }
 }
 
-export { TableRenderer };
+module.exports = { TableRenderer };

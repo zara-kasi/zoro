@@ -1,4 +1,4 @@
-const { Notice, Modal } = require('obsidian');
+const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
 
 class SimklPinModal extends Modal {
   constructor(app, deviceData, onCancel) {

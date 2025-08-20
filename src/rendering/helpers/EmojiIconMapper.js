@@ -314,4 +314,4 @@ class EmojiIconMapper {
   }
 }
 
-export { EmojiIconMapper };
+module.exports = { EmojiIconMapper };

@@ -1,7 +1,5 @@
 const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
 
-const { requestUrl } = require('obsidian');
-
 
 class AnilistApi {
   constructor(plugin) {

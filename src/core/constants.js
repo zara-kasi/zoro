@@ -47,4 +47,4 @@ const DEFAULT_SETTINGS = {
   tmdbApiKey: '',
 };
 
-export { DEFAULT_SETTINGS, getDefaultGridColumns };
+module.exports = { DEFAULT_SETTINGS, getDefaultGridColumns };

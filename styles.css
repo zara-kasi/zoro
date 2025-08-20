@@ -267,15 +267,6 @@
   margin: 0 auto;
 }
 
-/* Status Badge Colors */
-.status-current   { background: var(--color-green);  color: white; }
-.status-completed { background: var(--color-blue);   color: white; }
-.status-paused    { background: var(--color-orange); color: var(--text-normal); }
-.status-dropped   { background: var(--color-red);    color: white; }
-.status-planning  { background: var(--color-purple); color: white; }
-.status-repeating { background: var(--color-cyan);   color: white; }
-.status-edit { background: #10b981; color: white; }
-
 
 
 /* Progress & Score */
@@ -2933,17 +2924,29 @@ body.theme-light .zoro-heart.favorited::before {
   
 }
 
-.zoro-search-input-container { position: relative; display: flex; align-items: center; }
+/* Inline search icon styles */
+.zoro-search-input-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
 .zoro-search-icon {
   position: absolute;
-  left: 10px;
-  top: 50%;
-  transform: translateY(-50%);
+  left: 12px;
+  z-index: 1;
+  color: var(--text-muted);
   pointer-events: none;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  justify-content: center;
+}
+
+.zoro-search-icon svg {
   width: 20px;
   height: 20px;
 }
-.zoro-search-input { padding-left: 36px; }
+
+.zoro-search-input {
+  padding-left: 40px !important; /* Space for icon */
+  width: 100%;
+}

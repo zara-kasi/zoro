@@ -154,4 +154,4 @@ class Edit {
   }
 }
 
-export { Edit };
+module.exports = { Edit };

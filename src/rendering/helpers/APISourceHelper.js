@@ -186,4 +186,4 @@ class APISourceHelper {
   }
 }
 
-export { APISourceHelper };
+module.exports = { APISourceHelper };

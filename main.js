@@ -6986,7 +6986,7 @@ this.emojiMapper.init({ patchSettings:true, patchCreateEl:true, patchNotice:true
     this.globalLoader = document.createElement('div');
     this.globalLoader.id = 'zoro-global-loader';
     this.globalLoader.innerHTML = `
-      <div class="sharingan-glow">
+      <div class="global-loading-glow">
         <div class="tomoe-container">
           <span class="tomoe"></span>
           <span class="tomoe"></span>
@@ -9375,7 +9375,7 @@ class FormatterHelper {
 class DOMHelper {
   static createLoadingSpinner() {
     return `
-      <div class="sharingan-glow">
+      <div class="global-loading-glow">
         <div class="tomoe-container">
           <span class="tomoe"></span>
           <span class="tomoe"></span>
@@ -10706,7 +10706,7 @@ class SupportEditModal {
   setRemovingState(removeBtn) {
     removeBtn.disabled = true;
     removeBtn.innerHTML = `
-<div class="sharingan-glow">
+<div class="global-loading-glow">
   <div class="tomoe-container">
     <span class="tomoe"></span>
     <span class="tomoe"></span>

@@ -73,4 +73,4 @@ class FormatterHelper {
   }
 }
 
-export { FormatterHelper };
+module.exports = { FormatterHelper };

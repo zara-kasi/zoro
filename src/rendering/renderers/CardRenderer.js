@@ -571,4 +571,4 @@ class CardRenderer {
   }
 }
 
-export { CardRenderer };
+module.exports = { CardRenderer };

@@ -133,4 +133,4 @@ class AuthModal extends Modal {
   }
 }
 
-export { AuthModal };
+module.exports = { AuthModal };

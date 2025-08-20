@@ -932,4 +932,4 @@ async handleConnectedNotesClick(e, media, entry, config) {
 }
 }
 
-export { ConnectedNotes };
+module.exports = { ConnectedNotes };

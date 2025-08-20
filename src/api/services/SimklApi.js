@@ -1,3 +1,6 @@
+const { requestUrl } = require('obsidian');
+
+
 class SimklApi {
 
   constructor(plugin) {
@@ -2306,4 +2309,4 @@ async removeMediaListEntry(mediaId, mediaType) {
 
 }
 
-export { SimklApi };
+module.exports = { SimklApi };

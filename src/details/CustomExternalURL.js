@@ -420,4 +420,4 @@ class CustomExternalURL {
   }
 }
 
-export { CustomExternalURL };
+module.exports = { CustomExternalURL };

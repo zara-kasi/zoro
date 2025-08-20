@@ -112,4 +112,4 @@ class MALEditModal {
   }
 }
 
-export { MALEditModal };
+module.exports = { MALEditModal };

@@ -1,3 +1,6 @@
+const { Notice, requestUrl } = require('obsidian');
+
+
 class SimklAuthentication {
   constructor(plugin) {
     this.plugin = plugin;
@@ -238,4 +241,4 @@ class SimklAuthentication {
   }
 }
 
-export { SimklAuthentication };
+module.exports = { SimklAuthentication };

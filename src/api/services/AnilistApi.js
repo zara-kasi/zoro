@@ -1,3 +1,6 @@
+const { requestUrl } = require('obsidian');
+
+
 class AnilistApi {
   constructor(plugin) {
     this.plugin = plugin;
@@ -931,4 +934,4 @@ class AnilistApi {
     }
   }
 }
-export { AnilistApi };
+module.exports = { AnilistApi };

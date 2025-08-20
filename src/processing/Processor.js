@@ -478,4 +478,4 @@ async executeProcessing(el, config, retryFn) {
   }
 }
 
-export { Processor };
+module.exports = { Processor };

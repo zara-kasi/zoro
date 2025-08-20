@@ -137,4 +137,4 @@ class SupportEditModal {
   }
 }
 
-export { SupportEditModal };
+module.exports = { SupportEditModal };

@@ -122,4 +122,4 @@ class MALRequest {
   }
 }
 
-export { MALRequest };
+module.exports = { MALRequest };

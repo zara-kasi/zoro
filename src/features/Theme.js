@@ -254,4 +254,4 @@ static THEME_REPO_URL = 'https://api.github.com/repos/zara-kasi/zoro/contents/Th
   }
 }
 
-export { Theme };
+module.exports = { Theme };

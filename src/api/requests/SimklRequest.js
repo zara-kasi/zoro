@@ -211,4 +211,4 @@ class SimklRequest {
   }
 }
 
-export { SimklRequest };
+module.exports = { SimklRequest };

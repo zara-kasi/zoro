@@ -285,4 +285,4 @@ class RenderEditModal {
   }
 }
 
-export { RenderEditModal };
+module.exports = { RenderEditModal };

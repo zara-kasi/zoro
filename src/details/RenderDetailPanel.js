@@ -694,4 +694,4 @@ if (media.id && media.type !== 'ANIME' && media.type !== 'MANGA') {
   }
 }
 
-export { RenderDetailPanel };
+module.exports = { RenderDetailPanel };

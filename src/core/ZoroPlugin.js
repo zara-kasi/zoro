@@ -1,53 +1,35 @@
-// Obsidian imports
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+const { Plugin } = require('obsidian');
 
-// Import our constants
-import { DEFAULT_SETTINGS } from './constants.js';
+// Import constants using CommonJS
+const { DEFAULT_SETTINGS, getDefaultGridColumns } = require('./src/core/constants.js');
 
-// Import all classes
-import { Cache } from '../cache/Cache.js';
-import { AniListRequest } from '../api/requests/AniListRequest.js';
-import { MALRequest } from '../api/requests/MALRequest.js';
-import { SimklRequest } from '../api/requests/SimklRequest.js';
-import { RequestQueue } from '../api/requests/RequestQueue.js';
-import { AnilistApi } from '../api/services/AnilistApi.js';
-import { MalApi } from '../api/services/MalApi.js';
-import { SimklApi } from '../api/services/SimklApi.js';
-import { Authentication } from '../auth/Authentication.js';
-import { MALAuthentication } from '../auth/MALAuthentication.js';
-import { SimklAuthentication } from '../auth/SimklAuthentication.js';
-import { AuthModal } from '../auth/AuthModal.js';
-import { SimklPinModal } from '../auth/SimklPinModal.js';
-import { Render } from '../rendering/core/Render.js';
-import { CardRenderer } from '../rendering/renderers/CardRenderer.js';
-import { SearchRenderer } from '../rendering/renderers/SearchRenderer.js';
-import { MediaListRenderer } from '../rendering/renderers/MediaListRenderer.js';
-import { TableRenderer } from '../rendering/renderers/TableRenderer.js';
-import { StatsRenderer } from '../rendering/renderers/StatsRenderer.js';
-import { APISourceHelper } from '../rendering/helpers/APISourceHelper.js';
-import { FormatterHelper } from '../rendering/helpers/FormatterHelper.js';
-import { DOMHelper } from '../rendering/helpers/DOMHelper.js';
-import { EmojiIconMapper } from '../rendering/helpers/EmojiIconMapper.js';
-import { Edit } from '../editing/Edit.js';
-import { RenderEditModal } from '../editing/modals/RenderEditModal.js';
-import { AniListEditModal } from '../editing/modals/AniListEditModal.js';
-import { MALEditModal } from '../editing/modals/MALEditModal.js';
-import { SimklEditModal } from '../editing/modals/SimklEditModal.js';
-import { SupportEditModal } from '../editing/modals/SupportEditModal.js';
-import { ConnectedNotes } from '../features/ConnectedNotes.js';
-import { Theme } from '../features/Theme.js';
-import { Prompt } from '../features/Prompt.js';
-import { Export } from '../features/Export.js';
-import { Sample } from '../features/Sample.js';
-import { Trending } from '../features/Trending.js';
-import { MoreDetailsPanel } from '../details/MoreDetailsPanel.js';
-import { DetailPanelSource } from '../details/DetailPanelSource.js';
-import { OpenDetailPanel } from '../details/OpenDetailPanel.js';
-import { CustomExternalURL } from '../details/CustomExternalURL.js';
-import { RenderDetailPanel } from '../details/RenderDetailPanel.js';
-import { Processor } from '../processing/Processor.js';
-import { ZoroSettingTab } from '../settings/ZoroSettingTab.js';
+// Import all classes using CommonJS
+const { Cache } = require('./src/cache/Cache.js');
+const { AniListRequest } = require('./src/api/requests/AniListRequest.js');
+const { MALRequest } = require('./src/api/requests/MALRequest.js');
+const { SimklRequest } = require('./src/api/requests/SimklRequest.js');
+const { RequestQueue } = require('./src/api/requests/RequestQueue.js');
+const { AnilistApi } = require('./src/api/services/AnilistApi.js');
+const { MalApi } = require('./src/api/services/MalApi.js');
+const { SimklApi } = require('./src/api/services/SimklApi.js');
+const { Authentication } = require('./src/auth/Authentication.js');
+const { MALAuthentication } = require('./src/auth/MALAuthentication.js');
+const { SimklAuthentication } = require('./src/auth/SimklAuthentication.js');
+const { AuthModal } = require('./src/auth/AuthModal.js');
+const { SimklPinModal } = require('./src/auth/SimklPinModal.js');
+const { Render } = require('./src/rendering/core/Render.js');
+const { EmojiIconMapper } = require('./src/rendering/helpers/EmojiIconMapper.js');
+const { Edit } = require('./src/editing/Edit.js');
+const { ConnectedNotes } = require('./src/features/ConnectedNotes.js');
+const { Theme } = require('./src/features/Theme.js');
+const { Prompt } = require('./src/features/Prompt.js');
+const { Export } = require('./src/features/Export.js');
+const { Sample } = require('./src/features/Sample.js');
+const { MoreDetailsPanel } = require('./src/details/MoreDetailsPanel.js');
+const { Processor } = require('./src/processing/Processor.js');
+const { ZoroSettingTab } = require('./src/settings/ZoroSettingTab.js');
 
+// Your complete ZoroPlugin class with all your methods
 class ZoroPlugin extends Plugin {
   constructor(app, manifest) {
     super(app, manifest);
@@ -124,11 +106,28 @@ class ZoroPlugin extends Plugin {
     }
   }
 
+  // Fixed: Add promptForSecret method
+  async promptForSecret(message) {
+    const { Notice } = require('obsidian');
+    
+    return new Promise((resolve) => {
+      // Simple prompt - you can enhance this later with a proper modal
+      const secret = prompt(message || 'Enter your client secret:');
+      if (!secret || secret.trim() === '') {
+        new Notice('❌ Client secret is required for the plugin to work properly.');
+        resolve('');
+      } else {
+        resolve(secret.trim());
+      }
+    });
+  }
+
   async onload() {
     this.render = new Render(this);
     this.emojiMapper = new EmojiIconMapper();
     this.emojiMapper.init({ patchSettings:true, patchCreateEl:true, patchNotice:true });
     this.connectedNotes = new ConnectedNotes(this);
+    
     try {
       await this.loadSettings();
     } catch (err) {
@@ -203,6 +202,8 @@ class ZoroPlugin extends Plugin {
   }
 
   async saveSettings() {
+    const { Notice } = require('obsidian');
+    
     try {
       const validSettings = this.validateSettings(this.settings);
       await this.saveData(validSettings);
@@ -216,11 +217,18 @@ class ZoroPlugin extends Plugin {
     const saved = await this.loadData() || {};
     const merged = Object.assign({}, DEFAULT_SETTINGS, saved);
     this.settings = this.validateSettings(merged);
-    if (!this.settings.clientSecret) {
-      const secret = await this.promptForSecret("Paste your client secret:");
-      this.settings.clientSecret = secret.trim();
-      await this.saveData(this.settings);
+    
+    // Fixed: Only prompt if absolutely necessary and method exists
+    if (!this.settings.clientSecret && typeof this.promptForSecret === 'function') {
+      try {
+        const secret = await this.promptForSecret("Paste your client secret:");
+        this.settings.clientSecret = secret.trim();
+        await this.saveData(this.settings);
+      } catch (err) {
+        console.warn('[Zoro] Could not prompt for client secret:', err);
+      }
     }
+    
     if (typeof this.updateDefaultApiSourceBasedOnAuth === 'function') {
       await this.updateDefaultApiSourceBasedOnAuth();
     }
@@ -301,10 +309,18 @@ class ZoroPlugin extends Plugin {
     document.body.appendChild(this.globalLoader);
   }
 
+  // Fixed: Remove problematic handleAuthMessage or implement properly
+  // This was calling non-existent exchangeCodeForToken
+  // Comment out or remove if not needed:
+  /*
   handleAuthMessage(event) {
     if (event.origin !== 'https://anilist.co') return;
-    this.exchangeCodeForToken(event.data.code);
+    // Fixed: Use correct method from auth
+    if (this.auth && typeof this.auth.exchangePin === 'function') {
+      this.auth.exchangePin(event.data.code);
+    }
   }
+  */
 
   renderError(el, message, context = '', onRetry = null) {
     el.empty?.();
@@ -343,4 +359,7 @@ class ZoroPlugin extends Plugin {
   }
 }
 
-export default ZoroPlugin;
+// Export for Obsidian (CommonJS only)
+module.exports = {
+  default: ZoroPlugin,
+};

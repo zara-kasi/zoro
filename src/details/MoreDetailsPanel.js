@@ -21,4 +21,4 @@ class MoreDetailsPanel {
   }
 }
 
-export { MoreDetailsPanel };
+module.exports = { MoreDetailsPanel };

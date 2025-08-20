@@ -196,4 +196,4 @@ class DOMHelper {
   }
 }
 
-export { DOMHelper };
+module.exports = { DOMHelper };

@@ -1,3 +1,6 @@
+const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+
+
 class ConnectedNotes {
   constructor(plugin) {
     this.plugin = plugin;

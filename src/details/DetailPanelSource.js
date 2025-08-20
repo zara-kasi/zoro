@@ -422,4 +422,4 @@ class DetailPanelSource {
   }
 }
 
-export { DetailPanelSource };
+module.exports = { DetailPanelSource };

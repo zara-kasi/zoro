@@ -92,4 +92,4 @@ class MediaListRenderer {
   }
 }
 
-export { MediaListRenderer };
+module.exports = { MediaListRenderer };

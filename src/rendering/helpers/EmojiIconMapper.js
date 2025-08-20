@@ -1,3 +1,5 @@
+const { setIcon } = require('obsidian');
+
 class EmojiIconMapper {
   constructor(opts = {}) {
     this.map = new Map(Object.entries({

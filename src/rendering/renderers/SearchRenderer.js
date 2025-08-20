@@ -1,3 +1,5 @@
+const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+
 class SearchRenderer {
   constructor(parentRenderer) {
     this.parent = parentRenderer;

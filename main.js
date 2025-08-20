@@ -8001,7 +8001,7 @@ class CardRenderer {
     const statusText = this.formatter.getStatusText(entry.status);
     
     statusBadge.className = `status-badge status-${statusClass} clickable-status`;
-    statusBadge.textContent = 'Edit';
+    statusBadge.createEl('span', { text: '📝' });
     statusBadge.onclick = (e) => this.handleStatusClick(e, entry, statusBadge, config);
     
     return statusBadge;
@@ -8296,26 +8296,38 @@ class SearchRenderer {
   el.empty();
   el.className = 'zoro-search-container';
 
-  const searchDiv = el.createDiv({ cls: 'zoro-search-input-container' });
-
-  // create icon BEFORE the input so createEl(text) is intercepted by mapper
-  const iconSpan = searchDiv.createEl('span', { cls: 'zoro-search-icon', text: '🔍' });
-
-  // create actual input
-  const input = searchDiv.createEl('input', { type: 'text', cls: 'zoro-search-input' });
-
   const mt = String(config.mediaType || 'ANIME').toUpperCase();
   const src = String(config.source || '').toLowerCase();
 
-  // Set plain-text placeholder (no emoji)
+
+
+  // wrapper with positioning
+  const searchWrapper = el.createDiv({ cls: 'zoro-search-input-container' });
+
+  // icon element positioned absolutely inside the input
+  const iconSpan = searchWrapper.createEl('span', { cls: 'zoro-search-icon' });
+
+  // Use Obsidian's setIcon with Lucide 'search' icon
+  // Import setIcon from obsidian if not globally available
+  const { setIcon } = require('obsidian');
+  setIcon(iconSpan, 'search');
+
+  // create the input with left padding for the icon
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'zoro-search-input';
+
   if (src === 'simkl') {
-    if (mt === 'ANIME') input.placeholder = '      Search anime…';
-    else if (mt === 'MOVIE' || mt === 'MOVIES') input.placeholder = '      Search movies…';
-    else input.placeholder = '      Search TV shows…';
+    if (mt === 'ANIME') input.placeholder = 'Search anime…';
+    else if (mt === 'MOVIE' || mt === 'MOVIES') input.placeholder = 'Search movies…';
+    else input.placeholder = 'Search TV shows…';
   } else {
-    input.placeholder = mt === 'ANIME' ? '      Search anime…' : '      Search manga…';
+    input.placeholder = mt === 'ANIME' ? 'Search anime…' : 'Search manga…';
   }
 
+  searchWrapper.appendChild(input);
+
+  // results container
   const resultsDiv = el.createDiv({ cls: 'zoro-search-results' });
   let timeout;
 
@@ -9611,7 +9623,7 @@ class EmojiIconMapper {
       '🌓': 'swatch-book',
       '🗒️': 'notebook-pen', 
       '🗂️': 'folder-open',
-      '🔮': 'square-mouse-pointer',
+      '🔮': 'align-right',
       '🎴': 'file-input',
       '🚪': 'door-open',
       '📖': 'square-arrow-out-up-right',
@@ -11273,7 +11285,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
   const searchInput = searchWrapper.createEl('input', { cls: 'zoro-search-input' });
   searchInput.type = 'text';
   // plain-text placeholder (no emoji)
-  searchInput.placeholder = '      Search notes to connect...';
+  searchInput.placeholder = ' Search notes to connect...';
 
   // Search results container
   const resultsContainer = connectInterface.createEl('div', { cls: 'zoro-note-search-results' });
@@ -12639,7 +12651,7 @@ class RenderDetailPanel {
   createCopyButton(type, data) {
     const copyBtn = document.createElement('button');
     copyBtn.className = 'zoro-copy-btn';
-    copyBtn.innerHTML = '📋';
+    copyBtn.createEl('span', { text: '📋' });
     copyBtn.title = 'Copy';
 
     // Direct copy on click - no dropdown
@@ -12673,20 +12685,78 @@ class RenderDetailPanel {
   }
 
   async copyToClipboard(text, buttonElement) {
-    try {
-      await navigator.clipboard.writeText(text);
-      buttonElement.innerHTML = '✅';
-      buttonElement.classList.add('zoro-copied');
-      
-      setTimeout(() => {
-        buttonElement.innerHTML = '📋';
-        buttonElement.classList.remove('zoro-copied');
-      }, 2000);
-    } catch (err) {
-      // Fallback for older browsers
-      this.fallbackCopyTextToClipboard(text, buttonElement);
+  try {
+    await navigator.clipboard.writeText(text);
+
+    // cancel any existing revert timer
+    if (buttonElement._copyTimeout) {
+      clearTimeout(buttonElement._copyTimeout);
+      buttonElement._copyTimeout = null;
     }
+
+    const mapper = globalThis.__emojiIconMapper;
+
+    // helper to render an "emoji" via mapper/createEl/setIcon/fallback
+    const renderEmoji = (emojiOrGlyph, setIconNameFallback) => {
+      // normalize (strip variation selector FE0F if present)
+      const emoji = String(emojiOrGlyph).replace(/\uFE0F/g, '');
+
+      // clear current children (stop spinner + previous icon)
+      if (typeof buttonElement.replaceChildren === 'function') {
+        buttonElement.replaceChildren();
+      } else {
+        buttonElement.innerHTML = '';
+      }
+
+      // 1) Try mapper -> DocumentFragment
+      if (mapper) {
+        try {
+          const frag = mapper.parseToFragment(emoji);
+          if (frag) {
+            buttonElement.appendChild(frag);
+            return;
+          }
+        } catch (e) { /* ignore and fallback */ }
+      }
+
+      // 2) Try patched createEl (if available)
+      try {
+        if (typeof buttonElement.createEl === 'function') {
+          buttonElement.createEl('span', { text: emoji });
+          return;
+        }
+      } catch {}
+
+      // 3) Try global setIcon (icon name fallback)
+      if (typeof setIcon === 'function' && setIconNameFallback) {
+        const s = document.createElement('span');
+        try {
+          setIcon(s, setIconNameFallback);
+          buttonElement.appendChild(s);
+          return;
+        } catch {}
+      }
+
+      // 4) Last-resort: raw emoji glyph
+      buttonElement.textContent = emoji;
+    };
+
+    // show success icon (use mapper if present)
+    renderEmoji('✅', 'check');
+    buttonElement.classList.add('zoro-copied');
+
+    // revert after 2s (store timer so we can cancel on repeated clicks)
+    buttonElement._copyTimeout = setTimeout(() => {
+      renderEmoji('📋', 'clipboard-list');
+      buttonElement.classList.remove('zoro-copied');
+      buttonElement._copyTimeout = null;
+    }, 2000);
+
+  } catch (err) {
+    // fallback copy behaviour (your existing fallback method)
+    this.fallbackCopyTextToClipboard(text, buttonElement);
   }
+}
 
   fallbackCopyTextToClipboard(text, buttonElement) {
     const textArea = document.createElement("textarea");

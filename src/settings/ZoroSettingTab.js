@@ -891,4 +891,4 @@ if (movieTvContainer) {
 }
 }
 
-export { ZoroSettingTab };
+module.exports = { ZoroSettingTab };

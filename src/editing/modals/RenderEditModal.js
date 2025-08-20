@@ -1,3 +1,5 @@
+const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+
 class RenderEditModal {
   constructor(config) {
     this.config = config;

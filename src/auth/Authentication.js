@@ -1,3 +1,6 @@
+const { Notice, requestUrl } = require('obsidian');
+
+
 // AniList Authentication 
 
 class Authentication {
@@ -219,4 +222,4 @@ modal.open();
   }
 }
 
-export { Authentication };
+module.exports = { Authentication };

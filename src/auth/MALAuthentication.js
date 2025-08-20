@@ -1,3 +1,5 @@
+const { Notice, requestUrl } = require('obsidian');
+
 
 class MALAuthentication {
   constructor(plugin) {
@@ -375,4 +377,4 @@ return;
   }
 }
 
-export { MALAuthentication };
+module.exports = { MALAuthentication };

@@ -702,4 +702,4 @@ class RequestQueue {
   }
 }
 
-export { RequestQueue };
+module.exports = { RequestQueue };

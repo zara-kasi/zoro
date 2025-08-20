@@ -51,4 +51,4 @@ class SimklEditModal {
   }
 }
 
-export { SimklEditModal };
+module.exports = { SimklEditModal };

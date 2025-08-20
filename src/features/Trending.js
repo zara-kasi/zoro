@@ -544,4 +544,4 @@ class Trending {
   }
 }
 
-export { Trending };
+module.exports = { Trending };

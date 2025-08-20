@@ -145,4 +145,4 @@ class AniListEditModal {
   }
 }
 
-export { AniListEditModal };
+module.exports = { AniListEditModal };

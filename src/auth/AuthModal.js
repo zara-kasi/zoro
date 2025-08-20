@@ -1,4 +1,4 @@
-const { Modal } = require('obsidian');
+const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
 
 class AuthModal extends Modal {
   constructor(app, config) {

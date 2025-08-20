@@ -61,4 +61,4 @@ class AniListRequest {
   }
 }
 
-export { AniListRequest };
+module.exports = { AniListRequest };

@@ -98,4 +98,4 @@ class Prompt {
   }
 }
 
-export { Prompt };
+module.exports = { Prompt };

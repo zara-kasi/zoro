@@ -1,3 +1,6 @@
+const { Notice, requestUrl } = require('obsidian');
+
+
 class Cache {
   constructor(config = {}) {
     const {
@@ -983,4 +986,4 @@ class Cache {
   }
 }
 
-export { Cache };
+module.exports = { Cache };

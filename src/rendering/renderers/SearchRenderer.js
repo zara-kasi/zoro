@@ -101,4 +101,4 @@ class SearchRenderer {
   }
 }
 
-export { SearchRenderer };
+module.exports = { SearchRenderer };

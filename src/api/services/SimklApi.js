@@ -1407,6 +1407,18 @@ getSimklMediaType(mediaType) {
   // =================== UPDATE METHODS (Following MAL pattern) ===================
  async updateMediaListEntry(mediaId, updates, mediaType) {
   try {  
+    const typeUpper = (mediaType || '').toString().toUpperCase();
+    const isMovieOrTv = typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper.includes('SHOW');
+    if (updates && updates._zUseTmdbId === true && isMovieOrTv) {
+      // Prefer explicit TMDb/IMDb ids for trending TMDb entries
+      let imdb = undefined;
+      try {
+        const cached = this.cache?.get(String(mediaId), { scope: 'mediaData' });
+        const media = cached?.media || cached || {};
+        imdb = media.idImdb || media.ids?.imdb;
+      } catch {}
+      return await this.updateMediaListEntryWithIds({ tmdb: mediaId, imdb }, updates, mediaType);
+    }
     return await this.executeUpdate(mediaId, updates, mediaType);  
   } catch (error) {  
     throw this.createUserFriendlyError(error);  

@@ -1,3 +1,5 @@
+// No obsidian import needed
+
 class AniListRequest {
   constructor(config) {
     this.config = config;

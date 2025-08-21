@@ -1,4 +1,4 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+import { Notice } from 'obsidian';
 
 
 class ZoroError {
@@ -223,4 +223,4 @@ class ZoroError {
   }
 }
 
-module.exports = { ZoroError };
+export { ZoroError };

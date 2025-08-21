@@ -1,4 +1,4 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+// No obsidian import needed here
 
 class TableRenderer {
   constructor(parentRenderer) {
@@ -73,4 +73,4 @@ class TableRenderer {
   }
 }
 
-module.exports = { TableRenderer };
+export { TableRenderer };

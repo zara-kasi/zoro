@@ -1,4 +1,5 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+// No direct obsidian dependency except DOM APIs
+import { DOMHelper } from '../helpers/DOMHelper.js';
 
 class StatsRenderer {
   constructor(parentRenderer) {
@@ -569,4 +570,4 @@ class StatsRenderer {
   }
 }
 
-module.exports = { StatsRenderer };
+export { StatsRenderer };

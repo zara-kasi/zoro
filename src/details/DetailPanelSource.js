@@ -68,12 +68,19 @@ class DetailPanelSource {
   }
 
   shouldFetchDetailedData(media, entry = null) {
+    // PRIORITY 1: Always fetch details for TMDb trending MOVIE/TV items
     const mediaTypeUpper = (media?._zoroMeta?.mediaType || entry?._zoroMeta?.mediaType || media?.format || '').toUpperCase();
-    const hasTmdb = !!(media?.idTmdb || media?.ids?.tmdb || entry?.media?.idTmdb || entry?.media?.ids?.tmdb || (Number.isFinite(Number(media?.id)) && (mediaTypeUpper === 'MOVIE' || mediaTypeUpper === 'TV')));
-    if ((mediaTypeUpper === 'MOVIE' || mediaTypeUpper === 'TV') && hasTmdb) return true;
+    const hasTmdbId = !!(media?.idTmdb || media?.ids?.tmdb || entry?.media?.idTmdb || entry?.media?.ids?.tmdb);
+    
+    if ((mediaTypeUpper === 'MOVIE' || mediaTypeUpper === 'TV') && hasTmdbId) {
+      console.log('[DetailPanelSource] TMDb trending MOVIE/TV detected, forcing detailed fetch');
+      return true;
+    }
 
+    // PRIORITY 2: Check for missing basic data or anime without airing
     const missingBasicData = !media.description || !media.genres || !media.averageScore;
     const isAnimeWithoutAiring = media.type === 'ANIME' && !media.nextAiringEpisode;
+    
     return missingBasicData || isAnimeWithoutAiring;
   }
 
@@ -101,6 +108,36 @@ class DetailPanelSource {
     let targetId = mediaId;
     let originalMalId = null;
 
+    // PRIORITY 1: Handle TMDb trending items (MOVIE/TV) by converting to Simkl ID first
+    if ((resolvedMediaType === 'MOVIE' || resolvedMediaType === 'TV')) {
+      const tmdbId = entryOrSource?.media?.idTmdb || entryOrSource?.media?.ids?.tmdb || entryOrSource?.ids?.tmdb || entryOrSource?.idTmdb || mediaId;
+      const imdbId = entryOrSource?.media?.idImdb || entryOrSource?.media?.ids?.imdb || entryOrSource?.ids?.imdb || entryOrSource?.idImdb || null;
+      
+      if (tmdbId || imdbId) {
+        console.log('[DetailPanelSource] TMDb MOVIE/TV detected, converting to Simkl ID first:', { tmdbId, imdbId, resolvedMediaType });
+        const simklId = await this.resolveSimklIdByExternal({ tmdb: tmdbId, imdb: imdbId }, resolvedMediaType);
+        if (simklId) {
+          console.log('[DetailPanelSource] Successfully resolved Simkl ID:', simklId, 'for TMDb item');
+          const detailedSimklData = await this.fetchSimklDetailedData(simklId, resolvedMediaType);
+          if (detailedSimklData) {
+            const baseMedia = (typeof entryOrSource === 'object' && entryOrSource?.media) ? entryOrSource.media : (typeof entryOrSource === 'object' ? entryOrSource : { id: mediaId });
+            return {
+              ...baseMedia,
+              ...detailedSimklData,
+              id: baseMedia.id ?? mediaId,
+              idImdb: baseMedia.idImdb || detailedSimklData.ids?.imdb || null,
+              idTmdb: baseMedia.idTmdb || tmdbId || detailedSimklData.ids?.tmdb || null,
+              description: detailedSimklData.overview || baseMedia.description || null,
+              nextAiringEpisode: null
+            };
+          }
+        } else {
+          console.log('[DetailPanelSource] Failed to resolve Simkl ID for TMDb item');
+        }
+      }
+    }
+
+    // PRIORITY 2: Handle MAL entries
     if (source === 'mal') {
       originalMalId = mediaId;
       const conversionResult = await this.convertMalToAnilistId(mediaId, resolvedMediaType);
@@ -108,7 +145,9 @@ class DetailPanelSource {
         throw new Error(`Could not convert MAL ID ${mediaId} to AniList ID`);
       }
       targetId = conversionResult.id;
-    } else if (source === 'simkl' && resolvedMediaType === 'ANIME') {
+    } 
+    // PRIORITY 3: Handle Simkl anime entries
+    else if (source === 'simkl' && resolvedMediaType === 'ANIME') {
       if (typeof entryOrSource === 'object' && entryOrSource?.media?.idMal) {
         originalMalId = entryOrSource.media.idMal;
         const conversionResult = await this.convertMalToAnilistId(entryOrSource.media.idMal, resolvedMediaType);
@@ -119,7 +158,9 @@ class DetailPanelSource {
       } else {
         return null;
       }
-    } else if (source === 'simkl' && (resolvedMediaType === 'MOVIE' || resolvedMediaType === 'TV')) {
+    } 
+    // PRIORITY 4: Handle Simkl movies/TV shows
+    else if (source === 'simkl' && (resolvedMediaType === 'MOVIE' || resolvedMediaType === 'TV')) {
       if (typeof entryOrSource === 'object' && entryOrSource?.media?.id) {
         const detailedSimklData = await this.fetchSimklDetailedData(entryOrSource.media.id, resolvedMediaType);
         if (detailedSimklData) {
@@ -137,30 +178,9 @@ class DetailPanelSource {
       } else {
         return null;
       }
-    } else if ((resolvedMediaType === 'MOVIE' || resolvedMediaType === 'TV')) {
-      // New approach: resolve Simkl ID using search/id with tmdb/imdb, then fetch details
-      const tmdbId = entryOrSource?.media?.idTmdb || entryOrSource?.media?.ids?.tmdb || entryOrSource?.ids?.tmdb || entryOrSource?.idTmdb || mediaId;
-      const imdbId = entryOrSource?.media?.idImdb || entryOrSource?.media?.ids?.imdb || entryOrSource?.ids?.imdb || entryOrSource?.idImdb || null;
-      if (tmdbId || imdbId) {
-        const simklId = await this.resolveSimklIdByExternal({ tmdb: tmdbId, imdb: imdbId }, resolvedMediaType);
-        if (simklId) {
-          const detailedSimklData = await this.fetchSimklDetailedData(simklId, resolvedMediaType);
-          if (detailedSimklData) {
-            const baseMedia = (typeof entryOrSource === 'object' && entryOrSource?.media) ? entryOrSource.media : (typeof entryOrSource === 'object' ? entryOrSource : { id: mediaId });
-            return {
-              ...baseMedia,
-              ...detailedSimklData,
-              id: baseMedia.id ?? mediaId,
-              idImdb: baseMedia.idImdb || detailedSimklData.ids?.imdb || null,
-              idTmdb: baseMedia.idTmdb || detailedSimklData.ids?.tmdb || null,
-              description: detailedSimklData.overview || baseMedia.description || null,
-              nextAiringEpisode: null
-            };
-          }
-        }
-      }
     }
 
+    // PRIORITY 5: Fallback to AniList for anime/manga
     const stableCacheKey = this.plugin.cache.structuredKey('details', 'stable', targetId);
     const dynamicCacheKey = this.plugin.cache.structuredKey('details', 'airing', targetId);
 
@@ -392,26 +412,63 @@ class DetailPanelSource {
       if (tmdb) params.push(`tmdb=${encodeURIComponent(tmdb)}`);
       if (imdb) params.push(`imdb=${encodeURIComponent(imdb)}`);
       if (params.length === 0) return null;
+      
       const url = `https://api.simkl.com/search/id?${params.join('&')}${this.plugin.settings.simklClientId ? `&client_id=${this.plugin.settings.simklClientId}` : ''}`;
+      console.log('[DetailPanelSource] Resolving Simkl ID via:', url);
+      
       const res = await fetch(url);
-      if (!res.ok) return null;
+      if (!res.ok) {
+        console.log('[DetailPanelSource] Simkl search/id request failed:', res.status, res.statusText);
+        return null;
+      }
+      
       const raw = await res.json();
+      console.log('[DetailPanelSource] Simkl search/id response:', raw);
+      
       const candidates = [];
-      ['anime', 'movies', 'tv', 'shows', 'results', 'items'].forEach(key => { if (Array.isArray(raw?.[key])) candidates.push(...raw[key]); });
+      ['anime', 'movies', 'tv', 'shows', 'results', 'items'].forEach(key => { 
+        if (Array.isArray(raw?.[key])) candidates.push(...raw[key]); 
+      });
       if (Array.isArray(raw)) candidates.push(...raw);
       if (raw?.ids) candidates.push(raw);
+      
+      console.log('[DetailPanelSource] Found candidates:', candidates.length);
+      
       const match = candidates.find(item => {
         const node = item.movie || item.show || item;
         const ids = node?.ids || node || {};
         const okTmdb = tmdb ? Number(ids.tmdb) === Number(tmdb) : true;
         const okImdb = imdb ? String(ids.imdb) === String(imdb) : true;
-        return okTmdb && okImdb && Number(ids.simkl || ids.id) > 0;
+        const hasSimklId = Number(ids.simkl || ids.id) > 0;
+        
+        console.log('[DetailPanelSource] Checking candidate:', { 
+          itemTitle: node?.title || node?.name, 
+          ids, 
+          okTmdb, 
+          okImdb, 
+          hasSimklId 
+        });
+        
+        return okTmdb && okImdb && hasSimklId;
       }) || null;
-      if (!match) return null;
+      
+      if (!match) {
+        console.log('[DetailPanelSource] No matching candidate found');
+        return null;
+      }
+      
       const node = match.movie || match.show || match;
       const ids = node?.ids || node || {};
-      return Number(ids.simkl || ids.id) || null;
-    } catch {
+      const simklId = Number(ids.simkl || ids.id);
+      
+      console.log('[DetailPanelSource] Found matching item:', { 
+        title: node?.title || node?.name, 
+        simklId 
+      });
+      
+      return simklId || null;
+    } catch (error) {
+      console.log('[DetailPanelSource] resolveSimklIdByExternal error:', error);
       return null;
     }
   }

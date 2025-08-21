@@ -73,6 +73,7 @@ class CardRenderer {
     img.className = 'media-cover pressable-cover';
     img.loading = 'lazy';
 
+    
     let pressTimer = null;
     let isPressed = false;
     const pressHoldDuration = 400;
@@ -150,10 +151,10 @@ class CardRenderer {
       coverContainer.appendChild(formatBadge);
     }
     if (isSearch) {
-      // For search and trending cards, show both Add and Edit
-      const addBtn = this.createAddButton(media, entry, config);
-      coverContainer.appendChild(addBtn);
-    }
+  // For search and trending cards, show both Add and Edit
+  const addBtn = this.createAddButton(media, entry, config);
+  coverContainer.appendChild(addBtn);
+}
     
     const needsOverlay = (!isSearch && entry && this.plugin.settings.showProgress) || 
                        (this.plugin.settings.showRatings && (

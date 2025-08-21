@@ -86,6 +86,10 @@ class CardRenderer {
       
       pressTimer = setTimeout(() => {
         if (isPressed) {
+          console.log('[CardRenderer] Opening detail panel for:', { 
+            media: { id: media?.id, type: media?.type, _zoroMeta: media?._zoroMeta },
+            entry: { _zoroMeta: entry?._zoroMeta, media: entry?.media?._zoroMeta }
+          });
           this.plugin.moreDetailsPanel.showPanel(media, entry, img);
           img.classList.remove('pressed');
           isPressed = false;
@@ -125,6 +129,10 @@ class CardRenderer {
       pressTimer = setTimeout(() => {
         if (isPressed) {
           e.preventDefault();
+          console.log('[CardRenderer] Opening detail panel for (touch):', { 
+            media: { id: media?.id, type: media?.type, _zoroMeta: media?._zoroMeta },
+            entry: { _zoroMeta: entry?._zoroMeta, media: entry?.media?._zoroMeta }
+          });
           this.plugin.moreDetailsPanel.showPanel(media, entry, img);
           img.classList.remove('pressed');
           isPressed = false;

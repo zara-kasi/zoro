@@ -12,6 +12,18 @@ class OpenDetailPanel {
 	}
 
 	async showPanel(media, entry = null, triggerElement) {
+		console.log('[OpenDetailPanel] showPanel called with:', { 
+			media: { 
+				id: media?.id, 
+				type: media?.type, 
+				_zoroMeta: media?._zoroMeta 
+			}, 
+			entry: { 
+				_zoroMeta: entry?._zoroMeta,
+				media: entry?.media?._zoroMeta
+			} 
+		});
+		
 		this.closePanel();
 		const panel = this.renderer.createPanel(media, entry);
 		this.currentPanel = panel;
@@ -22,11 +34,17 @@ class OpenDetailPanel {
 		document.addEventListener('click', this.boundOutsideClickHandler);
 		this.plugin.requestQueue.showGlobalLoader();
 
-		if (this.dataSource.shouldFetchDetailedData(media, entry)) {
+		const shouldFetch = this.dataSource.shouldFetchDetailedData(media, entry);
+		console.log('[OpenDetailPanel] shouldFetchDetailedData result:', shouldFetch);
+		
+		if (shouldFetch) {
+			console.log('[OpenDetailPanel] Fetching detailed data for media ID:', media.id);
 			this.dataSource.fetchAndUpdateData(media.id, entry, (detailedMedia, malData, imdbData) => {
+				console.log('[OpenDetailPanel] Detailed data received:', { detailedMedia, malData, imdbData });
 				if (this.currentPanel === panel) this.renderer.updatePanelContent(panel, detailedMedia, malData, imdbData);
 			}).finally(() => this.plugin.requestQueue.hideGlobalLoader());
 		} else {
+			console.log('[OpenDetailPanel] Not fetching detailed data');
 			this.plugin.requestQueue.hideGlobalLoader();
 		}
 		return panel;

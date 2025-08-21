@@ -498,6 +498,13 @@ class Trending {
           item._zoroMeta.mediaType = config.mediaType || 'ANIME';
           item._zoroMeta.fetchedAt = Date.now();
         }
+        
+        console.log('[Trending] Item _zoroMeta set:', { 
+          itemId: item.id, 
+          source: item._zoroMeta.source, 
+          mediaType: item._zoroMeta.mediaType,
+          isTmdb 
+        });
       });
 
       el.empty();

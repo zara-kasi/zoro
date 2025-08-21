@@ -1,0 +1,14 @@
+{
+	"name": "zoro-obsidian-plugin",
+	"version": "1.0.5",
+	"description": "Zoro — Track anime, manga, movies and TV with AniList, MyAnimeList and Simkl.",
+	"type": "module",
+	"main": "main.js",
+	"scripts": {
+		"build": "esbuild src/index.js --bundle --platform=node --format=cjs --outfile=main.js --external:obsidian --sourcemap",
+		"dev": "npm run build -- --watch"
+	},
+	"devDependencies": {
+		"esbuild": "^0.23.0"
+	}
+}

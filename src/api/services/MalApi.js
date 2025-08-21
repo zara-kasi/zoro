@@ -1,4 +1,5 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+import { requestUrl } from 'obsidian';
+import { ZoroError } from '../../core/ZoroError.js';
 
 class MalApi {
   constructor(plugin) {
@@ -1141,4 +1142,4 @@ class MalApi {
   }
 }
 
-module.exports = { MalApi };
+export { MalApi };

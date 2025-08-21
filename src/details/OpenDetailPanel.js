@@ -22,7 +22,7 @@ class OpenDetailPanel {
 		document.addEventListener('click', this.boundOutsideClickHandler);
 		this.plugin.requestQueue.showGlobalLoader();
 
-		if (this.dataSource.shouldFetchDetailedData(media)) {
+		if (this.dataSource.shouldFetchDetailedData(media, entry)) {
 			this.dataSource.fetchAndUpdateData(media.id, entry, (detailedMedia, malData, imdbData) => {
 				if (this.currentPanel === panel) this.renderer.updatePanelContent(panel, detailedMedia, malData, imdbData);
 			}).finally(() => this.plugin.requestQueue.hideGlobalLoader());

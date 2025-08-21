@@ -67,18 +67,43 @@ class DetailPanelSource {
     return typeMap[normalizedType] || null;
   }
 
-  shouldFetchDetailedData(media) {
+  shouldFetchDetailedData(media, entry = null) {
     const missingBasicData = !media.description || !media.genres || !media.averageScore;
     const isAnimeWithoutAiring = media.type === 'ANIME' && !media.nextAiringEpisode;
+    
+    // For TMDb trending items, always fetch detailed data to get additional information
+    if (media._zoroMeta?.source === 'tmdb' && (media._zoroMeta?.mediaType === 'MOVIE' || media._zoroMeta?.mediaType === 'TV')) {
+      return true;
+    }
+    
+    // Also check the entry object for source information
+    if (entry?._zoroMeta?.source === 'tmdb' && (entry?._zoroMeta?.mediaType === 'MOVIE' || entry?._zoroMeta?.mediaType === 'TV')) {
+      return true;
+    }
+    
     return missingBasicData || isAnimeWithoutAiring;
   }
 
   extractSourceFromEntry(entry) {
-    return entry?._zoroMeta?.source || this.plugin.settings.defaultApiSource || 'anilist';
+    // For trending items, the source might be in the media object's _zoroMeta
+    if (entry?._zoroMeta?.source) {
+      return entry._zoroMeta.source;
+    }
+    if (entry?.media?._zoroMeta?.source) {
+      return entry.media._zoroMeta.source;
+    }
+    return this.plugin.settings.defaultApiSource || 'anilist';
   }
 
   extractMediaTypeFromEntry(entry) {
-    return entry?._zoroMeta?.mediaType || entry?.media?.type || null;
+    // For trending items, the mediaType might be in the media object's _zoroMeta
+    if (entry?._zoroMeta?.mediaType) {
+      return entry._zoroMeta.mediaType;
+    }
+    if (entry?.media?._zoroMeta?.mediaType) {
+      return entry.media._zoroMeta.mediaType;
+    }
+    return entry?.media?.type || null;
   }
 
   async fetchDetailedData(mediaId, entryOrSource = null, mediaType = null) {
@@ -138,6 +163,33 @@ class DetailPanelSource {
         }
         // Fallback to original media data if detailed fetch fails
         return entryOrSource.media;
+              } else {
+          return null;
+        }
+    } else if (source === 'tmdb' && (resolvedMediaType === 'MOVIE' || resolvedMediaType === 'TV')) {
+      // For TMDb movies and TV shows, fetch detailed data from TMDb API
+      // For TMDb trending items, mediaId is the TMDb ID
+      const tmdbId = entryOrSource?.media?.idTmdb || mediaId;
+      if (tmdbId) {
+        const detailedTmdbData = await this.fetchTmdbDetailedData(tmdbId, resolvedMediaType);
+        if (detailedTmdbData) {
+          // Merge the detailed data with the original media data
+          const originalMedia = entryOrSource?.media || entryOrSource;
+          return {
+            ...originalMedia,
+            ...detailedTmdbData,
+            // Ensure we keep the original ID and other essential fields
+            id: originalMedia.id || mediaId,
+            idImdb: originalMedia.idImdb || detailedTmdbData.external_ids?.imdb_id || null,
+            idTmdb: tmdbId,
+            // Map TMDb overview to description
+            description: detailedTmdbData.overview || originalMedia.description || null,
+            // TMDb doesn't provide airing data in their trending API
+            nextAiringEpisode: null
+          };
+        }
+        // Fallback to original media data if detailed fetch fails
+        return entryOrSource?.media || entryOrSource;
               } else {
           return null;
         }
@@ -269,6 +321,52 @@ class DetailPanelSource {
     }
   }
 
+  async fetchTmdbDetailedData(tmdbId, mediaType) {
+    if (!tmdbId) return null;
+    
+    // Check if TMDb API key is configured
+    if (!this.plugin.settings.tmdbApiKey) {
+      console.error('[DetailPanelSource] TMDb API key not configured');
+      return null;
+    }
+    
+    // Use stable caching system (TMDb doesn't have airing data)
+    const stableCacheKey = this.plugin.cache.structuredKey('tmdb', 'stable', `${tmdbId}_${mediaType}`);
+    const cached = this.plugin.cache.get(stableCacheKey, { scope: 'mediaDetails', source: 'tmdb' });
+    if (cached) return cached;
+
+    try {
+      // Use correct TMDb API endpoints for detailed data
+      const endpoint = mediaType === 'MOVIE' ? 'movie' : 'tv';
+      const url = `https://api.themoviedb.org/3/${endpoint}/${tmdbId}?api_key=${this.plugin.settings.tmdbApiKey}&append_to_response=external_ids,credits,videos,images`;
+      
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`TMDb API error: ${response.status}`);
+      const data = await response.json();
+      
+      if (data) {
+        // TMDb does not provide airing data in their trending API
+        // Remove any next_episode field if it exists (it shouldn't)
+        if (data.next_episode) {
+          delete data.next_episode;
+        }
+        
+        // Cache stable data using cache class TTL
+        this.plugin.cache.set(stableCacheKey, data, { 
+          scope: 'mediaDetails', 
+          source: 'tmdb', 
+          tags: ['tmdb', 'details', 'stable', endpoint] 
+        });
+        
+        return data;
+      }
+      return null;
+    } catch (error) {
+      console.error('[DetailPanelSource] TMDb fetch failed:', error);
+      return null;
+    }
+  }
+
 
 
 
@@ -379,6 +477,11 @@ class DetailPanelSource {
       
       // For Simkl movies/TV, fetch IMDB data
       if (source === 'simkl' && (mediaType === 'MOVIE' || mediaType === 'TV') && detailedMedia.idImdb) {
+        imdbDataPromise = this.fetchIMDBData(detailedMedia.idImdb, detailedMedia.type, detailedMedia);
+      }
+      
+      // For TMDb movies/TV, fetch IMDB data
+      if (source === 'tmdb' && (mediaType === 'MOVIE' || mediaType === 'TV') && detailedMedia.idImdb) {
         imdbDataPromise = this.fetchIMDBData(detailedMedia.idImdb, detailedMedia.type, detailedMedia);
       }
       

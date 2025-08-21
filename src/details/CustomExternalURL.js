@@ -1,4 +1,4 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+// No obsidian imports needed here
 
 class CustomExternalURL {
   constructor(plugin) {
@@ -420,4 +420,4 @@ class CustomExternalURL {
   }
 }
 
-module.exports = { CustomExternalURL };
+export { CustomExternalURL };

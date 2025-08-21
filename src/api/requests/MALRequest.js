@@ -1,4 +1,4 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+// No obsidian import needed
 
 class MALRequest {
   constructor(config, plugin) {
@@ -124,4 +124,4 @@ class MALRequest {
   }
 }
 
-module.exports = { MALRequest };
+export { MALRequest };

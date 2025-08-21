@@ -1,4 +1,5 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+import { Notice } from 'obsidian';
+import { Trending } from '../features/Trending.js';
 
 class Processor {
   constructor(plugin) {
@@ -478,4 +479,4 @@ async executeProcessing(el, config, retryFn) {
   }
 }
 
-module.exports = { Processor };
+export { Processor };

@@ -1,4 +1,4 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+// No obsidian import needed
 
 class SimklRequest {
   constructor(config, plugin) {
@@ -213,4 +213,4 @@ class SimklRequest {
   }
 }
 
-module.exports = { SimklRequest };
+export { SimklRequest };

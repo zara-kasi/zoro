@@ -382,10 +382,23 @@ class CardRenderer {
       ? { status: 'PLANNING', score: 0, _zUseTmdbId: true }
       : { status: 'PLANNING', progress: 0 };
 
+    try {
+      console.log('[CardRenderer][Add]', {
+        entrySource,
+        entryMediaType,
+        isTmdbItem,
+        isMovieOrTv,
+        mediaId: media?.id,
+        idTmdb: media?.idTmdb,
+        idImdb: media?.idImdb
+      });
+    } catch {}
+
     // For TMDb movie/TV routed to Simkl, call the same update path used by Simkl search
     // but use the TMDb id instead of Simkl id
     if (entrySource === 'simkl' && isTmdbItem && isMovieOrTv) {
       const ids = { tmdb: Number(media.idTmdb || media.id) || undefined, imdb: media.idImdb || undefined };
+      try { console.log('[CardRenderer][Add] Using Simkl explicit identifiers path', { ids, updates }); } catch {}
       if (typeof this.plugin?.simklApi?.updateMediaListEntryWithIds === 'function') {
         await this.plugin.simklApi.updateMediaListEntryWithIds(ids, updates, entryMediaType);
       } else {

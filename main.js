@@ -22,7 +22,7 @@ __export(src_exports, {
   default: () => src_default
 });
 module.exports = __toCommonJS(src_exports);
-var import_obsidian31 = require("obsidian");
+var import_obsidian30 = require("obsidian");
 
 // src/cache/Cache.js
 var import_obsidian = require("obsidian");
@@ -3641,1927 +3641,12 @@ var MalApi = class {
   }
 };
 
-// src/api/services/SimklApi.js
-var import_obsidian5 = require("obsidian");
-var SimklApi = class {
-  constructor(plugin) {
-    this.plugin = plugin;
-    this.requestQueue = plugin.requestQueue;
-    this.cache = plugin.cache;
-    this.baseUrl = "https://api.simkl.com";
-    this.tokenUrl = "https://api.simkl.com/oauth/token";
-    this.fieldSets = {
-      compact: "title,poster",
-      card: "title,poster,year,ids,genres,rating,total_episodes,status",
-      full: "title,poster,year,ids,genres,rating,total_episodes,total_seasons,status,overview,first_aired,last_aired,country,network,aired_episodes"
-    };
-    this.searchFieldSets = {
-      compact: "title,poster,year,ids",
-      card: "title,poster,year,ids,genres,rating,total_episodes",
-      full: "title,poster,year,ids,genres,rating,total_episodes,overview,first_aired,last_aired"
-    };
-    this.simklToAniListStatus = {
-      "watching": "CURRENT",
-      "completed": "COMPLETED",
-      "hold": "PAUSED",
-      "dropped": "DROPPED",
-      "plantowatch": "PLANNING",
-      "notinteresting": "DROPPED"
-    };
-    this.aniListToSimklStatus = {
-      "CURRENT": "watching",
-      "COMPLETED": "completed",
-      "PAUSED": "hold",
-      "DROPPED": "dropped",
-      "PLANNING": "plantowatch"
-    };
-    this.validMovieStatuses = ["plantowatch", "completed", "dropped"];
-    this.validShowStatuses = ["watching", "hold", "completed", "dropped", "plantowatch"];
-    this.mediaTypeMap = {
-      "ANIME": "anime",
-      "MANGA": "anime",
-      // Simkl doesn't have manga, fallback to anime
-      "TV": "tv",
-      "MOVIE": "movies",
-      "MOVIES": "movies"
-    };
-    this.metrics = { requests: 0, cached: 0, errors: 0 };
-  }
-  // =================== MAIN FETCH METHOD (Following MAL pattern) ===================
-  async fetchSimklData(config) {
-    try {
-      return await this.executeFetch(config);
-    } catch (error) {
-      this.metrics.errors++;
-      throw this.createUserFriendlyError(error);
-    }
-  }
-  async executeFetch(config) {
-    const normalizedConfig = this.validateConfig(config);
-    const cacheKey = this.createCacheKey(normalizedConfig);
-    const cacheScope = this.getCacheScope(normalizedConfig.type);
-    if (!normalizedConfig.nocache) {
-      const cached = this.cache.get(cacheKey, { scope: cacheScope });
-      if (cached) {
-        this.metrics.cached++;
-        return cached;
-      }
-    }
-    if (this.requiresAuth(normalizedConfig.type)) {
-      await this.ensureValidToken();
-    }
-    let transformedData = null;
-    try {
-      if (normalizedConfig.type === "search") {
-        transformedData = await this.performSearchWithFallbacks(normalizedConfig);
-      } else {
-        const requestParams = this.buildRequestParams(normalizedConfig);
-        const rawResponse = await this.makeRequest(requestParams);
-        transformedData = this.transformResponse(rawResponse, normalizedConfig);
-      }
-    } catch (err) {
-      if (normalizedConfig.type !== "single") {
-        throw err;
-      }
-      console.warn("[Simkl] Primary single request failed, will try public fallback:", err?.message || err);
-    }
-    if (normalizedConfig.type === "stats" && transformedData?.User) {
-      try {
-        await this.attachSimklDistributions(transformedData.User);
-      } catch (e) {
-      }
-    }
-    if (normalizedConfig.type === "single" && (!transformedData || transformedData.MediaList == null)) {
-      try {
-        const publicResult = await this.fetchSingleByIdPublic(normalizedConfig.mediaId, normalizedConfig.mediaType);
-        if (publicResult) {
-          transformedData = publicResult;
-        }
-      } catch (e) {
-        console.warn("[Simkl] Public single fetch fallback failed:", e?.message || e);
-      }
-    }
-    if (transformedData && !normalizedConfig.nocache) {
-      this.cache.set(cacheKey, transformedData, { scope: cacheScope });
-    }
-    return transformedData;
-  }
-  // =================== REQUEST BUILDING (Fixed based on MAL pattern) ===================
-  buildRequestParams(config) {
-    const endpoint = this.buildEndpointUrl(config);
-    const params = this.buildQueryParams(config);
-    const headers = this.getHeaders(config);
-    return {
-      url: this.buildFullUrl(endpoint, params),
-      method: config.method || "GET",
-      headers,
-      body: config.body,
-      priority: config.priority || "normal"
-    };
-  }
-  buildEndpointUrl(config) {
-    const simklMediaType = this.getSimklMediaType(config.mediaType);
-    switch (config.type) {
-      case "stats":
-        return `${this.baseUrl}/users/settings`;
-      case "list":
-        return `${this.baseUrl}/sync/all-items/${simklMediaType}`;
-      case "single":
-        return `${this.baseUrl}/sync/all-items/${simklMediaType}`;
-      case "search":
-        if (simklMediaType === "movies") {
-          return `${this.baseUrl}/search/movie`;
-        } else if (simklMediaType === "anime") {
-          return `${this.baseUrl}/search/anime`;
-        } else if (simklMediaType === "tv") {
-          return `${this.baseUrl}/search/tv`;
-        } else {
-          return `${this.baseUrl}/search/tv`;
-        }
-      default:
-        throw new Error(`Unknown request type: ${config.type}`);
-    }
-  }
-  // ALSO NEED TO FIX: getSimklMediaType method for consistency
-  getSimklMediaType(mediaType) {
-    if (!mediaType) return "anime";
-    const upperType = String(mediaType).toUpperCase();
-    if (upperType === "MOVIE" || upperType === "MOVIES") {
-      return "movies";
-    } else if (upperType === "ANIME") {
-      return "anime";
-    } else if (upperType === "TV") {
-      return "tv";
-    }
-    return this.mediaTypeMap[upperType] || "anime";
-  }
-  buildQueryParams(config) {
-    const params = {};
-    if (this.plugin.settings.simklClientId) {
-      params.client_id = this.plugin.settings.simklClientId;
-    }
-    switch (config.type) {
-      case "search":
-        if (config.search || config.query) {
-          params.q = (config.search || config.query).trim();
-        }
-        params.limit = Math.max(1, Math.min(config.perPage || 10, 20));
-        params.page = Math.max(1, config.page || 1);
-        break;
-      case "list":
-      case "single":
-        break;
-      case "stats":
-        break;
-    }
-    return params;
-  }
-  getHeaders(config) {
-    const headers = {
-      "Accept": "application/json",
-      "Content-Type": "application/json",
-      "User-Agent": `Zoro-Plugin/${this.plugin.manifest?.version || "1.0.0"}`
-    };
-    if (this.plugin.settings.simklClientId) {
-      headers["simkl-api-key"] = this.plugin.settings.simklClientId;
-    }
-    if (this.requiresAuth(config.type) && this.plugin.settings.simklAccessToken) {
-      headers["Authorization"] = `Bearer ${this.plugin.settings.simklAccessToken}`;
-    }
-    headers["Referer"] = "https://simkl.com/";
-    return headers;
-  }
-  // Append a focused error entry (only for edit-related requests)
-  // =================== HTTP REQUEST EXECUTION (Following MAL pattern) ===================
-  async makeRequest(requestParams) {
-    this.metrics.requests++;
-    const requestFn = () => (0, import_obsidian5.requestUrl)({
-      url: requestParams.url,
-      method: requestParams.method || "GET",
-      headers: requestParams.headers || {},
-      body: requestParams.body
-    });
-    try {
-      const response = await this.requestQueue.add(requestFn, {
-        priority: requestParams.priority || "normal",
-        timeout: 3e4
-      });
-      if (!response) {
-        console.log("[Simkl][HTTP] Empty response object");
-        throw new Error("Empty response from Simkl");
-      }
-      if (response.status && (response.status < 200 || response.status >= 300)) {
-        const errMsg = response.json?.error_description || response.json?.error || `HTTP ${response.status}`;
-        console.log("[Simkl][HTTP] Non-200", errMsg);
-        throw new Error(errMsg);
-      }
-      if (!response.json) {
-        if (response.text === null || response.text === void 0 || String(response.text).trim() === "") {
-          return { ok: true };
-        }
-        try {
-          const parsed = JSON.parse(response.text);
-          return parsed;
-        } catch (e) {
-          return { ok: true };
-        }
-      }
-      return response.json;
-    } catch (error) {
-      console.log("[Simkl][HTTP] request failed", error);
-      throw error;
-    }
-  }
-  // Robust search executor with endpoint fallbacks
-  async performSearchWithFallbacks(config) {
-    const term = (config.search || config.query || "").trim();
-    if (!term) {
-      return { Page: { media: [] } };
-    }
-    const primaryParams = this.buildRequestParams({ ...config, type: "search" });
-    try {
-      const primaryRaw = await this.makeRequest(primaryParams);
-      const primaryTransformed = this.transformSearchResponse(primaryRaw, config);
-      if (primaryTransformed?.Page?.media?.length) {
-        const itemsWithIds = primaryTransformed.Page.media.filter((item) => item && item.id > 0);
-        if (itemsWithIds.length > 0) {
-          return primaryTransformed;
-        }
-      }
-    } catch (e) {
-      console.log("[Simkl][Search] primary failed", e);
-    }
-    const candidates = [
-      { type: "ANIME", endpoint: `${this.baseUrl}/search/anime` },
-      { type: "TV", endpoint: `${this.baseUrl}/search/tv` },
-      { type: "MOVIE", endpoint: `${this.baseUrl}/search/movie` }
-      // singular according to API
-    ];
-    const aggregated = [];
-    for (const c of candidates) {
-      try {
-        const qp = {
-          q: term,
-          limit: Math.max(1, Math.min(config.perPage || 10, 20)),
-          page: Math.max(1, config.page || 1)
-        };
-        if (this.plugin.settings.simklClientId) {
-          qp.client_id = this.plugin.settings.simklClientId;
-        }
-        const url = this.buildFullUrl(c.endpoint, qp);
-        const raw = await this.makeRequest({ url, method: "GET", headers: this.getHeaders({ type: "search" }), priority: "normal" });
-        const key = this.getSimklMediaType(c.type);
-        let items;
-        if (Array.isArray(raw)) items = raw;
-        else if (Array.isArray(raw[key])) items = raw[key];
-        else if (Array.isArray(raw.results)) items = raw.results;
-        else if (raw.movie || raw.show) items = [raw];
-        else items = [];
-        for (const item of items) {
-          const mapped = this.transformMedia(item, c.type);
-          if (mapped && mapped.id > 0) {
-            aggregated.push(mapped);
-          }
-        }
-      } catch {
-      }
-    }
-    return { Page: { media: aggregated } };
-  }
-  // Enhanced method to resolve a Simkl ID by title for edit operations when search results lack ids
-  async resolveSimklIdByTitle(title, mediaType) {
-    if (!title || typeof title !== "string") return null;
-    const term = title.trim();
-    if (!term) return null;
-    const typeUpper = String(mediaType || "").toUpperCase();
-    const endpoints = [];
-    if (typeUpper === "MOVIE" || typeUpper === "MOVIES") endpoints.push(`${this.baseUrl}/search/movie`);
-    else if (typeUpper === "ANIME") endpoints.push(`${this.baseUrl}/search/anime`);
-    else if (typeUpper === "TV") endpoints.push(`${this.baseUrl}/search/tv`);
-    endpoints.push(`${this.baseUrl}/search/anime`, `${this.baseUrl}/search/tv`, `${this.baseUrl}/search/movie`);
-    for (const ep of endpoints) {
-      try {
-        const qp = { q: term, limit: 10, page: 1 };
-        if (this.plugin.settings.simklClientId) qp.client_id = this.plugin.settings.simklClientId;
-        const url = this.buildFullUrl(ep, qp);
-        const raw = await this.makeRequest({ url, method: "GET", headers: this.getHeaders({ type: "search" }), priority: "normal" });
-        const items = Array.isArray(raw) ? raw : raw.results || raw.anime || raw.tv || raw.movies || [];
-        let bestMatch = null;
-        let bestScore = 0;
-        for (const it of items) {
-          const node = it.movie || it.show || it;
-          const ids = node?.ids || node;
-          const id = Number(ids?.simkl || ids?.id);
-          if (id > 0) {
-            const itemTitle = (node.title || node.name || "").toLowerCase();
-            const searchTitle = term.toLowerCase();
-            if (itemTitle === searchTitle) {
-              return id;
-            }
-            const score = this.calculateTitleSimilarity(itemTitle, searchTitle);
-            if (score > bestScore) {
-              bestScore = score;
-              bestMatch = id;
-            }
-          }
-        }
-        if (bestMatch && bestScore > 0.7) {
-          return bestMatch;
-        }
-      } catch {
-      }
-    }
-    return null;
-  }
-  // Helper method to calculate title similarity for better ID resolution
-  calculateTitleSimilarity(title1, title2) {
-    if (!title1 || !title2) return 0;
-    const t1 = title1.toLowerCase().trim();
-    const t2 = title2.toLowerCase().trim();
-    if (t1 === t2) return 1;
-    if (t1.includes(t2) || t2.includes(t1)) return 0.9;
-    const clean1 = t1.replace(/season\s*\d+|s\d+|\(.*?\)/gi, "").trim();
-    const clean2 = t2.replace(/season\s*\d+|s\d+|\(.*?\)/gi, "").trim();
-    if (clean1 === clean2) return 0.8;
-    const words1 = new Set(clean1.split(/\s+/));
-    const words2 = new Set(clean2.split(/\s+/));
-    const intersection = new Set([...words1].filter((x) => words2.has(x)));
-    const union = /* @__PURE__ */ new Set([...words1, ...words2]);
-    return intersection.size / union.size;
-  }
-  // Method to ensure search results have proper IDs for editing operations
-  async ensureSearchResultIds(searchResults, mediaType) {
-    if (!searchResults?.Page?.media?.length) return searchResults;
-    const enhancedResults = [];
-    let resolvedCount = 0;
-    for (const item of searchResults.Page.media) {
-      if (item && item.id > 0) {
-        enhancedResults.push(item);
-      } else if (item && item.title) {
-        try {
-          console.log(`[Simkl] Resolving ID for search result: "${item.title}"`);
-          const resolvedId = await this.resolveSimklIdByTitle(item.title, mediaType);
-          if (resolvedId) {
-            item.id = resolvedId;
-            enhancedResults.push(item);
-            resolvedCount++;
-            console.log(`[Simkl] Successfully resolved ID ${resolvedId} for "${item.title}"`);
-          } else {
-            console.warn(`[Simkl] Could not resolve ID for "${item.title}"`);
-          }
-        } catch (error) {
-          console.warn(`[Simkl] Failed to resolve ID for "${item.title}":`, error);
-        }
-      }
-    }
-    if (resolvedCount > 0) {
-      console.log(`[Simkl] Enhanced ${resolvedCount} search results with resolved IDs`);
-    }
-    return {
-      Page: {
-        media: enhancedResults
-      }
-    };
-  }
-  // Method to get a single media item by ID, useful for resolving search result IDs
-  async getMediaById(mediaId, mediaType) {
-    if (!mediaId || !Number.isFinite(Number(mediaId))) return null;
-    try {
-      const response = await this.fetchSingleByIdPublic(mediaId, mediaType);
-      if (response?.MediaList) {
-        return response.MediaList;
-      }
-    } catch (error) {
-      console.warn(`[Simkl] Failed to get media by ID ${mediaId}:`, error);
-    }
-    return null;
-  }
-  // Method to validate and fix search result IDs before editing operations
-  async validateSearchResultForEditing(searchResult, mediaType) {
-    if (!searchResult) return null;
-    if (searchResult.id && Number.isFinite(Number(searchResult.id)) && Number(searchResult.id) > 0) {
-      return searchResult;
-    }
-    if (searchResult.title) {
-      try {
-        const resolvedId = await this.resolveSimklIdByTitle(searchResult.title, mediaType);
-        if (resolvedId) {
-          searchResult.id = resolvedId;
-          console.log(`[Simkl] Resolved ID ${resolvedId} for editing: "${searchResult.title}"`);
-          return searchResult;
-        }
-      } catch (error) {
-        console.warn(`[Simkl] Failed to resolve ID for editing "${searchResult.title}":`, error);
-      }
-    }
-    console.warn(`[Simkl] Cannot edit search result without valid ID: "${searchResult.title}"`);
-    return null;
-  }
-  // =================== DATA TRANSFORMATION (Fixed to match expected structure) ===================
-  transformResponse(data, config) {
-    switch (config.type) {
-      case "search":
-        return this.transformSearchResponse(data, config);
-      case "single":
-        return this.transformSingleResponse(data, config);
-      case "stats":
-        return this.transformStatsResponse(data);
-      case "list":
-        return this.transformListResponse(data, config);
-      default:
-        return this.transformListResponse(data, config);
-    }
-  }
-  transformSearchResponse(data, config) {
-    const simklType = this.getSimklMediaType(config.mediaType);
-    let items = [];
-    if (Array.isArray(data)) {
-      items = data;
-    } else if (data && typeof data === "object") {
-      const possibleKeys = [simklType, "results", "items", "anime", "tv", "movies", "shows"];
-      for (const key of possibleKeys) {
-        if (Array.isArray(data[key])) {
-          items = data[key];
-          break;
-        }
-      }
-      if (items.length === 0) {
-        if (data.movie || data.show || data.anime) {
-          items = [data];
-        }
-      }
-    }
-    const transformedItems = items.map((item) => this.transformMedia(item, config.mediaType)).filter((item) => item && item.id > 0);
-    return {
-      Page: {
-        media: transformedItems
-      }
-    };
-  }
-  transformSingleResponse(data, config) {
-    const targetMediaId = parseInt(config.mediaId);
-    let targetEntry = null;
-    const simklMediaType = this.getSimklMediaType(config.mediaType);
-    const mediaArray = data[simklMediaType] || [];
-    if (Array.isArray(mediaArray)) {
-      targetEntry = mediaArray.find((entry) => {
-        const show = entry.show || entry;
-        const ids = show.ids || show;
-        return ids.simkl === targetMediaId || ids.id === targetMediaId;
-      });
-    }
-    return {
-      MediaList: targetEntry ? this.transformListEntry(targetEntry, config.mediaType) : null
-    };
-  }
-  // Fallback: fetch a single media by Simkl ID using public search-by-id API
-  async fetchSingleByIdPublic(mediaId, mediaType) {
-    const id = parseInt(mediaId);
-    if (!id || Number.isNaN(id)) return null;
-    const url = `${this.baseUrl}/search/id?simkl=${encodeURIComponent(id)}`;
-    const headers = this.getHeaders({ type: "search" });
-    try {
-      const response = await this.makeRequest({ url, method: "GET", headers, priority: "normal" });
-      const wrapped = this.transformSinglePublicResponse(response, mediaType, id);
-      return wrapped;
-    } catch (e) {
-      console.warn("[Simkl] fetchSingleByIdPublic failed:", e?.message || e);
-      return { MediaList: null };
-    }
-  }
-  // Parse public search-by-id response into MediaList shape
-  transformSinglePublicResponse(raw, mediaType, targetId) {
-    if (!raw || typeof raw !== "object" && !Array.isArray(raw)) return { MediaList: null };
-    const candidates = [];
-    ["anime", "movies", "tv", "shows", "results", "items"].forEach((key) => {
-      if (Array.isArray(raw?.[key])) candidates.push(...raw[key]);
-    });
-    if (Array.isArray(raw)) candidates.push(...raw);
-    if (candidates.length === 0 && raw?.ids) candidates.push(raw);
-    const match = candidates.find((item) => {
-      const node2 = item.movie || item.show || item;
-      const ids = node2?.ids || node2 || {};
-      return Number(ids.simkl || ids.id) === Number(targetId);
-    }) || null;
-    if (!match) return { MediaList: null };
-    const node = match.movie || match.show || match;
-    const transformedMedia = this.transformMedia(node, mediaType);
-    const entry = {
-      id: null,
-      status: null,
-      score: null,
-      progress: this.isMovieType(mediaType, node) ? 0 : 0,
-      media: transformedMedia
-    };
-    return { MediaList: entry };
-  }
-  // FIXED: Complete rewrite of list response transformation with comprehensive debugging
-  transformListResponse(data, config) {
-    let entries = [];
-    const simklMediaType = this.getSimklMediaType(config.mediaType);
-    const raw = data || {};
-    if (Array.isArray(raw[simklMediaType])) {
-      entries = raw[simklMediaType];
-    } else if (Array.isArray(raw)) {
-      entries = raw;
-    } else if (raw[simklMediaType] && typeof raw[simklMediaType] === "object") {
-      const grouped = raw[simklMediaType];
-      Object.keys(grouped).forEach((statusKey) => {
-        const arr = grouped[statusKey];
-        if (Array.isArray(arr)) {
-          arr.forEach((item) => entries.push({ ...item, _status: statusKey }));
-        }
-      });
-    } else {
-      const alternativeKeys = ["anime", "movies", "tv", "shows", "items", "results"];
-      let found = false;
-      for (const key of alternativeKeys) {
-        if (raw[key] && Array.isArray(raw[key]) && raw[key].length > 0) {
-          entries = raw[key];
-          found = true;
-          break;
-        }
-      }
-      if (!found) {
-        Object.keys(raw).forEach((key) => {
-          if (Array.isArray(raw[key]) && raw[key].length > 0) {
-            entries = entries.concat(raw[key]);
-          }
-        });
-      }
-    }
-    if (entries.length > 0) {
-    }
-    if (config.listType && config.listType !== "ALL") {
-      const targetStatus = this.mapAniListStatusToSimkl(config.listType);
-      const beforeFilter = entries.length;
-      entries = entries.filter((entry) => (entry.status || entry._status) === targetStatus);
-    }
-    const transformedEntries = [];
-    entries.forEach((entry, index) => {
-      try {
-        const transformed = this.transformListEntry(entry, config.mediaType);
-        if (transformed) {
-          transformedEntries.push(transformed);
-        } else {
-          console.warn(`[Simkl] Entry ${index} transformed to null`);
-        }
-      } catch (error) {
-        console.error(`[Simkl] Error transforming entry ${index}:`, error, entry);
-      }
-    });
-    return {
-      MediaListCollection: {
-        lists: [{
-          entries: transformedEntries
-        }]
-      }
-    };
-  }
-  transformStatsResponse(data) {
-    const user = data.user || data;
-    const simklStats = user.stats || {};
-    const animeStats = simklStats.anime || {};
-    const tvStats = simklStats.tv || simklStats.shows || {};
-    const movieStats = simklStats.movies || simklStats.films || {};
-    return {
-      User: {
-        id: user.id || null,
-        name: user.name || user.username || "Unknown User",
-        avatar: {
-          large: user.avatar || null,
-          medium: user.avatar || null
-        },
-        statistics: {
-          anime: {
-            count: animeStats.total || 0,
-            meanScore: animeStats.rating || 0,
-            standardDeviation: 0,
-            episodesWatched: animeStats.episodes || 0,
-            minutesWatched: animeStats.minutes || 0
-          },
-          tv: {
-            count: tvStats.total || 0,
-            meanScore: tvStats.rating || 0,
-            standardDeviation: 0,
-            episodesWatched: tvStats.episodes || 0,
-            minutesWatched: tvStats.minutes || 0
-          },
-          movie: {
-            count: movieStats.total || 0,
-            meanScore: movieStats.rating || 0,
-            standardDeviation: 0,
-            minutesWatched: movieStats.minutes || 0
-          }
-        },
-        mediaListOptions: {
-          scoreFormat: "POINT_10"
-        }
-      }
-    };
-  }
-  // =================== MEDIA TRANSFORMATION (Fixed structure) ===================
-  // FIXED: Added enhanced debugging and comprehensive data structure handling
-  transformMedia(simklMedia, mediaType) {
-    if (!simklMedia) {
-      return null;
-    }
-    let media, originalData;
-    if (simklMedia.show) {
-      media = simklMedia.show;
-      originalData = simklMedia;
-    } else if (simklMedia.movie) {
-      media = simklMedia.movie;
-      originalData = simklMedia;
-    } else {
-      media = simklMedia;
-      originalData = simklMedia;
-    }
-    const ids = media.ids || originalData.ids || {};
-    const posterUrl = this.extractPosterUrl(media, originalData, ids);
-    const isMovie = this.isMovieType(mediaType, media);
-    const extractedTitle = this.extractTitle(media, originalData);
-    const genres = this.extractGenres(media, originalData);
-    const episodes = (() => {
-      if (isMovie) {
-        return 1;
-      }
-      const candidates = [
-        media.total_episodes_count,
-        media.total_episodes,
-        media.episodes,
-        originalData.total_episodes_count,
-        originalData.total_episodes,
-        originalData.episodes
-      ];
-      for (const cand of candidates) {
-        if (cand !== void 0 && cand !== null && cand !== "") {
-          const n = Number(cand);
-          if (!isNaN(n)) return n;
-        }
-      }
-      return null;
-    })();
-    let finalId = null;
-    if (ids.simkl_id && Number.isFinite(Number(ids.simkl_id))) {
-      finalId = Number(ids.simkl_id);
-      ids.simkl = finalId;
-    } else if (ids.simkl && Number.isFinite(Number(ids.simkl))) {
-      finalId = Number(ids.simkl);
-    } else if (ids.id && Number.isFinite(Number(ids.id))) {
-      finalId = Number(ids.id);
-    } else if (media.id && Number.isFinite(Number(media.id))) {
-      finalId = Number(media.id);
-    } else if (originalData.id && Number.isFinite(Number(originalData.id))) {
-      finalId = Number(originalData.id);
-    }
-    if (!finalId && media.ids) {
-      if (media.ids.simkl_id && Number.isFinite(Number(media.ids.simkl_id))) {
-        finalId = Number(media.ids.simkl_id);
-        media.ids.simkl = finalId;
-      } else if (media.ids.simkl && Number.isFinite(Number(media.ids.simkl))) {
-        finalId = Number(media.ids.simkl);
-      } else if (media.ids.id && Number.isFinite(Number(media.ids.id))) {
-        finalId = Number(media.ids.id);
-      }
-    }
-    if (!finalId && simklMedia.ids) {
-      if (simklMedia.ids.simkl_id && Number.isFinite(Number(simklMedia.ids.simkl_id))) {
-        finalId = Number(simklMedia.ids.simkl_id);
-        simklMedia.ids.simkl = finalId;
-      } else if (simklMedia.ids.simkl && Number.isFinite(Number(simklMedia.ids.simkl))) {
-        finalId = Number(simklMedia.ids.simkl);
-      } else if (simklMedia.ids.id && Number.isFinite(Number(simklMedia.ids.id))) {
-        finalId = Number(simklMedia.ids.id);
-      }
-    }
-    if (!finalId) {
-      const allIds = [
-        ids.simkl_id,
-        ids.simkl,
-        ids.id,
-        media.id,
-        originalData.id,
-        media.ids?.simkl_id,
-        media.ids?.simkl,
-        media.ids?.id,
-        originalData?.ids?.simkl_id,
-        originalData?.ids?.simkl,
-        originalData?.ids?.id,
-        simklMedia.ids?.simkl_id,
-        simklMedia.ids?.simkl,
-        simklMedia.ids?.id,
-        simklMedia.id
-      ];
-      for (const id of allIds) {
-        if (id && Number.isFinite(Number(id)) && Number(id) > 0) {
-          finalId = Number(id);
-          break;
-        }
-      }
-    }
-    const transformedResult = {
-      id: finalId || 0,
-      idMal: ids.mal || null,
-      idImdb: ids.imdb || null,
-      idTmdb: ids.tmdb || null,
-      title: extractedTitle,
-      coverImage: {
-        large: posterUrl,
-        medium: posterUrl,
-        _raw: media.poster || media.image || media.cover,
-        _normalized: posterUrl
-      },
-      format: isMovie ? "MOVIE" : this.mapSimklFormat(
-        media.type || media.kind || originalData.type || (mediaType || "").toString().toLowerCase(),
-        mediaType
-      ),
-      averageScore: null,
-      // Simkl ratings not needed for detail panel
-      status: media.status ? media.status.toUpperCase() : null,
-      genres,
-      episodes,
-      chapters: null,
-      isFavourite: false,
-      startDate: this.parseDate(media.first_aired || originalData.first_aired),
-      endDate: this.parseDate(media.last_aired || originalData.last_aired),
-      // Simkl does not provide airing data in their API
-      nextAiringEpisode: null,
-      // Map Simkl overview to description for detail panel
-      description: media.overview || originalData.overview || null,
-      // FIXED: Add movie-specific metadata for rendering
-      _isMovie: isMovie,
-      _mediaType: mediaType,
-      _rawData: originalData
-      // Keep for debugging
-    };
-    return transformedResult;
-  }
-  // FIXED: Enhanced poster URL extraction method
-  extractPosterUrl(media, originalData, ids) {
-    const posterCandidates = [
-      // Standard fields
-      media.poster,
-      media.image,
-      media.cover,
-      // Image object variations
-      media.images?.poster,
-      media.images?.poster_small,
-      media.images?.poster_large,
-      media.images?.movie_poster,
-      media.images?.cover,
-      media.images?.fanart,
-      // Original data fallbacks
-      originalData?.poster,
-      originalData?.image,
-      originalData?.cover,
-      originalData?.images?.poster,
-      originalData?.images?.movie_poster
-    ];
-    let posterUrl = null;
-    for (const candidate of posterCandidates) {
-      if (candidate) {
-        if (typeof candidate === "object") {
-          posterUrl = candidate.full || candidate.large || candidate.medium || candidate.url || candidate.path || Object.values(candidate).find((v) => typeof v === "string" && v.trim());
-        } else if (typeof candidate === "string" && candidate.trim()) {
-          posterUrl = candidate.trim();
-        }
-        if (posterUrl) break;
-      }
-    }
-    if (posterUrl) {
-      if (posterUrl.startsWith("//")) {
-        posterUrl = "https:" + posterUrl;
-      } else if (posterUrl.startsWith("/")) {
-        posterUrl = "https://simkl.in" + posterUrl;
-      } else if (!posterUrl.match(/^https?:\/\//i)) {
-        if (posterUrl.includes(".jpg") || posterUrl.includes(".png") || posterUrl.includes(".webp")) {
-          posterUrl = `https://simkl.in/posters/${posterUrl.replace(/\.(jpg|png|webp)$/i, "")}_m.jpg`;
-        } else {
-          posterUrl = `https://simkl.in/posters/${posterUrl}_m.jpg`;
-        }
-      }
-    }
-    if (!posterUrl && ids && ids.simkl) {
-      posterUrl = `https://simkl.in/posters/${ids.simkl}_m.jpg`;
-    }
-    return posterUrl;
-  }
-  // FIXED: Enhanced genres extraction method
-  extractGenres(media, originalData) {
-    const genreCandidates = [
-      media.genres,
-      media.genre,
-      originalData?.genres,
-      originalData?.genre
-    ];
-    for (const candidate of genreCandidates) {
-      if (Array.isArray(candidate) && candidate.length > 0) {
-        const validGenres = candidate.filter(
-          (g) => g && typeof g === "string" && g.trim()
-        ).map((g) => g.trim());
-        if (validGenres.length > 0) {
-          return validGenres;
-        }
-      }
-    }
-    return [];
-  }
-  // FIXED: Completely rewritten comprehensive title extraction method with deep debugging
-  extractTitle(media, originalData) {
-    const allPossibleTitleSources = [
-      // Direct media object fields
-      media?.title,
-      media?.name,
-      media?.en_title,
-      media?.original_title,
-      media?.title_en,
-      media?.title_english,
-      media?.english_name,
-      media?.romaji,
-      media?.english,
-      media?.native,
-      // Nested title objects (common in many APIs)
-      media?.title?.english,
-      media?.title?.romaji,
-      media?.title?.native,
-      media?.title?.en,
-      media?.title?.original,
-      // Original/root data fields
-      originalData?.title,
-      originalData?.name,
-      originalData?.en_title,
-      originalData?.original_title,
-      originalData?.title_en,
-      originalData?.title_english,
-      originalData?.english_name,
-      // Nested in original data
-      originalData?.title?.english,
-      originalData?.title?.romaji,
-      originalData?.title?.native,
-      originalData?.title?.en,
-      originalData?.title?.original,
-      // Show object nested fields (critical for Simkl sync responses)
-      originalData?.show?.title,
-      originalData?.show?.name,
-      originalData?.show?.en_title,
-      originalData?.show?.original_title,
-      originalData?.show?.title_en,
-      originalData?.show?.title_english,
-      // Nested show title objects
-      originalData?.show?.title?.english,
-      originalData?.show?.title?.romaji,
-      originalData?.show?.title?.native,
-      originalData?.show?.title?.en,
-      // Movie-specific nested fields
-      originalData?.movie?.title,
-      originalData?.movie?.name,
-      originalData?.movie?.en_title,
-      originalData?.movie?.original_title,
-      // Alternative nested structures
-      media?.show?.title,
-      media?.show?.name,
-      media?.movie?.title,
-      media?.movie?.name,
-      // International title variations
-      media?.titles?.en,
-      media?.titles?.english,
-      media?.titles?.original,
-      originalData?.titles?.en,
-      originalData?.titles?.english,
-      originalData?.titles?.original,
-      // Last resort - use ID or any string field
-      media?.slug,
-      originalData?.slug,
-      String(media?.id || originalData?.id || "").replace(/[^a-zA-Z0-9\s]/g, " ")
-    ];
-    const primaryTitle = allPossibleTitleSources.find(
-      (title) => title && typeof title === "string" && title.trim() !== "" && title.toLowerCase() !== "null" && title.toLowerCase() !== "undefined"
-    );
-    if (!primaryTitle || primaryTitle === "Unknown Title") {
-      const emergencyTitle = this.constructEmergencyTitle(media, originalData);
-      if (emergencyTitle) {
-        return {
-          romaji: emergencyTitle,
-          english: emergencyTitle,
-          native: emergencyTitle
-        };
-      }
-    }
-    const englishCandidates = [
-      media?.en_title,
-      media?.title_en,
-      media?.title_english,
-      media?.english_name,
-      media?.title?.english,
-      media?.title?.en,
-      originalData?.en_title,
-      originalData?.title_en,
-      originalData?.title_english,
-      originalData?.show?.en_title,
-      originalData?.show?.title?.english,
-      originalData?.movie?.en_title,
-      primaryTitle
-      // fallback
-    ];
-    const nativeCandidates = [
-      media?.original_title,
-      media?.title_original,
-      media?.native,
-      media?.title?.native,
-      media?.title?.original,
-      originalData?.original_title,
-      originalData?.title_original,
-      originalData?.show?.original_title,
-      originalData?.show?.title?.native,
-      originalData?.movie?.original_title,
-      primaryTitle
-      // fallback
-    ];
-    const englishTitle = englishCandidates.find(
-      (title) => title && typeof title === "string" && title.trim() !== ""
-    ) || primaryTitle || "Unknown Title";
-    const nativeTitle = nativeCandidates.find(
-      (title) => title && typeof title === "string" && title.trim() !== ""
-    ) || primaryTitle || "Unknown Title";
-    let romajiTitle = primaryTitle || "Unknown Title";
-    if (primaryTitle !== nativeTitle && /[a-zA-Z]/.test(primaryTitle)) {
-      romajiTitle = primaryTitle;
-    } else if (englishTitle !== primaryTitle) {
-      romajiTitle = englishTitle;
-    }
-    const result = {
-      romaji: romajiTitle,
-      english: englishTitle,
-      native: nativeTitle
-    };
-    return result;
-  }
-  // NEW: Emergency title construction when all standard fields fail
-  constructEmergencyTitle(media, originalData) {
-    const possibleSources = [
-      // Try any field that might contain a readable name
-      media?.slug?.replace(/[-_]/g, " "),
-      originalData?.slug?.replace(/[-_]/g, " "),
-      // Check if there are any string fields that might be titles
-      ...Object.values(media || {}).filter(
-        (val) => typeof val === "string" && val.length > 2 && val.length < 100 && !/^https?:\/\//.test(val) && // not a URL
-        !/^\d+$/.test(val) && // not just numbers
-        !/^[a-f0-9-]{20,}$/.test(val)
-        // not a hash/ID
-      ),
-      ...Object.values(originalData || {}).filter(
-        (val) => typeof val === "string" && val.length > 2 && val.length < 100 && !/^https?:\/\//.test(val) && !/^\d+$/.test(val) && !/^[a-f0-9-]{20,}$/.test(val)
-      )
-    ];
-    const emergencyTitle = possibleSources[0];
-    if (emergencyTitle) {
-      return emergencyTitle.replace(/[-_]/g, " ").replace(/\s+/g, " ").trim().replace(/\b\w/g, (l) => l.toUpperCase());
-    }
-    return null;
-  }
-  // FIXED: Enhanced list entry transformation with proper movie handling
-  transformListEntry(simklEntry, mediaType) {
-    if (!simklEntry) return null;
-    const show = simklEntry.show || simklEntry;
-    const statusRaw = simklEntry.status || simklEntry._status || show.status || null;
-    const isMovie = this.isMovieType(mediaType, show);
-    let progress = 0;
-    const watchedCandidates = [
-      simklEntry.watched_episodes_count,
-      simklEntry.watched_episodes,
-      simklEntry.episodes_watched,
-      show.watched_episodes_count,
-      show.watched_episodes
-    ];
-    for (const w of watchedCandidates) {
-      if (w !== void 0 && w !== null && w !== "") {
-        const n = Number(w);
-        if (!isNaN(n)) {
-          progress = n;
-          break;
-        }
-      }
-    }
-    if (isMovie) {
-      if (progress > 0) {
-        progress = 1;
-      } else {
-        const watchedStatuses = ["completed", "watching"];
-        if (watchedStatuses.includes(String(statusRaw).toLowerCase())) {
-          progress = 1;
-        }
-      }
-    } else {
-      if ((!progress || progress === 0) && typeof simklEntry.seasons_watched === "number") {
-        const totalEpisodes = (simklEntry.total_episodes_count ?? show.total_episodes_count ?? show.total_episodes ?? show.episodes) || 0;
-        const totalSeasons = show.seasons || 1;
-        if (totalEpisodes && totalSeasons) {
-          const perSeason = totalEpisodes / totalSeasons;
-          progress = Math.floor(simklEntry.seasons_watched * perSeason);
-        }
-      }
-    }
-    const mergedShow = Object.assign({}, show, {
-      total_episodes_count: simklEntry.total_episodes_count ?? show.total_episodes_count ?? show.total_episodes,
-      total_episodes: simklEntry.total_episodes_count ?? show.total_episodes
-    });
-    const transformedMedia = this.transformMedia(mergedShow, mediaType);
-    return {
-      id: transformedMedia?.id || null,
-      status: this.mapSimklStatusToAniList(statusRaw),
-      score: simklEntry.user_rating ?? simklEntry.rating ?? show.rating ?? 0,
-      progress: progress || 0,
-      media: transformedMedia
-    };
-  }
-  // FIXED: New helper method to properly detect movies
-  isMovieType(mediaType, mediaData) {
-    if (mediaType) {
-      const upperType = String(mediaType).toUpperCase();
-      if (upperType === "MOVIE" || upperType === "MOVIES") {
-        return true;
-      }
-    }
-    if (mediaData) {
-      const type = String(mediaData.type || mediaData.kind || "").toLowerCase();
-      return type === "movie" || type === "film" || type.includes("movie");
-    }
-    return false;
-  }
-  // =================== UPDATE METHODS (Following MAL pattern) ===================
-  async updateMediaListEntry(mediaId, updates, mediaType) {
-    try {
-      const typeUpper = (mediaType || "").toString().toUpperCase();
-      const isMovieOrTv = typeUpper === "MOVIE" || typeUpper === "MOVIES" || typeUpper === "TV" || typeUpper.includes("SHOW");
-      if (updates && updates._zUseTmdbId === true && isMovieOrTv) {
-        let imdb = void 0;
-        try {
-          const cached = this.cache?.get(String(mediaId), { scope: "mediaData" });
-          const media = cached?.media || cached || {};
-          imdb = media.idImdb || media.ids?.imdb;
-        } catch {
-        }
-        return await this.updateMediaListEntryWithIds({ tmdb: mediaId, imdb }, updates, mediaType);
-      }
-      return await this.executeUpdate(mediaId, updates, mediaType);
-    } catch (error) {
-      throw this.createUserFriendlyError(error);
-    }
-  }
-  /**
-   * Update/create a Simkl list entry using explicit external identifiers (e.g., TMDb/IMDb).
-   * This is primarily used for TMDb trending items (movies/TV) where we don't have Simkl IDs.
-   *
-   * @param {{ tmdb?: number|string, imdb?: string, simkl?: number|string }} identifiers
-   * @param {object} updates
-   * @param {string} mediaType One of MOVIE/MOVIES/TV/ANIME
-   */
-  async updateMediaListEntryWithIds(identifiers, updates, mediaType) {
-    try {
-      await this.ensureValidToken();
-      const payload = this.buildUpdatePayloadFromIdentifiers(identifiers, updates, mediaType);
-      const typeUpper = (mediaType || "").toString().toUpperCase();
-      const isMovie = typeUpper === "MOVIE" || typeUpper === "MOVIES";
-      if (updates.status !== void 0) {
-        await this.makeRequest({
-          url: `${this.baseUrl}/sync/add-to-list`,
-          method: "POST",
-          headers: this.getHeaders({ type: "update" }),
-          body: JSON.stringify(payload),
-          priority: "high"
-        });
-        if (updates.score === void 0 || updates.score === null) {
-          const statusMapped = this.mapAniListStatusToSimkl(updates.status);
-          const statusToRating = { watching: 8, completed: 9, hold: 6, dropped: 3, plantowatch: 1 };
-          const derived = statusToRating[statusMapped];
-          if (derived) {
-            const ratingsPayload = this.buildUpdatePayloadFromIdentifiers(identifiers, { score: derived }, mediaType);
-            await this.makeRequest({
-              url: `${this.baseUrl}/sync/ratings`,
-              method: "POST",
-              headers: this.getHeaders({ type: "update" }),
-              body: JSON.stringify(ratingsPayload),
-              priority: "high"
-            });
-          }
-        }
-      }
-      if (updates.progress !== void 0) {
-        if (isMovie) {
-          const watched = (parseInt(updates.progress) || 0) > 0;
-          const containerKey = "movies";
-          const historyPayload = { [containerKey]: [{ ids: {} }] };
-          const item = historyPayload[containerKey][0];
-          if (identifiers?.tmdb) item.ids.tmdb = parseInt(identifiers.tmdb);
-          if (!item.ids.tmdb && identifiers?.imdb) item.ids.imdb = String(identifiers.imdb);
-          if (!item.ids.tmdb && !item.ids.imdb && identifiers?.simkl) item.ids.simkl = parseInt(identifiers.simkl);
-          await this.makeRequest({
-            url: `${this.baseUrl}/sync/history${watched ? "" : "/remove"}`,
-            method: "POST",
-            headers: this.getHeaders({ type: "update" }),
-            body: JSON.stringify(historyPayload),
-            priority: "high"
-          });
-        }
-      }
-      this.cache.invalidateScope("userData");
-      return {
-        id: null,
-        status: updates.status || null,
-        score: updates.score || 0,
-        progress: updates.progress || 0
-      };
-    } catch (error) {
-      throw this.createUserFriendlyError(error);
-    }
-  }
-  async executeUpdate(mediaId, updates, mediaType) {
-    const normalizedId = this.normalizeSimklId(mediaId);
-    console.log("[Simkl][Update] executeUpdate", { rawId: mediaId, normalizedId, updates, mediaType });
-    this.validateMediaId(normalizedId);
-    this.validateUpdates(updates);
-    await this.ensureValidToken();
-    console.log("[Simkl][Update] token ensured");
-    const typeUpper = (mediaType || "").toString().toUpperCase();
-    const isMovie = typeUpper === "MOVIE" || typeUpper === "MOVIES";
-    if (updates.status !== void 0) {
-      const statusPayload = this.buildUpdatePayload(normalizedId, { status: updates.status }, mediaType);
-      console.log("[Simkl][Update] watchlist status payload", statusPayload);
-      await this.makeRequest({
-        url: `${this.baseUrl}/sync/add-to-list`,
-        method: "POST",
-        headers: this.getHeaders({ type: "update" }),
-        body: JSON.stringify(statusPayload),
-        priority: "high"
-      });
-      if (!isMovie && typeUpper === "ANIME") {
-        const mirrorPayload = this.buildUpdatePayload(normalizedId, { status: updates.status }, mediaType, "shows");
-        await this.makeRequest({
-          url: `${this.baseUrl}/sync/add-to-list`,
-          method: "POST",
-          headers: this.getHeaders({ type: "update" }),
-          body: JSON.stringify(mirrorPayload),
-          priority: "normal"
-        });
-      }
-      if (updates.score === void 0 || updates.score === null) {
-        const statusMapped = this.mapAniListStatusToSimkl(updates.status);
-        const statusToRating = { watching: 8, completed: 9, hold: 6, dropped: 3, plantowatch: 1 };
-        const derived = statusToRating[statusMapped];
-        if (derived) {
-          const ratingsPayload = this.buildUpdatePayload(normalizedId, { score: derived }, mediaType);
-          console.log("[Simkl][Update] derived ratings payload for status", ratingsPayload);
-          await this.makeRequest({
-            url: `${this.baseUrl}/sync/ratings`,
-            method: "POST",
-            headers: this.getHeaders({ type: "update" }),
-            body: JSON.stringify(ratingsPayload),
-            priority: "high"
-          });
-        }
-      }
-      if (!isMovie && String(updates.status).toUpperCase() === "COMPLETED" && updates.progress === void 0) {
-        try {
-          let prevProgress = 0;
-          let totalEpisodes = 0;
-          prevProgress = Math.max(0, parseInt(existing?.progress) || 0);
-          const media = existing?.media;
-          totalEpisodes = Math.max(0, parseInt(media?.episodes) || 0);
-          if (!totalEpisodes) {
-            const single = await this.fetchSimklData({ type: "single", mediaType, mediaId: normalizedId, nocache: true });
-            totalEpisodes = Math.max(0, parseInt(single?.MediaList?.media?.episodes) || 0);
-          }
-          if (totalEpisodes && totalEpisodes > prevProgress) {
-            const episodes = [];
-            for (let i = prevProgress + 1; i <= totalEpisodes && episodes.length < 1e3; i++) episodes.push({ number: i });
-            if (episodes.length) {
-              const payload = { shows: [{ ids: { simkl: parseInt(normalizedId) }, episodes }] };
-              await this.makeRequest({
-                url: `${this.baseUrl}/sync/history`,
-                method: "POST",
-                headers: this.getHeaders({ type: "update" }),
-                body: JSON.stringify(payload),
-                priority: "high"
-              });
-            }
-          }
-        } catch {
-        }
-      }
-    }
-    if (updates.score !== void 0 && updates.score !== null) {
-      const rating = Math.max(0, Math.min(10, Math.round(updates.score)));
-      if (rating > 0) {
-        const ratingsPayload = this.buildUpdatePayload(normalizedId, { score: rating }, mediaType);
-        console.log("[Simkl][Update] ratings payload", ratingsPayload);
-        await this.makeRequest({
-          url: `${this.baseUrl}/sync/ratings`,
-          method: "POST",
-          headers: this.getHeaders({ type: "update" }),
-          body: JSON.stringify(ratingsPayload),
-          priority: "high"
-        });
-        if (!isMovie && typeUpper === "ANIME") {
-          const mirrorRatings = this.buildUpdatePayload(normalizedId, { score: rating }, mediaType, "shows");
-          await this.makeRequest({
-            url: `${this.baseUrl}/sync/ratings`,
-            method: "POST",
-            headers: this.getHeaders({ type: "update" }),
-            body: JSON.stringify(mirrorRatings),
-            priority: "normal"
-          });
-        }
-      }
-    }
-    if (updates.progress !== void 0) {
-      if (isMovie) {
-        const watched = (parseInt(updates.progress) || 0) > 0;
-        const containerKey = "movies";
-        const historyPayload = { [containerKey]: [{ ids: { simkl: parseInt(normalizedId) } }] };
-        console.log("[Simkl][Update] history payload", historyPayload);
-        await this.makeRequest({
-          url: `${this.baseUrl}/sync/history${watched ? "" : "/remove"}`,
-          method: "POST",
-          headers: this.getHeaders({ type: "update" }),
-          body: JSON.stringify(historyPayload),
-          priority: "high"
-        });
-      } else {
-        let prevProgress = 0;
-        let totalEpisodes = 0;
-        let airedEpisodes = 0;
-        try {
-          prevProgress = Math.max(0, parseInt(existing?.progress) || 0);
-          totalEpisodes = Math.max(0, parseInt(existing?.media?.episodes) || 0);
-          const raw = existing?.media?._rawData || {};
-          const airedCandidates = [raw.aired_episodes_count, raw.aired_episodes, raw.show?.aired_episodes_count, raw.show?.aired_episodes];
-          for (const cand of airedCandidates) {
-            const n = Number(cand);
-            if (Number.isFinite(n) && n > 0) {
-              airedEpisodes = n;
-              break;
-            }
-          }
-        } catch {
-        }
-        const requestedProgress = Math.max(0, parseInt(updates.progress) || 0);
-        const cap = Math.max(0, airedEpisodes || totalEpisodes || requestedProgress);
-        if (requestedProgress !== prevProgress) {
-          let from, to, remove;
-          if (requestedProgress > prevProgress) {
-            remove = false;
-            from = prevProgress + 1;
-            to = Math.min(requestedProgress, cap);
-          } else {
-            remove = true;
-            from = requestedProgress + 1;
-            to = prevProgress;
-          }
-          const episodes = [];
-          for (let i = from; i <= to && episodes.length < 1e3; i++) episodes.push({ number: i });
-          if (episodes.length > 0) {
-            const payload = { shows: [{ ids: { simkl: parseInt(normalizedId) }, episodes }] };
-            const url = `${this.baseUrl}/sync/history${remove ? "/remove" : ""}`;
-            await this.makeRequest({
-              url,
-              method: "POST",
-              headers: this.getHeaders({ type: "update" }),
-              body: JSON.stringify(payload),
-              priority: "high"
-            });
-          }
-        }
-      }
-    }
-    this.cache.invalidateByMedia(mediaId);
-    this.cache.invalidateScope("userData");
-    return {
-      id: null,
-      status: updates.status || null,
-      score: updates.score || 0,
-      progress: updates.progress || 0
-    };
-  }
-  buildUpdatePayload(mediaId, updates, mediaType, forceContainerKey = null) {
-    console.log("[Simkl][Update] buildUpdatePayload", { mediaId, updates, mediaType, forceContainerKey });
-    const typeUpper = (mediaType || "").toString().toUpperCase();
-    const isMovie = typeUpper === "MOVIE" || typeUpper === "MOVIES";
-    const containerKey = forceContainerKey || (isMovie ? "movies" : "shows");
-    const payload = { [containerKey]: [{ ids: {} }] };
-    const item = payload[containerKey][0];
-    item.type = isMovie ? "movie" : "show";
-    try {
-      const cached = this.cache?.get(String(mediaId), { scope: "mediaData" });
-      const media = cached?.media || cached || {};
-      const tmdb = media.idTmdb || media.ids?.tmdb;
-      const imdb = media.idImdb || media.ids?.imdb;
-      if (tmdb) item.ids.tmdb = parseInt(tmdb);
-      if (imdb) item.ids.imdb = imdb;
-    } catch {
-    }
-    if (!item.ids.tmdb && !item.ids.imdb) {
-      const typeUpperLocal = typeUpper;
-      const shouldUseTmdbFallback = updates?._zUseTmdbId === true && (isMovie || typeUpperLocal === "TV" || typeUpperLocal.includes("SHOW"));
-      if (shouldUseTmdbFallback) {
-        item.ids.tmdb = parseInt(mediaId);
-      } else {
-        item.ids.simkl = parseInt(mediaId);
-      }
-    }
-    console.log("[Simkl][Update] initial payload item", JSON.parse(JSON.stringify(item)));
-    if (updates.status !== void 0) {
-      const originalStatus = updates.status;
-      const validatedStatus = this.validateAndConvertStatus(updates.status, mediaType);
-      item.to = validatedStatus;
-      if (originalStatus !== validatedStatus) {
-        console.log(`[Simkl][Update] Status converted: ${originalStatus} \u2192 ${validatedStatus} (${isMovie ? "movie" : "show"})`);
-      }
-    } else if (!isMovie && updates.progress !== void 0) {
-      const prog = parseInt(updates.progress) || 0;
-      item.to = prog > 0 ? "watching" : "plantowatch";
-    }
-    if (updates.score !== void 0 && updates.score !== null) {
-      const score = Math.max(0, Math.min(10, Math.round(updates.score)));
-      if (score > 0) {
-        item.rating = score;
-      }
-    }
-    if (updates.progress !== void 0) {
-      if (isMovie) {
-        item.watched = (parseInt(updates.progress) || 0) > 0;
-      } else {
-        const prog = parseInt(updates.progress) || 0;
-        item.watched_episodes = prog;
-        if (item.to === void 0) {
-          item.to = prog > 0 ? "watching" : "plantowatch";
-        }
-      }
-    }
-    console.log("[Simkl][Update] enriched item before cache", JSON.parse(JSON.stringify(item)));
-    try {
-      const cached = this.cache?.get(String(mediaId), { scope: "mediaData" });
-      const media = cached?.media || cached;
-      if (media?.idImdb) {
-        item.ids.imdb = media.idImdb;
-      }
-      if (media?.idMal) {
-        item.ids.mal = media.idMal;
-      }
-      const title = media?.title?.english || media?.title?.romaji || media?.title?.native;
-      if (title) {
-        item.title = title;
-      }
-      console.log("[Simkl][Update] enriched item after cache", JSON.parse(JSON.stringify(item)));
-    } catch (e) {
-      console.log("[Simkl][Update] cache enrich failed", e);
-    }
-    console.log("[Simkl][Update] final payload", JSON.parse(JSON.stringify(payload)));
-    return payload;
-  }
-  // Build payload using explicit identifiers, bypassing cache lookup
-  buildUpdatePayloadFromIdentifiers(identifiers, updates, mediaType, forceContainerKey = null) {
-    const typeUpper = (mediaType || "").toString().toUpperCase();
-    const isMovie = typeUpper === "MOVIE" || typeUpper === "MOVIES";
-    const containerKey = forceContainerKey || (isMovie ? "movies" : "shows");
-    const payload = { [containerKey]: [{ ids: {} }] };
-    const item = payload[containerKey][0];
-    item.type = isMovie ? "movie" : "show";
-    const tmdb = identifiers?.tmdb;
-    const imdb = identifiers?.imdb;
-    const simkl = identifiers?.simkl;
-    if (tmdb) item.ids.tmdb = parseInt(tmdb);
-    if (!item.ids.tmdb && imdb) item.ids.imdb = String(imdb);
-    if (!item.ids.tmdb && !item.ids.imdb && simkl) item.ids.simkl = parseInt(simkl);
-    try {
-      const cached = this.cache?.get(String(tmdb || simkl), { scope: "mediaData" }) || this.cache?.get(String(simkl || tmdb), { scope: "mediaData" });
-      const media = cached?.media || cached || {};
-      if (!item.ids.imdb && media.idImdb) item.ids.imdb = media.idImdb;
-      if (media.idMal) item.ids.mal = media.idMal;
-      const title = media?.title?.english || media?.title?.romaji || media?.title?.native;
-      if (title) item.title = title;
-    } catch {
-    }
-    if (updates.status !== void 0) {
-      const validatedStatus = this.validateAndConvertStatus(updates.status, mediaType);
-      item.to = validatedStatus;
-    } else if (!isMovie && updates.progress !== void 0) {
-      const prog = parseInt(updates.progress) || 0;
-      item.to = prog > 0 ? "watching" : "plantowatch";
-    }
-    if (updates.score !== void 0 && updates.score !== null) {
-      const score = Math.max(0, Math.min(10, Math.round(updates.score)));
-      if (score > 0) item.rating = score;
-    }
-    if (updates.progress !== void 0) {
-      if (isMovie) {
-        item.watched = (parseInt(updates.progress) || 0) > 0;
-      } else {
-        const prog = parseInt(updates.progress) || 0;
-        item.watched_episodes = prog;
-        if (item.to === void 0) item.to = prog > 0 ? "watching" : "plantowatch";
-      }
-    }
-    return payload;
-  }
-  // Build minimal payload for remove operations (only container and IDs)
-  buildRemovePayload(mediaId, mediaType, forceContainerKey = null) {
-    console.log("[Simkl][Remove] buildRemovePayload", { mediaId, mediaType, forceContainerKey });
-    const typeUpper = (mediaType || "").toString().toUpperCase();
-    const isMovie = typeUpper === "MOVIE" || typeUpper === "MOVIES";
-    const containerKey = forceContainerKey || (isMovie ? "movies" : "shows");
-    const payload = { [containerKey]: [{ ids: {} }] };
-    try {
-      const cached = this.cache?.get(String(mediaId), { scope: "mediaData" });
-      const media = cached?.media || cached || {};
-      const item = payload[containerKey][0];
-      const tmdb = media.idTmdb || media.ids?.tmdb;
-      const imdb = media.idImdb || media.ids?.imdb;
-      if (tmdb) item.ids.tmdb = parseInt(tmdb);
-      if (imdb) item.ids.imdb = imdb;
-      const title = media?.title?.english || media?.title?.romaji || media?.title?.native;
-      if (title) {
-        item.title = title;
-      }
-    } catch (e) {
-      console.log("[Simkl][Remove] cache enrich failed", e);
-    }
-    if (!payload[containerKey][0].ids.tmdb && !payload[containerKey][0].ids.imdb) {
-      payload[containerKey][0].ids.simkl = parseInt(mediaId);
-    }
-    console.log("[Simkl][Remove] minimal payload", JSON.parse(JSON.stringify(payload)));
-    return payload;
-  }
-  // Remove media from user's Simkl list
-  async removeMediaListEntry(mediaId, mediaType) {
-    const normalizedId = this.normalizeSimklId(mediaId);
-    this.validateMediaId(normalizedId);
-    await this.ensureValidToken();
-    const typeUpper = (mediaType || "").toString().toUpperCase();
-    const isMovie = typeUpper === "MOVIE" || typeUpper === "MOVIES";
-    console.log("[Simkl][Remove] Starting removal for", { normalizedId, mediaType, isMovie });
-    const payload = this.buildRemovePayload(normalizedId, mediaType);
-    const requestParams = {
-      url: `${this.baseUrl}/sync/remove-from-list`,
-      method: "POST",
-      headers: this.getHeaders({ type: "update" }),
-      body: JSON.stringify(payload),
-      priority: "high"
-    };
-    try {
-      console.log("[Simkl][Remove] Making primary remove request", requestParams);
-      await this.makeRequest(requestParams);
-      console.log("[Simkl][Remove] Primary remove request successful");
-    } catch (error) {
-      console.error("[Simkl][Remove] Primary remove request failed", error);
-      throw this.createUserFriendlyError(error);
-    }
-    try {
-      if (!isMovie && typeUpper === "ANIME") {
-        console.log("[Simkl][Remove] Attempting anime fallback with shows container");
-        const fallback = this.buildRemovePayload(normalizedId, mediaType, "shows");
-        await this.makeRequest({
-          url: `${this.baseUrl}/sync/remove-from-list`,
-          method: "POST",
-          headers: this.getHeaders({ type: "update" }),
-          body: JSON.stringify(fallback),
-          priority: "normal"
-        });
-        console.log("[Simkl][Remove] Anime fallback completed");
-      }
-    } catch (fallbackError) {
-      console.warn("[Simkl][Remove] Fallback attempt failed", fallbackError);
-    }
-    try {
-      console.log("[Simkl][Remove] Attempting comprehensive cleanup");
-      await this.makeRequest({
-        url: `${this.baseUrl}/sync/watchlist/remove`,
-        method: "POST",
-        headers: this.getHeaders({ type: "update" }),
-        body: JSON.stringify(payload),
-        priority: "normal"
-      });
-      await this.makeRequest({
-        url: `${this.baseUrl}/sync/history/remove`,
-        method: "POST",
-        headers: this.getHeaders({ type: "update" }),
-        body: JSON.stringify(payload),
-        priority: "normal"
-      });
-      await this.makeRequest({
-        url: `${this.baseUrl}/sync/ratings/remove`,
-        method: "POST",
-        headers: this.getHeaders({ type: "update" }),
-        body: JSON.stringify(payload),
-        priority: "normal"
-      });
-      console.log("[Simkl][Remove] Comprehensive cleanup completed");
-    } catch (cleanupError) {
-      console.warn("[Simkl][Remove] Comprehensive cleanup failed", cleanupError);
-    }
-    this.cache.invalidateByMedia(mediaId);
-    this.cache.invalidateScope("userData");
-    console.log("[Simkl][Remove] Removal process completed for", normalizedId);
-  }
-  // =================== AUTH METHODS (Following MAL pattern) ===================
-  async makeObsidianRequest(code, redirectUri) {
-    const body = {
-      grant_type: "authorization_code",
-      client_id: this.plugin.settings.simklClientId,
-      client_secret: this.plugin.settings.simklClientSecret || "",
-      redirect_uri: redirectUri,
-      code
-    };
-    try {
-      const requestFn = () => (0, import_obsidian5.requestUrl)({
-        url: this.tokenUrl,
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Accept": "application/json"
-        },
-        body: JSON.stringify(body)
-      });
-      const response = await this.requestQueue.add(requestFn, { priority: "high" });
-      if (!response?.json || typeof response.json !== "object") {
-        throw new Error("Invalid auth response from Simkl");
-      }
-      if (response.json.error) {
-        throw new Error(response.json.error_description || response.json.error);
-      }
-      console.log("[Simkl] Authentication successful");
-      return response.json;
-    } catch (error) {
-      console.error("[Simkl] Authentication failed:", error.message);
-      throw new Error(`Simkl authentication failed: ${error.message}`);
-    }
-  }
-  async ensureValidToken() {
-    if (!this.plugin.settings.simklAccessToken) {
-      throw new Error("Authentication required");
-    }
-    return true;
-  }
-  // =================== MAPPING FUNCTIONS (Fixed) ===================
-  mapAniListStatusToSimkl(status) {
-    return this.aniListToSimklStatus[status] || status?.toLowerCase();
-  }
-  mapSimklStatusToAniList(status) {
-    return this.simklToAniListStatus[status] || status?.toUpperCase();
-  }
-  // Validate and convert status based on media type
-  validateAndConvertStatus(status, mediaType) {
-    if (!status) return "plantowatch";
-    const typeUpper = String(mediaType || "").toUpperCase();
-    const isMovie = typeUpper === "MOVIE" || typeUpper === "MOVIES";
-    const simklStatus = this.mapAniListStatusToSimkl(status);
-    if (isMovie) {
-      if (!this.validMovieStatuses.includes(simklStatus)) {
-        if (["watching", "hold"].includes(simklStatus)) {
-          return "plantowatch";
-        }
-        if (["completed", "dropped"].includes(simklStatus)) {
-          return simklStatus;
-        }
-        return "plantowatch";
-      }
-      return simklStatus;
-    } else {
-      if (!this.validShowStatuses.includes(simklStatus)) {
-        return "plantowatch";
-      }
-      return simklStatus;
-    }
-  }
-  // Get valid statuses for a specific media type
-  getValidStatusesForMediaType(mediaType) {
-    const typeUpper = String(mediaType || "").toUpperCase();
-    const isMovie = typeUpper === "MOVIE" || typeUpper === "MOVIES";
-    if (isMovie) {
-      return this.validMovieStatuses;
-    } else {
-      return this.validShowStatuses;
-    }
-  }
-  // Get valid AniList statuses for a specific media type
-  getValidAniListStatusesForMediaType(mediaType) {
-    const simklStatuses = this.getValidStatusesForMediaType(mediaType);
-    return simklStatuses.map((status) => this.simklToAniListStatus[status]).filter(Boolean);
-  }
-  // Check if a status is valid for a specific media type
-  isStatusValidForMediaType(status, mediaType) {
-    const validStatuses = this.getValidStatusesForMediaType(mediaType);
-    return validStatuses.includes(status);
-  }
-  // Check if an AniList status is valid for a specific media type
-  isAniListStatusValidForMediaType(aniListStatus, mediaType) {
-    const simklStatus = this.mapAniListStatusToSimkl(aniListStatus);
-    return this.isStatusValidForMediaType(simklStatus, mediaType);
-  }
-  // Get status conversion info for user feedback
-  getStatusConversionInfo(aniListStatus, mediaType) {
-    const typeUpper = String(mediaType || "").toUpperCase();
-    const isMovie = typeUpper === "MOVIE" || typeUpper === "MOVIES";
-    if (isMovie) {
-      const simklStatus = this.mapAniListStatusToSimkl(aniListStatus);
-      if (!this.validMovieStatuses.includes(simklStatus)) {
-        const convertedStatus = this.validateAndConvertStatus(aniListStatus, mediaType);
-        return {
-          original: aniListStatus,
-          converted: this.simklToAniListStatus[convertedStatus],
-          reason: `Movies in Simkl only support: Planning, Completed, Dropped`,
-          note: `${aniListStatus} was converted to ${this.simklToAniListStatus[convertedStatus]}`
-        };
-      }
-    }
-    return {
-      original: aniListStatus,
-      converted: aniListStatus,
-      reason: null,
-      note: null
-    };
-  }
-  // Get default status for a media type
-  getDefaultStatusForMediaType(mediaType) {
-    return "plantowatch";
-  }
-  // Get default AniList status for a media type
-  getDefaultAniListStatusForMediaType(mediaType) {
-    const defaultSimklStatus = this.getDefaultStatusForMediaType(mediaType);
-    return this.simklToAniListStatus[defaultSimklStatus];
-  }
-  // FIXED: Enhanced format mapping with mediaType context
-  mapSimklFormat(type, mediaType) {
-    if (!type) {
-      if (mediaType) {
-        const upperType = String(mediaType).toUpperCase();
-        if (upperType === "MOVIE" || upperType === "MOVIES") return "MOVIE";
-        if (upperType === "TV") return "TV";
-        if (upperType === "ANIME") return "TV";
-      }
-      return "TV";
-    }
-    const formatMap = {
-      "tv": "TV",
-      "movie": "MOVIE",
-      "film": "MOVIE",
-      "special": "SPECIAL",
-      "ova": "OVA",
-      "ona": "ONA",
-      "anime": "TV"
-    };
-    const lowerType = String(type).toLowerCase();
-    if (lowerType.includes("movie") || lowerType.includes("film")) {
-      return "MOVIE";
-    }
-    return formatMap[lowerType] || "TV";
-  }
-  parseDate(dateString) {
-    if (!dateString) return null;
-    try {
-      const date = new Date(dateString);
-      if (isNaN(date.getTime())) return null;
-      return {
-        year: date.getFullYear(),
-        month: date.getMonth() + 1,
-        day: date.getDate()
-      };
-    } catch (error) {
-      return null;
-    }
-  }
-  // =================== VALIDATION METHODS (Following MAL pattern) ===================
-  validateConfig(config) {
-    if (!config || typeof config !== "object") {
-      throw new Error("Configuration must be an object");
-    }
-    const normalized = { ...config };
-    if (!normalized.type) normalized.type = "list";
-    if (normalized.mediaType) normalized.mediaType = normalized.mediaType.toUpperCase();
-    if (normalized.page && (normalized.page < 1 || normalized.page > 1e3)) {
-      throw new Error(`Invalid page: ${normalized.page}`);
-    }
-    return normalized;
-  }
-  normalizeSimklId(mediaId) {
-    if (typeof mediaId === "number") {
-      return Number.isFinite(mediaId) && mediaId > 0 ? mediaId : 0;
-    }
-    if (!mediaId) return 0;
-    const str = String(mediaId);
-    const simklMatch = str.match(/simkl[^0-9]*([0-9]+)/i);
-    if (simklMatch && simklMatch[1]) {
-      const val = parseInt(simklMatch[1], 10);
-      return Number.isFinite(val) && val > 0 ? val : 0;
-    }
-    const anyMatch = str.match(/([0-9]{1,})/);
-    if (anyMatch && anyMatch[1]) {
-      const val = parseInt(anyMatch[1], 10);
-      return Number.isFinite(val) && val > 0 ? val : 0;
-    }
-    return 0;
-  }
-  validateMediaId(mediaId) {
-    const id = this.normalizeSimklId(mediaId);
-    if (!id || id <= 0) {
-      throw new Error(`Invalid media ID: ${mediaId}`);
-    }
-  }
-  validateUpdates(updates) {
-    if (!updates || typeof updates !== "object") {
-      throw new Error("Updates must be an object");
-    }
-    if (Object.keys(updates).length === 0) {
-      throw new Error("At least one field must be updated");
-    }
-  }
-  requiresAuth(requestType) {
-    return requestType !== "search";
-  }
-  // =================== CACHE & URL METHODS ===================
-  createCacheKey(config) {
-    const sortedConfig = {};
-    Object.keys(config).sort().forEach((key) => {
-      if (key !== "accessToken" && key !== "clientSecret") {
-        sortedConfig[key] = config[key];
-      }
-    });
-    return JSON.stringify(sortedConfig);
-  }
-  getCacheScope(requestType) {
-    const scopeMap = {
-      "stats": "userData",
-      "single": "mediaData",
-      "search": "searchResults",
-      "list": "userData"
-    };
-    return scopeMap[requestType] || "userData";
-  }
-  buildFullUrl(baseUrl, params) {
-    if (!params || Object.keys(params).length === 0) return baseUrl;
-    const queryString = new URLSearchParams(params).toString();
-    return `${baseUrl}?${queryString}`;
-  }
-  getSimklUrl(mediaId, mediaType = "ANIME") {
-    try {
-      this.validateMediaId(mediaId);
-      const typeUpper = (mediaType || "ANIME").toString().toUpperCase();
-      let segment = "tv";
-      if (typeUpper === "ANIME") {
-        segment = "anime";
-      } else if (typeUpper === "MOVIE" || typeUpper === "MOVIES" || typeUpper.includes("MOVIE")) {
-        segment = "movies";
-      }
-      return `https://simkl.com/${segment}/${mediaId}`;
-    } catch (error) {
-      throw error;
-    }
-  }
-  // =================== ERROR HANDLING (Simplified from original) ===================
-  createUserFriendlyError(error) {
-    const errorMessages = {
-      "auth": "\u{1F511} Authentication required. Please connect your Simkl account.",
-      "network": "\u{1F310} Connection issue. Please check your internet connection.",
-      "rate": "\u{1F6A6} Too many requests. Please wait a moment.",
-      "server": "\u{1F527} Simkl servers are experiencing issues.",
-      "invalid": "\u26A0\uFE0F Invalid request. Please check your input."
-    };
-    let errorType = "unknown";
-    const msg = error.message?.toLowerCase() || "";
-    if (msg.includes("auth") || msg.includes("unauthorized")) {
-      errorType = "auth";
-    } else if (msg.includes("rate limit")) {
-      errorType = "rate";
-    } else if (msg.includes("network") || msg.includes("connection")) {
-      errorType = "network";
-    } else if (msg.includes("server") || msg.includes("500")) {
-      errorType = "server";
-    } else if (msg.includes("invalid") || msg.includes("400")) {
-      errorType = "invalid";
-    }
-    const userMessage = errorMessages[errorType] || "\u274C An unexpected error occurred.";
-    const friendlyError = new Error(userMessage);
-    friendlyError.type = errorType;
-    friendlyError.originalMessage = error.message;
-    return friendlyError;
-  }
-  // =================== COMPATIBILITY METHODS (Following MAL pattern) ===================
-  async fetchSimklStats(config) {
-    return this.fetchSimklData({ ...config, type: "stats" });
-  }
-  async fetchSimklList(config) {
-    return this.fetchSimklData(config);
-  }
-  async searchSimklMedia(config) {
-    const searchResults = await this.fetchSimklData({ ...config, type: "search" });
-    if (config.ensureIds !== false) {
-      return await this.ensureSearchResultIds(searchResults, config.mediaType);
-    }
-    return searchResults;
-  }
-  getMetrics() {
-    return { ...this.metrics };
-  }
-  // Fetch entries for computing distributions
-  async fetchUserListEntries(mediaType = "ANIME") {
-    const resp = await this.fetchSimklData({ type: "list", mediaType });
-    const entries = resp?.MediaListCollection?.lists?.flatMap((l) => l.entries) || [];
-    return entries;
-  }
-  // Compute distributions from entries (replicated from MAL logic for parity)
-  aggregateDistributionsFromEntries(entries, typeLower) {
-    const result = {
-      statuses: [],
-      scores: [],
-      formats: [],
-      releaseYears: [],
-      genres: []
-    };
-    const statusCounts = /* @__PURE__ */ new Map();
-    const scoreCounts = /* @__PURE__ */ new Map();
-    const formatCounts = /* @__PURE__ */ new Map();
-    const yearCounts = /* @__PURE__ */ new Map();
-    const genreSet = /* @__PURE__ */ new Set();
-    for (const entry of entries) {
-      const status = entry?.status;
-      if (status) {
-        statusCounts.set(status, (statusCounts.get(status) || 0) + 1);
-      }
-      const rawScore = entry?.score;
-      if (typeof rawScore === "number" && rawScore > 0) {
-        const scaled = Math.round(rawScore * 10);
-        scoreCounts.set(scaled, (scoreCounts.get(scaled) || 0) + 1);
-      }
-      const format = entry?.media?.format;
-      if (format) {
-        formatCounts.set(format, (formatCounts.get(format) || 0) + 1);
-      }
-      const year = entry?.media?.startDate?.year;
-      if (typeof year === "number" && year > 0) {
-        yearCounts.set(year, (yearCounts.get(year) || 0) + 1);
-      }
-      const genres = entry?.media?.genres || [];
-      for (const g of genres) {
-        if (typeof g === "string" && g.trim()) genreSet.add(g);
-      }
-    }
-    result.statuses = Array.from(statusCounts.entries()).map(([status, count]) => ({ status, count })).sort((a, b) => b.count - a.count);
-    result.scores = Array.from(scoreCounts.entries()).map(([score, count]) => ({ score, count })).sort((a, b) => a.score - b.score);
-    result.formats = Array.from(formatCounts.entries()).map(([format, count]) => ({ format, count })).sort((a, b) => b.count - a.count);
-    result.releaseYears = Array.from(yearCounts.entries()).map(([releaseYear, count]) => ({ releaseYear, count })).sort((a, b) => b.releaseYear - a.releaseYear);
-    result.genres = Array.from(genreSet);
-    return result;
-  }
-  async attachSimklDistributions(user) {
-    try {
-      const [animeEntries, tvEntries, movieEntries] = await Promise.all([
-        this.fetchUserListEntries("ANIME"),
-        this.fetchUserListEntries("TV"),
-        this.fetchUserListEntries("MOVIE")
-      ]);
-      const animeAgg = this.aggregateDistributionsFromEntries(animeEntries, "anime");
-      const tvAgg = this.aggregateDistributionsFromEntries(tvEntries, "tv");
-      const movieAgg = this.aggregateDistributionsFromEntries(movieEntries, "movie");
-      if (user?.statistics?.anime) {
-        Object.assign(user.statistics.anime, animeAgg);
-      }
-      if (user?.statistics?.tv) {
-        Object.assign(user.statistics.tv, tvAgg);
-      }
-      if (user?.statistics?.movie) {
-        Object.assign(user.statistics.movie, movieAgg);
-      }
-      const applyFallbacks = (entries, statsObj) => {
-        if (!statsObj) return;
-        if (!statsObj.count || statsObj.count === 0) {
-          statsObj.count = Array.isArray(entries) ? entries.length : 0;
-        }
-        if ((!statsObj.meanScore || statsObj.meanScore === 0) && Array.isArray(entries) && entries.length) {
-          const rated = entries.filter((e) => typeof e.score === "number" && e.score > 0);
-          if (rated.length) {
-            const avg10 = rated.reduce((sum, e) => sum + e.score, 0) / rated.length;
-            statsObj.meanScore = Math.round(avg10 * 10) / 10;
-          }
-        }
-      };
-      applyFallbacks(animeEntries, user?.statistics?.anime);
-      applyFallbacks(tvEntries, user?.statistics?.tv);
-      applyFallbacks(movieEntries, user?.statistics?.movie);
-    } catch (err) {
-    }
-  }
-  // =================== MEDIA TYPE DETECTION (Following MAL pattern) ===================
-  async getMediaType(mediaId) {
-    return "anime";
-  }
-};
-
 // src/auth/Authentication.js
-var import_obsidian7 = require("obsidian");
+var import_obsidian6 = require("obsidian");
 
 // src/auth/AuthModal.js
-var import_obsidian6 = require("obsidian");
-var AuthModal = class _AuthModal extends import_obsidian6.Modal {
+var import_obsidian5 = require("obsidian");
+var AuthModal = class _AuthModal extends import_obsidian5.Modal {
   constructor(app, config) {
     super(app);
     this.config = {
@@ -5688,7 +3773,7 @@ var Authentication = class _Authentication {
   }
   async loginWithFlow() {
     if (!this.plugin.settings.clientId) {
-      new import_obsidian7.Notice("\u274C Please enter your Client ID first.", 5e3);
+      new import_obsidian6.Notice("\u274C Please enter your Client ID first.", 5e3);
       return;
     }
     const { clientId } = this.plugin.settings;
@@ -5697,7 +3782,7 @@ var Authentication = class _Authentication {
       redirect_uri: _Authentication.REDIRECT_URI,
       response_type: "code"
     }).toString();
-    new import_obsidian7.Notice("\u{1F510} Opening AniList login page\u2026", 3e3);
+    new import_obsidian6.Notice("\u{1F510} Opening AniList login page\u2026", 3e3);
     if (window.require) {
       const { shell } = window.require("electron");
       await shell.openExternal(authUrl);
@@ -5720,7 +3805,7 @@ var Authentication = class _Authentication {
       this.plugin.cache.invalidateByUser(this.plugin.settings.authUsername);
     }
     this.plugin.cache.clear();
-    new import_obsidian7.Notice("\u2705 Logged out & cleared credentials.", 3e3);
+    new import_obsidian6.Notice("\u2705 Logged out & cleared credentials.", 3e3);
   }
   async exchangePin(pin) {
     const body = new URLSearchParams({
@@ -5736,7 +3821,7 @@ var Authentication = class _Authentication {
     };
     try {
       const res = await this.plugin.requestQueue.add(
-        () => (0, import_obsidian7.requestUrl)({
+        () => (0, import_obsidian6.requestUrl)({
           url: _Authentication.ANILIST_TOKEN_URL,
           method: "POST",
           headers,
@@ -5757,9 +3842,9 @@ var Authentication = class _Authentication {
       if (typeof this.plugin.updateDefaultApiSourceBasedOnAuth === "function") {
         await this.plugin.updateDefaultApiSourceBasedOnAuth();
       }
-      new import_obsidian7.Notice("\u2705 Authenticated successfully!", 4e3);
+      new import_obsidian6.Notice("\u2705 Authenticated successfully!", 4e3);
     } catch (err) {
-      new import_obsidian7.Notice(`\u274C Auth failed: ${err.message}`, 5e3);
+      new import_obsidian6.Notice(`\u274C Auth failed: ${err.message}`, 5e3);
       throw err;
     }
   }
@@ -5783,7 +3868,7 @@ var Authentication = class _Authentication {
   `;
     try {
       const currentResponse = await this.plugin.requestQueue.add(
-        () => (0, import_obsidian7.requestUrl)({
+        () => (0, import_obsidian6.requestUrl)({
           url: "https://graphql.anilist.co",
           method: "POST",
           headers: {
@@ -5811,7 +3896,7 @@ var Authentication = class _Authentication {
       }
     `;
       const response = await this.plugin.requestQueue.add(
-        () => (0, import_obsidian7.requestUrl)({
+        () => (0, import_obsidian6.requestUrl)({
           url: "https://graphql.anilist.co",
           method: "POST",
           headers: {
@@ -5829,19 +3914,19 @@ var Authentication = class _Authentication {
       const updatedFormat = response.json?.data?.UpdateUser?.mediaListOptions?.scoreFormat;
       console.log("Updated score format to:", updatedFormat);
       if (updatedFormat === "POINT_10") {
-        new import_obsidian7.Notice("\u2705 Score format updated to 0-10 scale", 3e3);
+        new import_obsidian6.Notice("\u2705 Score format updated to 0-10 scale", 3e3);
       } else {
         throw new Error(`Score format not updated properly. Got: ${updatedFormat}`);
       }
     } catch (err) {
-      new import_obsidian7.Notice(`\u274C Could not update score format: ${err.message}`, 5e3);
+      new import_obsidian6.Notice(`\u274C Could not update score format: ${err.message}`, 5e3);
     }
   }
   async getAuthenticatedUsername() {
     await this.ensureValidToken();
     const query = `query { Viewer { name } }`;
     const res = await this.plugin.requestQueue.add(
-      () => (0, import_obsidian7.requestUrl)({
+      () => (0, import_obsidian6.requestUrl)({
         url: "https://graphql.anilist.co",
         method: "POST",
         headers: {
@@ -5860,7 +3945,7 @@ var Authentication = class _Authentication {
 };
 
 // src/auth/MALAuthentication.js
-var import_obsidian8 = require("obsidian");
+var import_obsidian7 = require("obsidian");
 var MALAuthentication = class _MALAuthentication {
   constructor(plugin) {
     this.plugin = plugin;
@@ -5911,11 +3996,11 @@ var MALAuthentication = class _MALAuthentication {
   }
   async loginWithFlow() {
     if (!this.plugin.settings.malClientId) {
-      new import_obsidian8.Notice("\u274C Please enter your MAL Client ID first.", 5e3);
+      new import_obsidian7.Notice("\u274C Please enter your MAL Client ID first.", 5e3);
       return;
     }
     if (this.isTokenValid()) {
-      new import_obsidian8.Notice("Already authenticated with MyAnimeList", 3e3);
+      new import_obsidian7.Notice("Already authenticated with MyAnimeList", 3e3);
       return;
     }
     this.verifier = this.makeVerifier();
@@ -5931,7 +4016,7 @@ var MALAuthentication = class _MALAuthentication {
       state
     });
     const authUrl = `${_MALAuthentication.MAL_AUTH_URL}?${params.toString()}`;
-    new import_obsidian8.Notice("\u{1F510} Opening MyAnimeList login page\u2026", 3e3);
+    new import_obsidian7.Notice("\u{1F510} Opening MyAnimeList login page\u2026", 3e3);
     if (window.require) {
       const { shell } = window.require("electron");
       await shell.openExternal(authUrl);
@@ -5941,7 +4026,7 @@ var MALAuthentication = class _MALAuthentication {
     const modal = AuthModal.malCallback(this.plugin.app, async (callbackUrl) => {
       const code = this.extractAuthCode(callbackUrl);
       if (!code) {
-        new import_obsidian8.Notice("\u274C Could not extract authorization code from URL", 5e3);
+        new import_obsidian7.Notice("\u274C Could not extract authorization code from URL", 5e3);
         return;
       }
       await this.exchangeCodeForToken(code);
@@ -5990,7 +4075,7 @@ var MALAuthentication = class _MALAuthentication {
     if (!code || code.length < 10) {
       throw new Error("Invalid authorization code");
     }
-    new import_obsidian8.Notice("Exchanging authorization code for tokens\u2026", 6e3);
+    new import_obsidian7.Notice("Exchanging authorization code for tokens\u2026", 6e3);
     const body = new URLSearchParams({
       client_id: this.plugin.settings.malClientId,
       code,
@@ -6003,7 +4088,7 @@ var MALAuthentication = class _MALAuthentication {
     }
     try {
       const res = await this.plugin.requestQueue.add(
-        () => (0, import_obsidian8.requestUrl)({
+        () => (0, import_obsidian7.requestUrl)({
           url: _MALAuthentication.MAL_TOKEN_URL,
           method: "POST",
           headers: {
@@ -6052,22 +4137,22 @@ var MALAuthentication = class _MALAuthentication {
       this.plugin.cache.invalidateByUser(this.plugin.settings.malUserInfo?.name);
       try {
         await this.fetchUserInfo();
-        new import_obsidian8.Notice(`\u2705 Successfully authenticated with MAL! Welcome ${this.plugin.settings.malUserInfo?.name || "user"} \u{1F389}`, 4e3);
+        new import_obsidian7.Notice(`\u2705 Successfully authenticated with MAL! Welcome ${this.plugin.settings.malUserInfo?.name || "user"} \u{1F389}`, 4e3);
       } catch (userError) {
         console.log("[MAL-AUTH] Failed to fetch user info but auth succeeded", userError);
-        new import_obsidian8.Notice("\u2705 Authentication successful! \u{1F389}", 4e3);
+        new import_obsidian7.Notice("\u2705 Authentication successful! \u{1F389}", 4e3);
       }
       if (typeof this.plugin.updateDefaultApiSourceBasedOnAuth === "function") {
         await this.plugin.updateDefaultApiSourceBasedOnAuth();
       }
     } catch (err) {
-      new import_obsidian8.Notice(`\u274C MAL Auth failed: ${err.message}`, 5e3);
+      new import_obsidian7.Notice(`\u274C MAL Auth failed: ${err.message}`, 5e3);
       throw err;
     }
   }
   async fetchUserInfo() {
     const res = await this.plugin.requestQueue.add(
-      () => (0, import_obsidian8.requestUrl)({
+      () => (0, import_obsidian7.requestUrl)({
         url: _MALAuthentication.MAL_USER_URL,
         method: "GET",
         headers: {
@@ -6095,7 +4180,7 @@ var MALAuthentication = class _MALAuthentication {
       body.append("client_secret", this.plugin.settings.malClientSecret.trim());
     }
     const res = await this.plugin.requestQueue.add(
-      () => (0, import_obsidian8.requestUrl)({
+      () => (0, import_obsidian7.requestUrl)({
         url: _MALAuthentication.MAL_TOKEN_URL,
         method: "POST",
         headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -6127,7 +4212,7 @@ var MALAuthentication = class _MALAuthentication {
       console.log("[MAL-AUTH] Token automatically refreshed");
     } catch (e) {
       console.error("[MAL-AUTH] Automatic token refresh failed", e);
-      new import_obsidian8.Notice("MAL authentication expired. Please re-authenticate.", 5e3);
+      new import_obsidian7.Notice("MAL authentication expired. Please re-authenticate.", 5e3);
     }
   }
   async logout() {
@@ -6143,7 +4228,7 @@ var MALAuthentication = class _MALAuthentication {
     }
     this.plugin.cache.clear("malData");
     this.plugin.cache.clear();
-    new import_obsidian8.Notice("\u2705 Logged out from MyAnimeList & cleared credentials.", 3e3);
+    new import_obsidian7.Notice("\u2705 Logged out from MyAnimeList & cleared credentials.", 3e3);
   }
   async ensureValidToken() {
     if (!this.isLoggedIn) throw new Error("Not authenticated with MyAnimeList");
@@ -6171,11 +4256,11 @@ var MALAuthentication = class _MALAuthentication {
 };
 
 // src/auth/SimklAuthentication.js
-var import_obsidian10 = require("obsidian");
+var import_obsidian9 = require("obsidian");
 
 // src/auth/SimklPinModal.js
-var import_obsidian9 = require("obsidian");
-var SimklPinModal = class extends import_obsidian9.Modal {
+var import_obsidian8 = require("obsidian");
+var SimklPinModal = class extends import_obsidian8.Modal {
   constructor(app, deviceData, onCancel) {
     super(app);
     this.deviceData = deviceData;
@@ -6273,20 +4358,20 @@ var SimklAuthentication = class _SimklAuthentication {
   }
   async loginWithFlow() {
     if (!this.plugin.settings.simklClientId) {
-      new import_obsidian10.Notice("\u274C Please enter your SIMKL Client ID first.", 5e3);
+      new import_obsidian9.Notice("\u274C Please enter your SIMKL Client ID first.", 5e3);
       return;
     }
     if (!this.plugin.settings.simklClientSecret) {
-      new import_obsidian10.Notice("\u274C Please enter your SIMKL Client Secret first.", 5e3);
+      new import_obsidian9.Notice("\u274C Please enter your SIMKL Client Secret first.", 5e3);
       return;
     }
     if (this.isLoggedIn) {
-      new import_obsidian10.Notice("Already authenticated with SIMKL", 3e3);
+      new import_obsidian9.Notice("Already authenticated with SIMKL", 3e3);
       return;
     }
     try {
       const pinUrl = `${_SimklAuthentication.SIMKL_PIN_URL}?client_id=${encodeURIComponent(this.plugin.settings.simklClientId)}&redirect_uri=${encodeURIComponent("urn:ietf:wg:oauth:2.0:oob")}`;
-      const deviceResponse = await (0, import_obsidian10.requestUrl)({
+      const deviceResponse = await (0, import_obsidian9.requestUrl)({
         url: pinUrl,
         method: "GET",
         headers: {
@@ -6302,7 +4387,7 @@ var SimklAuthentication = class _SimklAuthentication {
       if (!deviceData.user_code) {
         throw new Error("Invalid response: missing user_code");
       }
-      new import_obsidian10.Notice("\u{1F510} Opening SIMKL PIN page\u2026", 3e3);
+      new import_obsidian9.Notice("\u{1F510} Opening SIMKL PIN page\u2026", 3e3);
       const pinPageUrl = deviceData.verification_url || "https://simkl.com/pin";
       if (window.require) {
         const { shell } = window.require("electron");
@@ -6317,7 +4402,7 @@ var SimklAuthentication = class _SimklAuthentication {
       this.startPolling(deviceData);
     } catch (error) {
       console.error("SIMKL authentication failed:", error);
-      new import_obsidian10.Notice(`\u274C Authentication failed: ${error.message}`, 8e3);
+      new import_obsidian9.Notice(`\u274C Authentication failed: ${error.message}`, 8e3);
     }
   }
   async startPolling(deviceData) {
@@ -6328,12 +4413,12 @@ var SimklAuthentication = class _SimklAuthentication {
       attempts++;
       if (attempts > maxAttempts) {
         this.stopPolling();
-        new import_obsidian10.Notice("\u274C Authentication timeout. Please try again.", 8e3);
+        new import_obsidian9.Notice("\u274C Authentication timeout. Please try again.", 8e3);
         return;
       }
       try {
         const pollUrl = `${_SimklAuthentication.SIMKL_PIN_CHECK_URL}${encodeURIComponent(user_code)}?client_id=${encodeURIComponent(this.plugin.settings.simklClientId)}`;
-        const response = await (0, import_obsidian10.requestUrl)({
+        const response = await (0, import_obsidian9.requestUrl)({
           url: pollUrl,
           method: "GET",
           headers: {
@@ -6354,10 +4439,10 @@ var SimklAuthentication = class _SimklAuthentication {
           this.stopPolling();
           try {
             await this.fetchUserInfo();
-            new import_obsidian10.Notice(`\u2705 Successfully authenticated with SIMKL! Welcome ${this.plugin.settings.simklUserInfo?.user?.name || "user"} \u{1F389}`, 4e3);
+            new import_obsidian9.Notice(`\u2705 Successfully authenticated with SIMKL! Welcome ${this.plugin.settings.simklUserInfo?.user?.name || "user"} \u{1F389}`, 4e3);
           } catch (userError) {
             console.log("[SIMKL-AUTH] Failed to fetch user info but auth succeeded", userError);
-            new import_obsidian10.Notice("\u2705 Authentication successful! \u{1F389}", 4e3);
+            new import_obsidian9.Notice("\u2705 Authentication successful! \u{1F389}", 4e3);
           }
           if (typeof this.plugin.updateDefaultApiSourceBasedOnAuth === "function") {
             await this.plugin.updateDefaultApiSourceBasedOnAuth();
@@ -6384,7 +4469,7 @@ var SimklAuthentication = class _SimklAuthentication {
     if (!headers) {
       throw new Error("Not authenticated");
     }
-    const res = await (0, import_obsidian10.requestUrl)({
+    const res = await (0, import_obsidian9.requestUrl)({
       url: _SimklAuthentication.SIMKL_USER_URL,
       method: "GET",
       headers,
@@ -6405,7 +4490,7 @@ var SimklAuthentication = class _SimklAuthentication {
     if (this.plugin.cache) {
       this.plugin.cache.clear("simklData");
     }
-    new import_obsidian10.Notice("\u2705 Logged out from SIMKL & cleared credentials.", 3e3);
+    new import_obsidian9.Notice("\u2705 Logged out from SIMKL & cleared credentials.", 3e3);
   }
   async ensureValidToken() {
     if (!this.isLoggedIn) throw new Error("Not authenticated with SIMKL");
@@ -6439,7 +4524,7 @@ var SimklAuthentication = class _SimklAuthentication {
 };
 
 // src/features/Theme.js
-var import_obsidian11 = require("obsidian");
+var import_obsidian10 = require("obsidian");
 var Theme = class _Theme {
   static THEME_REPO_URL = "https://api.github.com/repos/zara-kasi/zoro/contents/Theme?ref=main";
   constructor(plugin) {
@@ -6483,11 +4568,11 @@ var Theme = class _Theme {
       } catch (e) {
       }
       await this.plugin.app.vault.adapter.write(localPath, css);
-      new import_obsidian11.Notice(`\u2705 Theme "${name}" downloaded successfully`);
+      new import_obsidian10.Notice(`\u2705 Theme "${name}" downloaded successfully`);
       await this.applyTheme(name);
       return true;
     } catch (e) {
-      new import_obsidian11.Notice(`\u274C Could not download "${name}": ${e}`);
+      new import_obsidian10.Notice(`\u274C Could not download "${name}": ${e}`);
       return false;
     }
   }
@@ -6510,7 +4595,7 @@ var Theme = class _Theme {
       rawCss = await this.plugin.app.vault.adapter.read(cssPath);
     } catch (err) {
       console.warn("Zoro: theme file missing:", themeName, err);
-      new import_obsidian11.Notice(`\u274C Theme "${themeName}" not found`);
+      new import_obsidian10.Notice(`\u274C Theme "${themeName}" not found`);
       return;
     }
     const scopedCss = this.scopeToPlugin(rawCss);
@@ -6523,10 +4608,10 @@ var Theme = class _Theme {
     const localPath = `${this.plugin.manifest.dir}/themes/${name}.css`;
     try {
       await this.plugin.app.vault.adapter.remove(localPath);
-      new import_obsidian11.Notice(`\u2705 Theme "${name}" deleted successfully`);
+      new import_obsidian10.Notice(`\u2705 Theme "${name}" deleted successfully`);
       return true;
     } catch (e) {
-      new import_obsidian11.Notice(`\u274C Could not delete "${name}": ${e}`);
+      new import_obsidian10.Notice(`\u274C Could not delete "${name}": ${e}`);
       return false;
     }
   }
@@ -6646,10 +4731,10 @@ ${scopedInner}
 };
 
 // src/processing/Processor.js
-var import_obsidian13 = require("obsidian");
+var import_obsidian12 = require("obsidian");
 
 // src/features/Trending.js
-var import_obsidian12 = require("obsidian");
+var import_obsidian11 = require("obsidian");
 var Trending = class {
   constructor(plugin) {
     this.plugin = plugin;
@@ -7496,10 +5581,10 @@ var Processor = class {
 };
 
 // src/editing/Edit.js
-var import_obsidian20 = require("obsidian");
+var import_obsidian19 = require("obsidian");
 
 // src/editing/modals/RenderEditModal.js
-var import_obsidian14 = require("obsidian");
+var import_obsidian13 = require("obsidian");
 var RenderEditModal = class {
   constructor(config) {
     this.config = config;
@@ -7736,7 +5821,7 @@ var RenderEditModal = class {
 };
 
 // src/editing/modals/AniListEditModal.js
-var import_obsidian15 = require("obsidian");
+var import_obsidian14 = require("obsidian");
 var AniListEditModal = class {
   constructor(plugin) {
     this.plugin = plugin;
@@ -7809,7 +5894,7 @@ var AniListEditModal = class {
         })
       );
       if (res.json.errors) {
-        new import_obsidian15.Notice(`API Error: ${res.json.errors[0].message}`, 8e3);
+        new import_obsidian14.Notice(`API Error: ${res.json.errors[0].message}`, 8e3);
         throw new Error(res.json.errors[0].message);
       }
       const isFav = !wasAlreadyFavorited;
@@ -7818,9 +5903,9 @@ var AniListEditModal = class {
       this.invalidateCache(entry);
       this.updateAllFavoriteButtons(entry);
       favBtn.className = isFav ? "zoro-fav-btn zoro-heart" : "zoro-fav-btn zoro-no-heart";
-      new import_obsidian15.Notice(`${isFav ? "Added to" : "Removed from"} favorites!`, 3e3);
+      new import_obsidian14.Notice(`${isFav ? "Added to" : "Removed from"} favorites!`, 3e3);
     } catch (e) {
-      new import_obsidian15.Notice(`\u274C Error: ${e.message || "Unknown error"}`, 8e3);
+      new import_obsidian14.Notice(`\u274C Error: ${e.message || "Unknown error"}`, 8e3);
     } finally {
       favBtn.disabled = false;
     }
@@ -7861,7 +5946,7 @@ var AniListEditModal = class {
 };
 
 // src/editing/modals/MALEditModal.js
-var import_obsidian16 = require("obsidian");
+var import_obsidian15 = require("obsidian");
 var MALEditModal = class {
   constructor(plugin) {
     this.plugin = plugin;
@@ -7949,7 +6034,7 @@ var MALEditModal = class {
 };
 
 // src/editing/modals/SimklEditModal.js
-var import_obsidian17 = require("obsidian");
+var import_obsidian16 = require("obsidian");
 var SimklEditModal = class {
   constructor(plugin) {
     this.plugin = plugin;
@@ -7996,10 +6081,10 @@ var SimklEditModal = class {
 };
 
 // src/editing/modals/SupportEditModal.js
-var import_obsidian19 = require("obsidian");
+var import_obsidian18 = require("obsidian");
 
 // src/rendering/helpers/DOMHelper.js
-var import_obsidian18 = require("obsidian");
+var import_obsidian17 = require("obsidian");
 var DOMHelper = class {
   static createLoadingSpinner() {
     return `
@@ -8384,7 +6469,7 @@ var Edit = class {
       this.support.refreshUI(entry);
       this.support.closeModal(modal.container, () => {
       });
-      new import_obsidian20.Notice("\u2705 Saved");
+      new import_obsidian19.Notice("\u2705 Saved");
     } catch (err) {
       this.support.showModalError(form, `Save failed: ${err.message}`);
       this.support.resetSaveButton(saveBtn);
@@ -8408,7 +6493,7 @@ var Edit = class {
       this.support.refreshUI(entry);
       this.support.closeModal(modalElement, () => {
       });
-      new import_obsidian20.Notice("\u2705 Removed");
+      new import_obsidian19.Notice("\u2705 Removed");
     } catch (e) {
       this.support.showModalError(modalElement.querySelector(".zoro-edit-form"), `Remove failed: ${e.message}`);
       this.support.resetRemoveButton(removeBtn);
@@ -9670,7 +7755,7 @@ var MoreDetailsPanel = class {
 };
 
 // src/features/Export.js
-var import_obsidian21 = require("obsidian");
+var import_obsidian20 = require("obsidian");
 var Export = class {
   constructor(plugin) {
     this.plugin = plugin;
@@ -9687,7 +7772,7 @@ var Export = class {
     let username = this.plugin.settings.authUsername;
     if (!username) username = this.plugin.settings.defaultUsername;
     if (!username) {
-      new import_obsidian21.Notice("Set a default username in settings first.", 3e3);
+      new import_obsidian20.Notice("Set a default username in settings first.", 3e3);
       return;
     }
     const useAuth = !!this.plugin.settings.accessToken;
@@ -9712,7 +7797,7 @@ var Export = class {
         }
       }
     `;
-    new import_obsidian21.Notice(`${useAuth ? "\u{1F4E5} Full" : "\u{1F4E5} Public"} export started\u2026`, 3e3);
+    new import_obsidian20.Notice(`${useAuth ? "\u{1F4E5} Full" : "\u{1F4E5} Public"} export started\u2026`, 3e3);
     const progress = this.createProgressNotice("\u{1F4CA} Exporting\u2026 0 %");
     const fetchType = async (type) => {
       const headers = { "Content-Type": "application/json" };
@@ -9721,7 +7806,7 @@ var Export = class {
         headers["Authorization"] = `Bearer ${this.plugin.settings.accessToken}`;
       }
       const res = await this.plugin.requestQueue.add(
-        () => (0, import_obsidian21.requestUrl)({
+        () => (0, import_obsidian20.requestUrl)({
           url: "https://graphql.anilist.co",
           method: "POST",
           headers,
@@ -9737,7 +7822,7 @@ var Export = class {
     };
     const [animeLists, mangaLists] = await Promise.all([fetchType("ANIME"), fetchType("MANGA")]);
     if (!animeLists.flatMap((l) => l.entries).length && !mangaLists.flatMap((l) => l.entries).length) {
-      new import_obsidian21.Notice("No lists found (private or empty).", 3e3);
+      new import_obsidian20.Notice("No lists found (private or empty).", 3e3);
       return;
     }
     this.updateProgressNotice(progress, "\u{1F4CA} Generating standard export files...");
@@ -9752,7 +7837,7 @@ var Export = class {
     const totalItems = [...animeLists, ...mangaLists].flatMap((l) => l.entries).length;
     const fileCount = 1 + (animeLists.flatMap((l) => l.entries).length > 0 ? 1 : 0) + (mangaLists.flatMap((l) => l.entries).length > 0 ? 1 : 0);
     this.finishProgressNotice(progress, `\u2705 Exported ${totalItems} items in ${fileCount} files`);
-    new import_obsidian21.Notice(`\u2705 AniList export complete! Created ${fileCount} files`, 3e3);
+    new import_obsidian20.Notice(`\u2705 AniList export complete! Created ${fileCount} files`, 3e3);
   }
   async createAniListUnifiedCSV(lists, folderPath) {
     const rows = [];
@@ -9968,22 +8053,22 @@ var Export = class {
   }
   async exportMALListsToCSV() {
     if (!this.plugin.malAuth.isLoggedIn) {
-      new import_obsidian21.Notice("\u274C Please authenticate with MyAnimeList first.", 3e3);
+      new import_obsidian20.Notice("\u274C Please authenticate with MyAnimeList first.", 3e3);
       return;
     }
     const username = this.plugin.settings.malUserInfo?.name;
     if (!username) {
-      new import_obsidian21.Notice("\u274C Could not fetch MAL username.", 3e3);
+      new import_obsidian20.Notice("\u274C Could not fetch MAL username.", 3e3);
       return;
     }
-    new import_obsidian21.Notice("\u{1F4E5} Exporting MyAnimeList\u2026", 3e3);
+    new import_obsidian20.Notice("\u{1F4E5} Exporting MyAnimeList\u2026", 3e3);
     const progress = this.createProgressNotice("\u{1F4CA} MAL export 0 %");
     const fetchType = async (type) => {
       const headers = this.plugin.malAuth.getAuthHeaders();
       const apiType = type === "ANIME" ? "anime" : "manga";
       const url = `https://api.myanimelist.net/v2/users/@me/${apiType}list?fields=list_status{status,score,num_episodes_watched,num_chapters_read,is_rewatching,num_times_rewatched,rewatch_value,start_date,finish_date,priority,num_times_reread,comments,tags},node{id,title,media_type,status,num_episodes,num_chapters,num_volumes,start_season,source,rating,mean,genres}&limit=1000&nsfw=true`;
       const res = await this.plugin.requestQueue.add(
-        () => (0, import_obsidian21.requestUrl)({ url, method: "GET", headers })
+        () => (0, import_obsidian20.requestUrl)({ url, method: "GET", headers })
       );
       const items = (res.json?.data || []).map((item) => ({
         ...item,
@@ -9998,7 +8083,7 @@ var Export = class {
       fetchType("MANGA")
     ]);
     if (anime.length === 0 && manga.length === 0) {
-      new import_obsidian21.Notice("No MAL data found.", 3e3);
+      new import_obsidian20.Notice("No MAL data found.", 3e3);
       return;
     }
     this.updateProgressNotice(progress, "\u{1F4CA} Generating standard export files...");
@@ -10013,7 +8098,7 @@ var Export = class {
     const totalItems = anime.length + manga.length;
     const fileCount = 1 + (anime.length > 0 ? 1 : 0) + (manga.length > 0 ? 1 : 0);
     this.finishProgressNotice(progress, `\u2705 Exported ${totalItems} items in ${fileCount} files`);
-    new import_obsidian21.Notice(`\u2705 MAL export complete! Created ${fileCount} files`, 3e3);
+    new import_obsidian20.Notice(`\u2705 MAL export complete! Created ${fileCount} files`, 3e3);
   }
   async createMALUnifiedCSV(allItems, folderPath) {
     const rows = [];
@@ -10225,23 +8310,23 @@ var Export = class {
   }
   async exportSimklListsToCSV() {
     if (!this.plugin.simklAuth.isLoggedIn) {
-      new import_obsidian21.Notice("\u274C Please authenticate with SIMKL first.", 3e3);
+      new import_obsidian20.Notice("\u274C Please authenticate with SIMKL first.", 3e3);
       return;
     }
     const username = this.plugin.settings.simklUserInfo?.user?.name;
     if (!username) {
-      new import_obsidian21.Notice("\u274C Could not fetch SIMKL username.", 3e3);
+      new import_obsidian20.Notice("\u274C Could not fetch SIMKL username.", 3e3);
       return;
     }
     console.log("[SIMKL Export] Starting export for user:", username);
-    new import_obsidian21.Notice("\u{1F4E5} Exporting SIMKL data\u2026", 3e3);
+    new import_obsidian20.Notice("\u{1F4E5} Exporting SIMKL data\u2026", 3e3);
     const progress = this.createProgressNotice("\u{1F4CA} Fetching SIMKL data...");
     try {
       this.updateProgressNotice(progress, "\u{1F4CA} Fetching all items...");
       const allItemsUrl = "https://api.simkl.com/sync/all-items/";
       console.log("[SIMKL Export] Fetching from:", allItemsUrl);
       const allItemsRes = await this.plugin.requestQueue.add(
-        () => (0, import_obsidian21.requestUrl)({
+        () => (0, import_obsidian20.requestUrl)({
           url: allItemsUrl,
           method: "GET",
           headers: {
@@ -10297,7 +8382,7 @@ var Export = class {
       if (allItems.length === 0) {
         console.log("[SIMKL Export] No items found after processing");
         this.finishProgressNotice(progress, "\u274C No data found");
-        new import_obsidian21.Notice("No SIMKL data found after processing.", 3e3);
+        new import_obsidian20.Notice("No SIMKL data found after processing.", 3e3);
         return;
       }
       const animeItems = allItems.filter(
@@ -10316,11 +8401,11 @@ var Export = class {
         await this.createSimklMalXML(animeItems, folderPath);
       }
       this.finishProgressNotice(progress, `\u2705 Exported ${allItems.length} items in multiple formats`);
-      new import_obsidian21.Notice(`\u2705 SIMKL export complete! Created ${1 + (moviesTvItems.length > 0 ? 1 : 0) + (animeItems.length > 0 ? 1 : 0)} files`, 3e3);
+      new import_obsidian20.Notice(`\u2705 SIMKL export complete! Created ${1 + (moviesTvItems.length > 0 ? 1 : 0) + (animeItems.length > 0 ? 1 : 0)} files`, 3e3);
     } catch (error) {
       console.error("[SIMKL Export] Export failed:", error);
       this.finishProgressNotice(progress, `\u274C Export failed: ${error.message}`);
-      new import_obsidian21.Notice(`\u274C SIMKL export failed: ${error.message}`, 3e3);
+      new import_obsidian20.Notice(`\u274C SIMKL export failed: ${error.message}`, 3e3);
     }
   }
   async createSimklUnifiedCSV(allItems, folderPath) {
@@ -10595,26 +8680,26 @@ var Export = class {
     return str;
   }
   createProgressNotice(message) {
-    return new import_obsidian21.Notice(message, 0);
+    return new import_obsidian20.Notice(message, 0);
   }
   updateProgressNotice(notice, message) {
     notice.hide();
-    return new import_obsidian21.Notice(message, 0);
+    return new import_obsidian20.Notice(message, 0);
   }
   finishProgressNotice(notice, message) {
     notice.hide();
-    new import_obsidian21.Notice(message, 3e3);
+    new import_obsidian20.Notice(message, 3e3);
   }
 };
 
 // src/features/Sample.js
-var import_obsidian22 = require("obsidian");
+var import_obsidian21 = require("obsidian");
 var Sample = class {
   constructor(plugin) {
     this.plugin = plugin;
   }
   async createSampleFolders() {
-    new import_obsidian22.Notice("Creating\u2026", 3e3);
+    new import_obsidian21.Notice("Creating\u2026", 3e3);
     const vault = this.plugin.app.vault;
     const parentFolder = "Zoro";
     const folders = [
@@ -10644,7 +8729,7 @@ var Sample = class {
     for (const folder of folders) {
       const folderPath = parentFolder + "/" + folder.name;
       if (vault.getAbstractFileByPath(folderPath)) {
-        new import_obsidian22.Notice("\u23ED\uFE0F " + folder.name + " already exists in " + parentFolder);
+        new import_obsidian21.Notice("\u23ED\uFE0F " + folder.name + " already exists in " + parentFolder);
         continue;
       }
       const baseUrl = "https://raw.githubusercontent.com/zara-kasi/zoro/main/Template/" + encodeURIComponent(folder.name) + "/";
@@ -10665,7 +8750,7 @@ var Sample = class {
           continue;
         }
       }
-      new import_obsidian22.Notice("\u2705 " + folder.name + " in " + parentFolder + " (" + successfulFiles + " files)");
+      new import_obsidian21.Notice("\u2705 " + folder.name + " in " + parentFolder + " (" + successfulFiles + " files)");
       if (successfulFiles > 0) {
         this.plugin.app.workspace.openLinkText(folder.firstFile, folderPath, false);
       }
@@ -10674,7 +8759,7 @@ var Sample = class {
 };
 
 // src/features/Prompt.js
-var import_obsidian23 = require("obsidian");
+var import_obsidian22 = require("obsidian");
 var Prompt = class {
   constructor(plugin) {
     this.plugin = plugin;
@@ -10725,7 +8810,7 @@ var Prompt = class {
       closeModal();
       this.plugin.app.setting.open();
       this.plugin.app.setting.openTabById(this.plugin.manifest.id);
-      new import_obsidian23.Notice("\u{1F4DD} Please use AniList/MyAnimeList to authenticate from settings. Hint: use Setup\u2192 Authentication");
+      new import_obsidian22.Notice("\u{1F4DD} Please use AniList/MyAnimeList to authenticate from settings. Hint: use Setup\u2192 Authentication");
     };
     buttonContainer.appendChild(authenticateBtn);
     content.appendChild(title);
@@ -10752,10 +8837,10 @@ var Prompt = class {
 };
 
 // src/rendering/core/Render.js
-var import_obsidian27 = require("obsidian");
+var import_obsidian26 = require("obsidian");
 
 // src/rendering/helpers/APISourceHelper.js
-var import_obsidian24 = require("obsidian");
+var import_obsidian23 = require("obsidian");
 var APISourceHelper = class {
   constructor(plugin) {
     this.plugin = plugin;
@@ -10958,7 +9043,7 @@ var FormatterHelper = class {
 };
 
 // src/rendering/renderers/CardRenderer.js
-var import_obsidian25 = require("obsidian");
+var import_obsidian24 = require("obsidian");
 var CardRenderer = class {
   constructor(parentRenderer) {
     this.parent = parentRenderer;
@@ -11241,8 +9326,24 @@ var CardRenderer = class {
       const typeUpper = String(entryMediaType || "").toUpperCase();
       const isMovieOrTv = typeUpper === "MOVIE" || typeUpper === "MOVIES" || typeUpper === "TV" || typeUpper.includes("SHOW");
       const updates = entrySource === "simkl" && isMovieOrTv ? { status: "PLANNING", score: 0, _zUseTmdbId: true } : { status: "PLANNING", progress: 0 };
+      try {
+        console.log("[CardRenderer][Add]", {
+          entrySource,
+          entryMediaType,
+          isTmdbItem,
+          isMovieOrTv,
+          mediaId: media?.id,
+          idTmdb: media?.idTmdb,
+          idImdb: media?.idImdb
+        });
+      } catch {
+      }
       if (entrySource === "simkl" && isTmdbItem && isMovieOrTv) {
         const ids = { tmdb: Number(media.idTmdb || media.id) || void 0, imdb: media.idImdb || void 0 };
+        try {
+          console.log("[CardRenderer][Add] Using Simkl explicit identifiers path", { ids, updates });
+        } catch {
+        }
         if (typeof this.plugin?.simklApi?.updateMediaListEntryWithIds === "function") {
           await this.plugin.simklApi.updateMediaListEntryWithIds(ids, updates, entryMediaType);
         } else {
@@ -11252,7 +9353,7 @@ var CardRenderer = class {
       } else {
         await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, entryMediaType);
       }
-      new import_obsidian25.Notice("\u2705 Added to planning!", 3e3);
+      new import_obsidian24.Notice("\u2705 Added to planning!", 3e3);
       console.log(`[Zoro] Added ${media.id} to planning via add button`);
       addBtn.dataset.loading = "false";
       if (typeof addBtn.replaceChildren === "function") {
@@ -11270,9 +9371,9 @@ var CardRenderer = class {
         } else {
           addBtn.textContent = "\u{1F4D1}";
         }
-      } else if (typeof import_obsidian25.setIcon === "function") {
+      } else if (typeof import_obsidian24.setIcon === "function") {
         const span = document.createElement("span");
-        (0, import_obsidian25.setIcon)(span, "bookmark");
+        (0, import_obsidian24.setIcon)(span, "bookmark");
         addBtn.appendChild(span);
       } else {
         addBtn.textContent = "\u{1F4D1}";
@@ -11289,7 +9390,7 @@ var CardRenderer = class {
       addBtn.classList.add("zoro-add-button-cover");
       addBtn.textContent = "Add";
       addBtn.style.pointerEvents = "auto";
-      new import_obsidian25.Notice(`\u274C Failed to add: ${error.message}`, 5e3);
+      new import_obsidian24.Notice(`\u274C Failed to add: ${error.message}`, 5e3);
     }
   }
   async handleEditClick(e, media, entry, config, editBtn) {
@@ -11349,14 +9450,14 @@ var CardRenderer = class {
             console.log(`[Zoro] Updating media ${media.id} with:`, updates);
             await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, this.apiHelper.detectMediaType(entry, config, media));
             const successMessage = isNewEntry ? "\u2705 Added to list!" : "\u2705 Updated!";
-            new import_obsidian25.Notice(successMessage, 3e3);
+            new import_obsidian24.Notice(successMessage, 3e3);
             console.log(`[Zoro] ${successMessage}`);
             editBtn.textContent = "Edit";
             editBtn.className = "status-badge status-edit clickable-status";
             this.parent.refreshActiveViews();
           } catch (updateError) {
             console.error("[Zoro] Update failed:", updateError);
-            new import_obsidian25.Notice(`\u274C Update failed: ${updateError.message}`, 5e3);
+            new import_obsidian24.Notice(`\u274C Update failed: ${updateError.message}`, 5e3);
           }
         },
         () => {
@@ -11373,7 +9474,7 @@ var CardRenderer = class {
       editBtn.textContent = "Edit";
       editBtn.dataset.loading = "false";
       editBtn.style.pointerEvents = "auto";
-      new import_obsidian25.Notice("\u26A0\uFE0F Could not check list status, assuming new entry", 3e3);
+      new import_obsidian24.Notice("\u26A0\uFE0F Could not check list status, assuming new entry", 3e3);
       const defaultEntry = {
         media,
         status: "PLANNING",
@@ -11386,11 +9487,11 @@ var CardRenderer = class {
         async (updates) => {
           try {
             await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource);
-            new import_obsidian25.Notice("\u2705 Added to list!", 3e3);
+            new import_obsidian24.Notice("\u2705 Added to list!", 3e3);
             this.parent.refreshActiveViews();
           } catch (updateError) {
             console.error("[Zoro] Update failed:", updateError);
-            new import_obsidian25.Notice(`\u274C Failed to add: ${updateError.message}`, 5e3);
+            new import_obsidian24.Notice(`\u274C Failed to add: ${updateError.message}`, 5e3);
           }
         },
         () => {
@@ -11403,7 +9504,7 @@ var CardRenderer = class {
 };
 
 // src/rendering/renderers/SearchRenderer.js
-var import_obsidian26 = require("obsidian");
+var import_obsidian25 = require("obsidian");
 var SearchRenderer = class {
   constructor(parentRenderer) {
     this.parent = parentRenderer;
@@ -11418,7 +9519,7 @@ var SearchRenderer = class {
     const src = String(config.source || "").toLowerCase();
     const searchWrapper = el.createDiv({ cls: "zoro-search-input-container" });
     const iconSpan = searchWrapper.createEl("span", { cls: "zoro-search-icon" });
-    (0, import_obsidian26.setIcon)(iconSpan, "search");
+    (0, import_obsidian25.setIcon)(iconSpan, "search");
     const input = document.createElement("input");
     input.type = "text";
     input.className = "zoro-search-input";
@@ -12217,7 +10318,7 @@ var Render = class {
 };
 
 // src/rendering/helpers/EmojiIconMapper.js
-var import_obsidian28 = require("obsidian");
+var import_obsidian27 = require("obsidian");
 var EmojiIconMapper = class {
   constructor(opts = {}) {
     this.map = new Map(Object.entries({
@@ -12377,8 +10478,8 @@ var EmojiIconMapper = class {
     const span = document.createElement("span");
     span.style.cssText = this._iconStyle;
     try {
-      if (typeof import_obsidian28.setIcon === "function" && name) {
-        (0, import_obsidian28.setIcon)(span, name);
+      if (typeof import_obsidian27.setIcon === "function" && name) {
+        (0, import_obsidian27.setIcon)(span, name);
       } else {
         span.textContent = name ? `[${name}]` : "";
       }
@@ -12411,8 +10512,8 @@ var EmojiIconMapper = class {
     };
   }
   _patchSettings() {
-    if (typeof import_obsidian28.Setting === "undefined") return;
-    const proto = import_obsidian28.Setting.prototype;
+    if (typeof import_obsidian27.Setting === "undefined") return;
+    const proto = import_obsidian27.Setting.prototype;
     const original = {
       setName: proto.setName,
       setDesc: proto.setDesc
@@ -12443,8 +10544,8 @@ var EmojiIconMapper = class {
     this._patches.set(proto, original);
   }
   _patchNotice() {
-    if (typeof import_obsidian28.Notice === "undefined") return;
-    const OriginalNotice = import_obsidian28.Notice;
+    if (typeof import_obsidian27.Notice === "undefined") return;
+    const OriginalNotice = import_obsidian27.Notice;
     const self = this;
     function PatchedNotice(text, duration) {
       const instance = new OriginalNotice("", duration);
@@ -12484,7 +10585,7 @@ var EmojiIconMapper = class {
 };
 
 // src/features/ConnectedNotes.js
-var import_obsidian29 = require("obsidian");
+var import_obsidian28 = require("obsidian");
 var ConnectedNotes = class {
   constructor(plugin) {
     this.plugin = plugin;
@@ -12794,14 +10895,14 @@ var ConnectedNotes = class {
       const newContent = frontmatterLines.join("\n") + finalBodyContent;
       await this.app.vault.modify(file, newContent);
       if (isAlreadyConnected) {
-        new import_obsidian29.Notice(`Updated URLs for: ${file.basename}`);
+        new import_obsidian28.Notice(`Updated URLs for: ${file.basename}`);
       } else {
-        new import_obsidian29.Notice(`Connected note: ${file.basename}`);
+        new import_obsidian28.Notice(`Connected note: ${file.basename}`);
       }
       return true;
     } catch (error) {
       console.error("[ConnectedNotes] Error connecting existing note:", error);
-      new import_obsidian29.Notice(`Failed to connect note: ${file.basename}`);
+      new import_obsidian28.Notice(`Failed to connect note: ${file.basename}`);
       return false;
     }
   }
@@ -12825,7 +10926,7 @@ var ConnectedNotes = class {
       this.app.workspace.revealLeaf(zoroLeaf);
     } catch (error) {
       console.error("[ConnectedNotes] Error showing connected notes:", error);
-      new import_obsidian29.Notice("Failed to load connected notes");
+      new import_obsidian28.Notice("Failed to load connected notes");
     }
   }
   /**
@@ -13093,10 +11194,10 @@ var ConnectedNotes = class {
       const mainLeaf = this.app.workspace.getLeaf("tab");
       await mainLeaf.openFile(file);
       this.app.workspace.setActiveLeaf(mainLeaf);
-      new import_obsidian29.Notice("Created new connected note!");
+      new import_obsidian28.Notice("Created new connected note!");
     } catch (error) {
       console.error("[ConnectedNotes] Error creating new note:", error);
-      new import_obsidian29.Notice("Failed to create new note");
+      new import_obsidian28.Notice("Failed to create new note");
     }
   }
   /**
@@ -13127,7 +11228,7 @@ var ConnectedNotes = class {
       await this.showConnectedNotes(searchIds, mediaType);
     } catch (error) {
       console.error("[ConnectedNotes] Button click error:", error);
-      new import_obsidian29.Notice("Failed to open connected notes");
+      new import_obsidian28.Notice("Failed to open connected notes");
     }
   }
 };
@@ -13182,8 +11283,8 @@ var DEFAULT_SETTINGS = {
 };
 
 // src/settings/ZoroSettingTab.js
-var import_obsidian30 = require("obsidian");
-var ZoroSettingTab = class extends import_obsidian30.PluginSettingTab {
+var import_obsidian29 = require("obsidian");
+var ZoroSettingTab = class extends import_obsidian29.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -13214,11 +11315,11 @@ var ZoroSettingTab = class extends import_obsidian30.PluginSettingTab {
     const Cache2 = section("\u{1F501} Cache");
     const Exp = section("\u{1F6A7} Beta");
     const About = section("\u2139\uFE0F About");
-    new import_obsidian30.Setting(Account).setName("\u{1F194} Public profile").setDesc("View your AniList profile and stats \u2014 no login needed.").addText((text) => text.setPlaceholder("AniList username").setValue(this.plugin.settings.defaultUsername).onChange(async (value) => {
+    new import_obsidian29.Setting(Account).setName("\u{1F194} Public profile").setDesc("View your AniList profile and stats \u2014 no login needed.").addText((text) => text.setPlaceholder("AniList username").setValue(this.plugin.settings.defaultUsername).onChange(async (value) => {
       this.plugin.settings.defaultUsername = value.trim();
       await this.plugin.saveSettings();
     }));
-    const authSetting = new import_obsidian30.Setting(Account).setName("\u2733\uFE0F AniList").setDesc("Lets you peek at your private profile and actually change stuff.");
+    const authSetting = new import_obsidian29.Setting(Account).setName("\u2733\uFE0F AniList").setDesc("Lets you peek at your private profile and actually change stuff.");
     const authDescEl = authSetting.descEl;
     authDescEl.createEl("br");
     const authLinkEl = authDescEl.createEl("a", {
@@ -13235,7 +11336,7 @@ var ZoroSettingTab = class extends import_obsidian30.PluginSettingTab {
         await this.handleAuthButtonClick();
       });
     });
-    const malAuthSetting = new import_obsidian30.Setting(Account).setName("\u{1F5FE} MyAnimeList").setDesc("Lets you edit and view your MAL entries.");
+    const malAuthSetting = new import_obsidian29.Setting(Account).setName("\u{1F5FE} MyAnimeList").setDesc("Lets you edit and view your MAL entries.");
     const descEl = malAuthSetting.descEl;
     descEl.createEl("br");
     const linkEl = descEl.createEl("a", {
@@ -13252,12 +11353,12 @@ var ZoroSettingTab = class extends import_obsidian30.PluginSettingTab {
         await this.handleMALAuthButtonClick();
       });
     });
-    new import_obsidian30.Setting(Setup).setName("\u26A1 Sample Folder").setDesc("Builds a complete Zoro folder structure with notes, no manual setup needed. (Recommended)").addButton(
+    new import_obsidian29.Setting(Setup).setName("\u26A1 Sample Folder").setDesc("Builds a complete Zoro folder structure with notes, no manual setup needed. (Recommended)").addButton(
       (button) => button.setButtonText("Create").onClick(async () => {
         await this.plugin.sample.createSampleFolders();
       })
     );
-    new import_obsidian30.Setting(Note).setName("\u{1F5C2}\uFE0F Note path").setDesc("Folder path where new connected notes will be created").addText((text) => text.setPlaceholder("folder/subfolder").setValue(this.plugin.settings.notePath || "").onChange(async (value) => {
+    new import_obsidian29.Setting(Note).setName("\u{1F5C2}\uFE0F Note path").setDesc("Folder path where new connected notes will be created").addText((text) => text.setPlaceholder("folder/subfolder").setValue(this.plugin.settings.notePath || "").onChange(async (value) => {
       let cleanPath = value.trim();
       if (cleanPath.startsWith("/")) {
         cleanPath = cleanPath.substring(1);
@@ -13268,81 +11369,81 @@ var ZoroSettingTab = class extends import_obsidian30.PluginSettingTab {
       this.plugin.settings.notePath = cleanPath;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian30.Setting(Note).setName("\u{1F3B4} Media block").setDesc("Auto-insert cover, rating, and details in new notes").addToggle((toggle) => toggle.setValue(this.plugin.settings.insertCodeBlockOnNote).onChange(async (value) => {
+    new import_obsidian29.Setting(Note).setName("\u{1F3B4} Media block").setDesc("Auto-insert cover, rating, and details in new notes").addToggle((toggle) => toggle.setValue(this.plugin.settings.insertCodeBlockOnNote).onChange(async (value) => {
       this.plugin.settings.insertCodeBlockOnNote = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian30.Setting(Display).setName("\u{1F9CA} Layout").setDesc("Choose the default layout for media lists").addDropdown((dropdown) => dropdown.addOption("card", "Card Layout").addOption("table", "Table Layout").setValue(this.plugin.settings.defaultLayout).onChange(async (value) => {
+    new import_obsidian29.Setting(Display).setName("\u{1F9CA} Layout").setDesc("Choose the default layout for media lists").addDropdown((dropdown) => dropdown.addOption("card", "Card Layout").addOption("table", "Table Layout").setValue(this.plugin.settings.defaultLayout).onChange(async (value) => {
       this.plugin.settings.defaultLayout = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian30.Setting(Display).setName("\u{1F532} Grid Columns").setDesc("Number of columns in card grid layout").addSlider((slider) => slider.setLimits(1, 6, 1).setValue(this.plugin.settings.gridColumns).setDynamicTooltip().onChange(async (value) => {
+    new import_obsidian29.Setting(Display).setName("\u{1F532} Grid Columns").setDesc("Number of columns in card grid layout").addSlider((slider) => slider.setLimits(1, 6, 1).setValue(this.plugin.settings.gridColumns).setDynamicTooltip().onChange(async (value) => {
       this.plugin.settings.gridColumns = value;
       await this.plugin.saveSettings();
       this.updateGridColumns(value);
     }));
-    new import_obsidian30.Setting(More).setName("\u23F3 Loading Icon").setDesc("Show loading animation during API requests").addToggle((toggle) => toggle.setValue(this.plugin.settings.showLoadingIcon).onChange(async (value) => {
+    new import_obsidian29.Setting(More).setName("\u23F3 Loading Icon").setDesc("Show loading animation during API requests").addToggle((toggle) => toggle.setValue(this.plugin.settings.showLoadingIcon).onChange(async (value) => {
       this.plugin.settings.showLoadingIcon = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian30.Setting(More).setName("\u{1F517} Plain Titles").setDesc("Show titles as plain text instead of clickable links.").addToggle((toggle) => toggle.setValue(this.plugin.settings.hideUrlsInTitles).onChange(async (value) => {
+    new import_obsidian29.Setting(More).setName("\u{1F517} Plain Titles").setDesc("Show titles as plain text instead of clickable links.").addToggle((toggle) => toggle.setValue(this.plugin.settings.hideUrlsInTitles).onChange(async (value) => {
       this.plugin.settings.hideUrlsInTitles = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian30.Setting(More).setName("\u{1F306} Cover").setDesc("Display cover images for anime/manga").addToggle((toggle) => toggle.setValue(this.plugin.settings.showCoverImages).onChange(async (value) => {
+    new import_obsidian29.Setting(More).setName("\u{1F306} Cover").setDesc("Display cover images for anime/manga").addToggle((toggle) => toggle.setValue(this.plugin.settings.showCoverImages).onChange(async (value) => {
       this.plugin.settings.showCoverImages = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian30.Setting(More).setName("\u2B50 Ratings").setDesc("Display user ratings/scores").addToggle((toggle) => toggle.setValue(this.plugin.settings.showRatings).onChange(async (value) => {
+    new import_obsidian29.Setting(More).setName("\u2B50 Ratings").setDesc("Display user ratings/scores").addToggle((toggle) => toggle.setValue(this.plugin.settings.showRatings).onChange(async (value) => {
       this.plugin.settings.showRatings = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian30.Setting(More).setName("\u{1F4C8} Progress").setDesc("Display progress information").addToggle((toggle) => toggle.setValue(this.plugin.settings.showProgress).onChange(async (value) => {
+    new import_obsidian29.Setting(More).setName("\u{1F4C8} Progress").setDesc("Display progress information").addToggle((toggle) => toggle.setValue(this.plugin.settings.showProgress).onChange(async (value) => {
       this.plugin.settings.showProgress = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian30.Setting(More).setName("\u{1F3AD} Genres").setDesc("Display genre tags").addToggle((toggle) => toggle.setValue(this.plugin.settings.showGenres).onChange(async (value) => {
+    new import_obsidian29.Setting(More).setName("\u{1F3AD} Genres").setDesc("Display genre tags").addToggle((toggle) => toggle.setValue(this.plugin.settings.showGenres).onChange(async (value) => {
       this.plugin.settings.showGenres = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian30.Setting(More).setName("\u{1F9EE} Score Scale").setDesc("Ensures all ratings use the 0\u201310 point scale.").addToggle((toggle) => toggle.setValue(this.plugin.settings.forceScoreFormat).onChange(async (value) => {
+    new import_obsidian29.Setting(More).setName("\u{1F9EE} Score Scale").setDesc("Ensures all ratings use the 0\u201310 point scale.").addToggle((toggle) => toggle.setValue(this.plugin.settings.forceScoreFormat).onChange(async (value) => {
       this.plugin.settings.forceScoreFormat = value;
       await this.plugin.saveSettings();
       if (value && this.plugin.auth.isLoggedIn) {
         await this.plugin.auth.forceScoreFormat();
       }
     }));
-    new import_obsidian30.Setting(Shortcut).setName(" Open on site").setDesc("Adds a customizable external-link button to the More Details panel that opens a site-specific search for the current title.").addButton((button) => button.setButtonText("Add Anime URL").setClass("mod-cta").onClick(async () => {
+    new import_obsidian29.Setting(Shortcut).setName(" Open on site").setDesc("Adds a customizable external-link button to the More Details panel that opens a site-specific search for the current title.").addButton((button) => button.setButtonText("Add Anime URL").setClass("mod-cta").onClick(async () => {
       await this.plugin.moreDetailsPanel.customExternalURL.addUrl("ANIME");
       this.refreshCustomUrlSettings();
     }));
     const animeUrlContainer = Shortcut.createDiv("custom-url-container");
     animeUrlContainer.setAttribute("data-media-type", "ANIME");
     this.renderCustomUrls(animeUrlContainer, "ANIME");
-    new import_obsidian30.Setting(Shortcut).addButton((button) => button.setButtonText("Add Manga URL").setClass("mod-cta").onClick(async () => {
+    new import_obsidian29.Setting(Shortcut).addButton((button) => button.setButtonText("Add Manga URL").setClass("mod-cta").onClick(async () => {
       await this.plugin.moreDetailsPanel.customExternalURL.addUrl("MANGA");
       this.refreshCustomUrlSettings();
     }));
     const mangaUrlContainer = Shortcut.createDiv("custom-url-container");
     mangaUrlContainer.setAttribute("data-media-type", "MANGA");
     this.renderCustomUrls(mangaUrlContainer, "MANGA");
-    new import_obsidian30.Setting(Shortcut).addButton((button) => button.setButtonText("Add Movie/TV URL").setClass("mod-cta").onClick(async () => {
+    new import_obsidian29.Setting(Shortcut).addButton((button) => button.setButtonText("Add Movie/TV URL").setClass("mod-cta").onClick(async () => {
       await this.plugin.moreDetailsPanel.customExternalURL.addUrl("MOVIE_TV");
       this.refreshCustomUrlSettings();
     }));
     const movieTvUrlContainer = Shortcut.createDiv("custom-url-container");
     movieTvUrlContainer.setAttribute("data-media-type", "MOVIE_TV");
     this.renderCustomUrls(movieTvUrlContainer, "MOVIE_TV");
-    new import_obsidian30.Setting(Shortcut).setName("\u{1F527} Auto-Format Search URLs").setDesc("Automatically format URLs to search format. When disabled, URLs will be used exactly as entered.").addToggle((toggle) => toggle.setValue(this.plugin.settings.autoFormatSearchUrls).onChange(async (value) => {
+    new import_obsidian29.Setting(Shortcut).setName("\u{1F527} Auto-Format Search URLs").setDesc("Automatically format URLs to search format. When disabled, URLs will be used exactly as entered.").addToggle((toggle) => toggle.setValue(this.plugin.settings.autoFormatSearchUrls).onChange(async (value) => {
       this.plugin.settings.autoFormatSearchUrls = value;
       await this.plugin.saveSettings();
     }));
-    const exportSetting = new import_obsidian30.Setting(Data).setName("\u{1F4E5} Export your data").setDesc("Everything you've watched, rated, and maybe ghosted \u2014 neatly exported into a CSV & standard export format from AniList, MAL and Simkl.").addButton(
+    const exportSetting = new import_obsidian29.Setting(Data).setName("\u{1F4E5} Export your data").setDesc("Everything you've watched, rated, and maybe ghosted \u2014 neatly exported into a CSV & standard export format from AniList, MAL and Simkl.").addButton(
       (btn) => btn.setButtonText("AniList").setClass("mod-cta").onClick(async () => {
         try {
           await this.plugin.export.exportUnifiedListsToCSV();
         } catch (err) {
-          new import_obsidian30.Notice(`\u274C Export failed: ${err.message}`, 6e3);
+          new import_obsidian29.Notice(`\u274C Export failed: ${err.message}`, 6e3);
         }
       })
     );
@@ -13355,19 +11456,19 @@ var ZoroSettingTab = class extends import_obsidian30.PluginSettingTab {
     exportLinkEl.setAttr("target", "_blank");
     exportLinkEl.setAttr("rel", "noopener noreferrer");
     exportLinkEl.style.textDecoration = "none";
-    new import_obsidian30.Setting(Data).addButton(
+    new import_obsidian29.Setting(Data).addButton(
       (btn) => btn.setButtonText("MAL").setClass("mod-cta").onClick(async () => {
         try {
           await this.plugin.export.exportMALListsToCSV();
         } catch (err) {
-          new import_obsidian30.Notice(`\u274C MAL export failed: ${err.message}`, 6e3);
+          new import_obsidian29.Notice(`\u274C MAL export failed: ${err.message}`, 6e3);
         }
       })
     );
-    new import_obsidian30.Setting(Data).addButton(
+    new import_obsidian29.Setting(Data).addButton(
       (btn) => btn.setButtonText("SIMKL").setClass("mod-cta").onClick(async () => {
         if (!this.plugin.simklAuth.isLoggedIn) {
-          new import_obsidian30.Notice("\u274C Please authenticate with SIMKL first.", 4e3);
+          new import_obsidian29.Notice("\u274C Please authenticate with SIMKL first.", 4e3);
           return;
         }
         btn.setDisabled(true);
@@ -13375,30 +11476,30 @@ var ZoroSettingTab = class extends import_obsidian30.PluginSettingTab {
         try {
           await this.plugin.export.exportSimklListsToCSV();
         } catch (err) {
-          new import_obsidian30.Notice(`\u274C SIMKL export failed: ${err.message}`, 6e3);
+          new import_obsidian29.Notice(`\u274C SIMKL export failed: ${err.message}`, 6e3);
         } finally {
           btn.setDisabled(false);
           btn.setButtonText("SIMKL");
         }
       })
     );
-    new import_obsidian30.Setting(Cache2).setName("\u{1F4CA} Cache Stats").setDesc("Show live cache usage and hit-rate in a pop-up.").addButton(
+    new import_obsidian29.Setting(Cache2).setName("\u{1F4CA} Cache Stats").setDesc("Show live cache usage and hit-rate in a pop-up.").addButton(
       (btn) => btn.setButtonText("Show Stats").onClick(() => {
         const s = this.plugin.cache.getStats();
-        new import_obsidian30.Notice(
+        new import_obsidian29.Notice(
           `Cache: ${s.hitRate} | ${s.cacheSize} entries | Hits ${s.hits} | Misses ${s.misses}`,
           8e3
         );
         console.table(s);
       })
     );
-    new import_obsidian30.Setting(Cache2).setName("\u{1F9F9} Clear Cache").setDesc("Delete all cached data (user, media, search results).").addButton(
+    new import_obsidian29.Setting(Cache2).setName("\u{1F9F9} Clear Cache").setDesc("Delete all cached data (user, media, search results).").addButton(
       (btn) => btn.setButtonText("Clear All Cache").setWarning().onClick(async () => {
         const cleared = await this.plugin.cache.clearAll();
-        new import_obsidian30.Notice(`\u2705 Cache cleared (${cleared} entries)`, 3e3);
+        new import_obsidian29.Notice(`\u2705 Cache cleared (${cleared} entries)`, 3e3);
       })
     );
-    const simklAuthSetting = new import_obsidian30.Setting(Exp).setName("\u{1F3AC} SIMKL").setDesc("Track and sync your anime/movie/TV show progress with SIMKL.");
+    const simklAuthSetting = new import_obsidian29.Setting(Exp).setName("\u{1F3AC} SIMKL").setDesc("Track and sync your anime/movie/TV show progress with SIMKL.");
     simklAuthSetting.addButton((btn) => {
       this.simklAuthButton = btn;
       this.updateSimklAuthButton();
@@ -13406,12 +11507,12 @@ var ZoroSettingTab = class extends import_obsidian30.PluginSettingTab {
         await this.handleSimklAuthButtonClick();
       });
     });
-    new import_obsidian30.Setting(Exp).setName("Default API Source").setDesc("Choose which API to use by default when no source is specified in code blocks").addDropdown((dropdown) => dropdown.addOption("anilist", "AniList").addOption("mal", "MyAnimeList").addOption("simkl", "SIMKL").setValue(this.plugin.settings.defaultApiSource).onChange(async (value) => {
+    new import_obsidian29.Setting(Exp).setName("Default API Source").setDesc("Choose which API to use by default when no source is specified in code blocks").addDropdown((dropdown) => dropdown.addOption("anilist", "AniList").addOption("mal", "MyAnimeList").addOption("simkl", "SIMKL").setValue(this.plugin.settings.defaultApiSource).onChange(async (value) => {
       this.plugin.settings.defaultApiSource = value;
       this.plugin.settings.defaultApiUserOverride = true;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian30.Setting(Exp).setName("TMDb API Key").setDesc(
+    new import_obsidian29.Setting(Exp).setName("TMDb API Key").setDesc(
       createFragment((frag) => {
         frag.appendText("Your The Movie Database (TMDb) API key for trending movies & TV shows. ");
         const link = frag.createEl("a", {
@@ -13427,10 +11528,10 @@ var ZoroSettingTab = class extends import_obsidian30.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian30.Setting(About).setName("Author").setDesc(this.plugin.manifest.author);
-    new import_obsidian30.Setting(About).setName("Version").setDesc(this.plugin.manifest.version);
-    new import_obsidian30.Setting(About).setName("Privacy").setDesc("Zoro only talks to the APIs to fetch & update your media data. Nothing else is sent or shared\u2014your data stays local.");
-    new import_obsidian30.Setting(About).setName("GitHub").setDesc("Get more info or report an issue.").addButton(
+    new import_obsidian29.Setting(About).setName("Author").setDesc(this.plugin.manifest.author);
+    new import_obsidian29.Setting(About).setName("Version").setDesc(this.plugin.manifest.version);
+    new import_obsidian29.Setting(About).setName("Privacy").setDesc("Zoro only talks to the APIs to fetch & update your media data. Nothing else is sent or shared\u2014your data stays local.");
+    new import_obsidian29.Setting(About).setName("GitHub").setDesc("Get more info or report an issue.").addButton(
       (button) => button.setClass("mod-cta").setButtonText("Open GitHub").onClick(() => {
         window.open("https://github.com/zara-kasi/zoro", "_blank");
       })
@@ -13660,7 +11761,7 @@ var ZoroSettingTab = class extends import_obsidian30.PluginSettingTab {
 };
 
 // src/index.js
-var ZoroPlugin = class extends import_obsidian31.Plugin {
+var ZoroPlugin = class extends import_obsidian30.Plugin {
   constructor(app, manifest) {
     super(app, manifest);
     this.globalListeners = [];
@@ -13671,7 +11772,7 @@ var ZoroPlugin = class extends import_obsidian31.Plugin {
     this.malAuth = new MALAuthentication(this);
     this.malApi = new MalApi(this);
     this.simklAuth = new SimklAuthentication(this);
-    this.simklApi = new SimklApi(this);
+    this.simklApi = new (void 0)(this);
     this.theme = new Theme(this);
     this.processor = new Processor(this);
     this.edit = new Edit(this);
@@ -13816,7 +11917,7 @@ var ZoroPlugin = class extends import_obsidian31.Plugin {
       await this.saveData(validSettings);
     } catch (err) {
       console.error("[Zoro] Failed to save settings:", err);
-      new import_obsidian31.Notice("\u26A0\uFE0F Failed to save settings. See console for details.");
+      new import_obsidian30.Notice("\u26A0\uFE0F Failed to save settings. See console for details.");
     }
   }
   async loadSettings() {

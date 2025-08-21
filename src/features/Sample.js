@@ -1,4 +1,4 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+import { Notice } from 'obsidian';
 
 class Sample {
     constructor(plugin) {
@@ -71,4 +71,4 @@ class Sample {
     }
 }
 
-module.exports = { Sample };
+export { Sample };

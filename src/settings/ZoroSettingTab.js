@@ -1,4 +1,5 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+import { PluginSettingTab, Setting, Notice, setIcon } from 'obsidian';
+import { AuthModal } from '../auth/AuthModal.js';
 
 class ZoroSettingTab extends PluginSettingTab {
   constructor(app, plugin) {
@@ -492,8 +493,6 @@ new Setting(Data)
       })
     );
 
-  
-
 
     new Setting(About)
       .setName('Author')
@@ -666,229 +665,86 @@ new Setting(Data)
   }
   
   updateGridColumns(value) {
-  const gridElements = document.querySelectorAll('.zoro-cards-grid');
-  gridElements.forEach(grid => {
-    try {
-      grid.style.setProperty('--zoro-grid-columns', String(value));
-      grid.style.setProperty('--grid-cols', String(value));
-    } catch {}
-  });
-}
-
-renderCustomUrls(container, mediaType) {
-  container.empty();
-  const urls = this.plugin.settings.customSearchUrls?.[mediaType] || [];
-  
-  urls.forEach((url, index) => {
-    this.createUrlSetting(container, mediaType, url, index);
-  });
-}
-
-createUrlSetting(container, mediaType, url, index) {
-  const urlDiv = container.createDiv('url-setting-item');
-  
-  // Input container with flexbox layout
-  const inputContainer = urlDiv.createDiv('url-input-container');
-  
-  // Display URL or template data
-  let displayValue = url;
-  let placeholder = 'https://example.com/search?q=';
-  
-  // Check if this is a learned template
-  if (url.startsWith('{') && url.endsWith('}')) {
-    try {
-      const templateData = JSON.parse(url);
-      if (templateData.originalUrl) {
-        displayValue = templateData.originalUrl;
-        placeholder = 'Learned template from example';
-      }
-    } catch (e) {
-      // If parsing fails, use original URL
-    }
+    const gridElements = document.querySelectorAll('.zoro-cards-grid');
+    gridElements.forEach(grid => {
+      try {
+        grid.style.setProperty('--zoro-grid-columns', String(value));
+        grid.style.setProperty('--grid-cols', String(value));
+      } catch {}
+    });
   }
-  
-  const input = inputContainer.createEl('input', {
-    type: 'text',
-    placeholder: placeholder,
-    value: displayValue,
-    cls: 'custom-url-input'
-  });
-  
-  // Remove button inside the input container
-  const removeBtn = inputContainer.createEl('button', {
-    text: '×',
-    cls: 'url-remove-button-inside'
-  });
-  
-  // Auto-format on input (only if enabled)
-  input.addEventListener('input', async (e) => {
-    const newValue = e.target.value;
-    const updated = await this.plugin.moreDetailsPanel.customExternalURL.updateUrl(mediaType, index, newValue);
-    
-    // Show feedback based on auto-formatting setting
-    if (this.plugin.settings.autoFormatSearchUrls) {
-      const formatted = this.plugin.moreDetailsPanel.customExternalURL.formatSearchUrl(newValue);
-      if (formatted !== newValue && formatted) {
-        input.title = `Auto-formatted: ${formatted}`;
-      } else {
-        input.title = '';
-      }
-    } else {
-      // Check if this could be a template
-      if (newValue.toLowerCase().includes('zoro')) {
-        const template = this.plugin.moreDetailsPanel.customExternalURL.learnTemplateFromExample(newValue, 'zoro zoro');
-        if (template) {
-          input.title = `Template learned! Pattern: "${template.spacePattern}"`;
-        } else {
-          // Try basic template extraction
-          const basicTemplate = this.plugin.moreDetailsPanel.customExternalURL.extractBasicTemplate(newValue);
-          if (basicTemplate) {
-            input.title = `Basic template extracted! Pattern: "${basicTemplate.spacePattern}"`;
-          } else {
-            input.title = 'Auto-formatting disabled - using exact URL';
-          }
+
+  renderCustomUrls(container, mediaType) {
+    container.empty();
+    const urls = this.plugin.settings.customSearchUrls?.[mediaType] || [];
+    urls.forEach((url, index) => {
+      this.createUrlSetting(container, mediaType, url, index);
+    });
+  }
+
+  createUrlSetting(container, mediaType, url, index) {
+    const urlDiv = container.createDiv('url-setting-item');
+    const inputContainer = urlDiv.createDiv('url-input-container');
+    let displayValue = url;
+    let placeholder = 'https://example.com/search?q=';
+    if (url.startsWith('{') && url.endsWith('}')) {
+      try {
+        const templateData = JSON.parse(url);
+        if (templateData.originalUrl) {
+          displayValue = templateData.originalUrl;
+          placeholder = 'Learned template from example';
         }
+      } catch {}
+    }
+    const input = inputContainer.createEl('input', {
+      type: 'text',
+      placeholder: placeholder,
+      value: displayValue,
+      cls: 'custom-url-input'
+    });
+    const removeBtn = inputContainer.createEl('button', {
+      text: '×',
+      cls: 'url-remove-button-inside'
+    });
+    input.addEventListener('input', async (e) => {
+      const newValue = e.target.value;
+      await this.plugin.moreDetailsPanel.customExternalURL.updateUrl(mediaType, index, newValue);
+      if (this.plugin.settings.autoFormatSearchUrls) {
+        const formatted = this.plugin.moreDetailsPanel.customExternalURL.formatSearchUrl(newValue);
+        input.title = formatted !== newValue && formatted ? `Auto-formatted: ${formatted}` : '';
       } else {
-        input.title = 'Auto-formatting disabled - using exact URL';
-      }
-    }
-  });
-  
-  removeBtn.addEventListener('click', async () => {
-    await this.plugin.moreDetailsPanel.customExternalURL.removeUrl(mediaType, index);
-    this.refreshCustomUrlSettings();
-  });
-  
-  // Preview domain name
-  if (url && url.trim()) {
-    const preview = urlDiv.createDiv('url-preview');
-    const domainName = this.plugin.moreDetailsPanel.customExternalURL.extractDomainName(url);
-    preview.textContent = `Preview: ${domainName}`;
-  }
-  
-  }
-
-updateGridColumns(value) {
-const gridElements = document.querySelectorAll('.zoro-cards-grid');
-gridElements.forEach(grid => {
-  try {
-    grid.style.setProperty('--zoro-grid-columns', String(value));
-    grid.style.setProperty('--grid-cols', String(value));
-  } catch {}
-});
-}
-
-renderCustomUrls(container, mediaType) {
-container.empty();
-const urls = this.plugin.settings.customSearchUrls?.[mediaType] || [];
-
-urls.forEach((url, index) => {
-  this.createUrlSetting(container, mediaType, url, index);
-});
-}
-
-createUrlSetting(container, mediaType, url, index) {
-const urlDiv = container.createDiv('url-setting-item');
-
-// Input container with flexbox layout
-const inputContainer = urlDiv.createDiv('url-input-container');
-
-// Display URL or template data
-let displayValue = url;
-let placeholder = 'https://example.com/search?q=';
-
-// Check if this is a learned template
-if (url.startsWith('{') && url.endsWith('}')) {
-  try {
-    const templateData = JSON.parse(url);
-    if (templateData.originalUrl) {
-      displayValue = templateData.originalUrl;
-      placeholder = 'Learned template from example';
-    }
-  } catch (e) {
-    // If parsing fails, use original URL
-  }
-}
-
-const input = inputContainer.createEl('input', {
-  type: 'text',
-  placeholder: placeholder,
-  value: displayValue,
-  cls: 'custom-url-input'
-});
-
-// Remove button inside the input container
-const removeBtn = inputContainer.createEl('button', {
-  text: '×',
-  cls: 'url-remove-button-inside'
-});
-
-// Auto-format on input (only if enabled)
-input.addEventListener('input', async (e) => {
-  const newValue = e.target.value;
-  const updated = await this.plugin.moreDetailsPanel.customExternalURL.updateUrl(mediaType, index, newValue);
-  
-  // Show feedback based on auto-formatting setting
-  if (this.plugin.settings.autoFormatSearchUrls) {
-    const formatted = this.plugin.moreDetailsPanel.customExternalURL.formatSearchUrl(newValue);
-    if (formatted !== newValue && formatted) {
-      input.title = `Auto-formatted: ${formatted}`;
-    } else {
-      input.title = '';
-    }
-  } else {
-    // Check if this could be a template
-    if (newValue.toLowerCase().includes('zoro')) {
-      const template = this.plugin.moreDetailsPanel.customExternalURL.learnTemplateFromExample(newValue, 'zoro zoro');
-      if (template) {
-        input.title = `Template learned! Pattern: "${template.spacePattern}"`;
-      } else {
-        // Try basic template extraction
-        const basicTemplate = this.plugin.moreDetailsPanel.customExternalURL.extractBasicTemplate(newValue);
-        if (basicTemplate) {
-          input.title = `Basic template extracted! Pattern: "${basicTemplate.spacePattern}"`;
+        if (newValue.toLowerCase().includes('zoro')) {
+          const template = this.plugin.moreDetailsPanel.customExternalURL.learnTemplateFromExample(newValue, 'zoro zoro');
+          if (template) {
+            input.title = `Template learned! Pattern: "${template.spacePattern}"`;
+          } else {
+            const basicTemplate = this.plugin.moreDetailsPanel.customExternalURL.extractBasicTemplate(newValue);
+            input.title = basicTemplate ? `Basic template extracted! Pattern: "${basicTemplate.spacePattern}"` : 'Auto-formatting disabled - using exact URL';
+          }
         } else {
           input.title = 'Auto-formatting disabled - using exact URL';
         }
       }
-    } else {
-      input.title = 'Auto-formatting disabled - using exact URL';
+    });
+    removeBtn.addEventListener('click', async () => {
+      await this.plugin.moreDetailsPanel.customExternalURL.removeUrl(mediaType, index);
+      this.refreshCustomUrlSettings();
+    });
+    if (url && url.trim()) {
+      const preview = urlDiv.createDiv('url-preview');
+      const domainName = this.plugin.moreDetailsPanel.customExternalURL.extractDomainName(url);
+      preview.textContent = `Preview: ${domainName}`;
     }
   }
-});
 
-removeBtn.addEventListener('click', async () => {
-  await this.plugin.moreDetailsPanel.customExternalURL.removeUrl(mediaType, index);
-  this.refreshCustomUrlSettings();
-});
-
-// Preview domain name
-if (url && url.trim()) {
-  const preview = urlDiv.createDiv('url-preview');
-  const domainName = this.plugin.moreDetailsPanel.customExternalURL.extractDomainName(url);
-  preview.textContent = `Preview: ${domainName}`;
-}
+  refreshCustomUrlSettings() {
+    const animeContainer = this.containerEl.querySelector('[data-media-type="ANIME"]');
+    if (animeContainer) this.renderCustomUrls(animeContainer, 'ANIME');
+    const mangaContainer = this.containerEl.querySelector('[data-media-type="MANGA"]');
+    if (mangaContainer) this.renderCustomUrls(mangaContainer, 'MANGA');
+    const movieTvContainer = this.containerEl.querySelector('[data-media-type="MOVIE_TV"]');
+    if (movieTvContainer) this.renderCustomUrls(movieTvContainer, 'MOVIE_TV');
+  }
 }
 
-refreshCustomUrlSettings() {
-// Refresh anime URLs
-const animeContainer = this.containerEl.querySelector('[data-media-type="ANIME"]');
-if (animeContainer) {
-  this.renderCustomUrls(animeContainer, 'ANIME');
-}
-
-// Refresh manga URLs  
-const mangaContainer = this.containerEl.querySelector('[data-media-type="MANGA"]');
-if (mangaContainer) {
-  this.renderCustomUrls(mangaContainer, 'MANGA');
-}
-
-// Refresh movie/TV URLs
-const movieTvContainer = this.containerEl.querySelector('[data-media-type="MOVIE_TV"]');
-if (movieTvContainer) {
-  this.renderCustomUrls(movieTvContainer, 'MOVIE_TV');
-}
-}
-}
-
-module.exports = { ZoroSettingTab };
+export { ZoroSettingTab };

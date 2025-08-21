@@ -1,4 +1,4 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+import { Notice, requestUrl } from 'obsidian';
 
 class Theme {
 static THEME_REPO_URL = 'https://api.github.com/repos/zara-kasi/zoro/contents/Theme?ref=main';
@@ -254,4 +254,4 @@ static THEME_REPO_URL = 'https://api.github.com/repos/zara-kasi/zoro/contents/Th
   }
 }
 
-module.exports = { Theme };
+export { Theme };

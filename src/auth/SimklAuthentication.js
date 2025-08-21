@@ -1,4 +1,5 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+import { Notice, requestUrl } from 'obsidian';
+import { SimklPinModal } from './SimklPinModal.js';
 
 
 class SimklAuthentication {
@@ -241,4 +242,4 @@ class SimklAuthentication {
   }
 }
 
-module.exports = { SimklAuthentication };
+export { SimklAuthentication };

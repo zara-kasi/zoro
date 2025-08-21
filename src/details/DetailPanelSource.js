@@ -68,16 +68,7 @@ class DetailPanelSource {
   }
 
   shouldFetchDetailedData(media, entry = null) {
-    // PRIORITY 1: Always fetch details for TMDb trending MOVIE/TV items
-    const mediaTypeUpper = (media?._zoroMeta?.mediaType || entry?._zoroMeta?.mediaType || media?.format || '').toUpperCase();
-    const hasTmdbId = !!(media?.idTmdb || media?.ids?.tmdb || entry?.media?.idTmdb || entry?.media?.ids?.tmdb);
-    
-    if ((mediaTypeUpper === 'MOVIE' || mediaTypeUpper === 'TV') && hasTmdbId) {
-      console.log('[DetailPanelSource] TMDb trending MOVIE/TV detected, forcing detailed fetch');
-      return true;
-    }
-
-    // PRIORITY 2: Check for missing basic data or anime without airing
+    // PRIORITY 1: Check for missing basic data or anime without airing
     const missingBasicData = !media.description || !media.genres || !media.averageScore;
     const isAnimeWithoutAiring = media.type === 'ANIME' && !media.nextAiringEpisode;
     
@@ -118,19 +109,27 @@ class DetailPanelSource {
         const simklId = await this.resolveSimklIdByExternal({ tmdb: tmdbId, imdb: imdbId }, resolvedMediaType);
         if (simklId) {
           console.log('[DetailPanelSource] Successfully resolved Simkl ID:', simklId, 'for TMDb item');
-          const detailedSimklData = await this.fetchSimklDetailedData(simklId, resolvedMediaType);
-          if (detailedSimklData) {
-            const baseMedia = (typeof entryOrSource === 'object' && entryOrSource?.media) ? entryOrSource.media : (typeof entryOrSource === 'object' ? entryOrSource : { id: mediaId });
-            return {
-              ...baseMedia,
-              ...detailedSimklData,
-              id: baseMedia.id ?? mediaId,
-              idImdb: baseMedia.idImdb || detailedSimklData.ids?.imdb || null,
-              idTmdb: baseMedia.idTmdb || tmdbId || detailedSimklData.ids?.tmdb || null,
-              description: detailedSimklData.overview || baseMedia.description || null,
-              nextAiringEpisode: null
-            };
-          }
+          
+          // Create a proper Simkl media object so the existing Simkl details panel system can handle it
+          const baseMedia = (typeof entryOrSource === 'object' && entryOrSource?.media) ? entryOrSource.media : (typeof entryOrSource === 'object' ? entryOrSource : { id: mediaId });
+          
+          // Create a Simkl-style media object
+          const simklMedia = {
+            ...baseMedia,
+            id: simklId, // Use the Simkl ID
+            source: 'simkl', // Mark as Simkl source
+            type: resolvedMediaType === 'MOVIE' ? 'MOVIE' : 'TV',
+            idTmdb: tmdbId,
+            idImdb: imdbId,
+            ids: {
+              simkl: simklId,
+              tmdb: tmdbId,
+              imdb: imdbId
+            }
+          };
+          
+          console.log('[DetailPanelSource] Created Simkl media object:', simklMedia);
+          return simklMedia;
         } else {
           console.log('[DetailPanelSource] Failed to resolve Simkl ID for TMDb item');
         }

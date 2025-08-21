@@ -1,5 +1,3 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
-
 class AniListRequest {
   constructor(config) {
     this.config = config;
@@ -63,4 +61,4 @@ class AniListRequest {
   }
 }
 
-module.exports = { AniListRequest };
+export { AniListRequest };

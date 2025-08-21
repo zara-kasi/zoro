@@ -11242,8 +11242,13 @@ var CardRenderer = class {
       const isMovieOrTv = typeUpper === "MOVIE" || typeUpper === "MOVIES" || typeUpper === "TV" || typeUpper.includes("SHOW");
       const updates = entrySource === "simkl" && isMovieOrTv ? { status: "PLANNING", score: 0, _zUseTmdbId: true } : { status: "PLANNING", progress: 0 };
       if (entrySource === "simkl" && isTmdbItem && isMovieOrTv) {
-        const idToUse = Number(media.idTmdb || media.id) || 0;
-        await this.apiHelper.updateMediaListEntry(idToUse, updates, entrySource, entryMediaType);
+        const ids = { tmdb: Number(media.idTmdb || media.id) || void 0, imdb: media.idImdb || void 0 };
+        if (typeof this.plugin?.simklApi?.updateMediaListEntryWithIds === "function") {
+          await this.plugin.simklApi.updateMediaListEntryWithIds(ids, updates, entryMediaType);
+        } else {
+          const idFallback = Number(media.idTmdb || media.id) || 0;
+          await this.apiHelper.updateMediaListEntry(idFallback, updates, entrySource, entryMediaType);
+        }
       } else {
         await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, entryMediaType);
       }

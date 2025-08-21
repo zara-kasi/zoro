@@ -4692,20 +4692,31 @@ var SimklApi = class {
   // =================== UPDATE METHODS (Following MAL pattern) ===================
   async updateMediaListEntry(mediaId, updates, mediaType) {
     try {
+      console.log("[SimklApi][Update] === ENTRY POINT ===");
+      console.log("[SimklApi][Update] Input params:", { mediaId, updates, mediaType });
       const typeUpper = (mediaType || "").toString().toUpperCase();
       const isMovieOrTv = typeUpper === "MOVIE" || typeUpper === "MOVIES" || typeUpper === "TV" || typeUpper.includes("SHOW");
+      console.log("[SimklApi][Update] Type analysis:", { typeUpper, isMovieOrTv });
       if (updates && updates._zUseTmdbId === true && isMovieOrTv) {
+        console.log("[SimklApi][Update] === TMDb ROUTING PATH ===");
+        console.log("[SimklApi][Update] _zUseTmdbId flag detected, routing to with-ids method");
         let imdb = void 0;
         try {
           const cached = this.cache?.get(String(mediaId), { scope: "mediaData" });
           const media = cached?.media || cached || {};
           imdb = media.idImdb || media.ids?.imdb;
+          console.log("[SimklApi][Update] Cache lookup result:", { cached: !!cached, imdb });
         } catch {
         }
+        console.log("[SimklApi][Update] Calling updateMediaListEntryWithIds with:", { tmdb: mediaId, imdb, updates, mediaType });
         return await this.updateMediaListEntryWithIds({ tmdb: mediaId, imdb }, updates, mediaType);
       }
+      console.log("[SimklApi][Update] === REGULAR PATH ===");
+      console.log("[SimklApi][Update] Using standard executeUpdate path");
       return await this.executeUpdate(mediaId, updates, mediaType);
     } catch (error) {
+      console.log("[SimklApi][Update] === ERROR PATH ===");
+      console.error("[SimklApi][Update] Error in updateMediaListEntry:", error);
       throw this.createUserFriendlyError(error);
     }
   }
@@ -4961,14 +4972,22 @@ var SimklApi = class {
     } catch {
     }
     if (!item.ids.tmdb && !item.ids.imdb) {
-      const typeUpperLocal = typeUpper;
-      const shouldUseTmdbFallback = updates?._zUseTmdbId === true && (isMovie || typeUpperLocal === "TV" || typeUpperLocal.includes("SHOW"));
+      const shouldUseTmdbFallback = updates?._zUseTmdbId === true && (isMovie || typeUpper === "TV" || typeUpper.includes("SHOW"));
+      console.log("[SimklApi][buildUpdatePayload] ID fallback decision:", {
+        shouldUseTmdbFallback,
+        _zUseTmdbId: updates?._zUseTmdbId,
+        isMovie,
+        typeUpper
+      });
       if (shouldUseTmdbFallback) {
         item.ids.tmdb = parseInt(mediaId);
+        console.log("[SimklApi][buildUpdatePayload] Forcing TMDb ID in payload:", { mediaId, mediaType });
       } else {
         item.ids.simkl = parseInt(mediaId);
+        console.log("[SimklApi][buildUpdatePayload] Using Simkl ID in payload:", { mediaId, mediaType });
       }
     }
+    console.log("[SimklApi][buildUpdatePayload] Final IDs object:", JSON.parse(JSON.stringify(item.ids)));
     console.log("[Simkl][Update] initial payload item", JSON.parse(JSON.stringify(item)));
     if (updates.status !== void 0) {
       const originalStatus = updates.status;
@@ -11216,15 +11235,22 @@ var CardRenderer = class {
   async handleAddClick(e, media, entry, config, addBtn) {
     e.preventDefault();
     e.stopPropagation();
+    console.log("[CardRenderer][Add] === START ADD FLOW ===");
+    console.log("[CardRenderer][Add] Raw media object:", JSON.parse(JSON.stringify(media)));
+    console.log("[CardRenderer][Add] Entry object:", JSON.parse(JSON.stringify(entry)));
+    console.log("[CardRenderer][Add] Config:", JSON.parse(JSON.stringify(config)));
     let entrySource = this.apiHelper.detectSource(entry, config);
     const entryMediaType = this.apiHelper.detectMediaType(entry, config, media);
     const isTmdbItem = (entry?._zoroMeta?.source || "").toLowerCase() === "tmdb";
+    console.log("[CardRenderer][Add] Initial detection:", { entrySource, entryMediaType, isTmdbItem });
     if (isTmdbItem) {
       entrySource = "simkl";
+      console.log("[CardRenderer][Add] TMDb item detected, switching to Simkl source");
       try {
         const numericId = Number(media.id) || Number(media.idTmdb) || 0;
         if (numericId > 0) {
           this.plugin.cache.set(String(numericId), { media }, { scope: "mediaData" });
+          console.log("[CardRenderer][Add] Cached media data with ID:", numericId);
         }
       } catch {
       }
@@ -11234,13 +11260,16 @@ var CardRenderer = class {
       this.plugin.prompt.createAuthenticationPrompt(entrySource);
       return;
     }
+    console.log("[CardRenderer][Add] Authentication check passed for:", entrySource);
     addBtn.dataset.loading = "true";
     addBtn.innerHTML = DOMHelper.createLoadingSpinner();
     addBtn.style.pointerEvents = "none";
     try {
       const typeUpper = String(entryMediaType || "").toUpperCase();
       const isMovieOrTv = typeUpper === "MOVIE" || typeUpper === "MOVIES" || typeUpper === "TV" || typeUpper.includes("SHOW");
+      console.log("[CardRenderer][Add] Media type analysis:", { typeUpper, isMovieOrTv });
       const updates = entrySource === "simkl" && isMovieOrTv ? { status: "PLANNING", score: 0, _zUseTmdbId: true } : { status: "PLANNING", progress: 0 };
+      console.log("[CardRenderer][Add] Updates object:", JSON.parse(JSON.stringify(updates)));
       try {
         console.log("[CardRenderer][Add]", {
           entrySource,
@@ -11254,20 +11283,26 @@ var CardRenderer = class {
       } catch {
       }
       if (entrySource === "simkl" && isTmdbItem && isMovieOrTv) {
+        console.log("[CardRenderer][Add] === TMDb MOVIE/TV PATH ===");
         const ids = { tmdb: Number(media.idTmdb || media.id) || void 0, imdb: media.idImdb || void 0 };
-        try {
-          console.log("[CardRenderer][Add] Using Simkl explicit identifiers path", { ids, updates });
-        } catch {
-        }
+        console.log("[CardRenderer][Add] Constructed IDs object:", ids);
+        console.log("[CardRenderer][Add] Checking if updateMediaListEntryWithIds method exists...");
         if (typeof this.plugin?.simklApi?.updateMediaListEntryWithIds === "function") {
+          console.log("[CardRenderer][Add] Method exists, calling updateMediaListEntryWithIds...");
           await this.plugin.simklApi.updateMediaListEntryWithIds(ids, updates, entryMediaType);
+          console.log("[CardRenderer][Add] updateMediaListEntryWithIds completed successfully");
         } else {
+          console.log("[CardRenderer][Add] Method does not exist, falling back to generic update...");
           const idFallback = Number(media.idTmdb || media.id) || 0;
+          console.log("[CardRenderer][Add] Using fallback ID:", idFallback);
           await this.apiHelper.updateMediaListEntry(idFallback, updates, entrySource, entryMediaType);
         }
       } else {
+        console.log("[CardRenderer][Add] === REGULAR PATH ===");
+        console.log("[CardRenderer][Add] Calling regular updateMediaListEntry...");
         await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, entryMediaType);
       }
+      console.log("[CardRenderer][Add] === SUCCESS PATH ===");
       new import_obsidian25.Notice("\u2705 Added to planning!", 3e3);
       console.log(`[Zoro] Added ${media.id} to planning via add button`);
       addBtn.dataset.loading = "false";
@@ -11298,7 +11333,17 @@ var CardRenderer = class {
       addBtn.style.pointerEvents = "none";
       this.parent.refreshActiveViews();
     } catch (error) {
+      console.log("[CardRenderer][Add] === ERROR PATH ===");
       console.error("[Zoro] Add failed:", error);
+      console.log("[CardRenderer][Add] Error details:", {
+        message: error.message,
+        stack: error.stack,
+        entrySource,
+        entryMediaType,
+        isTmdbItem,
+        mediaId: media?.id,
+        idTmdb: media?.idTmdb
+      });
       addBtn.dataset.loading = "false";
       addBtn.innerHTML = "";
       addBtn.classList.remove("zoro-add-button-cover");

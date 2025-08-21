@@ -1406,24 +1406,37 @@ getSimklMediaType(mediaType) {
 
   // =================== UPDATE METHODS (Following MAL pattern) ===================
  async updateMediaListEntry(mediaId, updates, mediaType) {
-  try {  
-    const typeUpper = (mediaType || '').toString().toUpperCase();
-    const isMovieOrTv = typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper.includes('SHOW');
-    if (updates && updates._zUseTmdbId === true && isMovieOrTv) {
-      // Prefer explicit TMDb/IMDb ids for trending TMDb entries
-      let imdb = undefined;
-      try {
-        const cached = this.cache?.get(String(mediaId), { scope: 'mediaData' });
-        const media = cached?.media || cached || {};
-        imdb = media.idImdb || media.ids?.imdb;
-      } catch {}
-      return await this.updateMediaListEntryWithIds({ tmdb: mediaId, imdb }, updates, mediaType);
-    }
-    return await this.executeUpdate(mediaId, updates, mediaType);  
-  } catch (error) {  
-    throw this.createUserFriendlyError(error);  
-  }
-}
+   try {  
+     console.log('[SimklApi][Update] === ENTRY POINT ===');
+     console.log('[SimklApi][Update] Input params:', { mediaId, updates, mediaType });
+     
+     const typeUpper = (mediaType || '').toString().toUpperCase();
+     const isMovieOrTv = typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper.includes('SHOW');
+     console.log('[SimklApi][Update] Type analysis:', { typeUpper, isMovieOrTv });
+     
+     if (updates && updates._zUseTmdbId === true && isMovieOrTv) {
+       console.log('[SimklApi][Update] === TMDb ROUTING PATH ===');
+       console.log('[SimklApi][Update] _zUseTmdbId flag detected, routing to with-ids method');
+       // Prefer explicit TMDb/IMDb ids for trending TMDb entries
+       let imdb = undefined;
+       try {
+         const cached = this.cache?.get(String(mediaId), { scope: 'mediaData' });
+         const media = cached?.media || cached || {};
+         imdb = media.idImdb || media.ids?.imdb;
+         console.log('[SimklApi][Update] Cache lookup result:', { cached: !!cached, imdb });
+       } catch {}
+       console.log('[SimklApi][Update] Calling updateMediaListEntryWithIds with:', { tmdb: mediaId, imdb, updates, mediaType });
+       return await this.updateMediaListEntryWithIds({ tmdb: mediaId, imdb }, updates, mediaType);
+     }
+     console.log('[SimklApi][Update] === REGULAR PATH ===');
+     console.log('[SimklApi][Update] Using standard executeUpdate path');
+     return await this.executeUpdate(mediaId, updates, mediaType);  
+   } catch (error) {  
+     console.log('[SimklApi][Update] === ERROR PATH ===');
+     console.error('[SimklApi][Update] Error in updateMediaListEntry:', error);
+     throw this.createUserFriendlyError(error);  
+   }
+ }
 
   /**
    * Update/create a Simkl list entry using explicit external identifiers (e.g., TMDb/IMDb).
@@ -1707,14 +1720,22 @@ buildUpdatePayload(mediaId, updates, mediaType, forceContainerKey = null) {
     if (imdb) item.ids.imdb = imdb;
   } catch {}
   if (!item.ids.tmdb && !item.ids.imdb) {
-    const typeUpperLocal = typeUpper; // retain computed
-    const shouldUseTmdbFallback = (updates?._zUseTmdbId === true) && (isMovie || typeUpperLocal === 'TV' || typeUpperLocal.includes('SHOW'));
+    const shouldUseTmdbFallback = (updates?._zUseTmdbId === true) && (isMovie || typeUpper === 'TV' || typeUpper.includes('SHOW'));
+    console.log('[SimklApi][buildUpdatePayload] ID fallback decision:', { 
+      shouldUseTmdbFallback, 
+      _zUseTmdbId: updates?._zUseTmdbId, 
+      isMovie, 
+      typeUpper 
+    });
     if (shouldUseTmdbFallback) {
       item.ids.tmdb = parseInt(mediaId);
+      console.log('[SimklApi][buildUpdatePayload] Forcing TMDb ID in payload:', { mediaId, mediaType });
     } else {
       item.ids.simkl = parseInt(mediaId);
+      console.log('[SimklApi][buildUpdatePayload] Using Simkl ID in payload:', { mediaId, mediaType });
     }
   }
+  console.log('[SimklApi][buildUpdatePayload] Final IDs object:', JSON.parse(JSON.stringify(item.ids)));
   
   console.log('[Simkl][Update] initial payload item', JSON.parse(JSON.stringify(item)));  
     

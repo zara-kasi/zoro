@@ -349,16 +349,25 @@ class CardRenderer {
   async handleAddClick(e, media, entry, config, addBtn) {
   e.preventDefault(); e.stopPropagation();
 
+  console.log('[CardRenderer][Add] === START ADD FLOW ===');
+  console.log('[CardRenderer][Add] Raw media object:', JSON.parse(JSON.stringify(media)));
+  console.log('[CardRenderer][Add] Entry object:', JSON.parse(JSON.stringify(entry)));
+  console.log('[CardRenderer][Add] Config:', JSON.parse(JSON.stringify(config)));
+
   let entrySource = this.apiHelper.detectSource(entry, config);
   const entryMediaType = this.apiHelper.detectMediaType(entry, config, media);
 
   const isTmdbItem = (entry?._zoroMeta?.source || '').toLowerCase() === 'tmdb';
+  console.log('[CardRenderer][Add] Initial detection:', { entrySource, entryMediaType, isTmdbItem });
+
   if (isTmdbItem) {
     entrySource = 'simkl';
+    console.log('[CardRenderer][Add] TMDb item detected, switching to Simkl source');
     try {
       const numericId = Number(media.id) || Number(media.idTmdb) || 0;
       if (numericId > 0) {
         this.plugin.cache.set(String(numericId), { media }, { scope: 'mediaData' });
+        console.log('[CardRenderer][Add] Cached media data with ID:', numericId);
       }
     } catch {}
   }
@@ -369,6 +378,8 @@ class CardRenderer {
     return;
   }
 
+  console.log('[CardRenderer][Add] Authentication check passed for:', entrySource);
+
   // show spinner
   addBtn.dataset.loading = 'true';
   addBtn.innerHTML = DOMHelper.createLoadingSpinner();
@@ -378,9 +389,13 @@ class CardRenderer {
     const typeUpper = String(entryMediaType || '').toUpperCase();
     const isMovieOrTv = typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper.includes('SHOW');
 
+    console.log('[CardRenderer][Add] Media type analysis:', { typeUpper, isMovieOrTv });
+
     const updates = (entrySource === 'simkl' && isMovieOrTv)
       ? { status: 'PLANNING', score: 0, _zUseTmdbId: true }
       : { status: 'PLANNING', progress: 0 };
+
+    console.log('[CardRenderer][Add] Updates object:', JSON.parse(JSON.stringify(updates)));
 
     try {
       console.log('[CardRenderer][Add]', {
@@ -397,17 +412,27 @@ class CardRenderer {
     // For TMDb movie/TV routed to Simkl, call the same update path used by Simkl search
     // but use the TMDb id instead of Simkl id
     if (entrySource === 'simkl' && isTmdbItem && isMovieOrTv) {
+      console.log('[CardRenderer][Add] === TMDb MOVIE/TV PATH ===');
       const ids = { tmdb: Number(media.idTmdb || media.id) || undefined, imdb: media.idImdb || undefined };
-      try { console.log('[CardRenderer][Add] Using Simkl explicit identifiers path', { ids, updates }); } catch {}
+      console.log('[CardRenderer][Add] Constructed IDs object:', ids);
+      console.log('[CardRenderer][Add] Checking if updateMediaListEntryWithIds method exists...');
       if (typeof this.plugin?.simklApi?.updateMediaListEntryWithIds === 'function') {
+        console.log('[CardRenderer][Add] Method exists, calling updateMediaListEntryWithIds...');
         await this.plugin.simklApi.updateMediaListEntryWithIds(ids, updates, entryMediaType);
+        console.log('[CardRenderer][Add] updateMediaListEntryWithIds completed successfully');
       } else {
+        console.log('[CardRenderer][Add] Method does not exist, falling back to generic update...');
         const idFallback = Number(media.idTmdb || media.id) || 0;
+        console.log('[CardRenderer][Add] Using fallback ID:', idFallback);
         await this.apiHelper.updateMediaListEntry(idFallback, updates, entrySource, entryMediaType);
       }
     } else {
+      console.log('[CardRenderer][Add] === REGULAR PATH ===');
+      console.log('[CardRenderer][Add] Calling regular updateMediaListEntry...');
       await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, entryMediaType);
     }
+
+    console.log('[CardRenderer][Add] === SUCCESS PATH ===');
 
     // Success feedback
     new Notice('✅ Added to planning!', 3000);
@@ -453,7 +478,17 @@ class CardRenderer {
     this.parent.refreshActiveViews();
 
   } catch (error) {
+    console.log('[CardRenderer][Add] === ERROR PATH ===');
     console.error('[Zoro] Add failed:', error);
+    console.log('[CardRenderer][Add] Error details:', {
+      message: error.message,
+      stack: error.stack,
+      entrySource,
+      entryMediaType,
+      isTmdbItem,
+      mediaId: media?.id,
+      idTmdb: media?.idTmdb
+    });
 
     // Reset button on error
     addBtn.dataset.loading = 'false';

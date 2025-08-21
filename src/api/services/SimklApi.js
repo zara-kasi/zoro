@@ -1694,7 +1694,15 @@ buildUpdatePayload(mediaId, updates, mediaType, forceContainerKey = null) {
     if (tmdb) item.ids.tmdb = parseInt(tmdb);
     if (imdb) item.ids.imdb = imdb;
   } catch {}
-  if (!item.ids.tmdb && !item.ids.imdb) item.ids.simkl = parseInt(mediaId);
+  if (!item.ids.tmdb && !item.ids.imdb) {
+    const typeUpperLocal = typeUpper; // retain computed
+    const shouldUseTmdbFallback = (updates?._zUseTmdbId === true) && (isMovie || typeUpperLocal === 'TV' || typeUpperLocal.includes('SHOW'));
+    if (shouldUseTmdbFallback) {
+      item.ids.tmdb = parseInt(mediaId);
+    } else {
+      item.ids.simkl = parseInt(mediaId);
+    }
+  }
   
   console.log('[Simkl][Update] initial payload item', JSON.parse(JSON.stringify(item)));  
     

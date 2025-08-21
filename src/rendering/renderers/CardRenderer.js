@@ -379,7 +379,7 @@ class CardRenderer {
     const isMovieOrTv = typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper.includes('SHOW');
 
     const updates = (entrySource === 'simkl' && isMovieOrTv)
-      ? { status: 'PLANNING', score: 0 }
+      ? { status: 'PLANNING', score: 0, _zUseTmdbId: true }
       : { status: 'PLANNING', progress: 0 };
 
     // For TMDb movie/TV routed to Simkl, use explicit TMDb/IMDb identifiers

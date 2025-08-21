@@ -1,4 +1,5 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+import { Notice, requestUrl, Modal } from 'obsidian';
+import { AuthModal } from './AuthModal.js';
 
 
 // AniList Authentication 
@@ -222,4 +223,4 @@ modal.open();
   }
 }
 
-module.exports = { Authentication };
+export { Authentication };

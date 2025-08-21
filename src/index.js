@@ -9,8 +9,6 @@ import { SimklApi } from './api/services/SimklApi.js';
 import { Authentication } from './auth/Authentication.js';
 import { MALAuthentication } from './auth/MALAuthentication.js';
 import { SimklAuthentication } from './auth/SimklAuthentication.js';
-
-import { Theme } from './features/Theme.js';
 import { Processor } from './processing/Processor.js';
 import { Edit } from './editing/Edit.js';
 import { MoreDetailsPanel } from './details/MoreDetailsPanel.js';

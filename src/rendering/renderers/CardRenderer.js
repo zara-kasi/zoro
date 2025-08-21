@@ -1,4 +1,5 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+import { Notice, setIcon } from 'obsidian';
+import { DOMHelper } from '../helpers/DOMHelper.js';
 
 class CardRenderer {
   constructor(parentRenderer) {
@@ -72,7 +73,6 @@ class CardRenderer {
     img.className = 'media-cover pressable-cover';
     img.loading = 'lazy';
 
-    
     let pressTimer = null;
     let isPressed = false;
     const pressHoldDuration = 400;
@@ -150,10 +150,10 @@ class CardRenderer {
       coverContainer.appendChild(formatBadge);
     }
     if (isSearch) {
-  // For search and trending cards, show both Add and Edit
-  const addBtn = this.createAddButton(media, entry, config);
-  coverContainer.appendChild(addBtn);
-}
+      // For search and trending cards, show both Add and Edit
+      const addBtn = this.createAddButton(media, entry, config);
+      coverContainer.appendChild(addBtn);
+    }
     
     const needsOverlay = (!isSearch && entry && this.plugin.settings.showProgress) || 
                        (this.plugin.settings.showRatings && (
@@ -273,6 +273,10 @@ class CardRenderer {
       const statusBadge = this.createStatusBadge(entry, config);
       details.appendChild(statusBadge);
     }
+
+    // Always show an edit button to open the edit panel
+    const editBtn = this.createEditButton(media, entry || { media }, config);
+    details.appendChild(editBtn);
 
     // CONNECTED NOTES BUTTON - ADD THIS
     const connectedNotesBtn = this.plugin.connectedNotes.createConnectedNotesButton(media, entry, config);
@@ -571,4 +575,4 @@ class CardRenderer {
   }
 }
 
-module.exports = { CardRenderer };
+export { CardRenderer };

@@ -1,4 +1,4 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+import { Notice } from 'obsidian';
 
 
 class AniListEditModal {
@@ -145,4 +145,4 @@ class AniListEditModal {
   }
 }
 
-module.exports = { AniListEditModal };
+export { AniListEditModal };

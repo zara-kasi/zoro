@@ -1,4 +1,5 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+import { Notice } from 'obsidian';
+import { DOMHelper } from '../../rendering/helpers/DOMHelper.js';
 
 class SupportEditModal {
   constructor(plugin, renderer) {
@@ -137,4 +138,4 @@ class SupportEditModal {
   }
 }
 
-module.exports = { SupportEditModal };
+export { SupportEditModal };

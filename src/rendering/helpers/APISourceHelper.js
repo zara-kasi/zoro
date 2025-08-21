@@ -1,4 +1,4 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+import { Notice } from 'obsidian';
 
 class APISourceHelper {
   constructor(plugin) {
@@ -186,4 +186,4 @@ class APISourceHelper {
   }
 }
 
-module.exports = { APISourceHelper };
+export { APISourceHelper };

@@ -434,39 +434,39 @@ class DetailPanelSource {
       
       console.log('[DetailPanelSource] Found candidates:', candidates.length);
       
-      const match = candidates.find(item => {
-        const node = item.movie || item.show || item;
-        const ids = node?.ids || node || {};
-        const okTmdb = tmdb ? Number(ids.tmdb) === Number(tmdb) : true;
-        const okImdb = imdb ? String(ids.imdb) === String(imdb) : true;
-        const hasSimklId = Number(ids.simkl || ids.id) > 0;
-        
-        console.log('[DetailPanelSource] Checking candidate:', { 
-          itemTitle: node?.title || node?.name, 
-          ids, 
-          okTmdb, 
-          okImdb, 
-          hasSimklId 
+      // Since we're searching by TMDb ID, if Simkl returns results, trust the first valid result
+      // The external ID matching was failing because Simkl doesn't return tmdb/imdb in the response
+      if (candidates.length > 0) {
+        const firstValidCandidate = candidates.find(item => {
+          const node = item.movie || item.show || item;
+          const ids = node?.ids || node || {};
+          const hasSimklId = Number(ids.simkl || ids.id) > 0;
+          
+          console.log('[DetailPanelSource] Checking candidate:', { 
+            itemTitle: node?.title || node?.name, 
+            ids, 
+            hasSimklId 
+          });
+          
+          return hasSimklId;
         });
         
-        return okTmdb && okImdb && hasSimklId;
-      }) || null;
-      
-      if (!match) {
-        console.log('[DetailPanelSource] No matching candidate found');
-        return null;
+        if (firstValidCandidate) {
+          const node = firstValidCandidate.movie || firstValidCandidate.show || firstValidCandidate;
+          const ids = node?.ids || node || {};
+          const simklId = Number(ids.simkl || ids.id);
+          
+          console.log('[DetailPanelSource] Found matching item:', { 
+            title: node?.title || node?.name, 
+            simklId 
+          });
+          
+          return simklId;
+        }
       }
       
-      const node = match.movie || match.show || match;
-      const ids = node?.ids || node || {};
-      const simklId = Number(ids.simkl || ids.id);
-      
-      console.log('[DetailPanelSource] Found matching item:', { 
-        title: node?.title || node?.name, 
-        simklId 
-      });
-      
-      return simklId || null;
+      console.log('[DetailPanelSource] No matching candidate found');
+      return null;
     } catch (error) {
       console.log('[DetailPanelSource] resolveSimklIdByExternal error:', error);
       return null;

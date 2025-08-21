@@ -1,4 +1,4 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+// No obsidian imports needed here
 
 class MediaListRenderer {
   constructor(parentRenderer) {
@@ -92,4 +92,4 @@ class MediaListRenderer {
   }
 }
 
-module.exports = { MediaListRenderer };
+export { MediaListRenderer };

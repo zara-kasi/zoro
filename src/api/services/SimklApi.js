@@ -1796,6 +1796,17 @@ buildUpdatePayload(mediaId, updates, mediaType, forceContainerKey = null) {
     if (!item.ids.tmdb && imdb) item.ids.imdb = String(imdb);
     if (!item.ids.tmdb && !item.ids.imdb && simkl) item.ids.simkl = parseInt(simkl);
 
+    // Try to enrich with metadata from cache (title/mal/imdb stabilization)
+    try {
+      const cached = this.cache?.get(String(tmdb || simkl), { scope: 'mediaData' })
+        || this.cache?.get(String(simkl || tmdb), { scope: 'mediaData' });
+      const media = cached?.media || cached || {};
+      if (!item.ids.imdb && media.idImdb) item.ids.imdb = media.idImdb;
+      if (media.idMal) item.ids.mal = media.idMal;
+      const title = media?.title?.english || media?.title?.romaji || media?.title?.native;
+      if (title) item.title = title;
+    } catch {}
+
     // Status
     if (updates.status !== undefined) {
       const validatedStatus = this.validateAndConvertStatus(updates.status, mediaType);

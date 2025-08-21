@@ -5033,6 +5033,15 @@ var SimklApi = class {
     if (tmdb) item.ids.tmdb = parseInt(tmdb);
     if (!item.ids.tmdb && imdb) item.ids.imdb = String(imdb);
     if (!item.ids.tmdb && !item.ids.imdb && simkl) item.ids.simkl = parseInt(simkl);
+    try {
+      const cached = this.cache?.get(String(tmdb || simkl), { scope: "mediaData" }) || this.cache?.get(String(simkl || tmdb), { scope: "mediaData" });
+      const media = cached?.media || cached || {};
+      if (!item.ids.imdb && media.idImdb) item.ids.imdb = media.idImdb;
+      if (media.idMal) item.ids.mal = media.idMal;
+      const title = media?.title?.english || media?.title?.romaji || media?.title?.native;
+      if (title) item.title = title;
+    } catch {
+    }
     if (updates.status !== void 0) {
       const validatedStatus = this.validateAndConvertStatus(updates.status, mediaType);
       item.to = validatedStatus;
@@ -11232,9 +11241,9 @@ var CardRenderer = class {
       const typeUpper = String(entryMediaType || "").toUpperCase();
       const isMovieOrTv = typeUpper === "MOVIE" || typeUpper === "MOVIES" || typeUpper === "TV" || typeUpper.includes("SHOW");
       const updates = entrySource === "simkl" && isMovieOrTv ? { status: "PLANNING", score: 0, _zUseTmdbId: true } : { status: "PLANNING", progress: 0 };
-      if (entrySource === "simkl" && isTmdbItem && isMovieOrTv && typeof this.plugin?.simklApi?.updateMediaListEntryWithIds === "function") {
-        const ids = { tmdb: Number(media.idTmdb || media.id) || void 0, imdb: media.idImdb || void 0 };
-        await this.plugin.simklApi.updateMediaListEntryWithIds(ids, updates, entryMediaType);
+      if (entrySource === "simkl" && isTmdbItem && isMovieOrTv) {
+        const idToUse = Number(media.idTmdb || media.id) || 0;
+        await this.apiHelper.updateMediaListEntry(idToUse, updates, entrySource, entryMediaType);
       } else {
         await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, entryMediaType);
       }

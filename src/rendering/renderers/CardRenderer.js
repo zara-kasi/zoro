@@ -382,10 +382,11 @@ class CardRenderer {
       ? { status: 'PLANNING', score: 0, _zUseTmdbId: true }
       : { status: 'PLANNING', progress: 0 };
 
-    // For TMDb movie/TV routed to Simkl, use explicit TMDb/IMDb identifiers
-    if (entrySource === 'simkl' && isTmdbItem && isMovieOrTv && typeof this.plugin?.simklApi?.updateMediaListEntryWithIds === 'function') {
-      const ids = { tmdb: Number(media.idTmdb || media.id) || undefined, imdb: media.idImdb || undefined };
-      await this.plugin.simklApi.updateMediaListEntryWithIds(ids, updates, entryMediaType);
+    // For TMDb movie/TV routed to Simkl, call the same update path used by Simkl search
+    // but use the TMDb id instead of Simkl id
+    if (entrySource === 'simkl' && isTmdbItem && isMovieOrTv) {
+      const idToUse = Number(media.idTmdb || media.id) || 0;
+      await this.apiHelper.updateMediaListEntry(idToUse, updates, entrySource, entryMediaType);
     } else {
       await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, entryMediaType);
     }

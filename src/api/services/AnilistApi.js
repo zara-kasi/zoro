@@ -1,4 +1,5 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+import { Notice, requestUrl } from 'obsidian';
+import { ZoroError } from '../../core/ZoroError.js';
 
 
 class AnilistApi {
@@ -443,16 +444,11 @@ class AnilistApi {
         'X-Request-ID': requestId
       };
 
-      const result = await this.executeRequestWithRetry({
-        makeRequest: () => requestUrl({
-          url: 'https://anilist.co/api/v2/oauth/token',
-          method: 'POST',
-          headers,
-          body: body.toString()
-        }),
-        config: { type: 'auth' },
-        requestId,
-        maxRetries: 2
+      const result = await requestUrl({
+        url: 'https://anilist.co/api/v2/oauth/token',
+        method: 'POST',
+        headers,
+        body: body.toString()
       });
 
       if (!result || typeof result.json !== 'object') {
@@ -934,4 +930,4 @@ class AnilistApi {
     }
   }
 }
-module.exports = { AnilistApi };
+export { AnilistApi };

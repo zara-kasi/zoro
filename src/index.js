@@ -46,27 +46,7 @@ class ZoroPlugin extends Plugin {
 		this.prompt = new Prompt(this);
 	}
 
-	handleEditClick(e, entry, statusEl, config = {}) {
-		e.preventDefault();
-		e.stopPropagation();
-
-		this.edit.createEditModal(
-			entry,
-			async updates => {
-				if (config.source === 'mal') {
-					await this.malApi.updateMediaListEntry(entry.media.id, updates);
-				} else if (config.source === 'simkl') {
-					await this.simklApi.updateMediaListEntry(entry.media.id, updates);
-				} else {
-					await this.api.updateMediaListEntry(entry.media.id, updates);
-				}
-			},
-			() => {
-				// no-op callback after successful update
-			},
-			config.source || 'anilist'
-		);
-	}
+	
 
 	renderError(el, message, context = '', onRetry = null) {
 		el.empty?.();
@@ -248,6 +228,29 @@ class ZoroPlugin extends Plugin {
 		});
 		this.globalListeners.length = 0;
 	}
+	
+	handleEditClick(e, entry, statusEl, config = {}) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    this.edit.createEditModal(
+      entry,
+      async updates => {
+        // Use appropriate API based on source
+        if (config.source === 'mal') {
+          await this.malApi.updateMediaListEntry(entry.media.id, updates);
+        } else if (config.source === 'simkl') {
+          await this.simklApi.updateMediaListEntry(entry.media.id, updates);
+        } else {
+          await this.api.updateMediaListEntry(entry.media.id, updates);
+        }
+      },
+      () => {
+        // Callback after successful update
+      },
+      config.source || 'anilist'
+    );
+  }
 
 	injectCSS() {
 		const styleId = 'zoro-plugin-styles';

@@ -1,4 +1,4 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+import { Notice } from 'obsidian';
 
 class SimklEditModal {
   constructor(plugin) {
@@ -51,4 +51,4 @@ class SimklEditModal {
   }
 }
 
-module.exports = { SimklEditModal };
+export { SimklEditModal };

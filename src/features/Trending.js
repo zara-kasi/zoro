@@ -184,6 +184,12 @@ class Trending {
         .slice(0, limit)
         .map(item => this.transformTMDbMedia(item, mediaType))
         .filter(Boolean);
+      
+      console.log('[Trending] fetchTMDbTrending created mediaList with items:', mediaList.map(item => ({
+        id: item.id,
+        source: item._zoroMeta?.source,
+        mediaType: item._zoroMeta?.mediaType
+      })));
 
       try {
         const idsToFetch = mediaList.map(m => m.idTmdb).filter(Boolean).slice(0, 20);
@@ -235,7 +241,7 @@ class Trending {
     try {
       const isMovie = mediaType.toUpperCase() === 'MOVIE' || mediaType.toUpperCase() === 'MOVIES';
       
-      return {
+      const transformedItem = {
         id: item.id,
         idTmdb: item.id,
         idImdb: null,
@@ -277,6 +283,14 @@ class Trending {
           }
         }
       };
+      
+      console.log('[Trending] transformTMDbMedia created item with _zoroMeta:', {
+        itemId: transformedItem.id,
+        source: transformedItem._zoroMeta.source,
+        mediaType: transformedItem._zoroMeta.mediaType
+      });
+      
+      return transformedItem;
     } catch (error) {
       console.error('[Trending] Failed to transform TMDb item:', item, error);
       return null;
@@ -487,6 +501,8 @@ class Trending {
 
       items.forEach(item => {
         const isTmdb = ['MOVIE','MOVIES','TV','SHOW','SHOWS'].includes((config.mediaType || '').toUpperCase());
+        
+        // For TMDb items, preserve the existing _zoroMeta.source if it's already set
         if (!item._zoroMeta) {
           item._zoroMeta = {
             source: isTmdb ? 'tmdb' : source,
@@ -494,7 +510,10 @@ class Trending {
             fetchedAt: Date.now()
           };
         } else {
-          item._zoroMeta.source = isTmdb ? 'tmdb' : source;
+          // Only override source if it's not already set to 'tmdb'
+          if (item._zoroMeta.source !== 'tmdb') {
+            item._zoroMeta.source = isTmdb ? 'tmdb' : source;
+          }
           item._zoroMeta.mediaType = config.mediaType || 'ANIME';
           item._zoroMeta.fetchedAt = Date.now();
         }
@@ -503,7 +522,8 @@ class Trending {
           itemId: item.id, 
           source: item._zoroMeta.source, 
           mediaType: item._zoroMeta.mediaType,
-          isTmdb 
+          isTmdb,
+          originalSource: item._zoroMeta.source
         });
       });
 

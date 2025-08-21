@@ -98,6 +98,12 @@ class DetailPanelSource {
       return true;
     }
     
+    // Also check if the entry object has a media property with TMDb source
+    if (entry?.media?._zoroMeta?.source === 'tmdb' && (entry?.media?._zoroMeta?.mediaType === 'MOVIE' || entry?.media?._zoroMeta?.mediaType === 'TV')) {
+      console.log('[DetailPanelSource] TMDb source detected from entry.media._zoroMeta, returning true');
+      return true;
+    }
+    
     const result = missingBasicData || isAnimeWithoutAiring;
     console.log('[DetailPanelSource] Final result:', result, { missingBasicData, isAnimeWithoutAiring });
     return result;

@@ -274,10 +274,6 @@ class CardRenderer {
       details.appendChild(statusBadge);
     }
 
-    // Always show an edit button to open the edit panel
-    const editBtn = this.createEditButton(media, entry || { media }, config);
-    details.appendChild(editBtn);
-
     // CONNECTED NOTES BUTTON - ADD THIS
     const connectedNotesBtn = this.plugin.connectedNotes.createConnectedNotesButton(media, entry, config);
     details.appendChild(connectedNotesBtn);

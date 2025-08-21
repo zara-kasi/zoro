@@ -1413,6 +1413,84 @@ getSimklMediaType(mediaType) {
   }
 }
 
+  /**
+   * Update/create a Simkl list entry using explicit external identifiers (e.g., TMDb/IMDb).
+   * This is primarily used for TMDb trending items (movies/TV) where we don't have Simkl IDs.
+   *
+   * @param {{ tmdb?: number|string, imdb?: string, simkl?: number|string }} identifiers
+   * @param {object} updates
+   * @param {string} mediaType One of MOVIE/MOVIES/TV/ANIME
+   */
+  async updateMediaListEntryWithIds(identifiers, updates, mediaType) {
+    try {
+      await this.ensureValidToken();
+      const payload = this.buildUpdatePayloadFromIdentifiers(identifiers, updates, mediaType);
+      const typeUpper = (mediaType || '').toString().toUpperCase();
+      const isMovie = typeUpper === 'MOVIE' || typeUpper === 'MOVIES';
+
+      // Add to list (status)
+      if (updates.status !== undefined) {
+        await this.makeRequest({
+          url: `${this.baseUrl}/sync/add-to-list`,
+          method: 'POST',
+          headers: this.getHeaders({ type: 'update' }),
+          body: JSON.stringify(payload),
+          priority: 'high'
+        });
+
+        // Enforce via ratings if score not provided
+        if (updates.score === undefined || updates.score === null) {
+          const statusMapped = this.mapAniListStatusToSimkl(updates.status);
+          const statusToRating = { watching: 8, completed: 9, hold: 6, dropped: 3, plantowatch: 1 };
+          const derived = statusToRating[statusMapped];
+          if (derived) {
+            const ratingsPayload = this.buildUpdatePayloadFromIdentifiers(identifiers, { score: derived }, mediaType);
+            await this.makeRequest({
+              url: `${this.baseUrl}/sync/ratings`,
+              method: 'POST',
+              headers: this.getHeaders({ type: 'update' }),
+              body: JSON.stringify(ratingsPayload),
+              priority: 'high'
+            });
+          }
+        }
+      }
+
+      // Progress handling (movies only here; shows use watched_episodes in list payload already)
+      if (updates.progress !== undefined) {
+        if (isMovie) {
+          const watched = (parseInt(updates.progress) || 0) > 0;
+          const containerKey = 'movies';
+          const historyPayload = { [containerKey]: [{ ids: {} }] };
+          const item = historyPayload[containerKey][0];
+          if (identifiers?.tmdb) item.ids.tmdb = parseInt(identifiers.tmdb);
+          if (!item.ids.tmdb && identifiers?.imdb) item.ids.imdb = String(identifiers.imdb);
+          if (!item.ids.tmdb && !item.ids.imdb && identifiers?.simkl) item.ids.simkl = parseInt(identifiers.simkl);
+
+          await this.makeRequest({
+            url: `${this.baseUrl}/sync/history${watched ? '' : '/remove'}`,
+            method: 'POST',
+            headers: this.getHeaders({ type: 'update' }),
+            body: JSON.stringify(historyPayload),
+            priority: 'high'
+          });
+        }
+      }
+
+      // Invalidate caches
+      this.cache.invalidateScope('userData');
+
+      return {
+        id: null,
+        status: updates.status || null,
+        score: updates.score || 0,
+        progress: updates.progress || 0
+      };
+    } catch (error) {
+      throw this.createUserFriendlyError(error);
+    }
+  }
+
 async executeUpdate(mediaId, updates, mediaType) {
   const normalizedId = this.normalizeSimklId(mediaId);
   console.log('[Simkl][Update] executeUpdate', { rawId: mediaId, normalizedId, updates, mediaType });
@@ -1680,6 +1758,52 @@ buildUpdatePayload(mediaId, updates, mediaType, forceContainerKey = null) {
   console.log('[Simkl][Update] final payload', JSON.parse(JSON.stringify(payload)));  
   return payload;
 }
+
+  // Build payload using explicit identifiers, bypassing cache lookup
+  buildUpdatePayloadFromIdentifiers(identifiers, updates, mediaType, forceContainerKey = null) {
+    const typeUpper = (mediaType || '').toString().toUpperCase();
+    const isMovie = typeUpper === 'MOVIE' || typeUpper === 'MOVIES';
+    const containerKey = forceContainerKey || (isMovie ? 'movies' : 'shows');
+    const payload = { [containerKey]: [{ ids: {} }] };
+
+    const item = payload[containerKey][0];
+    item.type = isMovie ? 'movie' : 'show';
+
+    const tmdb = identifiers?.tmdb;
+    const imdb = identifiers?.imdb;
+    const simkl = identifiers?.simkl;
+    if (tmdb) item.ids.tmdb = parseInt(tmdb);
+    if (!item.ids.tmdb && imdb) item.ids.imdb = String(imdb);
+    if (!item.ids.tmdb && !item.ids.imdb && simkl) item.ids.simkl = parseInt(simkl);
+
+    // Status
+    if (updates.status !== undefined) {
+      const validatedStatus = this.validateAndConvertStatus(updates.status, mediaType);
+      item.to = validatedStatus;
+    } else if (!isMovie && updates.progress !== undefined) {
+      const prog = parseInt(updates.progress) || 0;
+      item.to = prog > 0 ? 'watching' : 'plantowatch';
+    }
+
+    // Rating
+    if (updates.score !== undefined && updates.score !== null) {
+      const score = Math.max(0, Math.min(10, Math.round(updates.score)));
+      if (score > 0) item.rating = score;
+    }
+
+    // Progress
+    if (updates.progress !== undefined) {
+      if (isMovie) {
+        item.watched = (parseInt(updates.progress) || 0) > 0;
+      } else {
+        const prog = parseInt(updates.progress) || 0;
+        item.watched_episodes = prog;
+        if (item.to === undefined) item.to = prog > 0 ? 'watching' : 'plantowatch';
+      }
+    }
+
+    return payload;
+  }
 
 // Build minimal payload for remove operations (only container and IDs)
 buildRemovePayload(mediaId, mediaType, forceContainerKey = null) {

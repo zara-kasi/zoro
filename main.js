@@ -17,11 +17,11 @@ var __copyProps = (to, from, except, desc) => {
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // src/index.js
-var index_exports = {};
-__export(index_exports, {
-  default: () => index_default
+var src_exports = {};
+__export(src_exports, {
+  default: () => src_default
 });
-module.exports = __toCommonJS(index_exports);
+module.exports = __toCommonJS(src_exports);
 var import_obsidian31 = require("obsidian");
 
 // src/cache/Cache.js
@@ -4697,6 +4697,73 @@ var SimklApi = class {
       throw this.createUserFriendlyError(error);
     }
   }
+  /**
+   * Update/create a Simkl list entry using explicit external identifiers (e.g., TMDb/IMDb).
+   * This is primarily used for TMDb trending items (movies/TV) where we don't have Simkl IDs.
+   *
+   * @param {{ tmdb?: number|string, imdb?: string, simkl?: number|string }} identifiers
+   * @param {object} updates
+   * @param {string} mediaType One of MOVIE/MOVIES/TV/ANIME
+   */
+  async updateMediaListEntryWithIds(identifiers, updates, mediaType) {
+    try {
+      await this.ensureValidToken();
+      const payload = this.buildUpdatePayloadFromIdentifiers(identifiers, updates, mediaType);
+      const typeUpper = (mediaType || "").toString().toUpperCase();
+      const isMovie = typeUpper === "MOVIE" || typeUpper === "MOVIES";
+      if (updates.status !== void 0) {
+        await this.makeRequest({
+          url: `${this.baseUrl}/sync/add-to-list`,
+          method: "POST",
+          headers: this.getHeaders({ type: "update" }),
+          body: JSON.stringify(payload),
+          priority: "high"
+        });
+        if (updates.score === void 0 || updates.score === null) {
+          const statusMapped = this.mapAniListStatusToSimkl(updates.status);
+          const statusToRating = { watching: 8, completed: 9, hold: 6, dropped: 3, plantowatch: 1 };
+          const derived = statusToRating[statusMapped];
+          if (derived) {
+            const ratingsPayload = this.buildUpdatePayloadFromIdentifiers(identifiers, { score: derived }, mediaType);
+            await this.makeRequest({
+              url: `${this.baseUrl}/sync/ratings`,
+              method: "POST",
+              headers: this.getHeaders({ type: "update" }),
+              body: JSON.stringify(ratingsPayload),
+              priority: "high"
+            });
+          }
+        }
+      }
+      if (updates.progress !== void 0) {
+        if (isMovie) {
+          const watched = (parseInt(updates.progress) || 0) > 0;
+          const containerKey = "movies";
+          const historyPayload = { [containerKey]: [{ ids: {} }] };
+          const item = historyPayload[containerKey][0];
+          if (identifiers?.tmdb) item.ids.tmdb = parseInt(identifiers.tmdb);
+          if (!item.ids.tmdb && identifiers?.imdb) item.ids.imdb = String(identifiers.imdb);
+          if (!item.ids.tmdb && !item.ids.imdb && identifiers?.simkl) item.ids.simkl = parseInt(identifiers.simkl);
+          await this.makeRequest({
+            url: `${this.baseUrl}/sync/history${watched ? "" : "/remove"}`,
+            method: "POST",
+            headers: this.getHeaders({ type: "update" }),
+            body: JSON.stringify(historyPayload),
+            priority: "high"
+          });
+        }
+      }
+      this.cache.invalidateScope("userData");
+      return {
+        id: null,
+        status: updates.status || null,
+        score: updates.score || 0,
+        progress: updates.progress || 0
+      };
+    } catch (error) {
+      throw this.createUserFriendlyError(error);
+    }
+  }
   async executeUpdate(mediaId, updates, mediaType) {
     const normalizedId = this.normalizeSimklId(mediaId);
     console.log("[Simkl][Update] executeUpdate", { rawId: mediaId, normalizedId, updates, mediaType });
@@ -4930,6 +4997,42 @@ var SimklApi = class {
       console.log("[Simkl][Update] cache enrich failed", e);
     }
     console.log("[Simkl][Update] final payload", JSON.parse(JSON.stringify(payload)));
+    return payload;
+  }
+  // Build payload using explicit identifiers, bypassing cache lookup
+  buildUpdatePayloadFromIdentifiers(identifiers, updates, mediaType, forceContainerKey = null) {
+    const typeUpper = (mediaType || "").toString().toUpperCase();
+    const isMovie = typeUpper === "MOVIE" || typeUpper === "MOVIES";
+    const containerKey = forceContainerKey || (isMovie ? "movies" : "shows");
+    const payload = { [containerKey]: [{ ids: {} }] };
+    const item = payload[containerKey][0];
+    item.type = isMovie ? "movie" : "show";
+    const tmdb = identifiers?.tmdb;
+    const imdb = identifiers?.imdb;
+    const simkl = identifiers?.simkl;
+    if (tmdb) item.ids.tmdb = parseInt(tmdb);
+    if (!item.ids.tmdb && imdb) item.ids.imdb = String(imdb);
+    if (!item.ids.tmdb && !item.ids.imdb && simkl) item.ids.simkl = parseInt(simkl);
+    if (updates.status !== void 0) {
+      const validatedStatus = this.validateAndConvertStatus(updates.status, mediaType);
+      item.to = validatedStatus;
+    } else if (!isMovie && updates.progress !== void 0) {
+      const prog = parseInt(updates.progress) || 0;
+      item.to = prog > 0 ? "watching" : "plantowatch";
+    }
+    if (updates.score !== void 0 && updates.score !== null) {
+      const score = Math.max(0, Math.min(10, Math.round(updates.score)));
+      if (score > 0) item.rating = score;
+    }
+    if (updates.progress !== void 0) {
+      if (isMovie) {
+        item.watched = (parseInt(updates.progress) || 0) > 0;
+      } else {
+        const prog = parseInt(updates.progress) || 0;
+        item.watched_episodes = prog;
+        if (item.to === void 0) item.to = prog > 0 ? "watching" : "plantowatch";
+      }
+    }
     return payload;
   }
   // Build minimal payload for remove operations (only container and IDs)
@@ -11109,7 +11212,12 @@ var CardRenderer = class {
       const typeUpper = String(entryMediaType || "").toUpperCase();
       const isMovieOrTv = typeUpper === "MOVIE" || typeUpper === "MOVIES" || typeUpper === "TV" || typeUpper.includes("SHOW");
       const updates = entrySource === "simkl" && isMovieOrTv ? { status: "PLANNING", score: 0 } : { status: "PLANNING", progress: 0 };
-      await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, entryMediaType);
+      if (entrySource === "simkl" && isTmdbItem && isMovieOrTv && typeof this.plugin?.simklApi?.updateMediaListEntryWithIds === "function") {
+        const ids = { tmdb: Number(media.idTmdb || media.id) || void 0, imdb: media.idImdb || void 0 };
+        await this.plugin.simklApi.updateMediaListEntryWithIds(ids, updates, entryMediaType);
+      } else {
+        await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, entryMediaType);
+      }
       new import_obsidian25.Notice("\u2705 Added to planning!", 3e3);
       console.log(`[Zoro] Added ${media.id} to planning via add button`);
       addBtn.dataset.loading = "false";
@@ -13066,7 +13174,6 @@ var ZoroSettingTab = class extends import_obsidian30.PluginSettingTab {
     const Setup = section("\u{1F9ED} Setup");
     const Note = section("\u{1F5D2}\uFE0F Note");
     const Display = section("\u{1F4FA} Display");
-    const Theme2 = section("\u{1F313} Theme");
     const More = section("\u2728  More");
     const Shortcut = section("\u{1F6AA} Shortcut");
     const Data = section("\u{1F4BE} Data");
@@ -13241,51 +13348,6 @@ var ZoroSettingTab = class extends import_obsidian30.PluginSettingTab {
         }
       })
     );
-    new import_obsidian30.Setting(Theme2).setName("\u{1F3A8} Apply").setDesc("Choose from available themes").addDropdown(async (dropdown) => {
-      dropdown.addOption("", "Default");
-      const localThemes = await this.plugin.theme.getAvailableThemes();
-      localThemes.forEach((t) => dropdown.addOption(t, t));
-      dropdown.setValue(this.plugin.settings.theme || "");
-      dropdown.onChange(async (name) => {
-        this.plugin.settings.theme = name;
-        await this.plugin.saveSettings();
-        await this.plugin.theme.applyTheme(name);
-      });
-    });
-    new import_obsidian30.Setting(Theme2).setName("\u{1F4E5} Download").setDesc("Download themes from GitHub repository").addDropdown((dropdown) => {
-      dropdown.addOption("", "Select");
-      this.plugin.theme.fetchRemoteThemes().then((remoteThemes) => {
-        remoteThemes.forEach((t) => dropdown.addOption(t, t));
-      });
-      dropdown.onChange(async (name) => {
-        if (!name) return;
-        const success = await this.plugin.theme.downloadTheme(name);
-        if (success) {
-          this.plugin.settings.theme = name;
-          await this.plugin.saveSettings();
-          await this.plugin.theme.applyTheme(name);
-          this.display();
-        }
-        dropdown.setValue("");
-      });
-    });
-    new import_obsidian30.Setting(Theme2).setName("\u{1F5D1} Delete").setDesc("Remove downloaded themes from local storage").addDropdown(async (dropdown) => {
-      dropdown.addOption("", "Select");
-      const localThemes = await this.plugin.theme.getAvailableThemes();
-      localThemes.forEach((t) => dropdown.addOption(t, t));
-      dropdown.onChange(async (name) => {
-        if (!name) return;
-        const success = await this.plugin.theme.deleteTheme(name);
-        if (success) {
-          if (this.plugin.settings.theme === name) {
-            this.plugin.settings.theme = "";
-            await this.plugin.saveSettings();
-            await this.plugin.theme.applyTheme("");
-          }
-        }
-        dropdown.setValue("");
-      });
-    });
     new import_obsidian30.Setting(Cache2).setName("\u{1F4CA} Cache Stats").setDesc("Show live cache usage and hit-rate in a pop-up.").addButton(
       (btn) => btn.setButtonText("Show Stats").onClick(() => {
         const s = this.plugin.cache.getStats();
@@ -13794,5 +13856,5 @@ var ZoroPlugin = class extends import_obsidian31.Plugin {
     if (loader) loader.remove();
   }
 };
-var index_default = ZoroPlugin;
+var src_default = ZoroPlugin;
 //# sourceMappingURL=main.js.map

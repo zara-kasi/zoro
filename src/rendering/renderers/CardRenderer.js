@@ -382,7 +382,13 @@ class CardRenderer {
       ? { status: 'PLANNING', score: 0 }
       : { status: 'PLANNING', progress: 0 };
 
-    await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, entryMediaType);
+    // For TMDb movie/TV routed to Simkl, use explicit TMDb/IMDb identifiers
+    if (entrySource === 'simkl' && isTmdbItem && isMovieOrTv && typeof this.plugin?.simklApi?.updateMediaListEntryWithIds === 'function') {
+      const ids = { tmdb: Number(media.idTmdb || media.id) || undefined, imdb: media.idImdb || undefined };
+      await this.plugin.simklApi.updateMediaListEntryWithIds(ids, updates, entryMediaType);
+    } else {
+      await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, entryMediaType);
+    }
 
     // Success feedback
     new Notice('✅ Added to planning!', 3000);

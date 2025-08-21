@@ -1,4 +1,5 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+import { Notice, requestUrl } from 'obsidian';
+import { AuthModal } from './AuthModal.js';
 
 
 class MALAuthentication {
@@ -377,4 +378,4 @@ return;
   }
 }
 
-module.exports = { MALAuthentication };
+export { MALAuthentication };

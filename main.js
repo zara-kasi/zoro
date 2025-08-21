@@ -2,7 +2,6 @@ var __defProp = Object.defineProperty;
 var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
 var __hasOwnProp = Object.prototype.hasOwnProperty;
-var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
 var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
@@ -16,14 +15,13 @@ var __copyProps = (to, from, except, desc) => {
   return to;
 };
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
-var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
 
 // src/index.js
-var src_exports = {};
-__export(src_exports, {
-  default: () => src_default
+var index_exports = {};
+__export(index_exports, {
+  default: () => index_default
 });
-module.exports = __toCommonJS(src_exports);
+module.exports = __toCommonJS(index_exports);
 var import_obsidian31 = require("obsidian");
 
 // src/cache/Cache.js
@@ -5546,10 +5544,13 @@ var AuthModal = class _AuthModal extends import_obsidian6.Modal {
 };
 
 // src/auth/Authentication.js
-var _Authentication = class _Authentication {
+var Authentication = class _Authentication {
   constructor(plugin) {
     this.plugin = plugin;
   }
+  static ANILIST_AUTH_URL = "https://anilist.co/api/v2/oauth/authorize";
+  static ANILIST_TOKEN_URL = "https://anilist.co/api/v2/oauth/token";
+  static REDIRECT_URI = "https://anilist.co/api/v2/oauth/pin";
   get isLoggedIn() {
     return Boolean(this.plugin.settings.accessToken);
   }
@@ -5725,17 +5726,16 @@ var _Authentication = class _Authentication {
     return name;
   }
 };
-__publicField(_Authentication, "ANILIST_AUTH_URL", "https://anilist.co/api/v2/oauth/authorize");
-__publicField(_Authentication, "ANILIST_TOKEN_URL", "https://anilist.co/api/v2/oauth/token");
-__publicField(_Authentication, "REDIRECT_URI", "https://anilist.co/api/v2/oauth/pin");
-var Authentication = _Authentication;
 
 // src/auth/MALAuthentication.js
 var import_obsidian8 = require("obsidian");
-var _MALAuthentication = class _MALAuthentication {
+var MALAuthentication = class _MALAuthentication {
   constructor(plugin) {
     this.plugin = plugin;
   }
+  static MAL_AUTH_URL = "https://myanimelist.net/v1/oauth2/authorize";
+  static MAL_TOKEN_URL = "https://myanimelist.net/v1/oauth2/token";
+  static MAL_USER_URL = "https://api.myanimelist.net/v2/users/@me";
   get isLoggedIn() {
     return Boolean(this.plugin.settings.malAccessToken && this.isTokenValid());
   }
@@ -6037,10 +6037,6 @@ var _MALAuthentication = class _MALAuthentication {
     return this.plugin.settings.malUserInfo;
   }
 };
-__publicField(_MALAuthentication, "MAL_AUTH_URL", "https://myanimelist.net/v1/oauth2/authorize");
-__publicField(_MALAuthentication, "MAL_TOKEN_URL", "https://myanimelist.net/v1/oauth2/token");
-__publicField(_MALAuthentication, "MAL_USER_URL", "https://api.myanimelist.net/v2/users/@me");
-var MALAuthentication = _MALAuthentication;
 
 // src/auth/SimklAuthentication.js
 var import_obsidian10 = require("obsidian");
@@ -6129,11 +6125,14 @@ var SimklPinModal = class extends import_obsidian9.Modal {
 };
 
 // src/auth/SimklAuthentication.js
-var _SimklAuthentication = class _SimklAuthentication {
+var SimklAuthentication = class _SimklAuthentication {
   constructor(plugin) {
     this.plugin = plugin;
     this.pollInterval = null;
   }
+  static SIMKL_PIN_URL = "https://api.simkl.com/oauth/pin";
+  static SIMKL_PIN_CHECK_URL = "https://api.simkl.com/oauth/pin/";
+  static SIMKL_USER_URL = "https://api.simkl.com/users/settings";
   get isLoggedIn() {
     return Boolean(this.plugin.settings.simklAccessToken);
   }
@@ -6306,14 +6305,11 @@ var _SimklAuthentication = class _SimklAuthentication {
     return this.plugin.settings.simklUserInfo;
   }
 };
-__publicField(_SimklAuthentication, "SIMKL_PIN_URL", "https://api.simkl.com/oauth/pin");
-__publicField(_SimklAuthentication, "SIMKL_PIN_CHECK_URL", "https://api.simkl.com/oauth/pin/");
-__publicField(_SimklAuthentication, "SIMKL_USER_URL", "https://api.simkl.com/users/settings");
-var SimklAuthentication = _SimklAuthentication;
 
 // src/features/Theme.js
 var import_obsidian11 = require("obsidian");
-var _Theme = class _Theme {
+var Theme = class _Theme {
+  static THEME_REPO_URL = "https://api.github.com/repos/zara-kasi/zoro/contents/Theme?ref=main";
   constructor(plugin) {
     this.plugin = plugin;
     this.themeStyleId = "zoro-theme";
@@ -6516,8 +6512,6 @@ ${scopedInner}
     }
   }
 };
-__publicField(_Theme, "THEME_REPO_URL", "https://api.github.com/repos/zara-kasi/zoro/contents/Theme?ref=main");
-var Theme = _Theme;
 
 // src/processing/Processor.js
 var import_obsidian13 = require("obsidian");
@@ -11035,8 +11029,6 @@ var CardRenderer = class {
       const statusBadge = this.createStatusBadge(entry, config);
       details.appendChild(statusBadge);
     }
-    const editBtn = this.createEditButton(media, entry || { media }, config);
-    details.appendChild(editBtn);
     const connectedNotesBtn = this.plugin.connectedNotes.createConnectedNotesButton(media, entry, config);
     details.appendChild(connectedNotesBtn);
     return details;
@@ -13592,25 +13584,6 @@ var ZoroPlugin = class extends import_obsidian31.Plugin {
     this.sample = new Sample(this);
     this.prompt = new Prompt(this);
   }
-  handleEditClick(e, entry, statusEl, config = {}) {
-    e.preventDefault();
-    e.stopPropagation();
-    this.edit.createEditModal(
-      entry,
-      async (updates) => {
-        if (config.source === "mal") {
-          await this.malApi.updateMediaListEntry(entry.media.id, updates);
-        } else if (config.source === "simkl") {
-          await this.simklApi.updateMediaListEntry(entry.media.id, updates);
-        } else {
-          await this.api.updateMediaListEntry(entry.media.id, updates);
-        }
-      },
-      () => {
-      },
-      config.source || "anilist"
-    );
-  }
   renderError(el, message, context = "", onRetry = null) {
     el.empty?.();
     el.classList.add("zoro-error-container");
@@ -13768,6 +13741,25 @@ var ZoroPlugin = class extends import_obsidian31.Plugin {
     });
     this.globalListeners.length = 0;
   }
+  handleEditClick(e, entry, statusEl, config = {}) {
+    e.preventDefault();
+    e.stopPropagation();
+    this.edit.createEditModal(
+      entry,
+      async (updates) => {
+        if (config.source === "mal") {
+          await this.malApi.updateMediaListEntry(entry.media.id, updates);
+        } else if (config.source === "simkl") {
+          await this.simklApi.updateMediaListEntry(entry.media.id, updates);
+        } else {
+          await this.api.updateMediaListEntry(entry.media.id, updates);
+        }
+      },
+      () => {
+      },
+      config.source || "anilist"
+    );
+  }
   injectCSS() {
     const styleId = "zoro-plugin-styles";
     const existingStyle = document.getElementById(styleId);
@@ -13802,5 +13794,5 @@ var ZoroPlugin = class extends import_obsidian31.Plugin {
     if (loader) loader.remove();
   }
 };
-var src_default = ZoroPlugin;
+var index_default = ZoroPlugin;
 //# sourceMappingURL=main.js.map

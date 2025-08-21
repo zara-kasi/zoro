@@ -16,11 +16,17 @@ class OpenDetailPanel {
 			media: { 
 				id: media?.id, 
 				type: media?.type, 
-				_zoroMeta: media?._zoroMeta 
+				_zoroMeta: media?._zoroMeta,
+				idTmdb: media?.idTmdb,
+				ids: media?.ids
 			}, 
 			entry: { 
 				_zoroMeta: entry?._zoroMeta,
-				media: entry?.media?._zoroMeta
+				media: {
+					_zoroMeta: entry?.media?._zoroMeta,
+					idTmdb: entry?.media?.idTmdb,
+					ids: entry?.media?.ids
+				}
 			} 
 		});
 		

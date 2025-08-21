@@ -73,37 +73,34 @@ class DetailPanelSource {
         id: media?.id, 
         type: media?.type, 
         _zoroMeta: media?._zoroMeta,
+        idTmdb: media?.idTmdb,
+        ids: media?.ids,
         description: media?.description,
         genres: media?.genres,
         averageScore: media?.averageScore
       }, 
       entry: { 
         _zoroMeta: entry?._zoroMeta,
-        media: entry?.media?._zoroMeta
+        media: entry?.media ? { _zoroMeta: entry.media._zoroMeta, idTmdb: entry.media.idTmdb, ids: entry.media.ids } : null
       } 
     });
-    
+
+    // FORCE: If it's a TMDb trending MOVIE/TV (detected by tmdb id or explicit mediaType), always fetch details from Simkl
+    const mediaTypeUpper = (media?._zoroMeta?.mediaType || entry?._zoroMeta?.mediaType || '').toUpperCase();
+    const looksLikeTmdb = !!(media?.idTmdb || media?.ids?.tmdb || entry?.media?.idTmdb || entry?.media?.ids?.tmdb);
+    if ((mediaTypeUpper === 'MOVIE' || mediaTypeUpper === 'TV') && looksLikeTmdb) {
+      console.log('[DetailPanelSource] Detected TMDb MOVIE/TV with tmdb id, forcing detailed fetch');
+      return true;
+    }
+
     const missingBasicData = !media.description || !media.genres || !media.averageScore;
     const isAnimeWithoutAiring = media.type === 'ANIME' && !media.nextAiringEpisode;
-    
-    // For TMDb trending items, always fetch detailed data to get additional information from Simkl
-    if (media._zoroMeta?.source === 'tmdb' && (media._zoroMeta?.mediaType === 'MOVIE' || media._zoroMeta?.mediaType === 'TV')) {
-      console.log('[DetailPanelSource] TMDb source detected from media._zoroMeta, returning true');
-      return true;
-    }
-    
-    // Also check the entry object for source information
-    if (entry?._zoroMeta?.source === 'tmdb' && (entry?._zoroMeta?.mediaType === 'MOVIE' || entry?._zoroMeta?.mediaType === 'TV')) {
-      console.log('[DetailPanelSource] TMDb source detected from entry._zoroMeta, returning true');
-      return true;
-    }
-    
-    // Also check if the entry object has a media property with TMDb source
-    if (entry?.media?._zoroMeta?.source === 'tmdb' && (entry?.media?._zoroMeta?.mediaType === 'MOVIE' || entry?.media?._zoroMeta?.mediaType === 'TV')) {
-      console.log('[DetailPanelSource] TMDb source detected from entry.media._zoroMeta, returning true');
-      return true;
-    }
-    
+
+    // For TMDb trending items flagged only by source
+    if (media._zoroMeta?.source === 'tmdb' && (media._zoroMeta?.mediaType === 'MOVIE' || media._zoroMeta?.mediaType === 'TV')) return true;
+    if (entry?._zoroMeta?.source === 'tmdb' && (entry?._zoroMeta?.mediaType === 'MOVIE' || entry?._zoroMeta?.mediaType === 'TV')) return true;
+    if (entry?.media?._zoroMeta?.source === 'tmdb' && (entry?.media?._zoroMeta?.mediaType === 'MOVIE' || entry?.media?._zoroMeta?.mediaType === 'TV')) return true;
+
     const result = missingBasicData || isAnimeWithoutAiring;
     console.log('[DetailPanelSource] Final result:', result, { missingBasicData, isAnimeWithoutAiring });
     return result;
@@ -165,10 +162,10 @@ class DetailPanelSource {
           throw new Error(`Could not convert MAL ID ${entryOrSource.media.idMal} to AniList ID for Simkl anime`);
         }
         targetId = conversionResult.id;
-              } else {
-          // If no MAL ID found, just return null without showing annoying notice
-          return null;
-        }
+      } else {
+        // If no MAL ID found, just return null without showing annoying notice
+        return null;
+      }
     } else if (source === 'simkl' && (resolvedMediaType === 'MOVIE' || resolvedMediaType === 'TV')) {
       // For Simkl movies and TV shows, fetch detailed data from Simkl API
       if (typeof entryOrSource === 'object' && entryOrSource?.media?.id) {
@@ -190,39 +187,31 @@ class DetailPanelSource {
         }
         // Fallback to original media data if detailed fetch fails
         return entryOrSource.media;
-              } else {
-          return null;
-        }
-    } else if (source === 'tmdb' && (resolvedMediaType === 'MOVIE' || resolvedMediaType === 'TV')) {
-      console.log('[DetailPanelSource] TMDb case triggered!', { source, resolvedMediaType, entryOrSource });
-      // For TMDb trending items, treat them as Simkl items and use TMDb ID to fetch from Simkl API
-      // Simkl supports TMDb ID-based requests for movies and TV shows
-      if (typeof entryOrSource === 'object' && entryOrSource?.media?.idTmdb) {
-        console.log('[DetailPanelSource] Found TMDb ID, fetching from Simkl:', entryOrSource.media.idTmdb);
-        const detailedSimklData = await this.fetchSimklDetailedData(entryOrSource.media.idTmdb, resolvedMediaType);
+      } else {
+        return null;
+      }
+    } else if ((resolvedMediaType === 'MOVIE' || resolvedMediaType === 'TV')) {
+      // Unified path: If we see TMDb identifiers, fetch details from Simkl using TMDb id
+      const tmdbId = entryOrSource?.media?.idTmdb || entryOrSource?.media?.ids?.tmdb || entryOrSource?.ids?.tmdb || entryOrSource?.idTmdb || mediaId;
+      const hasTmdbId = !!tmdbId && !Number.isNaN(Number(tmdbId));
+      if (hasTmdbId) {
+        console.log('[DetailPanelSource] MOVIE/TV with TMDb id detected, fetching Simkl by tmdb id:', tmdbId);
+        const detailedSimklData = await this.fetchSimklDetailedData(tmdbId, resolvedMediaType);
         if (detailedSimklData) {
-          console.log('[DetailPanelSource] Successfully fetched Simkl data for TMDb item');
-          // Merge the detailed data with the original media data
+          const baseMedia = (typeof entryOrSource === 'object' && entryOrSource?.media) ? entryOrSource.media : (typeof entryOrSource === 'object' ? entryOrSource : { id: mediaId });
           return {
-            ...entryOrSource.media,
+            ...baseMedia,
             ...detailedSimklData,
-            // Ensure we keep the original ID and other essential fields
-            id: entryOrSource.media.id,
-            idImdb: entryOrSource.media.idImdb || detailedSimklData.ids?.imdb || null,
-            idTmdb: entryOrSource.media.idTmdb,
-            // Map Simkl overview to description
-            description: detailedSimklData.overview || entryOrSource.media.description || null,
-            // Simkl does not provide airing data in their API
+            id: baseMedia.id ?? mediaId,
+            idImdb: baseMedia.idImdb || detailedSimklData.ids?.imdb || null,
+            idTmdb: baseMedia.idTmdb || tmdbId || detailedSimklData.ids?.tmdb || null,
+            description: detailedSimklData.overview || baseMedia.description || null,
             nextAiringEpisode: null
           };
         }
-        console.log('[DetailPanelSource] Failed to fetch Simkl data for TMDb item');
-        // Fallback to original media data if detailed fetch fails
-        return entryOrSource.media;
-              } else {
-        console.log('[DetailPanelSource] No TMDb ID found in entryOrSource.media:', entryOrSource?.media);
-          return null;
-        }
+      } else {
+        console.log('[DetailPanelSource] MOVIE/TV without TMDb id, skipping Simkl fetch');
+      }
     }
 
     const stableCacheKey = this.plugin.cache.structuredKey('details', 'stable', targetId);
@@ -323,7 +312,10 @@ class DetailPanelSource {
     try {
       // Use correct Simkl API endpoints for detailed data
       const endpoint = mediaType === 'MOVIE' ? 'movies' : 'tv';
-      const url = `https://api.simkl.com/${endpoint}/${simklId}?extended=full&client_id=${this.plugin.settings.simklClientId}`;
+      // Important: Simkl supports paths like /movies/tmdb/{id} and /tv/tmdb/{id}
+      const looksNumeric = !Number.isNaN(Number(simklId));
+      const path = looksNumeric ? `${endpoint}/tmdb/${simklId}` : `${endpoint}/${simklId}`;
+      const url = `https://api.simkl.com/${path}?extended=full&client_id=${this.plugin.settings.simklClientId}`;
       
       const response = await fetch(url);
       if (!response.ok) throw new Error(`Simkl API error: ${response.status}`);
@@ -331,10 +323,7 @@ class DetailPanelSource {
       
       if (data) {
         // Simkl does not provide airing data in their API
-        // Remove any next_episode field if it exists (it shouldn't)
-        if (data.next_episode) {
-          delete data.next_episode;
-        }
+        if (data.next_episode) delete data.next_episode;
         
         // Cache stable data using cache class TTL
         this.plugin.cache.set(stableCacheKey, data, { 
@@ -346,16 +335,11 @@ class DetailPanelSource {
         return data;
       }
       return null;
-    } catch {
+    } catch (e) {
+      console.log('[DetailPanelSource] fetchSimklDetailedData error:', e);
       return null;
     }
   }
-
-
-
-
-
-
 
   async fetchIMDBData(imdbId, mediaType, simklData = null) {
     if (!imdbId) return null;
@@ -461,17 +445,10 @@ class DetailPanelSource {
       
       if (malId) malDataPromise = this.fetchMALData(malId, detailedMedia.type);
       
-      // For Simkl movies/TV, fetch IMDB data
-      if (source === 'simkl' && (mediaType === 'MOVIE' || mediaType === 'TV') && detailedMedia.idImdb) {
+      // For Simkl/TMDb movies/TV, fetch IMDB data
+      if ((source === 'simkl' || source === 'tmdb' || mediaType === 'MOVIE' || mediaType === 'TV') && detailedMedia.idImdb) {
         imdbDataPromise = this.fetchIMDBData(detailedMedia.idImdb, detailedMedia.type, detailedMedia);
       }
-      
-      // For TMDb movies/TV, fetch IMDB data
-      if (source === 'tmdb' && (mediaType === 'MOVIE' || mediaType === 'TV') && detailedMedia.idImdb) {
-        imdbDataPromise = this.fetchIMDBData(detailedMedia.idImdb, detailedMedia.type, detailedMedia);
-      }
-      
-
       
       // Collect all data
       let malData = null;

@@ -1,4 +1,4 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+// No obsidian imports needed here
 
 class DetailPanelSource {
   constructor(plugin) {
@@ -422,4 +422,4 @@ class DetailPanelSource {
   }
 }
 
-module.exports = { DetailPanelSource };
+export { DetailPanelSource };

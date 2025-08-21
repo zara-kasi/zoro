@@ -1,4 +1,4 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+import { Notice } from 'obsidian';
 
 class Trending {
   constructor(plugin) { 
@@ -544,4 +544,4 @@ class Trending {
   }
 }
 
-module.exports = { Trending };
+export { Trending };

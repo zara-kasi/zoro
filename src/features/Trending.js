@@ -267,6 +267,7 @@ class Trending {
         },
         releaseDate: isMovie ? item.release_date : item.first_air_date,
         _zoroMeta: {
+          source: 'tmdb',
           mediaType: mediaType.toUpperCase(),
           fetchedAt: Date.now(),
           trending: {

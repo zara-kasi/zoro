@@ -1,4 +1,5 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+import { setIcon } from 'obsidian';
+import { DOMHelper } from '../helpers/DOMHelper.js';
 
 class SearchRenderer {
   constructor(parentRenderer) {
@@ -24,8 +25,6 @@ class SearchRenderer {
   const iconSpan = searchWrapper.createEl('span', { cls: 'zoro-search-icon' });
 
   // Use Obsidian's setIcon with Lucide 'search' icon
-  // Import setIcon from obsidian if not globally available
-  const { setIcon } = require('obsidian');
   setIcon(iconSpan, 'search');
 
   // create the input with left padding for the icon
@@ -101,4 +100,4 @@ class SearchRenderer {
   }
 }
 
-module.exports = { SearchRenderer };
+export { SearchRenderer };

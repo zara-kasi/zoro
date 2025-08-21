@@ -1,4 +1,5 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+import { requestUrl } from 'obsidian';
+import { ZoroError } from '../../core/ZoroError.js';
 
 
 class SimklApi {
@@ -2309,4 +2310,4 @@ async removeMediaListEntry(mediaId, mediaType) {
 
 }
 
-module.exports = { SimklApi };
+export { SimklApi };

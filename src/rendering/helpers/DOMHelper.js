@@ -1,4 +1,4 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+import { setIcon } from 'obsidian';
 
 class DOMHelper {
   static createLoadingSpinner() {
@@ -196,4 +196,4 @@ class DOMHelper {
   }
 }
 
-module.exports = { DOMHelper };
+export { DOMHelper };

@@ -1,4 +1,5 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+import { Notice } from 'obsidian';
+import { EmojiIconMapper } from '../rendering/helpers/EmojiIconMapper.js';
 
 
 class ConnectedNotes {
@@ -932,4 +933,4 @@ async handleConnectedNotesClick(e, media, entry, config) {
 }
 }
 
-module.exports = { ConnectedNotes };
+export { ConnectedNotes };

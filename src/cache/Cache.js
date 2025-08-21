@@ -1,4 +1,4 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+import { Notice } from 'obsidian';
 
 class Cache {
   constructor(config = {}) {
@@ -985,4 +985,4 @@ class Cache {
   }
 }
 
-module.exports = { Cache };
+export { Cache };

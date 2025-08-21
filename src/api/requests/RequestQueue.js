@@ -1,4 +1,7 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+// No obsidian import needed here
+import { AniListRequest } from './AniListRequest.js';
+import { MALRequest } from './MALRequest.js';
+import { SimklRequest } from './SimklRequest.js';
 
 class RequestQueue {
   constructor(plugin) {
@@ -704,4 +707,4 @@ class RequestQueue {
   }
 }
 
-module.exports = { RequestQueue };
+export { RequestQueue };

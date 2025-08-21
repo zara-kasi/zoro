@@ -1,4 +1,6 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+// No obsidian imports needed here
+import { OpenDetailPanel } from './OpenDetailPanel.js';
+import { CustomExternalURL } from './CustomExternalURL.js';
 
 class MoreDetailsPanel {
   constructor(plugin) {
@@ -21,4 +23,4 @@ class MoreDetailsPanel {
   }
 }
 
-module.exports = { MoreDetailsPanel };
+export { MoreDetailsPanel };

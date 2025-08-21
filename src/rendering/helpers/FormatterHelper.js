@@ -1,4 +1,4 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+// No obsidian imports needed here
 
 class FormatterHelper {
   formatScore(score, scoreFormat = 'POINT_10') {
@@ -73,4 +73,4 @@ class FormatterHelper {
   }
 }
 
-module.exports = { FormatterHelper };
+export { FormatterHelper };

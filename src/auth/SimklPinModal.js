@@ -1,4 +1,4 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+import { Modal } from 'obsidian';
 
 class SimklPinModal extends Modal {
   constructor(app, deviceData, onCancel) {
@@ -103,4 +103,4 @@ class SimklPinModal extends Modal {
   }
 }
 
-module.exports = { SimklPinModal };
+export { SimklPinModal };

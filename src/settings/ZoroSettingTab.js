@@ -29,7 +29,6 @@ class ZoroSettingTab extends PluginSettingTab {
     const Setup = section('🧭 Setup');
     const Note = section('🗒️ Note');
     const Display = section('📺 Display');
-    const Theme = section('🌓 Theme');
     const More = section('✨  More');
     const Shortcut = section('🚪 Shortcut');
     const Data = section('💾 Data');
@@ -349,73 +348,6 @@ new Setting(Data)
       }
     })
   );
-      
-  
-    new Setting(Theme)
-      .setName('🎨 Apply')
-      .setDesc('Choose from available themes')
-      .addDropdown(async dropdown => {
-        dropdown.addOption('', 'Default');
-        const localThemes = await this.plugin.theme.getAvailableThemes();
-        localThemes.forEach(t => dropdown.addOption(t, t));
-        dropdown.setValue(this.plugin.settings.theme || '');
-        dropdown.onChange(async name => {
-          this.plugin.settings.theme = name;
-          await this.plugin.saveSettings();
-          await this.plugin.theme.applyTheme(name);
-        });
-      });
-
-    new Setting(Theme)
-  .setName('📥 Download')
-  .setDesc('Download themes from GitHub repository')
-  .addDropdown(dropdown => {
-    dropdown.addOption('', 'Select');
-    
-    this.plugin.theme.fetchRemoteThemes().then(remoteThemes => {
-      remoteThemes.forEach(t => dropdown.addOption(t, t));
-    });
-    
-    dropdown.onChange(async name => {
-      if (!name) return;
-      
-      const success = await this.plugin.theme.downloadTheme(name);
-      if (success) {
-        // Auto-apply the downloaded theme
-        this.plugin.settings.theme = name;
-        await this.plugin.saveSettings();
-        await this.plugin.theme.applyTheme(name);
-        
-        // Refresh the Apply dropdown to show the new theme
-        this.display();
-      }
-      dropdown.setValue('');
-    });
-  });
-
-    new Setting(Theme)
-      .setName('🗑 Delete')
-      .setDesc('Remove downloaded themes from local storage')
-      .addDropdown(async dropdown => {
-        dropdown.addOption('', 'Select');
-        const localThemes = await this.plugin.theme.getAvailableThemes();
-        localThemes.forEach(t => dropdown.addOption(t, t));
-        
-        dropdown.onChange(async name => {
-          if (!name) return;
-          
-          const success = await this.plugin.theme.deleteTheme(name);
-          if (success) {
-            // If deleted theme was currently active, remove it
-            if (this.plugin.settings.theme === name) {
-              this.plugin.settings.theme = '';
-              await this.plugin.saveSettings();
-              await this.plugin.theme.applyTheme('');
-            }
-          }
-          dropdown.setValue('');
-        });
-      });
       
       new Setting(Cache)
       .setName('📊 Cache Stats')

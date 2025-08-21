@@ -1,4 +1,9 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+import { Notice } from 'obsidian';
+import { RenderEditModal } from './modals/RenderEditModal.js';
+import { AniListEditModal } from './modals/AniListEditModal.js';
+import { MALEditModal } from './modals/MALEditModal.js';
+import { SimklEditModal } from './modals/SimklEditModal.js';
+import { SupportEditModal } from './modals/SupportEditModal.js';
 
 class Edit {
   constructor(plugin) {
@@ -154,4 +159,4 @@ class Edit {
   }
 }
 
-module.exports = { Edit };
+export { Edit };

@@ -1,4 +1,5 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+// No obsidian imports needed
+import { CustomExternalURL } from './CustomExternalURL.js';
 
 class RenderDetailPanel {
   constructor(plugin) {
@@ -694,4 +695,4 @@ if (media.id && media.type !== 'ANIME' && media.type !== 'MANGA') {
   }
 }
 
-module.exports = { RenderDetailPanel };
+export { RenderDetailPanel };

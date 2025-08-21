@@ -1,4 +1,4 @@
-const { Plugin, PluginSettingTab, Setting, Notice, requestUrl, Modal, setIcon } = require('obsidian');
+import { Setting, Notice, setIcon } from 'obsidian';
 
 class EmojiIconMapper {
   constructor(opts = {}) {
@@ -314,4 +314,4 @@ class EmojiIconMapper {
   }
 }
 
-module.exports = { EmojiIconMapper };
+export { EmojiIconMapper };

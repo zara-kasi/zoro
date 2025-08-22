@@ -2462,6 +2462,40 @@ async removeMediaListEntry(mediaId, mediaType) {
     return 'anime'; // Default fallback
   }
 
+  // Resolve a Simkl entry (and id) using external identifiers like TMDb/IMDb
+  async resolveSimklByExternalIds({ tmdb = null, imdb = null }, mediaType) {
+    try {
+      const params = [];
+      if (tmdb) params.push(`tmdb=${encodeURIComponent(tmdb)}`);
+      if (!tmdb && imdb) params.push(`imdb=${encodeURIComponent(imdb)}`);
+      if (params.length === 0) return null;
+      const url = `${this.baseUrl}/search/id?${params.join('&')}`;
+      const headers = this.getHeaders({ type: 'search' });
+      const response = await this.makeRequest({ url, method: 'GET', headers, priority: 'normal' });
+
+      // Reuse transformSinglePublicResponse parsing by simkl id once we find a candidate with simkl id
+      const candidates = [];
+      ['anime', 'movies', 'tv', 'shows', 'results', 'items'].forEach(key => {
+        if (Array.isArray(response?.[key])) candidates.push(...response[key]);
+      });
+      if (Array.isArray(response)) candidates.push(...response);
+      if (response?.ids) candidates.push(response);
+
+      const first = candidates.find(item => {
+        const node = item.movie || item.show || item;
+        const ids = node?.ids || node || {};
+        return Number(ids?.simkl || ids?.id) > 0;
+      });
+      if (!first) return null;
+      const node = first.movie || first.show || first;
+      const simklId = Number(node?.ids?.simkl || node?.ids?.id);
+      const media = this.transformMedia(node, mediaType);
+      return { simklId, media };
+    } catch (e) {
+      console.warn('[Simkl] resolveSimklByExternalIds failed:', e?.message || e);
+      return null;
+    }
+  }
 
 }
 

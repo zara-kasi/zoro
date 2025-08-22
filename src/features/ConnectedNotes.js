@@ -10,7 +10,6 @@ class ConnectedNotes {
     this.currentUrls = null; // Store current URLs as array for matching
     this.currentSource = null; // Store current source for code block generation
     this.currentMediaType = null; // Store current media type for code block generation
-    this.isTrendingContext = false; // Track if current action comes from a trending view
   }
 
    /**
@@ -315,13 +314,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
     if (!this.currentMedia || !this.currentSource || !this.currentMediaType) {
       return ''; // Return empty if missing required data
     }
-    // Disable code block for trending Movie/TV entries regardless of source
-    const typeUpper = String(this.currentMediaType || '').toUpperCase();
-    const isMovieOrTv = (typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper === 'SHOW' || typeUpper === 'SHOWS');
-    const isTrending = this.isTrendingContext || Boolean(this.currentMedia?._zoroMeta?.isTrending);
-    if (isMovieOrTv && isTrending) {
-      return '';
-    }
+    // No special suppression here; masking will ensure proper source/media
 
     const codeBlockLines = [
       '```zoro',
@@ -926,17 +919,6 @@ async handleConnectedNotesClick(e, media, entry, config) {
   e.stopPropagation();
   
   try {
-    // Determine trending context strictly via DOM/data attribute, independent of source
-    let trendingFlag = false;
-    try {
-      const target = e.currentTarget || e.target;
-      const cardEl = target?.closest?.('.zoro-card');
-      if (cardEl && cardEl.dataset && cardEl.dataset.trending === 'true') {
-        trendingFlag = true;
-      }
-    } catch {}
-    this.isTrendingContext = trendingFlag;
-
     // Extract source and media type
     const source = this.plugin.apiHelper ? 
       this.plugin.apiHelper.detectSource(entry, config) : 
@@ -946,18 +928,34 @@ async handleConnectedNotesClick(e, media, entry, config) {
       this.plugin.apiHelper.detectMediaType(entry, config, media) : 
       (entry?._zoroMeta?.mediaType || config?.mediaType || 'ANIME');
     
+    // If Movie/TV card from trending or TMDb-tagged entry, mask as Simkl by resolving Simkl via TMDb/IMDb
+    const typeUpper = String(mediaType || '').toUpperCase();
+    const isMovieOrTv = (typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper.includes('SHOW'));
+    const isTmdbEntry = (entry?._zoroMeta?.source || '').toLowerCase() === 'tmdb' || !!media?.idTmdb;
+    let maskedMedia = media;
+    let maskedSource = source;
+    if (isMovieOrTv && isTmdbEntry && this.plugin?.simklApi?.resolveSimklByExternalIds) {
+      const ids = { tmdb: Number(media.idTmdb || media.id) || null, imdb: media.idImdb || null };
+      const resolved = await this.plugin.simklApi.resolveSimklByExternalIds(ids, mediaType);
+      if (resolved?.simklId) {
+        // Update media and source to behave like a Simkl entry
+        maskedMedia = { ...resolved.media, id: resolved.simklId };
+        maskedSource = 'simkl';
+      }
+    }
+
     // Store current media for filename generation (PREFER ENGLISH TITLE)
-    this.currentMedia = media;
+    this.currentMedia = maskedMedia;
     
     // Store current source and media type for code block generation
-    this.currentSource = source;
+    this.currentSource = maskedSource;
     this.currentMediaType = mediaType;
     
     // Build URLs array for current media (NOW PASSES SOURCE)
-    this.currentUrls = this.buildCurrentUrls(media, mediaType, source);
+    this.currentUrls = this.buildCurrentUrls(maskedMedia, mediaType, maskedSource);
     
     // Extract search IDs
-    const searchIds = this.extractSearchIds(media, entry, source);
+    const searchIds = this.extractSearchIds(maskedMedia, entry, maskedSource);
     
     // Show connected notes
     await this.showConnectedNotes(searchIds, mediaType);

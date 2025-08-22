@@ -10,7 +10,6 @@ class ConnectedNotes {
     this.currentUrls = null; // Store current URLs as array for matching
     this.currentSource = null; // Store current source for code block generation
     this.currentMediaType = null; // Store current media type for code block generation
-    this.currentOperationType = null; // Track operation type
   }
 
    /**
@@ -30,16 +29,7 @@ extractSearchIds(media, entry, source) {
     // Always add anilist_id as backup
     ids.anilist_id = media.id;
   } else if (source === 'simkl') {
-    // Get media type
-    
-    
-    // Only add simkl_id if NOT trending TV/Movie
-    const isTrendingTvMovie = this.currentOperationType === 'trending' && 
-                              (mediaType === 'TV' || mediaType === 'MOVIE');
-    
-    if (!isTrendingTvMovie) {
-      ids.simkl_id = media.id;
-    }
+    ids.simkl_id = media.id;
     
     // Get media type for SIMKL backup strategy
     const mediaType = this.plugin.apiHelper ? 
@@ -301,11 +291,12 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
     if (!this.currentMedia || !this.currentSource || !this.currentMediaType) {
       return ''; // Return empty if missing required data
     }
-   // Disable code block for trending TV/Movie
-const typeUpper = String(this.currentMediaType || '').toUpperCase();
-if (this.currentOperationType === 'trending' && (typeUpper === 'TV' || typeUpper === 'MOVIE')) {
-  return '';
-}
+    // Disable code block for TMDb trending (movies/TV) since single render is not supported
+    const src = String(this.currentSource || '').toLowerCase();
+    const typeUpper = String(this.currentMediaType || '').toUpperCase();
+    if (src === 'tmdb' && (typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper === 'SHOW' || typeUpper === 'SHOWS')) {
+      return '';
+    }
 
     const codeBlockLines = [
       '```zoro',
@@ -892,20 +883,20 @@ if (this.currentOperationType === 'trending' && (typeUpper === 'TV' || typeUpper
   /**
    * Create the connected notes button for media cards
    */
-  createConnectedNotesButton(media, entry, config, operationType = null) {
+  createConnectedNotesButton(media, entry, config) {
     const notesBtn = document.createElement('span');
     notesBtn.className = 'zoro-note-obsidian';
     notesBtn.createEl('span', { text: '🔮' });
     notesBtn.title = 'View connected notes';
     
-    notesBtn.onclick = (e) => this.handleConnectedNotesClick(e, media, entry, config, operationType);
+    notesBtn.onclick = (e) => this.handleConnectedNotesClick(e, media, entry, config);
     
     return notesBtn;
   }
   /**
  * Handle connected notes button click
  */
-async handleConnectedNotesClick(e, media, entry, config, operationType = null) {
+async handleConnectedNotesClick(e, media, entry, config) {
   e.preventDefault();
   e.stopPropagation();
   
@@ -922,12 +913,10 @@ async handleConnectedNotesClick(e, media, entry, config, operationType = null) {
     // Store current media for filename generation (PREFER ENGLISH TITLE)
     this.currentMedia = media;
     
-// Store operation type
-this.currentOperationType = operationType;
-
-// Store current source and media type for code block generation
-this.currentSource = source;
-this.currentMediaType = mediaType;
+    // Store current source and media type for code block generation
+    this.currentSource = source;
+    this.currentMediaType = mediaType;
+    
     // Build URLs array for current media (NOW PASSES SOURCE)
     this.currentUrls = this.buildCurrentUrls(media, mediaType, source);
     

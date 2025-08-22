@@ -109,7 +109,26 @@ class CardRenderer {
             });
           }
           
-          this.plugin.moreDetailsPanel.showPanel(media, entry, img);
+          // For trending items, ensure we use the current item data with updated _zoroMeta
+          if (isSearch && (entry?._zoroMeta?.mediaType === 'MOVIE' || entry?._zoroMeta?.mediaType === 'TV')) {
+            // Create a fresh entry object with current item data to ensure source is up-to-date
+            const currentEntry = {
+              media,
+              _zoroMeta: {
+                source: media._zoroMeta?.source || entry._zoroMeta?.source,
+                mediaType: entry._zoroMeta?.mediaType,
+                fetchedAt: Date.now()
+              }
+            };
+            console.log(`[CardRenderer] Using current entry for "${media.title?.english}":`, {
+              originalSource: entry._zoroMeta?.source,
+              currentSource: currentEntry._zoroMeta.source,
+              mediaId: media.id
+            });
+            this.plugin.moreDetailsPanel.showPanel(media, currentEntry, img);
+          } else {
+            this.plugin.moreDetailsPanel.showPanel(media, entry, img);
+          }
           img.classList.remove('pressed');
           isPressed = false;
         }
@@ -145,14 +164,30 @@ class CardRenderer {
       isPressed = true;
       img.classList.add('pressed');
       
-      pressTimer = setTimeout(() => {
-        if (isPressed) {
-          e.preventDefault();
-          this.plugin.moreDetailsPanel.showPanel(media, entry, img);
-          img.classList.remove('pressed');
-          isPressed = false;
-        }
-      }, pressHoldDuration);
+              pressTimer = setTimeout(() => {
+          if (isPressed) {
+            e.preventDefault();
+            
+            // For trending items, ensure we use the current item data with updated _zoroMeta
+            if (isSearch && (entry?._zoroMeta?.mediaType === 'MOVIE' || entry?._zoroMeta?.mediaType === 'TV')) {
+              // Create a fresh entry object with current item data to ensure source is up-to-date
+              const currentEntry = {
+                media,
+                _zoroMeta: {
+                  source: media._zoroMeta?.source || entry._zoroMeta?.source,
+                  mediaType: entry._zoroMeta?.mediaType,
+                  fetchedAt: Date.now()
+                }
+              };
+              this.plugin.moreDetailsPanel.showPanel(media, currentEntry, img);
+            } else {
+              this.plugin.moreDetailsPanel.showPanel(media, entry, img);
+            }
+            
+            img.classList.remove('pressed');
+            isPressed = false;
+          }
+        }, pressHoldDuration);
     };
 
     img.ontouchend = img.ontouchcancel = img.ontouchmove = (e) => {

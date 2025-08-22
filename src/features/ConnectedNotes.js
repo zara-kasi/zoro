@@ -10,6 +10,7 @@ class ConnectedNotes {
     this.currentUrls = null; // Store current URLs as array for matching
     this.currentSource = null; // Store current source for code block generation
     this.currentMediaType = null; // Store current media type for code block generation
+    this.isTrendingContext = false; // Track if current action comes from a trending view
   }
 
    /**
@@ -735,8 +736,13 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
     // Footer section at bottom
     const footer = container.createEl('div', { cls: 'zoro-note-panel-footer' });
     
-    const createButton = footer.createEl('button', { text: '📝', cls: 'zoro-note-create-btn' });
-    createButton.onclick = () => this.createNewConnectedNote(searchIds, mediaType);
+    // Hide create button for trending Movie/TV context
+    const typeUpper = String(mediaType || '').toUpperCase();
+    const hideCreate = this.isTrendingContext && (typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper.includes('SHOW'));
+    if (!hideCreate) {
+      const createButton = footer.createEl('button', { text: '📝', cls: 'zoro-note-create-btn' });
+      createButton.onclick = () => this.createNewConnectedNote(searchIds, mediaType);
+    }
     
     // New connect existing button
     const connectButton = footer.createEl('button', { text: '⛓️', cls: 'zoro-note-connect-existing-btn' });
@@ -919,6 +925,8 @@ async handleConnectedNotesClick(e, media, entry, config) {
   e.stopPropagation();
   
   try {
+    // Set trending context based on entry metadata
+    this.isTrendingContext = Boolean(entry?._zoroMeta?.isTrending);
     // Extract source and media type
     const source = this.plugin.apiHelper ? 
       this.plugin.apiHelper.detectSource(entry, config) : 

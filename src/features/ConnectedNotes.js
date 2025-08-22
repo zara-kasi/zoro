@@ -31,9 +31,7 @@ extractSearchIds(media, entry, source) {
     ids.anilist_id = media.id;
   } else if (source === 'simkl') {
     // Get media type
-    const mediaType = this.plugin.apiHelper ? 
-      this.plugin.apiHelper.detectMediaType(entry, {}, media) : 
-      (entry?._zoroMeta?.mediaType || 'ANIME');
+    
     
     // Only add simkl_id if NOT trending TV/Movie
     const isTrendingTvMovie = this.currentOperationType === 'trending' && 

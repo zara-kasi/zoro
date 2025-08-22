@@ -23,8 +23,9 @@ class CardRenderer {
           media,
           _zoroMeta: data?._zoroMeta || {
             source:
-              this.apiHelper.validateAndReturnSource(config?.source) ||
+              // Prioritize the item's own _zoroMeta.source if it exists
               data?._zoroMeta?.source ||
+              this.apiHelper.validateAndReturnSource(config?.source) ||
               this.apiHelper.detectFromDataStructure({ media }) ||
               this.apiHelper.getFallbackSource(),
             mediaType: (() => {

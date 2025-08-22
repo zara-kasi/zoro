@@ -292,10 +292,11 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
     if (!this.currentMedia || !this.currentSource || !this.currentMediaType) {
       return ''; // Return empty if missing required data
     }
-    // Always disable code block for Movie/TV entries regardless of source or context
+    // Disable code block for trending Movie/TV entries regardless of source
     const typeUpper = String(this.currentMediaType || '').toUpperCase();
     const isMovieOrTv = (typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper === 'SHOW' || typeUpper === 'SHOWS');
-    if (isMovieOrTv) {
+    const isTrending = this.isTrendingContext || Boolean(this.currentMedia?._zoroMeta?.isTrending);
+    if (isMovieOrTv && isTrending) {
       return '';
     }
 

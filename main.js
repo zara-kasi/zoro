@@ -11193,6 +11193,16 @@ var CardRenderer = class {
     } : data;
     const source = this.apiHelper.detectSource(entry, config);
     const mediaType = this.apiHelper.detectMediaType(entry, config, media);
+    if (isSearch && (mediaType === "MOVIE" || mediaType === "TV")) {
+      console.log(`[CardRenderer] Created entry for "${media.title?.english}":`, {
+        entrySource: entry._zoroMeta?.source,
+        configSource: config?.source,
+        mediaType,
+        mediaId: media.id,
+        hasSimklId: !!media.idSimkl,
+        simklId: media.idSimkl
+      });
+    }
     const card = document.createElement("div");
     card.className = `zoro-card ${isCompact ? "compact" : ""}`;
     card.dataset.mediaId = String(Number(media.id) || 0);
@@ -11226,7 +11236,32 @@ var CardRenderer = class {
       img.classList.add("pressed");
       pressTimer = setTimeout(() => {
         if (isPressed) {
-          this.plugin.moreDetailsPanel.showPanel(media, entry, img);
+          if (entry?._zoroMeta?.mediaType === "MOVIE" || entry?._zoroMeta?.mediaType === "TV") {
+            console.log(`[CardRenderer] Opening details panel for "${media.title?.english}":`, {
+              entrySource: entry._zoroMeta?.source,
+              mediaId: media.id,
+              hasSimklId: !!media.idSimkl,
+              simklId: media.idSimkl
+            });
+          }
+          if (isSearch && (entry?._zoroMeta?.mediaType === "MOVIE" || entry?._zoroMeta?.mediaType === "TV")) {
+            const currentEntry = {
+              media,
+              _zoroMeta: {
+                source: media._zoroMeta?.source || entry._zoroMeta?.source,
+                mediaType: entry._zoroMeta?.mediaType,
+                fetchedAt: Date.now()
+              }
+            };
+            console.log(`[CardRenderer] Using current entry for "${media.title?.english}":`, {
+              originalSource: entry._zoroMeta?.source,
+              currentSource: currentEntry._zoroMeta.source,
+              mediaId: media.id
+            });
+            this.plugin.moreDetailsPanel.showPanel(media, currentEntry, img);
+          } else {
+            this.plugin.moreDetailsPanel.showPanel(media, entry, img);
+          }
           img.classList.remove("pressed");
           isPressed = false;
         }
@@ -11259,7 +11294,19 @@ var CardRenderer = class {
       pressTimer = setTimeout(() => {
         if (isPressed) {
           e.preventDefault();
-          this.plugin.moreDetailsPanel.showPanel(media, entry, img);
+          if (isSearch && (entry?._zoroMeta?.mediaType === "MOVIE" || entry?._zoroMeta?.mediaType === "TV")) {
+            const currentEntry = {
+              media,
+              _zoroMeta: {
+                source: media._zoroMeta?.source || entry._zoroMeta?.source,
+                mediaType: entry._zoroMeta?.mediaType,
+                fetchedAt: Date.now()
+              }
+            };
+            this.plugin.moreDetailsPanel.showPanel(media, currentEntry, img);
+          } else {
+            this.plugin.moreDetailsPanel.showPanel(media, entry, img);
+          }
           img.classList.remove("pressed");
           isPressed = false;
         }

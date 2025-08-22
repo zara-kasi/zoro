@@ -6923,19 +6923,22 @@ var Trending = class {
           item._zoroMeta = {
             source: isTmdb ? "tmdb" : source,
             mediaType: config.mediaType || "ANIME",
-            fetchedAt: Date.now()
+            fetchedAt: Date.now(),
+            isTrending: true
           };
         } else {
           item._zoroMeta.source = isTmdb ? "tmdb" : source;
           item._zoroMeta.mediaType = config.mediaType || "ANIME";
           item._zoroMeta.fetchedAt = Date.now();
+          item._zoroMeta.isTrending = true;
         }
       });
       el.empty();
       this.plugin.render.renderSearchResults(el, items, {
         layout: config.layout || "card",
         mediaType: config.mediaType || "ANIME",
-        source
+        source,
+        isTrending: true
       });
     } catch (err) {
       console.error("[Trending] Error in renderTrendingBlock:", err);
@@ -12559,9 +12562,10 @@ var ConnectedNotes = class {
     if (!this.currentMedia || !this.currentSource || !this.currentMediaType) {
       return "";
     }
-    const src = String(this.currentSource || "").toLowerCase();
     const typeUpper = String(this.currentMediaType || "").toUpperCase();
-    if (src === "tmdb" && (typeUpper === "MOVIE" || typeUpper === "MOVIES" || typeUpper === "TV" || typeUpper === "SHOW" || typeUpper === "SHOWS")) {
+    const isMovieOrTv = typeUpper === "MOVIE" || typeUpper === "MOVIES" || typeUpper === "TV" || typeUpper === "SHOW" || typeUpper === "SHOWS";
+    const isTrending = Boolean(this.currentMedia?._zoroMeta?.isTrending);
+    if (isMovieOrTv && isTrending) {
       return "";
     }
     const codeBlockLines = [

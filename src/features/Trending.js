@@ -490,12 +490,14 @@ class Trending {
           item._zoroMeta = {
             source: isTmdb ? 'tmdb' : source,
             mediaType: config.mediaType || 'ANIME',
-            fetchedAt: Date.now()
+            fetchedAt: Date.now(),
+            isTrending: true
           };
         } else {
           item._zoroMeta.source = isTmdb ? 'tmdb' : source;
           item._zoroMeta.mediaType = config.mediaType || 'ANIME';
           item._zoroMeta.fetchedAt = Date.now();
+          item._zoroMeta.isTrending = true;
         }
       });
 
@@ -503,7 +505,8 @@ class Trending {
       this.plugin.render.renderSearchResults(el, items, {
         layout: config.layout || 'card',
         mediaType: config.mediaType || 'ANIME',
-        source: source
+        source: source,
+        isTrending: true
       });
 
     } catch (err) {

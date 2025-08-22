@@ -291,10 +291,11 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
     if (!this.currentMedia || !this.currentSource || !this.currentMediaType) {
       return ''; // Return empty if missing required data
     }
-    // Disable code block for TMDb trending (movies/TV) since single render is not supported
-    const src = String(this.currentSource || '').toLowerCase();
+    // Disable code block for trending Movie/TV entries regardless of source
     const typeUpper = String(this.currentMediaType || '').toUpperCase();
-    if (src === 'tmdb' && (typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper === 'SHOW' || typeUpper === 'SHOWS')) {
+    const isMovieOrTv = (typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper === 'SHOW' || typeUpper === 'SHOWS');
+    const isTrending = Boolean(this.currentMedia?._zoroMeta?.isTrending);
+    if (isMovieOrTv && isTrending) {
       return '';
     }
 

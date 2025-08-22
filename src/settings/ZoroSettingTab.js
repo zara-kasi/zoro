@@ -115,28 +115,6 @@ malAuthSetting.addButton(btn => {
     await this.handleMALAuthButtonClick();  
   });  
 }); 
-  
-  
-  new Setting(Exp)
-      .setName('Default Source')
-      .setDesc(
-  "Choose which service to use by default when none is specified.\n" +
-  "Anime — AniList, MAL, or SIMKL\n" +
-  "Manga — AniList or MAL\n" +
-  "Movies & TV — Always SIMKL"
-)
-      .addDropdown(dropdown => dropdown
-        .addOption('anilist', 'AniList')
-        .addOption('mal', 'MyAnimeList')
-        .addOption('simkl', 'SIMKL')
-        .setValue(this.plugin.settings.defaultApiSource)
-        .onChange(async (value) => {
-          this.plugin.settings.defaultApiSource = value;
-          this.plugin.settings.defaultApiUserOverride = true;
-          await this.plugin.saveSettings();
-        }));
-
-
     
     
     new Setting(Setup)
@@ -149,6 +127,26 @@ malAuthSetting.addButton(btn => {
             await this.plugin.sample.createSampleFolders();
           })
       );
+      
+      new Setting(Exp)
+      .setName('Default Source')
+      .setDesc(
+  "Choose which service to use by default when none is specified.\n" +
+  "Anime — AniList, MAL, or SIMKL\n" +
+  "Manga — AniList or MAL\n" +
+  "Movies & TV — Always SIMKL\n" +
+  "Recommended: AniList"
+)
+      .addDropdown(dropdown => dropdown
+        .addOption('anilist', 'AniList')
+        .addOption('mal', 'MyAnimeList')
+        .addOption('simkl', 'SIMKL')
+        .setValue(this.plugin.settings.defaultApiSource)
+        .onChange(async (value) => {
+          this.plugin.settings.defaultApiSource = value;
+          this.plugin.settings.defaultApiUserOverride = true;
+          await this.plugin.saveSettings();
+        }));
         
         new Setting(Note)
       .setName('🗂️ Note path')

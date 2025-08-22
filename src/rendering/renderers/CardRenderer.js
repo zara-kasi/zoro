@@ -43,6 +43,10 @@ class CardRenderer {
     const card = document.createElement('div');
     card.className = `zoro-card ${isCompact ? 'compact' : ''}`;
     card.dataset.mediaId = String(Number(media.id) || 0);
+    // Propagate trending context via data attribute if provided
+    try {
+      if (options?.isTrending) card.dataset.trending = 'true';
+    } catch {}
 
     // Create cover image if enabled
     if (this.plugin.settings.showCoverImages && media.coverImage?.large) {

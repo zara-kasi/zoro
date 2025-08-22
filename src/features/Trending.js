@@ -471,6 +471,8 @@ class Trending {
 
   async renderTrendingBlock(el, config) {
     el.empty();
+    // Mark this container as a trending context for downstream DOM-based detection
+    try { el.classList.add('zoro-trending-context'); } catch {}
     el.appendChild(this.plugin.render.createListSkeleton(10));
 
     try {

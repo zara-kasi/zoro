@@ -93,7 +93,7 @@ class SearchRenderer {
     const fragment = document.createDocumentFragment();
     
     media.forEach(item => {
-      fragment.appendChild(this.cardRenderer.createMediaCard(item, config, { isSearch: true }));
+      fragment.appendChild(this.cardRenderer.createMediaCard(item, config, { isSearch: true, isTrending: Boolean(config?.isTrending) }));
     });
     
     grid.appendChild(fragment);

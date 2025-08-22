@@ -903,8 +903,16 @@ async handleConnectedNotesClick(e, media, entry, config) {
   e.stopPropagation();
   
   try {
-    // Mark context as trending if coming from trending rendering
-    this.isTrendingContext = Boolean(config?.isTrending);
+    // Determine trending context strictly via DOM/data attribute, independent of source
+    let trendingFlag = false;
+    try {
+      const target = e.currentTarget || e.target;
+      const cardEl = target?.closest?.('.zoro-card');
+      if (cardEl && cardEl.dataset && cardEl.dataset.trending === 'true') {
+        trendingFlag = true;
+      }
+    } catch {}
+    this.isTrendingContext = trendingFlag;
 
     // Extract source and media type
     const source = this.plugin.apiHelper ? 

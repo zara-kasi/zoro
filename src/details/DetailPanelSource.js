@@ -69,11 +69,10 @@ class DetailPanelSource {
 
   shouldFetchDetailedData(media) {
     const missingBasicData = !media.description || !media.genres || !media.averageScore;
-    const mediaKind = media?.type || media?.format; // Support TMDb items which use format instead of type
-    const isAnimeWithoutAiring = mediaKind === 'ANIME' && !media.nextAiringEpisode;
+    const isAnimeWithoutAiring = media.type === 'ANIME' && !media.nextAiringEpisode;
     // Force fetch for TMDb movies/TV to route through Simkl detail panel
     const isTmdbMovieOrTv = ((media?._zoroMeta?.source || '').toLowerCase() === 'tmdb')
-      && (mediaKind === 'MOVIE' || mediaKind === 'TV');
+      && (media?.type === 'MOVIE' || media?.type === 'TV');
     return missingBasicData || isAnimeWithoutAiring || isTmdbMovieOrTv;
   }
 
@@ -468,17 +467,16 @@ DetailPanelSource.prototype.resolveSimklIdFromExternal = async function(tmdbId, 
   if (cached) return cached;
 
   try {
-    const params = {};
-    if (tmdbId) params.tmdb = String(tmdbId);
-    if (imdbId) params.imdb = String(imdbId);
-    if (this.plugin.settings.simklClientId) params.client_id = this.plugin.settings.simklClientId;
+    const params = new URLSearchParams();
+    if (tmdbId) params.set('tmdb', String(tmdbId));
+    if (imdbId) params.set('imdb', String(imdbId));
+    if (this.plugin.settings.simklClientId) params.set('client_id', this.plugin.settings.simklClientId);
 
-    const base = 'https://api.simkl.com/search/id';
-    const url = this.plugin.simklApi?.buildFullUrl ? this.plugin.simklApi.buildFullUrl(base, params) : `${base}?${new URLSearchParams(params).toString()}`;
-    const headers = this.plugin.simklApi?.getHeaders ? this.plugin.simklApi.getHeaders({ type: 'search' }) : { 'Accept': 'application/json' };
-    const data = this.plugin.simklApi && this.plugin.simklApi.makeRequest
-      ? await this.plugin.simklApi.makeRequest({ url, method: 'GET', headers, priority: 'normal' })
-      : await (await fetch(url)).json();
+    // Prefer the generic search-by-external-id endpoint
+    const url = `https://api.simkl.com/search/id?${params.toString()}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Simkl resolve error: ${res.status}`);
+    const data = await res.json();
 
     // Try to extract Simkl ID from multiple possible structures
     let simklId = null;
@@ -501,15 +499,15 @@ DetailPanelSource.prototype.resolveSimklIdFromExternal = async function(tmdbId, 
     const endpoint = (mediaType === 'MOVIE' || mediaType === 'MOVIES') ? 'movie' : 'tv';
     const idPart = tmdbId ? `tmdb/${encodeURIComponent(String(tmdbId))}` : `imdb/${encodeURIComponent(String(imdbId))}`;
     const url = `https://api.simkl.com/${endpoint}/${idPart}${this.plugin.settings.simklClientId ? `?client_id=${this.plugin.settings.simklClientId}` : ''}`;
-    const headers = this.plugin.simklApi?.getHeaders ? this.plugin.simklApi.getHeaders({ type: 'search' }) : { 'Accept': 'application/json' };
-    const data = this.plugin.simklApi && this.plugin.simklApi.makeRequest
-      ? await this.plugin.simklApi.makeRequest({ url, method: 'GET', headers, priority: 'normal' })
-      : await (await fetch(url)).json();
-    const ids = data?.ids || {};
-    const simklId = Number(ids.simkl || ids.id);
-    if (Number.isFinite(simklId) && simklId > 0) {
-      this.plugin.cache.set(cacheKey, simklId, { scope: 'mediaDetails', source: 'simkl', tags: ['simkl','resolve','external', endpoint] });
-      return simklId;
+    const res = await fetch(url);
+    if (res.ok) {
+      const data = await res.json();
+      const ids = data?.ids || {};
+      const simklId = Number(ids.simkl || ids.id);
+      if (Number.isFinite(simklId) && simklId > 0) {
+        this.plugin.cache.set(cacheKey, simklId, { scope: 'mediaDetails', source: 'simkl', tags: ['simkl','resolve','external', endpoint] });
+        return simklId;
+      }
     }
   } catch {}
 

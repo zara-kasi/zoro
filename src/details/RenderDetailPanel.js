@@ -35,7 +35,9 @@ class RenderDetailPanel {
       }
 
       if (media.genres?.length > 0) {
-        sections.push(this.createGenresSection(media.genres));
+        const mappedInitialGenres = this.mapTmdbGenresIfNeeded(media.genres, mediaKind);
+        console.log('[Details][Genres][Initial] Mapped genres:', mappedInitialGenres);
+        sections.push(this.createGenresSection(mappedInitialGenres));
       }
 
       sections.push(this.createSynopsisSection(media.description));
@@ -563,8 +565,8 @@ class RenderDetailPanel {
     const section = document.createElement('div');
     section.className = 'panel-section genres-section';
 
-    const displayGenres = this.mapTmdbGenresIfNeeded(genres);
-    console.log('[Details][Genres] Rendering genres:', displayGenres);
+    const displayGenres = Array.isArray(genres) ? genres.map(g => String(g)) : [];
+    console.log('[Details][Genres] Rendering genres (final):', displayGenres);
 
     section.innerHTML = `
       <h3 class="section-title">Genres</h3>

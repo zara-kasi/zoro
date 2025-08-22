@@ -48,7 +48,6 @@ class EmojiIconMapper {
       '🧿': 'list',
       '🧨': 'zap',
       'ℹ': 'info',
-      '⚠️': 'alert-triangle',
       '➕': 'circle-plus',
       '📝': 'square-pen',
       '⛓️': 'workflow',

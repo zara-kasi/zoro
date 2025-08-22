@@ -611,10 +611,14 @@ class Trending {
   async fetchTrending(source, mediaType, limit = 40) {
     const typeUpper = String(mediaType || '').toUpperCase();
     
+    console.log(`[Trending] fetchTrending called with: source=${source}, mediaType=${mediaType}, typeUpper=${typeUpper}`);
+    
     // Automatically use TMDb trending for movies and TV shows, regardless of source
     if (typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper === 'SHOW' || typeUpper === 'SHOWS') {
       console.log(`[Trending] Auto-detected MOVIE/TV media type (${typeUpper}), using TMDb trending with Simkl integration`);
-      return await this.fetchTMDbTrending(typeUpper.includes('MOVIE') ? 'MOVIE' : 'TV', limit);
+      const result = await this.fetchTMDbTrending(typeUpper.includes('MOVIE') ? 'MOVIE' : 'TV', limit);
+      console.log(`[Trending] fetchTMDbTrending returned ${result?.length || 0} items`);
+      return result;
     }
 
     // For anime/manga, use the specified source
@@ -654,8 +658,12 @@ class Trending {
         this.fetchTrending(source, normalizedType, limit)
       );
 
+      console.log(`[Trending] Processing ${items.length} items for source/metadata assignment`);
+
       items.forEach(item => {
         const isTmdb = ['MOVIE','MOVIES','TV','SHOW','SHOWS'].includes((config.mediaType || '').toUpperCase());
+        
+        console.log(`[Trending] Processing item "${item.title?.english}": isTmdb=${isTmdb}, idSimkl=${item.idSimkl}, ids.simkl=${item.ids?.simkl}`);
         
         // Check if this TMDb item has a successful Simkl conversion
         const hasSimklConversion = isTmdb && item.idSimkl && item.ids?.simkl;

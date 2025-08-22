@@ -276,7 +276,7 @@ class CardRenderer {
     }
 
     // CONNECTED NOTES BUTTON - ADD THIS
-    const connectedNotesBtn = this.plugin.connectedNotes.createConnectedNotesButton(media, entry, config, config.type );
+    const connectedNotesBtn = this.plugin.connectedNotes.createConnectedNotesButton(media, entry, config);
     details.appendChild(connectedNotesBtn);
 
     return details;

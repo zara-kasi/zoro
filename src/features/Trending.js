@@ -652,10 +652,17 @@ class Trending {
       });
 
       el.empty();
+      
+      // Determine the effective source for rendering - use Simkl if any items have conversion
+      const hasAnySimklConversion = items.some(item => 
+        item._zoroMeta?.source === 'simkl'
+      );
+      const effectiveSource = hasAnySimklConversion ? 'simkl' : source;
+      
       this.plugin.render.renderSearchResults(el, items, {
         layout: config.layout || 'card',
         mediaType: config.mediaType || 'ANIME',
-        source: source
+        source: effectiveSource
       });
 
     } catch (err) {

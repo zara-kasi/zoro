@@ -932,9 +932,10 @@ async handleConnectedNotesClick(e, media, entry, config) {
     const typeUpper = String(mediaType || '').toUpperCase();
     const isMovieOrTv = (typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper.includes('SHOW'));
     const isTmdbEntry = (entry?._zoroMeta?.source || '').toLowerCase() === 'tmdb' || !!media?.idTmdb;
+    const isTrending = Boolean(entry?._zoroMeta?.isTrending);
     let maskedMedia = media;
     let maskedSource = source;
-    if (isMovieOrTv && isTmdbEntry && this.plugin?.simklApi?.resolveSimklByExternalIds) {
+    if (isTrending && isMovieOrTv && isTmdbEntry && this.plugin?.simklApi?.resolveSimklByExternalIds) {
       const ids = { tmdb: Number(media.idTmdb || media.id) || null, imdb: media.idImdb || null };
       const resolved = await this.plugin.simklApi.resolveSimklByExternalIds(ids, mediaType);
       if (resolved?.simklId) {

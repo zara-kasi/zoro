@@ -9726,7 +9726,15 @@ var DetailPanelSource = class {
       let imdbDataPromise = null;
       if (malId) malDataPromise = this.fetchMALData(malId, detailedMedia.type);
       if ((source === "simkl" || source === "tmdb") && (mediaType === "MOVIE" || mediaType === "TV")) {
-        let imdbIdLocal = detailedMedia.idImdb;
+        let imdbIdLocal = null;
+        if (source === "tmdb" && typeof entryOrSource === "object" && entryOrSource?.media) {
+          imdbIdLocal = entryOrSource.media.idImdb || entryOrSource.media.ids?.imdb || null;
+          if (imdbIdLocal) console.log("[Details][OMDb] Using IMDb from TMDb entry.media", imdbIdLocal);
+        }
+        if (!imdbIdLocal) {
+          imdbIdLocal = detailedMedia.idImdb || detailedMedia.ids?.imdb || null;
+          if (imdbIdLocal) console.log("[Details][OMDb] Using IMDb from detailedMedia", imdbIdLocal);
+        }
         if (!imdbIdLocal && source === "tmdb") {
           try {
             const tmdbId = detailedMedia.idTmdb || detailedMedia.ids?.tmdb || mediaId;
@@ -9742,6 +9750,8 @@ var DetailPanelSource = class {
         }
         if (imdbIdLocal) {
           imdbDataPromise = this.fetchIMDBData(imdbIdLocal, detailedMedia.type, detailedMedia);
+        } else {
+          console.log("[Details][OMDb] IMDb id not found; skipping OMDb");
         }
       }
       let malData = null;

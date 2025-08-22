@@ -426,9 +426,19 @@ class DetailPanelSource {
       
       // For Simkl or TMDb movies/TV, fetch IMDB data
       if ((source === 'simkl' || source === 'tmdb') && (mediaType === 'MOVIE' || mediaType === 'TV')) {
-        let imdbIdLocal = detailedMedia.idImdb;
+        let imdbIdLocal = null;
+        // 1) Prefer IMDb from the original TMDb entry (entry.media)
+        if (source === 'tmdb' && typeof entryOrSource === 'object' && entryOrSource?.media) {
+          imdbIdLocal = entryOrSource.media.idImdb || entryOrSource.media.ids?.imdb || null;
+          if (imdbIdLocal) console.log('[Details][OMDb] Using IMDb from TMDb entry.media', imdbIdLocal);
+        }
+        // 2) Fallback to detailed media (merged result)
+        if (!imdbIdLocal) {
+          imdbIdLocal = detailedMedia.idImdb || detailedMedia.ids?.imdb || null;
+          if (imdbIdLocal) console.log('[Details][OMDb] Using IMDb from detailedMedia', imdbIdLocal);
+        }
+        // 3) Final fallback: resolve from TMDb external_ids
         if (!imdbIdLocal && source === 'tmdb') {
-          // Fallback: try to get IMDb id from TMDb external_ids
           try {
             const tmdbId = detailedMedia.idTmdb || detailedMedia.ids?.tmdb || mediaId;
             console.log('[Details][OMDb] Missing IMDb id; resolving from TMDb external_ids', { tmdbId, mediaType });
@@ -443,6 +453,8 @@ class DetailPanelSource {
         }
         if (imdbIdLocal) {
           imdbDataPromise = this.fetchIMDBData(imdbIdLocal, detailedMedia.type, detailedMedia);
+        } else {
+          console.log('[Details][OMDb] IMDb id not found; skipping OMDb');
         }
       }
       

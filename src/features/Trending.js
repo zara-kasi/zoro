@@ -210,17 +210,23 @@ class Trending {
       // Convert TMDb IDs to Simkl IDs for better integration
       try {
         if (this.plugin.simklApi && this.plugin.settings.simklClientId) {
+          console.log(`[Trending] Starting TMDb to Simkl conversion for ${mediaList.length} items`);
+          
           const simklConversions = await Promise.allSettled(
             mediaList.slice(0, 10).map(async (media) => {
               try {
+                console.log(`[Trending] Converting TMDb ID ${media.idTmdb} (${media.title?.english}) to Simkl ID...`);
                 const conversion = await this.plugin.simklApi.convertTMDbToSimklId(
                   media.idTmdb, 
                   mediaType.toLowerCase()
                 );
                 if (conversion && conversion.simklId) {
+                  console.log(`[Trending] Successfully converted TMDb ${media.idTmdb} to Simkl ID ${conversion.simklId}`);
                   return { media, conversion };
+                } else {
+                  console.log(`[Trending] No conversion result for TMDb ID ${media.idTmdb}`);
+                  return null;
                 }
-                return null;
               } catch (error) {
                 console.warn(`[Trending] Failed to convert TMDb ${media.idTmdb} to Simkl ID:`, error);
                 return null;
@@ -229,6 +235,7 @@ class Trending {
           );
 
           // Apply successful conversions
+          let conversionCount = 0;
           simklConversions.forEach((result, index) => {
             if (result.status === 'fulfilled' && result.value) {
               const { media, conversion } = result.value;
@@ -240,8 +247,15 @@ class Trending {
               if (conversion.simklId && conversion.simklId > 0) {
                 media.id = conversion.simklId;
               }
+              
+              conversionCount++;
+              console.log(`[Trending] Applied conversion: TMDb ${media.idTmdb} -> Simkl ${conversion.simklId} for "${media.title?.english}"`);
             }
           });
+          
+          console.log(`[Trending] Completed TMDb to Simkl conversion: ${conversionCount} successful conversions out of ${simklConversions.length} attempts`);
+        } else {
+          console.log('[Trending] Skipping TMDb to Simkl conversion: simklApi or simklClientId not available');
         }
       } catch (error) {
         console.warn('[Trending] Simkl ID conversion failed:', error);
@@ -648,6 +662,9 @@ class Trending {
         // For items with Simkl conversion, ensure the ID is set to Simkl ID
         if (hasSimklConversion) {
           item.id = item.idSimkl;
+          console.log(`[Trending] Item "${item.title?.english}" converted to Simkl: ID ${item.id}, source ${item._zoroMeta.source}`);
+        } else if (isTmdb) {
+          console.log(`[Trending] Item "${item.title?.english}" remains TMDb: ID ${item.id}, source ${item._zoroMeta.source}`);
         }
       });
 

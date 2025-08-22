@@ -41,6 +41,18 @@ class CardRenderer {
     const source = this.apiHelper.detectSource(entry, config);
     const mediaType = this.apiHelper.detectMediaType(entry, config, media);
     
+    // Debug logging for trending items
+    if (isSearch && (mediaType === 'MOVIE' || mediaType === 'TV')) {
+      console.log(`[CardRenderer] Created entry for "${media.title?.english}":`, {
+        entrySource: entry._zoroMeta?.source,
+        configSource: config?.source,
+        mediaType: mediaType,
+        mediaId: media.id,
+        hasSimklId: !!media.idSimkl,
+        simklId: media.idSimkl
+      });
+    }
+    
     const card = document.createElement('div');
     card.className = `zoro-card ${isCompact ? 'compact' : ''}`;
     card.dataset.mediaId = String(Number(media.id) || 0);
@@ -87,6 +99,16 @@ class CardRenderer {
       
       pressTimer = setTimeout(() => {
         if (isPressed) {
+          // Debug logging for trending items
+          if (entry?._zoroMeta?.mediaType === 'MOVIE' || entry?._zoroMeta?.mediaType === 'TV') {
+            console.log(`[CardRenderer] Opening details panel for "${media.title?.english}":`, {
+              entrySource: entry._zoroMeta?.source,
+              mediaId: media.id,
+              hasSimklId: !!media.idSimkl,
+              simklId: media.idSimkl
+            });
+          }
+          
           this.plugin.moreDetailsPanel.showPanel(media, entry, img);
           img.classList.remove('pressed');
           isPressed = false;

@@ -9720,8 +9720,24 @@ var DetailPanelSource = class {
       let malDataPromise = null;
       let imdbDataPromise = null;
       if (malId) malDataPromise = this.fetchMALData(malId, detailedMedia.type);
-      if ((source === "simkl" || source === "tmdb") && (mediaType === "MOVIE" || mediaType === "TV") && detailedMedia.idImdb) {
-        imdbDataPromise = this.fetchIMDBData(detailedMedia.idImdb, detailedMedia.type, detailedMedia);
+      if ((source === "simkl" || source === "tmdb") && (mediaType === "MOVIE" || mediaType === "TV")) {
+        let imdbIdLocal = detailedMedia.idImdb;
+        if (!imdbIdLocal && source === "tmdb") {
+          try {
+            const tmdbId = detailedMedia.idTmdb || detailedMedia.ids?.tmdb || mediaId;
+            console.log("[Details][OMDb] Missing IMDb id; resolving from TMDb external_ids", { tmdbId, mediaType });
+            imdbIdLocal = await this.fetchImdbIdFromTmdb(tmdbId, mediaType);
+            if (imdbIdLocal) {
+              detailedMedia.idImdb = imdbIdLocal;
+              console.log("[Details][OMDb] Resolved IMDb id from TMDb", imdbIdLocal);
+            }
+          } catch (e) {
+            console.log("[Details][OMDb] Failed to resolve IMDb id from TMDb", e?.message || e);
+          }
+        }
+        if (imdbIdLocal) {
+          imdbDataPromise = this.fetchIMDBData(imdbIdLocal, detailedMedia.type, detailedMedia);
+        }
       }
       let malData = null;
       let imdbData = null;
@@ -9800,6 +9816,22 @@ DetailPanelSource.prototype.resolveSimklIdFromExternal = async function(tmdbId, 
   } catch {
   }
   return null;
+};
+DetailPanelSource.prototype.fetchImdbIdFromTmdb = async function(tmdbId, mediaType) {
+  if (!tmdbId) return null;
+  const key = this.plugin.settings.tmdbApiKey;
+  if (!key) return null;
+  const typePath = mediaType === "MOVIE" || mediaType === "MOVIES" ? "movie" : "tv";
+  const url = `https://api.themoviedb.org/3/${typePath}/${tmdbId}/external_ids?api_key=${encodeURIComponent(key)}`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const imdb = data?.imdb_id || data?.imdb || null;
+    return imdb || null;
+  } catch {
+    return null;
+  }
 };
 
 // src/details/OpenDetailPanel.js

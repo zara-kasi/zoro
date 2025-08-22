@@ -419,8 +419,25 @@ class DetailPanelSource {
       if (malId) malDataPromise = this.fetchMALData(malId, detailedMedia.type);
       
       // For Simkl or TMDb movies/TV, fetch IMDB data
-      if ((source === 'simkl' || source === 'tmdb') && (mediaType === 'MOVIE' || mediaType === 'TV') && detailedMedia.idImdb) {
-        imdbDataPromise = this.fetchIMDBData(detailedMedia.idImdb, detailedMedia.type, detailedMedia);
+      if ((source === 'simkl' || source === 'tmdb') && (mediaType === 'MOVIE' || mediaType === 'TV')) {
+        let imdbIdLocal = detailedMedia.idImdb;
+        if (!imdbIdLocal && source === 'tmdb') {
+          // Fallback: try to get IMDb id from TMDb external_ids
+          try {
+            const tmdbId = detailedMedia.idTmdb || detailedMedia.ids?.tmdb || mediaId;
+            console.log('[Details][OMDb] Missing IMDb id; resolving from TMDb external_ids', { tmdbId, mediaType });
+            imdbIdLocal = await this.fetchImdbIdFromTmdb(tmdbId, mediaType);
+            if (imdbIdLocal) {
+              detailedMedia.idImdb = imdbIdLocal;
+              console.log('[Details][OMDb] Resolved IMDb id from TMDb', imdbIdLocal);
+            }
+          } catch (e) {
+            console.log('[Details][OMDb] Failed to resolve IMDb id from TMDb', e?.message || e);
+          }
+        }
+        if (imdbIdLocal) {
+          imdbDataPromise = this.fetchIMDBData(imdbIdLocal, detailedMedia.type, detailedMedia);
+        }
       }
       
       // Collect all data
@@ -518,6 +535,24 @@ DetailPanelSource.prototype.resolveSimklIdFromExternal = async function(tmdbId, 
   } catch {}
 
   return null;
+};
+
+// Helper: resolve IMDb id from TMDb external_ids
+DetailPanelSource.prototype.fetchImdbIdFromTmdb = async function(tmdbId, mediaType) {
+  if (!tmdbId) return null;
+  const key = this.plugin.settings.tmdbApiKey;
+  if (!key) return null;
+  const typePath = (mediaType === 'MOVIE' || mediaType === 'MOVIES') ? 'movie' : 'tv';
+  const url = `https://api.themoviedb.org/3/${typePath}/${tmdbId}/external_ids?api_key=${encodeURIComponent(key)}`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const imdb = data?.imdb_id || data?.imdb || null;
+    return imdb || null;
+  } catch {
+    return null;
+  }
 };
 
 export { DetailPanelSource };

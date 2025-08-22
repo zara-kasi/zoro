@@ -2462,6 +2462,72 @@ async removeMediaListEntry(mediaId, mediaType) {
     return 'anime'; // Default fallback
   }
 
+  // =================== TMDb TO SIMKL ID CONVERSION ===================
+
+  async convertTMDbToSimklId(tmdbId, mediaType = 'movie') {
+    if (!tmdbId) return null;
+    
+    const cacheKey = this.plugin.cache.structuredKey('conversion', 'tmdb_to_simkl', `${tmdbId}_${mediaType}`);
+    const cached = this.plugin.cache.get(cacheKey, { scope: 'mediaData', source: 'simkl' });
+    if (cached) return cached;
+
+    try {
+      // Use Simkl's search by ID endpoint to convert TMDb ID to Simkl ID
+      const url = `${this.baseUrl}/search/id?tmdb=${encodeURIComponent(tmdbId)}&client_id=${this.plugin.settings.simklClientId}`;
+      
+      const response = await fetch(url);
+      if (!response.ok) {
+        console.warn(`[Simkl] TMDb to Simkl conversion failed for ID ${tmdbId}: ${response.status}`);
+        return null;
+      }
+      
+      const data = await response.json();
+      
+      if (data && data.length > 0) {
+        // Find the best match based on media type
+        let bestMatch = data[0];
+        
+        if (mediaType && data.length > 1) {
+          const normalizedType = mediaType.toLowerCase();
+          const typeMatch = data.find(item => {
+            const itemType = item.type?.toLowerCase();
+            if (normalizedType === 'movie' || normalizedType === 'movies') {
+              return itemType === 'movie';
+            } else if (normalizedType === 'tv' || normalizedType === 'show' || normalizedType === 'shows') {
+              return itemType === 'show';
+            }
+            return true; // Default to first match
+          });
+          
+          if (typeMatch) {
+            bestMatch = typeMatch;
+          }
+        }
+        
+        const result = {
+          simklId: bestMatch.ids?.simkl || bestMatch.id,
+          type: bestMatch.type,
+          title: bestMatch.title,
+          ids: bestMatch.ids
+        };
+        
+        // Cache the result for future use
+        this.plugin.cache.set(cacheKey, result, {
+          scope: 'mediaData',
+          source: 'simkl',
+          ttl: 7 * 24 * 60 * 60 * 1000, // 7 days
+          tags: ['conversion', 'tmdb_to_simkl', mediaType.toLowerCase()]
+        });
+        
+        return result;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error(`[Simkl] Error converting TMDb ID ${tmdbId} to Simkl ID:`, error);
+      return null;
+    }
+  }
 
 }
 

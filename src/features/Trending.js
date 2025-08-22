@@ -207,6 +207,46 @@ class Trending {
         });
       } catch {}
 
+      // Convert TMDb IDs to Simkl IDs for better integration
+      try {
+        if (this.plugin.simklApi && this.plugin.settings.simklClientId) {
+          const simklConversions = await Promise.allSettled(
+            mediaList.slice(0, 10).map(async (media) => {
+              try {
+                const conversion = await this.plugin.simklApi.convertTMDbToSimklId(
+                  media.idTmdb, 
+                  mediaType.toLowerCase()
+                );
+                if (conversion && conversion.simklId) {
+                  return { media, conversion };
+                }
+                return null;
+              } catch (error) {
+                console.warn(`[Trending] Failed to convert TMDb ${media.idTmdb} to Simkl ID:`, error);
+                return null;
+              }
+            })
+          );
+
+          // Apply successful conversions
+          simklConversions.forEach((result, index) => {
+            if (result.status === 'fulfilled' && result.value) {
+              const { media, conversion } = result.value;
+              media.idSimkl = conversion.simklId;
+              if (!media.ids) media.ids = {};
+              media.ids.simkl = conversion.simklId;
+              
+              // Update the media ID to use Simkl ID for better integration
+              if (conversion.simklId && conversion.simklId > 0) {
+                media.id = conversion.simklId;
+              }
+            }
+          });
+        }
+      } catch (error) {
+        console.warn('[Trending] Simkl ID conversion failed:', error);
+      }
+
       this.plugin.cache.set(cacheKey, mediaList, {
         scope: 'mediaData',
         ttl: 24 * 60 * 60 * 1000,
@@ -239,9 +279,11 @@ class Trending {
         id: item.id,
         idTmdb: item.id,
         idImdb: null,
+        idSimkl: null, // Will be populated later if conversion succeeds
         ids: {
           tmdb: item.id,
-          imdb: null
+          imdb: null,
+          simkl: null // Will be populated later if conversion succeeds
         },
         title: {
           english: isMovie ? item.title : item.name,
@@ -450,7 +492,107 @@ class Trending {
     
     throw error;
   }
-}
+  }
+
+  async fetchSimklTrending(mediaType = 'anime', limit = 40) {
+    const cacheKey = this.getTrendingCacheKey('simkl', mediaType, limit);
+    
+    const cached = this.plugin.cache.get(cacheKey, {
+      scope: 'mediaData',
+      source: 'simkl'
+    });
+    
+    if (cached) {
+      return cached;
+    }
+
+    try {
+      // Simkl doesn't have a native trending API, so we'll use their top content
+      // For movies and TV shows, we'll use the top endpoints
+      const type = mediaType.toLowerCase();
+      let endpoint;
+      
+      if (type === 'movie' || type === 'movies') {
+        endpoint = 'movies/top';
+      } else if (type === 'tv' || type === 'show' || type === 'shows') {
+        endpoint = 'tv/top';
+      } else {
+        // For anime, use the anime top endpoint
+        endpoint = 'anime/top';
+      }
+
+      const url = `https://api.simkl.com/${endpoint}?extended=full&client_id=${this.plugin.settings.simklClientId}&limit=${limit}`;
+      
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Simkl API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      
+      if (!Array.isArray(data)) {
+        console.error('[Trending] Invalid Simkl response format:', data);
+        return [];
+      }
+
+      const mediaList = data.slice(0, limit).map(item => ({
+        id: item.ids?.simkl || item.id,
+        idSimkl: item.ids?.simkl || item.id,
+        idTmdb: item.ids?.tmdb || null,
+        idImdb: item.ids?.imdb || null,
+        ids: item.ids || {},
+        title: {
+          english: item.title || '',
+          romaji: null,
+          native: null
+        },
+        coverImage: {
+          large: item.poster || null,
+          medium: item.poster || null
+        },
+        format: type === 'movie' || type === 'movies' ? 'MOVIE' : (type === 'tv' || type === 'show' || type === 'shows' ? 'TV' : 'ANIME'),
+        averageScore: item.rating ? Math.round(item.rating * 10) : null,
+        genres: item.genres || [],
+        episodes: item.total_episodes || null,
+        status: null,
+        description: item.overview || null,
+        startDate: {
+          year: item.year || null,
+          month: null,
+          day: null
+        },
+        _zoroMeta: {
+          source: 'simkl',
+          mediaType: type === 'movie' || type === 'movies' ? 'MOVIE' : (type === 'tv' || type === 'show' || type === 'shows' ? 'TV' : 'ANIME'),
+          fetchedAt: Date.now()
+        }
+      }));
+
+      this.plugin.cache.set(cacheKey, mediaList, {
+        scope: 'mediaData',
+        source: 'simkl',
+        ttl: 24 * 60 * 60 * 1000,
+        tags: ['trending', type, 'simkl']
+      });
+
+      return mediaList;
+
+    } catch (error) {
+      console.error('[Trending] Simkl fetch failed:', error);
+      
+      const staleData = this.plugin.cache.get(cacheKey, {
+        scope: 'mediaData',
+        source: 'simkl',
+        ttl: Infinity
+      });
+      
+      if (staleData) {
+        return staleData;
+      }
+      
+      throw error;
+    }
+  }
 
   async fetchTrending(source, mediaType, limit = 40) {
     const typeUpper = String(mediaType || '').toUpperCase();
@@ -486,16 +628,26 @@ class Trending {
 
       items.forEach(item => {
         const isTmdb = ['MOVIE','MOVIES','TV','SHOW','SHOWS'].includes((config.mediaType || '').toUpperCase());
+        
+        // Check if this TMDb item has a successful Simkl conversion
+        const hasSimklConversion = isTmdb && item.idSimkl && item.ids?.simkl;
+        
         if (!item._zoroMeta) {
           item._zoroMeta = {
-            source: isTmdb ? 'tmdb' : source,
+            source: hasSimklConversion ? 'simkl' : (isTmdb ? 'tmdb' : source),
             mediaType: config.mediaType || 'ANIME',
             fetchedAt: Date.now()
           };
         } else {
-          item._zoroMeta.source = isTmdb ? 'tmdb' : source;
+          // If we have a Simkl conversion, treat it as a Simkl item for better integration
+          item._zoroMeta.source = hasSimklConversion ? 'simkl' : (isTmdb ? 'tmdb' : source);
           item._zoroMeta.mediaType = config.mediaType || 'ANIME';
           item._zoroMeta.fetchedAt = Date.now();
+        }
+        
+        // For items with Simkl conversion, ensure the ID is set to Simkl ID
+        if (hasSimklConversion) {
+          item.id = item.idSimkl;
         }
       });
 

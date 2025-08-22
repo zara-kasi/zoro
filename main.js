@@ -8924,7 +8924,7 @@ var RenderDetailPanel = class {
       const newLinksSection = this.createExternalLinksSection(media);
       content.replaceChild(newLinksSection, existingLinksSection);
     }
-    if (media.averageScore > 0 || malData || imdbData || media.type !== "ANIME" && (media.rating != null || media._rawData?.rating != null)) {
+    if (media.averageScore > 0 || malData || imdbData) {
       const existingStats = content.querySelector(".stats-section");
       const newStats = this.createStatisticsSection(media, malData, imdbData);
       if (existingStats) {
@@ -9071,8 +9071,7 @@ var RenderDetailPanel = class {
     section.appendChild(title);
     const statsGrid = document.createElement("div");
     statsGrid.className = "stats-grid";
-    const isAnime = media.type === "ANIME" || media.type === "MANGA";
-    if (isAnime) {
+    if (media.type === "ANIME" || media.type === "MANGA") {
       if (media.averageScore > 0) {
         const scoreOutOf10 = (media.averageScore / 10).toFixed(1);
         this.addStatItem(statsGrid, "AniList Score", `${scoreOutOf10}`, "score-stat anilist-stat");
@@ -9083,10 +9082,6 @@ var RenderDetailPanel = class {
         if (malData.rank) this.addStatItem(statsGrid, "MAL Rank", `#${malData.rank}`, "rank-stat");
       }
     } else {
-      const simklScore = media?.rating ?? media?._rawData?.rating ?? null;
-      if (simklScore != null) {
-        this.addStatItem(statsGrid, "Simkl Score", `${simklScore}`, "score-stat simkl-stat");
-      }
       if (imdbData) {
         if (imdbData.score) this.addStatItem(statsGrid, "IMDB Score", `${imdbData.score}`, "score-stat imdb-stat");
         if (imdbData.scored_by) this.addStatItem(statsGrid, "IMDB Ratings", imdbData.scored_by.toLocaleString(), "count-stat");

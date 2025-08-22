@@ -72,8 +72,8 @@ class DetailPanelSource {
     const mediaKind = media?.type || media?.format; // Support TMDb items which use format instead of type
     const isAnimeWithoutAiring = mediaKind === 'ANIME' && !media.nextAiringEpisode;
     // Force fetch for TMDb movies/TV to route through Simkl detail panel
-    const hasTmdbId = (Number(media?.idTmdb) > 0) || (Number(media?.ids?.tmdb) > 0);
-    const isTmdbMovieOrTv = hasTmdbId && (mediaKind === 'MOVIE' || mediaKind === 'TV');
+    const isTmdbMovieOrTv = ((media?._zoroMeta?.source || '').toLowerCase() === 'tmdb')
+      && (mediaKind === 'MOVIE' || mediaKind === 'TV');
     return missingBasicData || isAnimeWithoutAiring || isTmdbMovieOrTv;
   }
 

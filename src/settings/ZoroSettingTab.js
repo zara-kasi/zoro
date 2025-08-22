@@ -33,7 +33,7 @@ class ZoroSettingTab extends PluginSettingTab {
     const Shortcut = section('🚪 Shortcut');
     const Data = section('💾 Data');
     const Cache = section('🔁 Cache');
-    const Exp = section('🚧 Beta');
+    const Exp = section('⚠️ Beta');
     const About = section('ℹ️ About');
 
     new Setting(Account)
@@ -423,8 +423,8 @@ new Setting(Data)
   );
       
         
-         /**
-   * new Setting(Exp)
+         
+    new Setting(Exp)
     .setName('TMDb API Key')
     .setDesc(
       createFragment((frag) => {
@@ -445,7 +445,7 @@ new Setting(Data)
         await this.plugin.saveSettings();
       })
     );
-   */
+   
    /**
     * new Setting(Theme)
       .setName('🎨 Apply')

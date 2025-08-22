@@ -893,11 +893,11 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
       (entry?._zoroMeta?.mediaType || config?.mediaType || 'ANIME');
 
     // Hide for trending TMDb movie/TV items
-    const isTmdb = String(source || '').toLowerCase() === 'tmdb';
+    const isTrendingCtx = Boolean(config?.isTrending);
     const mtUpper = String(mediaType || '').toUpperCase();
     const isMovieTv = ['MOVIE','MOVIES','TV','SHOW','SHOWS'].includes(mtUpper);
-    const isTrending = Boolean(entry?._zoroMeta?.trending || media?._zoroMeta?.trending);
-    if (isTmdb && isMovieTv && isTrending) {
+    // When trending movies/TV, we fetch from TMDb; treat that as TMDb context
+    if (isTrendingCtx && isMovieTv) {
       return null;
     }
 

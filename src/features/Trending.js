@@ -503,7 +503,8 @@ class Trending {
       this.plugin.render.renderSearchResults(el, items, {
         layout: config.layout || 'card',
         mediaType: config.mediaType || 'ANIME',
-        source: source
+        source: source,
+        isTrending: true
       });
 
     } catch (err) {

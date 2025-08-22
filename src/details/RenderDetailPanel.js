@@ -239,13 +239,18 @@ class RenderDetailPanel {
       }
     }
 
-    if (media.genres?.length > 0 && !content.querySelector('.genres-section')) {
+    if (media.genres?.length > 0) {
+      const existingGenres = content.querySelector('.genres-section');
       const genresSection = this.createGenresSection(media.genres);
-      const synopsisSection = content.querySelector('.synopsis-section');
-      if (synopsisSection) {
-        content.insertBefore(genresSection, synopsisSection);
+      if (existingGenres) {
+        content.replaceChild(genresSection, existingGenres);
       } else {
-        content.appendChild(genresSection);
+        const synopsisSection = content.querySelector('.synopsis-section');
+        if (synopsisSection) {
+          content.insertBefore(genresSection, synopsisSection);
+        } else {
+          content.appendChild(genresSection);
+        }
       }
     }
 
@@ -256,14 +261,13 @@ class RenderDetailPanel {
       content.replaceChild(newLinksSection, existingLinksSection);
     }
 
-    if (media.averageScore > 0 || malData || imdbData) {
+    if (media.averageScore > 0 || malData || imdbData || (media.type !== 'ANIME' && (media.rating != null || media._rawData?.rating != null))) {
       const existingStats = content.querySelector('.stats-section');
+      const newStats = this.createStatisticsSection(media, malData, imdbData);
       if (existingStats) {
-        const newStats = this.createStatisticsSection(media, malData, imdbData);
         content.replaceChild(newStats, existingStats);
       } else {
         // Add statistics section if it doesn't exist (for Simkl entries)
-        const newStats = this.createStatisticsSection(media, malData, imdbData);
         const synopsisSection = content.querySelector('.synopsis-section');
         if (synopsisSection) {
           content.insertBefore(newStats, synopsisSection);
@@ -448,35 +452,28 @@ class RenderDetailPanel {
     const statsGrid = document.createElement('div');
     statsGrid.className = 'stats-grid';
 
-    // AniList rating (for anime)
-    if (media.averageScore > 0) {
-      const scoreOutOf10 = (media.averageScore / 10).toFixed(1);
-      this.addStatItem(statsGrid, 'AniList Score', `${scoreOutOf10}`, 'score-stat anilist-stat');
-    }
+    const isAnime = media.type === 'ANIME' || media.type === 'MANGA';
 
-    // MAL data (for anime)
-    if (malData) {
-      if (malData.score) {
-        this.addStatItem(statsGrid, 'MAL Score', `${malData.score}`, 'score-stat mal-stat');
+    // For anime, show AniList/MAL
+    if (isAnime) {
+      if (media.averageScore > 0) {
+        const scoreOutOf10 = (media.averageScore / 10).toFixed(1);
+        this.addStatItem(statsGrid, 'AniList Score', `${scoreOutOf10}`, 'score-stat anilist-stat');
       }
-      
-      if (malData.scored_by) {
-        this.addStatItem(statsGrid, 'MAL Ratings', malData.scored_by.toLocaleString(), 'count-stat');
+      if (malData) {
+        if (malData.score) this.addStatItem(statsGrid, 'MAL Score', `${malData.score}`, 'score-stat mal-stat');
+        if (malData.scored_by) this.addStatItem(statsGrid, 'MAL Ratings', malData.scored_by.toLocaleString(), 'count-stat');
+        if (malData.rank) this.addStatItem(statsGrid, 'MAL Rank', `#${malData.rank}`, 'rank-stat');
       }
-      
-      if (malData.rank) {
-        this.addStatItem(statsGrid, 'MAL Rank', `#${malData.rank}`, 'rank-stat');
+    } else {
+      // For movies/TV, prefer Simkl rating, optionally include IMDb
+      const simklScore = media?.rating ?? media?._rawData?.rating ?? null;
+      if (simklScore != null) {
+        this.addStatItem(statsGrid, 'Simkl Score', `${simklScore}`, 'score-stat simkl-stat');
       }
-    }
-
-    // IMDB data (for movies/TV)
-    if (imdbData) {
-      if (imdbData.score) {
-        this.addStatItem(statsGrid, 'IMDB Score', `${imdbData.score}`, 'score-stat imdb-stat');
-      }
-      
-      if (imdbData.scored_by) {
-        this.addStatItem(statsGrid, 'IMDB Ratings', imdbData.scored_by.toLocaleString(), 'count-stat');
+      if (imdbData) {
+        if (imdbData.score) this.addStatItem(statsGrid, 'IMDB Score', `${imdbData.score}`, 'score-stat imdb-stat');
+        if (imdbData.scored_by) this.addStatItem(statsGrid, 'IMDB Ratings', imdbData.scored_by.toLocaleString(), 'count-stat');
       }
     }
 

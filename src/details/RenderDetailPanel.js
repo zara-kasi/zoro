@@ -480,23 +480,26 @@ class RenderDetailPanel {
       }
     } else {
       // Movies/TV: prefer OMDb (IMDb). If missing, fallback to TMDb data on entry
+      const tmdbVoteAverage = typeof media.averageScore === 'number' ? (media.averageScore / 10) : null;
+      const tmdbVoteCount = media?._zoroMeta?.trending?.voteCount || null;
+
+      // IMDb (OMDb) stats if available
       if (imdbData) {
         if (imdbData.score) {
-          console.log('[Details][Stats] Using IMDb score from OMDb', imdbData.score);
+          console.log('[Details][Stats] IMDb (OMDb) score', imdbData.score);
           this.addStatItem(statsGrid, 'IMDB Score', `${imdbData.score}`, 'score-stat imdb-stat');
         }
         if (imdbData.scored_by) {
           this.addStatItem(statsGrid, 'IMDB Ratings', imdbData.scored_by.toLocaleString(), 'count-stat');
         }
-      } else {
-        const tmdbVoteAverage = typeof media.averageScore === 'number' ? (media.averageScore / 10) : null;
-        const tmdbVoteCount = media?._zoroMeta?.trending?.voteCount || null;
-        if (tmdbVoteAverage != null) {
-          console.log('[Details][Stats] Fallback to TMDb score', tmdbVoteAverage, 'votes', tmdbVoteCount);
-          this.addStatItem(statsGrid, 'TMDb Score', `${tmdbVoteAverage.toFixed(1)}`, 'score-stat tmdb-stat');
-          if (tmdbVoteCount != null) {
-            this.addStatItem(statsGrid, 'TMDb Ratings', Number(tmdbVoteCount).toLocaleString(), 'count-stat');
-          }
+      }
+
+      // TMDb stats alongside IMDb when present
+      if (tmdbVoteAverage != null) {
+        console.log('[Details][Stats] TMDb score', tmdbVoteAverage, 'votes', tmdbVoteCount);
+        this.addStatItem(statsGrid, 'TMDb Score', `${tmdbVoteAverage.toFixed(1)}`, 'score-stat tmdb-stat');
+        if (tmdbVoteCount != null) {
+          this.addStatItem(statsGrid, 'TMDb Ratings', Number(tmdbVoteCount).toLocaleString(), 'count-stat');
         }
       }
     }

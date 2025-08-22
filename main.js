@@ -9360,8 +9360,7 @@ var DetailPanelSource = class {
     const missingBasicData = !media.description || !media.genres || !media.averageScore;
     const mediaKind = media?.type || media?.format;
     const isAnimeWithoutAiring = mediaKind === "ANIME" && !media.nextAiringEpisode;
-    const hasTmdbId = Number(media?.idTmdb) > 0 || Number(media?.ids?.tmdb) > 0;
-    const isTmdbMovieOrTv = hasTmdbId && (mediaKind === "MOVIE" || mediaKind === "TV");
+    const isTmdbMovieOrTv = (media?._zoroMeta?.source || "").toLowerCase() === "tmdb" && (mediaKind === "MOVIE" || mediaKind === "TV");
     return missingBasicData || isAnimeWithoutAiring || isTmdbMovieOrTv;
   }
   extractSourceFromEntry(entry) {
@@ -9409,6 +9408,8 @@ var DetailPanelSource = class {
           return {
             ...entryOrSource.media,
             ...detailedSimklData,
+            // Ensure explicit media type for correct panel rendering
+            type: resolvedMediaType,
             // Ensure we keep the original ID and other essential fields
             id: entryOrSource.media.id,
             idImdb: entryOrSource.media.idImdb || detailedSimklData.ids?.imdb || null,
@@ -9435,6 +9436,8 @@ var DetailPanelSource = class {
             return {
               ...mediaObj,
               ...detailedSimklData,
+              // Ensure explicit media type for correct panel rendering
+              type: resolvedMediaType,
               // Preserve original TMDb id on the media object
               id: mediaObj?.id ?? tmdbId,
               idImdb: mediaObj?.idImdb || detailedSimklData.ids?.imdb || imdbId || null,

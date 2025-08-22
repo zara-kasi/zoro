@@ -69,11 +69,11 @@ class DetailPanelSource {
 
   shouldFetchDetailedData(media) {
     const missingBasicData = !media.description || !media.genres || !media.averageScore;
-    const mediaKind = media?.type || media?.format;
+    const mediaKind = media?.type || media?.format; // MOVIE/TV often in format for TMDb
     const isAnimeWithoutAiring = mediaKind === 'ANIME' && !media.nextAiringEpisode;
-    // Force fetch for TMDb movies/TV to route through Simkl detail panel
-    const isTmdbMovieOrTv = ((media?._zoroMeta?.source || '').toLowerCase() === 'tmdb')
-      && (mediaKind === 'MOVIE' || mediaKind === 'TV');
+    // Detect TMDb movie/TV by presence of TMDb id on media, since _zoroMeta is on entry, not media
+    const hasTmdbId = (Number(media?.idTmdb) > 0) || (Number(media?.ids?.tmdb) > 0);
+    const isTmdbMovieOrTv = hasTmdbId && (mediaKind === 'MOVIE' || mediaKind === 'TV');
     return missingBasicData || isAnimeWithoutAiring || isTmdbMovieOrTv;
   }
 

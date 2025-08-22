@@ -19,6 +19,17 @@ class ConnectedNotes {
 extractSearchIds(media, entry, source) {
   const ids = {};
   
+  // Special case: Trending Movie/TV entries should not be treated as Simkl or other sources
+  try {
+    const typeUpper = String(this.currentMediaType || '').toUpperCase();
+    const isMovieOrTv = (typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper === 'SHOW' || typeUpper === 'SHOWS');
+    if (this.isTrendingContext && isMovieOrTv) {
+      if (media.idTmdb || media.id) ids.tmdb_id = media.idTmdb || media.id;
+      if (media.idImdb) ids.imdb_id = media.idImdb;
+      return ids;
+    }
+  } catch {}
+  
   // mal_id is STANDARD for all anime/manga regardless of source
   if (source === 'mal') {
     ids.mal_id = media.id;
@@ -62,6 +73,18 @@ extractSearchIds(media, entry, source) {
  */
 buildCurrentUrls(media, mediaType, source) {
   const urls = [];
+  
+  // Special case: Trending Movie/TV entries should only include TMDb/IMDb URLs
+  try {
+    const typeUpper = String(mediaType || '').toUpperCase();
+    const isMovieOrTv = (typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper === 'SHOW' || typeUpper === 'SHOWS');
+    if (this.isTrendingContext && isMovieOrTv) {
+      const isMovie = typeUpper.includes('MOVIE');
+      if (media.idTmdb || media.id) urls.push(`https://www.themoviedb.org/${isMovie ? 'movie' : 'tv'}/${media.idTmdb || media.id}`);
+      if (media.idImdb) urls.push(`https://www.imdb.com/title/${media.idImdb}/`);
+      return urls;
+    }
+  } catch {}
   
   // Build source-specific URL first
   if (source === 'simkl') {

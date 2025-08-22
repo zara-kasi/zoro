@@ -49,7 +49,7 @@ class ZoroSettingTab extends PluginSettingTab {
 
     const authSetting = new Setting(Account)
   .setName('✳️ AniList')
-  .setDesc('“Connect your AniList account to manage your anime and manga lists.');
+  .setDesc('Connect your AniList account to manage your anime and manga lists. (Recommended)');
 
 const authDescEl = authSetting.descEl;
 authDescEl.createEl('br');
@@ -72,7 +72,7 @@ authSetting.addButton(button => {
    
    const simklAuthSetting = new Setting(Account)
   .setName('🎬 SIMKL')
-  .setDesc('Connect your SIMKL account to manage your anime, movies, and TV shows.');
+  .setDesc('Connect your SIMKL account to manage your anime, movies, and TV shows. (Recommended)');
 
 // Add the documentation link after the description
 const simklDescEl = simklAuthSetting.descEl;
@@ -128,8 +128,8 @@ malAuthSetting.addButton(btn => {
           })
       );
       
-      new Setting(Exp)
-      .setName('Default Source')
+      new Setting(Setup)
+      .setName('🕹️ Default Source')
       .setDesc(
   "Choose which service to use by default when none is specified.\n" +
   "Anime — AniList, MAL, or SIMKL\n" +

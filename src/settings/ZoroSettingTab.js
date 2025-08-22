@@ -49,7 +49,7 @@ class ZoroSettingTab extends PluginSettingTab {
 
     const authSetting = new Setting(Account)
   .setName('✳️ AniList')
-  .setDesc('Lets you peek at your private profile and actually change stuff.');
+  .setDesc('“Connect your AniList account to manage your anime and manga lists.');
 
 const authDescEl = authSetting.descEl;
 authDescEl.createEl('br');
@@ -68,10 +68,34 @@ authSetting.addButton(button => {
     await this.handleAuthButtonClick();
   });
 });
+   
+   
+   const simklAuthSetting = new Setting(Account)
+  .setName('🎬 SIMKL')
+  .setDesc('Connect your SIMKL account to manage your anime, movies, and TV shows.');
+
+// Add the documentation link after the description
+const simklDescEl = simklAuthSetting.descEl;
+simklDescEl.createEl('br');
+const simklLinkEl = simklDescEl.createEl('a', {
+  text: 'Guide 📖',
+  href: 'https://github.com/zara-kasi/zoro/blob/main/Docs/simkl-auth-setup.md'
+});
+simklLinkEl.setAttr('target', '_blank');
+simklLinkEl.setAttr('rel', 'noopener noreferrer');
+simklLinkEl.style.textDecoration = 'none';
+
+simklAuthSetting.addButton(btn => {
+  this.simklAuthButton = btn;
+  this.updateSimklAuthButton();
+  btn.onClick(async () => {
+    await this.handleSimklAuthButtonClick();
+  });
+});
     
     const malAuthSetting = new Setting(Account)
   .setName('🗾 MyAnimeList')
-  .setDesc('Lets you edit and view your MAL entries.');
+  .setDesc('Connect your MAL account to manage your anime and manga lists');
 
 // Add the documentation link after the description
 const descEl = malAuthSetting.descEl;
@@ -90,7 +114,29 @@ malAuthSetting.addButton(btn => {
   btn.onClick(async () => {  
     await this.handleMALAuthButtonClick();  
   });  
-});
+}); 
+  
+  
+  new Setting(Exp)
+      .setName('Default Source')
+      .setDesc(
+  "Choose which service to use by default when none is specified.\n" +
+  "Anime — AniList, MAL, or SIMKL\n" +
+  "Manga — AniList or MAL\n" +
+  "Movies & TV — Always SIMKL"
+)
+      .addDropdown(dropdown => dropdown
+        .addOption('anilist', 'AniList')
+        .addOption('mal', 'MyAnimeList')
+        .addOption('simkl', 'SIMKL')
+        .setValue(this.plugin.settings.defaultApiSource)
+        .onChange(async (value) => {
+          this.plugin.settings.defaultApiSource = value;
+          this.plugin.settings.defaultApiUserOverride = true;
+          await this.plugin.saveSettings();
+        }));
+
+
     
     
     new Setting(Setup)
@@ -376,34 +422,9 @@ new Setting(Data)
     })
   );
       
-
-    const simklAuthSetting = new Setting(Exp)
-      .setName('🎬 SIMKL')
-      .setDesc('Track and sync your anime/movie/TV show progress with SIMKL.');
-
-    simklAuthSetting.addButton(btn => {
-      this.simklAuthButton = btn;
-      this.updateSimklAuthButton();
-      btn.onClick(async () => {
-        await this.handleSimklAuthButtonClick();
-      });
-    });
-    
-    new Setting(Exp)
-      .setName('Default API Source')
-      .setDesc('Choose which API to use by default when no source is specified in code blocks')
-      .addDropdown(dropdown => dropdown
-        .addOption('anilist', 'AniList')
-        .addOption('mal', 'MyAnimeList')
-        .addOption('simkl', 'SIMKL')
-        .setValue(this.plugin.settings.defaultApiSource)
-        .onChange(async (value) => {
-          this.plugin.settings.defaultApiSource = value;
-          this.plugin.settings.defaultApiUserOverride = true;
-          await this.plugin.saveSettings();
-        }));
         
-        new Setting(Exp)
+         /**
+   * new Setting(Exp)
     .setName('TMDb API Key')
     .setDesc(
       createFragment((frag) => {
@@ -424,8 +445,75 @@ new Setting(Data)
         await this.plugin.saveSettings();
       })
     );
+   */
+   /**
+    * new Setting(Theme)
+      .setName('🎨 Apply')
+      .setDesc('Choose from available themes')
+      .addDropdown(async dropdown => {
+        dropdown.addOption('', 'Default');
+        const localThemes = await this.plugin.theme.getAvailableThemes();
+        localThemes.forEach(t => dropdown.addOption(t, t));
+        dropdown.setValue(this.plugin.settings.theme || '');
+        dropdown.onChange(async name => {
+          this.plugin.settings.theme = name;
+          await this.plugin.saveSettings();
+          await this.plugin.theme.applyTheme(name);
+        });
+      });
 
+    new Setting(Theme)
+  .setName('📥 Download')
+  .setDesc('Download themes from GitHub repository')
+  .addDropdown(dropdown => {
+    dropdown.addOption('', 'Select');
+    
+    this.plugin.theme.fetchRemoteThemes().then(remoteThemes => {
+      remoteThemes.forEach(t => dropdown.addOption(t, t));
+    });
+    
+    dropdown.onChange(async name => {
+      if (!name) return;
+      
+      const success = await this.plugin.theme.downloadTheme(name);
+      if (success) {
+        // Auto-apply the downloaded theme
+        this.plugin.settings.theme = name;
+        await this.plugin.saveSettings();
+        await this.plugin.theme.applyTheme(name);
+        
+        // Refresh the Apply dropdown to show the new theme
+        this.display();
+      }
+      dropdown.setValue('');
+    });
+  });
 
+    new Setting(Theme)
+      .setName('🗑 Delete')
+      .setDesc('Remove downloaded themes from local storage')
+      .addDropdown(async dropdown => {
+        dropdown.addOption('', 'Select');
+        const localThemes = await this.plugin.theme.getAvailableThemes();
+        localThemes.forEach(t => dropdown.addOption(t, t));
+        
+        dropdown.onChange(async name => {
+          if (!name) return;
+          
+          const success = await this.plugin.theme.deleteTheme(name);
+          if (success) {
+            // If deleted theme was currently active, remove it
+            if (this.plugin.settings.theme === name) {
+              this.plugin.settings.theme = '';
+              await this.plugin.saveSettings();
+              await this.plugin.theme.applyTheme('');
+            }
+          }
+          dropdown.setValue('');
+        });
+      });
+    */
+   
     new Setting(About)
       .setName('Author')
       .setDesc(this.plugin.manifest.author);

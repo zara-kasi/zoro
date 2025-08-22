@@ -12979,6 +12979,7 @@ var ConnectedNotes = class {
     e.preventDefault();
     e.stopPropagation();
     try {
+      this.isTrendingContext = Boolean(config?.isTrending);
       const source = this.plugin.apiHelper ? this.plugin.apiHelper.detectSource(entry, config) : entry?._zoroMeta?.source || config?.source || "anilist";
       const mediaType = this.plugin.apiHelper ? this.plugin.apiHelper.detectMediaType(entry, config, media) : entry?._zoroMeta?.mediaType || config?.mediaType || "ANIME";
       this.currentMedia = media;

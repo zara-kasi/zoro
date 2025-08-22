@@ -10767,6 +10767,7 @@ class ConnectedNotes {
     this.currentUrls = null; // Store current URLs as array for matching
     this.currentSource = null; // Store current source for code block generation
     this.currentMediaType = null; // Store current media type for code block generation
+    this.isTrendingContext = false; // Track if current action comes from a trending view
   }
 
    /**
@@ -11048,10 +11049,11 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
     if (!this.currentMedia || !this.currentSource || !this.currentMediaType) {
       return ''; // Return empty if missing required data
     }
-    // Disable code block for TMDb trending (movies/TV) since single render is not supported
-    const src = String(this.currentSource || '').toLowerCase();
+    // Disable code block for trending Movie/TV entries regardless of source
     const typeUpper = String(this.currentMediaType || '').toUpperCase();
-    if (src === 'tmdb' && (typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper === 'SHOW' || typeUpper === 'SHOWS')) {
+    const isMovieOrTv = (typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper === 'SHOW' || typeUpper === 'SHOWS');
+    const isTrending = this.isTrendingContext || Boolean(this.currentMedia?._zoroMeta?.isTrending);
+    if (isMovieOrTv && isTrending) {
       return '';
     }
 
@@ -11653,11 +11655,12 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
   /**
  * Handle connected notes button click
  */
-async handleConnectedNotesClick(e, media, entry, config) {
-  e.preventDefault();
-  e.stopPropagation();
-  
-  try {
+  async handleConnectedNotesClick(e, media, entry, config) {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    try {
+      this.isTrendingContext = Boolean(config?.isTrending);
     // Extract source and media type
     const source = this.plugin.apiHelper ? 
       this.plugin.apiHelper.detectSource(entry, config) : 

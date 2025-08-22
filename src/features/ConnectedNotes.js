@@ -10,6 +10,7 @@ class ConnectedNotes {
     this.currentUrls = null; // Store current URLs as array for matching
     this.currentSource = null; // Store current source for code block generation
     this.currentMediaType = null; // Store current media type for code block generation
+    this.isTrendingContext = false; // Track if current action comes from a trending view
   }
 
    /**
@@ -294,7 +295,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
     // Disable code block for trending Movie/TV entries regardless of source
     const typeUpper = String(this.currentMediaType || '').toUpperCase();
     const isMovieOrTv = (typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper === 'SHOW' || typeUpper === 'SHOWS');
-    const isTrending = Boolean(this.currentMedia?._zoroMeta?.isTrending);
+    const isTrending = this.isTrendingContext || Boolean(this.currentMedia?._zoroMeta?.isTrending);
     if (isMovieOrTv && isTrending) {
       return '';
     }
@@ -902,6 +903,9 @@ async handleConnectedNotesClick(e, media, entry, config) {
   e.stopPropagation();
   
   try {
+    // Mark context as trending if coming from trending rendering
+    this.isTrendingContext = Boolean(config?.isTrending);
+
     // Extract source and media type
     const source = this.plugin.apiHelper ? 
       this.plugin.apiHelper.detectSource(entry, config) : 

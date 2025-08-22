@@ -7208,6 +7208,7 @@ var Trending = class {
   async fetchTrending(source, mediaType, limit = 40) {
     const typeUpper = String(mediaType || "").toUpperCase();
     if (typeUpper === "MOVIE" || typeUpper === "MOVIES" || typeUpper === "TV" || typeUpper === "SHOW" || typeUpper === "SHOWS") {
+      console.log(`[Trending] Auto-detected MOVIE/TV media type (${typeUpper}), using TMDb trending with Simkl integration`);
       return await this.fetchTMDbTrending(typeUpper.includes("MOVIE") ? "MOVIE" : "TV", limit);
     }
     switch ((source || "").toLowerCase()) {
@@ -7227,7 +7228,15 @@ var Trending = class {
       const type = (config.mediaType || "ANIME").toLowerCase();
       const source = config.source || this.plugin.settings.defaultApiSource || "anilist";
       const limit = config.limit || 40;
+      console.log(`[Trending] renderTrendingBlock called with:`, {
+        mediaType: config.mediaType,
+        source: config.source,
+        defaultSource: this.plugin.settings.defaultApiSource,
+        resolvedType: type,
+        resolvedSource: source
+      });
       const normalizedType = ["movie", "movies", "tv", "show", "shows"].includes(type) ? type.includes("movie") ? "MOVIE" : "TV" : type === "manga" ? "MANGA" : "ANIME";
+      console.log(`[Trending] Normalized media type: ${normalizedType}`);
       const items = await this.plugin.requestQueue.add(
         () => this.fetchTrending(source, normalizedType, limit)
       );

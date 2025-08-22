@@ -9650,9 +9650,14 @@ var DetailPanelSource = class {
     const cached = this.plugin.cache.get(stableCacheKey, { scope: "mediaDetails", source: "imdb" });
     if (cached) return cached;
     try {
+      console.log("[Details][OMDb] Fetching OMDb data", { imdbId, mediaType });
       const response = await fetch(`https://www.omdbapi.com/?i=${imdbId}&apikey=fc1fef96`);
-      if (!response.ok) throw new Error(`OMDB API error: ${response.status}`);
+      if (!response.ok) {
+        console.log("[Details][OMDb] HTTP error", response.status);
+        throw new Error(`OMDB API error: ${response.status}`);
+      }
       const data = await response.json();
+      console.log("[Details][OMDb] Response", data?.Response, { imdbRating: data?.imdbRating, imdbVotes: data?.imdbVotes });
       if (data.Response === "True") {
         const transformedData = {
           score: parseFloat(data.imdbRating) || null,
@@ -9677,7 +9682,8 @@ var DetailPanelSource = class {
         return transformedData;
       }
       return null;
-    } catch {
+    } catch (e) {
+      console.log("[Details][OMDb] Fetch failed", e?.message || e);
       return null;
     }
   }

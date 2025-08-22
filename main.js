@@ -8745,7 +8745,9 @@ var RenderDetailPanel = class {
     const sections = [];
     const src = (entry?._zoroMeta?.source || "").toLowerCase();
     const mediaKind = media?.type || media?.format;
-    const deferDetailsToSimkl = src === "tmdb" && (mediaKind === "MOVIE" || mediaKind === "TV");
+    const hasTmdbId = Number(media?.idTmdb || media?.ids?.tmdb) > 0;
+    const isMovieOrTvKind = mediaKind === "MOVIE" || mediaKind === "TV";
+    const deferDetailsToSimkl = (src === "tmdb" || hasTmdbId) && isMovieOrTvKind;
     sections.push(this.createHeaderSection(media));
     if (!deferDetailsToSimkl) {
       sections.push(this.createMetadataSection(media, entry));
@@ -9442,7 +9444,8 @@ var DetailPanelSource = class {
     const missingBasicData = !media.description || !media.genres || !media.averageScore;
     const mediaKind = media?.type || media?.format;
     const isAnimeWithoutAiring = mediaKind === "ANIME" && !media.nextAiringEpisode;
-    const isTmdbMovieOrTv = (media?._zoroMeta?.source || "").toLowerCase() === "tmdb" && (mediaKind === "MOVIE" || mediaKind === "TV");
+    const hasTmdbId = Number(media?.idTmdb) > 0 || Number(media?.ids?.tmdb) > 0;
+    const isTmdbMovieOrTv = hasTmdbId && (mediaKind === "MOVIE" || mediaKind === "TV");
     return missingBasicData || isAnimeWithoutAiring || isTmdbMovieOrTv;
   }
   extractSourceFromEntry(entry) {
@@ -9462,6 +9465,18 @@ var DetailPanelSource = class {
     } else {
       source = this.plugin.settings.defaultApiSource || "anilist";
       resolvedMediaType = mediaType;
+    }
+    try {
+      const mediaObj = typeof entryOrSource === "object" && entryOrSource?.media ? entryOrSource.media : null;
+      const hasTmdb = Number(mediaObj?.idTmdb || mediaObj?.ids?.tmdb || mediaId) > 0;
+      const typeUpper = (resolvedMediaType || mediaObj?.type || mediaObj?.format || "").toString().toUpperCase();
+      const isMovieOrTv = typeUpper.includes("MOVIE") || typeUpper === "TV" || typeUpper.includes("SHOW");
+      const isValidSource = source === "tmdb" || source === "simkl" || source === "mal" || source === "anilist";
+      if ((!isValidSource || source === "anilist") && hasTmdb && isMovieOrTv) {
+        console.log("[Details][Route] Forcing source to tmdb for MOVIE/TV with TMDb id");
+        source = "tmdb";
+      }
+    } catch {
     }
     let targetId = mediaId;
     let originalMalId = null;

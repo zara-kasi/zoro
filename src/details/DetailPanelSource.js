@@ -98,6 +98,19 @@ class DetailPanelSource {
       resolvedMediaType = mediaType;
     }
 
+    // Safety: if MOVIE/TV with TMDb id but invalid/missing source, force 'tmdb'
+    try {
+      const mediaObj = (typeof entryOrSource === 'object' && entryOrSource?.media) ? entryOrSource.media : null;
+      const hasTmdb = Number(mediaObj?.idTmdb || mediaObj?.ids?.tmdb || mediaId) > 0;
+      const typeUpper = (resolvedMediaType || mediaObj?.type || mediaObj?.format || '').toString().toUpperCase();
+      const isMovieOrTv = typeUpper.includes('MOVIE') || typeUpper === 'TV' || typeUpper.includes('SHOW');
+      const isValidSource = source === 'tmdb' || source === 'simkl' || source === 'mal' || source === 'anilist';
+      if ((!isValidSource || source === 'anilist') && hasTmdb && isMovieOrTv) {
+        console.log('[Details][Route] Forcing source to tmdb for MOVIE/TV with TMDb id');
+        source = 'tmdb';
+      }
+    } catch {}
+
     let targetId = mediaId;
     let originalMalId = null;
 

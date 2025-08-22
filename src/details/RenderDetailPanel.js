@@ -19,7 +19,9 @@ class RenderDetailPanel {
 
     const src = (entry?._zoroMeta?.source || '').toLowerCase();
     const mediaKind = media?.type || media?.format;
-    const deferDetailsToSimkl = src === 'tmdb' && (mediaKind === 'MOVIE' || mediaKind === 'TV');
+    const hasTmdbId = Number(media?.idTmdb || media?.ids?.tmdb) > 0;
+    const isMovieOrTvKind = mediaKind === 'MOVIE' || mediaKind === 'TV';
+    const deferDetailsToSimkl = (src === 'tmdb' || hasTmdbId) && isMovieOrTvKind;
 
     sections.push(this.createHeaderSection(media));
 

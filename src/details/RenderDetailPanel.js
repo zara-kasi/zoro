@@ -688,14 +688,18 @@ if (media.type !== 'ANIME' && media.type !== 'MANGA') {
     }
 
     // TMDB button (for movies/TV)
-    if (media.idTmdb) {
+    if (media.idTmdb || media?.ids?.tmdb) {
       const tmdbBtn = document.createElement('button');
       tmdbBtn.className = 'external-link-btn tmdb-btn';
       tmdbBtn.innerHTML = '🔗 View on TMDB';
       tmdbBtn.onclick = (e) => {
         e.stopPropagation();
-        const mediaType = media.type === 'MOVIE' ? 'movie' : 'tv';
-        window.open(`https://www.themoviedb.org/${mediaType}/${media.idTmdb}`, '_blank');
+        const typeHint = (media.type || media.format || media?._zoroMeta?.mediaType || '').toString().toUpperCase();
+        const isMovie = typeHint.includes('MOVIE');
+        const mediaType = isMovie ? 'movie' : 'tv';
+        const tmdbId = media.idTmdb || media?.ids?.tmdb;
+        console.log('[Details][Links] Opening TMDb', { mediaType, tmdbId, typeHint });
+        window.open(`https://www.themoviedb.org/${mediaType}/${tmdbId}`, '_blank');
       };
       linksContainer.appendChild(tmdbBtn);
     }

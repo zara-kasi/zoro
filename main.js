@@ -8743,25 +8743,18 @@ var RenderDetailPanel = class {
     const content = document.createElement("div");
     content.className = "panel-content";
     const sections = [];
-    const src = (entry?._zoroMeta?.source || "").toLowerCase();
-    const mediaKind = media?.type || media?.format;
-    const deferDetailsToSimkl = src === "tmdb" && (mediaKind === "MOVIE" || mediaKind === "TV");
     sections.push(this.createHeaderSection(media));
-    if (!deferDetailsToSimkl) {
-      sections.push(this.createMetadataSection(media, entry));
-      if (media.type === "ANIME" && media.nextAiringEpisode) {
-        sections.push(this.createAiringSection(media.nextAiringEpisode));
-      }
-      if (media.averageScore > 0) {
-        sections.push(this.createStatisticsSection(media));
-      }
-      if (media.genres?.length > 0) {
-        sections.push(this.createGenresSection(media.genres));
-      }
-      sections.push(this.createSynopsisSection(media.description));
-    } else {
-      sections.push(this.createLoadingSection());
+    sections.push(this.createMetadataSection(media, entry));
+    if (media.type === "ANIME" && media.nextAiringEpisode) {
+      sections.push(this.createAiringSection(media.nextAiringEpisode));
     }
+    if (media.averageScore > 0) {
+      sections.push(this.createStatisticsSection(media));
+    }
+    if (media.genres?.length > 0) {
+      sections.push(this.createGenresSection(media.genres));
+    }
+    sections.push(this.createSynopsisSection(media.description));
     sections.push(this.createExternalLinksSection(media));
     sections.forEach((section) => content.appendChild(section));
     const closeBtn = document.createElement("button");
@@ -8879,8 +8872,6 @@ var RenderDetailPanel = class {
   }
   updatePanelContent(panel, media, malData = null, imdbData = null) {
     const content = panel.querySelector(".panel-content");
-    const loadingSection = content.querySelector(".loading-section");
-    if (loadingSection) loadingSection.remove();
     if (media.type === "ANIME" && media.nextAiringEpisode && !content.querySelector(".airing-section")) {
       const airingSection = this.createAiringSection(media.nextAiringEpisode);
       const metadataSection = content.querySelector(".metadata-section");
@@ -8898,11 +8889,6 @@ var RenderDetailPanel = class {
       if (existingSynopsis) {
         const newSynopsis = this.createSynopsisSection(media.description);
         content.replaceChild(newSynopsis, existingSynopsis);
-      } else {
-        const linksSection = content.querySelector(".external-links-section");
-        const synopsis = this.createSynopsisSection(media.description);
-        if (linksSection) content.insertBefore(synopsis, linksSection);
-        else content.appendChild(synopsis);
       }
     }
     if (media.genres?.length > 0 && !content.querySelector(".genres-section")) {
@@ -9145,19 +9131,6 @@ var RenderDetailPanel = class {
         ${genres.map((genre) => `<span class="genre-tag">${genre}</span>`).join("")}
       </div>
     `;
-    return section;
-  }
-  createLoadingSection() {
-    const section = document.createElement("div");
-    section.className = "panel-section loading-section";
-    const title = document.createElement("h3");
-    title.className = "section-title";
-    title.textContent = "Loading details\u2026";
-    section.appendChild(title);
-    const body = document.createElement("div");
-    body.className = "loading-body";
-    body.textContent = "Fetching details from Simkl\u2026";
-    section.appendChild(body);
     return section;
   }
   createExternalLinksSection(media) {

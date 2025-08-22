@@ -9714,7 +9714,42 @@ var DetailPanelSource = class {
         const { detailedMedia: detailedMedia2, malData: malData2, imdbData: imdbData2 } = cachedDetailPanel;
         if (this.hasMoreData(detailedMedia2)) callback(detailedMedia2, null, null);
         if (malData2) callback(detailedMedia2, malData2, null);
-        if (imdbData2) callback(detailedMedia2, null, imdbData2);
+        if (imdbData2) {
+          callback(detailedMedia2, null, imdbData2);
+        } else {
+          const typeUpperCached = (mediaType || detailedMedia2?.type || "").toString().toUpperCase();
+          const isMovieOrTvCached = typeUpperCached.includes("MOVIE") || typeUpperCached === "TV" || typeUpperCached.includes("SHOW");
+          const isTmdbOrSimkl = source === "tmdb" || source === "simkl";
+          if (isTmdbOrSimkl && isMovieOrTvCached) {
+            let imdbIdLocal = null;
+            if (typeof entryOrSource === "object" && entryOrSource?.media) {
+              imdbIdLocal = entryOrSource.media.idImdb || entryOrSource.media.ids?.imdb || null;
+              if (imdbIdLocal) console.log("[Details][OMDb][Cache] Using IMDb from entry.media", imdbIdLocal);
+            }
+            if (!imdbIdLocal) {
+              imdbIdLocal = detailedMedia2?.idImdb || detailedMedia2?.ids?.imdb || null;
+              if (imdbIdLocal) console.log("[Details][OMDb][Cache] Using IMDb from cached detailedMedia", imdbIdLocal);
+            }
+            if (!imdbIdLocal && source === "tmdb") {
+              try {
+                const tmdbId = detailedMedia2?.idTmdb || detailedMedia2?.ids?.tmdb || mediaId;
+                console.log("[Details][OMDb][Cache] Resolving IMDb via TMDb external_ids", { tmdbId, mediaType });
+                imdbIdLocal = await this.fetchImdbIdFromTmdb(tmdbId, typeUpperCached);
+                if (imdbIdLocal) console.log("[Details][OMDb][Cache] Resolved IMDb via TMDb", imdbIdLocal);
+              } catch (e) {
+                console.log("[Details][OMDb][Cache] Resolve failed", e?.message || e);
+              }
+            }
+            if (imdbIdLocal) {
+              const imdbDataResolved = await this.fetchIMDBData(imdbIdLocal, detailedMedia2?.type || typeUpperCached, detailedMedia2);
+              if (imdbDataResolved) {
+                const updated = { detailedMedia: detailedMedia2, malData: malData2, imdbData: imdbDataResolved };
+                this.plugin.cache.set(detailPanelCacheKey, updated, { scope: "mediaDetails", source: "detailPanel", tags: ["detailPanel", "combined", source, mediaType] });
+                callback(detailedMedia2, null, imdbDataResolved);
+              }
+            }
+          }
+        }
         return;
       }
       const detailedMedia = await this.fetchDetailedData(mediaId, entryOrSource, mediaType);
@@ -9725,7 +9760,9 @@ var DetailPanelSource = class {
       let malDataPromise = null;
       let imdbDataPromise = null;
       if (malId) malDataPromise = this.fetchMALData(malId, detailedMedia.type);
-      if ((source === "simkl" || source === "tmdb") && (mediaType === "MOVIE" || mediaType === "TV")) {
+      const typeUpper = (mediaType || detailedMedia.type || "").toString().toUpperCase();
+      const isMovieOrTv = typeUpper.includes("MOVIE") || typeUpper === "TV" || typeUpper.includes("SHOW");
+      if ((source === "simkl" || source === "tmdb") && isMovieOrTv) {
         let imdbIdLocal = null;
         if (source === "tmdb" && typeof entryOrSource === "object" && entryOrSource?.media) {
           imdbIdLocal = entryOrSource.media.idImdb || entryOrSource.media.ids?.imdb || null;
@@ -9739,7 +9776,7 @@ var DetailPanelSource = class {
           try {
             const tmdbId = detailedMedia.idTmdb || detailedMedia.ids?.tmdb || mediaId;
             console.log("[Details][OMDb] Missing IMDb id; resolving from TMDb external_ids", { tmdbId, mediaType });
-            imdbIdLocal = await this.fetchImdbIdFromTmdb(tmdbId, mediaType);
+            imdbIdLocal = await this.fetchImdbIdFromTmdb(tmdbId, typeUpper);
             if (imdbIdLocal) {
               detailedMedia.idImdb = imdbIdLocal;
               console.log("[Details][OMDb] Resolved IMDb id from TMDb", imdbIdLocal);
@@ -9749,7 +9786,7 @@ var DetailPanelSource = class {
           }
         }
         if (imdbIdLocal) {
-          imdbDataPromise = this.fetchIMDBData(imdbIdLocal, detailedMedia.type, detailedMedia);
+          imdbDataPromise = this.fetchIMDBData(imdbIdLocal, detailedMedia.type || typeUpper, detailedMedia);
         } else {
           console.log("[Details][OMDb] IMDb id not found; skipping OMDb");
         }

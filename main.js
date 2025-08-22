@@ -9360,7 +9360,8 @@ var DetailPanelSource = class {
     const missingBasicData = !media.description || !media.genres || !media.averageScore;
     const mediaKind = media?.type || media?.format;
     const isAnimeWithoutAiring = mediaKind === "ANIME" && !media.nextAiringEpisode;
-    const isTmdbMovieOrTv = (media?._zoroMeta?.source || "").toLowerCase() === "tmdb" && (mediaKind === "MOVIE" || mediaKind === "TV");
+    const hasTmdbId = Number(media?.idTmdb) > 0 || Number(media?.ids?.tmdb) > 0;
+    const isTmdbMovieOrTv = hasTmdbId && (mediaKind === "MOVIE" || mediaKind === "TV");
     return missingBasicData || isAnimeWithoutAiring || isTmdbMovieOrTv;
   }
   extractSourceFromEntry(entry) {
@@ -9730,6 +9731,20 @@ var OpenDetailPanel = class {
   }
   async showPanel(media, entry = null, triggerElement) {
     this.closePanel();
+    try {
+      const mediaKind = media?.type || media?.format;
+      const hasTmdbId = Number(media?.idTmdb) > 0 || Number(media?.ids?.tmdb) > 0 || Number(media?.id) > 0 && (entry?._zoroMeta?.source || "").toLowerCase() === "tmdb";
+      const isMovieOrTv = mediaKind === "MOVIE" || mediaKind === "TV";
+      if (hasTmdbId && isMovieOrTv) {
+        const tmdbId = Number(media?.idTmdb || media?.ids?.tmdb || media?.id);
+        const imdbId = media?.idImdb || media?.ids?.imdb || null;
+        const resolved = await this.dataSource.resolveSimklIdFromExternal(tmdbId, imdbId, mediaKind);
+        if (resolved) {
+          media = { ...media, ids: { ...media.ids || {}, simkl: resolved } };
+        }
+      }
+    } catch {
+    }
     const panel = this.renderer.createPanel(media, entry);
     this.currentPanel = panel;
     this.renderer.positionPanel(panel, triggerElement);

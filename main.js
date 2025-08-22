@@ -8906,8 +8906,11 @@ var RenderDetailPanel = class {
       }
     }
     if (media.genres?.length > 0) {
+      console.log("[Details][Genres] Incoming genres before mapping:", media.genres);
+      const mappedGenres = this.mapTmdbGenresIfNeeded(media.genres, media.type);
+      console.log("[Details][Genres] Mapped genres:", mappedGenres);
       const existingGenres = content.querySelector(".genres-section");
-      const genresSection = this.createGenresSection(media.genres);
+      const genresSection = this.createGenresSection(mappedGenres);
       if (existingGenres) {
         content.replaceChild(genresSection, existingGenres);
       } else {
@@ -8924,7 +8927,9 @@ var RenderDetailPanel = class {
       const newLinksSection = this.createExternalLinksSection(media);
       content.replaceChild(newLinksSection, existingLinksSection);
     }
-    if (media.averageScore > 0 || malData || imdbData) {
+    const shouldShowStats = media.type === "ANIME" && media.averageScore > 0 || malData || imdbData || media.type !== "ANIME" && (imdbData || typeof media.averageScore === "number");
+    if (shouldShowStats) {
+      console.log("[Details][Stats] Building stats section", { type: media.type, hasImdb: !!imdbData, averageScore: media.averageScore });
       const existingStats = content.querySelector(".stats-section");
       const newStats = this.createStatisticsSection(media, malData, imdbData);
       if (existingStats) {
@@ -9074,17 +9079,40 @@ var RenderDetailPanel = class {
     if (media.type === "ANIME" || media.type === "MANGA") {
       if (media.averageScore > 0) {
         const scoreOutOf10 = (media.averageScore / 10).toFixed(1);
+        console.log("[Details][Stats] AniList score used", scoreOutOf10);
         this.addStatItem(statsGrid, "AniList Score", `${scoreOutOf10}`, "score-stat anilist-stat");
       }
       if (malData) {
-        if (malData.score) this.addStatItem(statsGrid, "MAL Score", `${malData.score}`, "score-stat mal-stat");
-        if (malData.scored_by) this.addStatItem(statsGrid, "MAL Ratings", malData.scored_by.toLocaleString(), "count-stat");
-        if (malData.rank) this.addStatItem(statsGrid, "MAL Rank", `#${malData.rank}`, "rank-stat");
+        if (malData.score) {
+          console.log("[Details][Stats] MAL score used", malData.score);
+          this.addStatItem(statsGrid, "MAL Score", `${malData.score}`, "score-stat mal-stat");
+        }
+        if (malData.scored_by) {
+          this.addStatItem(statsGrid, "MAL Ratings", malData.scored_by.toLocaleString(), "count-stat");
+        }
+        if (malData.rank) {
+          this.addStatItem(statsGrid, "MAL Rank", `#${malData.rank}`, "rank-stat");
+        }
       }
     } else {
       if (imdbData) {
-        if (imdbData.score) this.addStatItem(statsGrid, "IMDB Score", `${imdbData.score}`, "score-stat imdb-stat");
-        if (imdbData.scored_by) this.addStatItem(statsGrid, "IMDB Ratings", imdbData.scored_by.toLocaleString(), "count-stat");
+        if (imdbData.score) {
+          console.log("[Details][Stats] Using IMDb score from OMDb", imdbData.score);
+          this.addStatItem(statsGrid, "IMDB Score", `${imdbData.score}`, "score-stat imdb-stat");
+        }
+        if (imdbData.scored_by) {
+          this.addStatItem(statsGrid, "IMDB Ratings", imdbData.scored_by.toLocaleString(), "count-stat");
+        }
+      } else {
+        const tmdbVoteAverage = typeof media.averageScore === "number" ? media.averageScore / 10 : null;
+        const tmdbVoteCount = media?._zoroMeta?.trending?.voteCount || null;
+        if (tmdbVoteAverage != null) {
+          console.log("[Details][Stats] Fallback to TMDb score", tmdbVoteAverage, "votes", tmdbVoteCount);
+          this.addStatItem(statsGrid, "TMDb Score", `${tmdbVoteAverage.toFixed(1)}`, "score-stat tmdb-stat");
+          if (tmdbVoteCount != null) {
+            this.addStatItem(statsGrid, "TMDb Ratings", Number(tmdbVoteCount).toLocaleString(), "count-stat");
+          }
+        }
       }
     }
     section.appendChild(statsGrid);
@@ -9136,13 +9164,65 @@ var RenderDetailPanel = class {
   createGenresSection(genres) {
     const section = document.createElement("div");
     section.className = "panel-section genres-section";
+    const displayGenres = this.mapTmdbGenresIfNeeded(genres);
+    console.log("[Details][Genres] Rendering genres:", displayGenres);
     section.innerHTML = `
       <h3 class="section-title">Genres</h3>
       <div class="genres-container">
-        ${genres.map((genre) => `<span class="genre-tag">${genre}</span>`).join("")}
+        ${displayGenres.map((genre) => `<span class="genre-tag">${genre}</span>`).join("")}
       </div>
     `;
     return section;
+  }
+  mapTmdbGenresIfNeeded(genres, mediaType) {
+    if (!Array.isArray(genres)) return [];
+    const areStrings = genres.every((g) => typeof g === "string");
+    if (areStrings) return genres;
+    const movieMap = {
+      28: "Action",
+      12: "Adventure",
+      16: "Animation",
+      35: "Comedy",
+      80: "Crime",
+      99: "Documentary",
+      18: "Drama",
+      10751: "Family",
+      14: "Fantasy",
+      36: "History",
+      27: "Horror",
+      10402: "Music",
+      9648: "Mystery",
+      10749: "Romance",
+      878: "Science Fiction",
+      10770: "TV Movie",
+      53: "Thriller",
+      10752: "War",
+      37: "Western"
+    };
+    const tvMap = {
+      10759: "Action & Adventure",
+      16: "Animation",
+      35: "Comedy",
+      80: "Crime",
+      99: "Documentary",
+      18: "Drama",
+      10751: "Family",
+      10762: "Kids",
+      9648: "Mystery",
+      10763: "News",
+      10764: "Reality",
+      10765: "Sci-Fi & Fantasy",
+      10766: "Soap",
+      10767: "Talk",
+      10768: "War & Politics",
+      37: "Western"
+    };
+    const useTv = mediaType === "TV";
+    const map = useTv ? tvMap : movieMap;
+    return genres.map((g) => {
+      const id = typeof g === "string" ? parseInt(g) : g;
+      return map[id] || String(g);
+    });
   }
   createLoadingSection() {
     const section = document.createElement("div");

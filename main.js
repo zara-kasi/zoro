@@ -12564,8 +12564,7 @@ var ConnectedNotes = class {
     }
     const typeUpper = String(this.currentMediaType || "").toUpperCase();
     const isMovieOrTv = typeUpper === "MOVIE" || typeUpper === "MOVIES" || typeUpper === "TV" || typeUpper === "SHOW" || typeUpper === "SHOWS";
-    const isTrending = Boolean(this.currentMedia?._zoroMeta?.isTrending);
-    if (isMovieOrTv && isTrending) {
+    if (isMovieOrTv) {
       return "";
     }
     const codeBlockLines = [

@@ -229,12 +229,11 @@ class RenderDetailPanel {
       }
     }
 
-    if (media.idMal) {
-      const existingLinksSection = content.querySelector('.external-links-section');
-      if (existingLinksSection) {
-        const newLinksSection = this.createExternalLinksSection(media);
-        content.replaceChild(newLinksSection, existingLinksSection);
-      }
+    // Always rebuild external links after updates (ids like Simkl/TMDb may appear later)
+    const existingLinksSection = content.querySelector('.external-links-section');
+    if (existingLinksSection) {
+      const newLinksSection = this.createExternalLinksSection(media);
+      content.replaceChild(newLinksSection, existingLinksSection);
     }
 
     if (media.averageScore > 0 || malData || imdbData) {
@@ -574,17 +573,20 @@ class RenderDetailPanel {
     }
 
     // Simkl button (for movies and TV only, not anime or manga)
-if (media.id && media.type !== 'ANIME' && media.type !== 'MANGA') {
-  const simklBtn = document.createElement('button');
-  simklBtn.className = 'external-link-btn simkl-btn';
-  simklBtn.innerHTML = '🔗 View on Simkl';
-  simklBtn.onclick = (e) => {
-    e.stopPropagation();
-    const mediaType = media.type === 'MOVIE' ? 'movies' : 'tv';
-    const url = `https://simkl.com/${mediaType}/${media.id}`;
-    window.open(url, '_blank');
-  };
-  linksContainer.appendChild(simklBtn);
+if (media.type !== 'ANIME' && media.type !== 'MANGA') {
+  const simklId = media?.ids?.simkl || media?.id;
+  if (simklId) {
+    const simklBtn = document.createElement('button');
+    simklBtn.className = 'external-link-btn simkl-btn';
+    simklBtn.innerHTML = '🔗 View on Simkl';
+    simklBtn.onclick = (e) => {
+      e.stopPropagation();
+      const mediaType = media.type === 'MOVIE' ? 'movies' : 'tv';
+      const url = `https://simkl.com/${mediaType}/${simklId}`;
+      window.open(url, '_blank');
+    };
+    linksContainer.appendChild(simklBtn);
+  }
 }
 
     // IMDB button (for movies/TV)

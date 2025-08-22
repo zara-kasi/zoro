@@ -17,11 +17,11 @@ var __copyProps = (to, from, except, desc) => {
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // src/index.js
-var index_exports = {};
-__export(index_exports, {
-  default: () => index_default
+var src_exports = {};
+__export(src_exports, {
+  default: () => src_default
 });
-module.exports = __toCommonJS(index_exports);
+module.exports = __toCommonJS(src_exports);
 var import_obsidian31 = require("obsidian");
 
 // src/cache/Cache.js
@@ -4692,7 +4692,86 @@ var SimklApi = class {
   // =================== UPDATE METHODS (Following MAL pattern) ===================
   async updateMediaListEntry(mediaId, updates, mediaType) {
     try {
+      const typeUpper = (mediaType || "").toString().toUpperCase();
+      const isMovieOrTv = typeUpper === "MOVIE" || typeUpper === "MOVIES" || typeUpper === "TV" || typeUpper.includes("SHOW");
+      if (updates && updates._zUseTmdbId === true && isMovieOrTv) {
+        let imdb = void 0;
+        try {
+          const cached = this.cache?.get(String(mediaId), { scope: "mediaData" });
+          const media = cached?.media || cached || {};
+          imdb = media.idImdb || media.ids?.imdb;
+        } catch {
+        }
+        return await this.updateMediaListEntryWithIds({ tmdb: mediaId, imdb }, updates, mediaType);
+      }
       return await this.executeUpdate(mediaId, updates, mediaType);
+    } catch (error) {
+      throw this.createUserFriendlyError(error);
+    }
+  }
+  /**
+   * Update/create a Simkl list entry using explicit external identifiers (e.g., TMDb/IMDb).
+   * This is primarily used for TMDb trending items (movies/TV) where we don't have Simkl IDs.
+   *
+   * @param {{ tmdb?: number|string, imdb?: string, simkl?: number|string }} identifiers
+   * @param {object} updates
+   * @param {string} mediaType One of MOVIE/MOVIES/TV/ANIME
+   */
+  async updateMediaListEntryWithIds(identifiers, updates, mediaType) {
+    try {
+      await this.ensureValidToken();
+      const payload = this.buildUpdatePayloadFromIdentifiers(identifiers, updates, mediaType);
+      const typeUpper = (mediaType || "").toString().toUpperCase();
+      const isMovie = typeUpper === "MOVIE" || typeUpper === "MOVIES";
+      if (updates.status !== void 0) {
+        await this.makeRequest({
+          url: `${this.baseUrl}/sync/add-to-list`,
+          method: "POST",
+          headers: this.getHeaders({ type: "update" }),
+          body: JSON.stringify(payload),
+          priority: "high"
+        });
+        if (updates.score === void 0 || updates.score === null) {
+          const statusMapped = this.mapAniListStatusToSimkl(updates.status);
+          const statusToRating = { watching: 8, completed: 9, hold: 6, dropped: 3, plantowatch: 1 };
+          const derived = statusToRating[statusMapped];
+          if (derived) {
+            const ratingsPayload = this.buildUpdatePayloadFromIdentifiers(identifiers, { score: derived }, mediaType);
+            await this.makeRequest({
+              url: `${this.baseUrl}/sync/ratings`,
+              method: "POST",
+              headers: this.getHeaders({ type: "update" }),
+              body: JSON.stringify(ratingsPayload),
+              priority: "high"
+            });
+          }
+        }
+      }
+      if (updates.progress !== void 0) {
+        if (isMovie) {
+          const watched = (parseInt(updates.progress) || 0) > 0;
+          const containerKey = "movies";
+          const historyPayload = { [containerKey]: [{ ids: {} }] };
+          const item = historyPayload[containerKey][0];
+          if (identifiers?.tmdb) item.ids.tmdb = parseInt(identifiers.tmdb);
+          if (!item.ids.tmdb && identifiers?.imdb) item.ids.imdb = String(identifiers.imdb);
+          if (!item.ids.tmdb && !item.ids.imdb && identifiers?.simkl) item.ids.simkl = parseInt(identifiers.simkl);
+          await this.makeRequest({
+            url: `${this.baseUrl}/sync/history${watched ? "" : "/remove"}`,
+            method: "POST",
+            headers: this.getHeaders({ type: "update" }),
+            body: JSON.stringify(historyPayload),
+            priority: "high"
+          });
+        }
+      }
+      this.cache.invalidateScope("userData");
+      return {
+        id: null,
+        status: updates.status || null,
+        score: updates.score || 0,
+        progress: updates.progress || 0
+      };
     } catch (error) {
       throw this.createUserFriendlyError(error);
     }
@@ -4881,7 +4960,15 @@ var SimklApi = class {
       if (imdb) item.ids.imdb = imdb;
     } catch {
     }
-    if (!item.ids.tmdb && !item.ids.imdb) item.ids.simkl = parseInt(mediaId);
+    if (!item.ids.tmdb && !item.ids.imdb) {
+      const typeUpperLocal = typeUpper;
+      const shouldUseTmdbFallback = updates?._zUseTmdbId === true && (isMovie || typeUpperLocal === "TV" || typeUpperLocal.includes("SHOW"));
+      if (shouldUseTmdbFallback) {
+        item.ids.tmdb = parseInt(mediaId);
+      } else {
+        item.ids.simkl = parseInt(mediaId);
+      }
+    }
     console.log("[Simkl][Update] initial payload item", JSON.parse(JSON.stringify(item)));
     if (updates.status !== void 0) {
       const originalStatus = updates.status;
@@ -4930,6 +5017,51 @@ var SimklApi = class {
       console.log("[Simkl][Update] cache enrich failed", e);
     }
     console.log("[Simkl][Update] final payload", JSON.parse(JSON.stringify(payload)));
+    return payload;
+  }
+  // Build payload using explicit identifiers, bypassing cache lookup
+  buildUpdatePayloadFromIdentifiers(identifiers, updates, mediaType, forceContainerKey = null) {
+    const typeUpper = (mediaType || "").toString().toUpperCase();
+    const isMovie = typeUpper === "MOVIE" || typeUpper === "MOVIES";
+    const containerKey = forceContainerKey || (isMovie ? "movies" : "shows");
+    const payload = { [containerKey]: [{ ids: {} }] };
+    const item = payload[containerKey][0];
+    item.type = isMovie ? "movie" : "show";
+    const tmdb = identifiers?.tmdb;
+    const imdb = identifiers?.imdb;
+    const simkl = identifiers?.simkl;
+    if (tmdb) item.ids.tmdb = parseInt(tmdb);
+    if (!item.ids.tmdb && imdb) item.ids.imdb = String(imdb);
+    if (!item.ids.tmdb && !item.ids.imdb && simkl) item.ids.simkl = parseInt(simkl);
+    try {
+      const cached = this.cache?.get(String(tmdb || simkl), { scope: "mediaData" }) || this.cache?.get(String(simkl || tmdb), { scope: "mediaData" });
+      const media = cached?.media || cached || {};
+      if (!item.ids.imdb && media.idImdb) item.ids.imdb = media.idImdb;
+      if (media.idMal) item.ids.mal = media.idMal;
+      const title = media?.title?.english || media?.title?.romaji || media?.title?.native;
+      if (title) item.title = title;
+    } catch {
+    }
+    if (updates.status !== void 0) {
+      const validatedStatus = this.validateAndConvertStatus(updates.status, mediaType);
+      item.to = validatedStatus;
+    } else if (!isMovie && updates.progress !== void 0) {
+      const prog = parseInt(updates.progress) || 0;
+      item.to = prog > 0 ? "watching" : "plantowatch";
+    }
+    if (updates.score !== void 0 && updates.score !== null) {
+      const score = Math.max(0, Math.min(10, Math.round(updates.score)));
+      if (score > 0) item.rating = score;
+    }
+    if (updates.progress !== void 0) {
+      if (isMovie) {
+        item.watched = (parseInt(updates.progress) || 0) > 0;
+      } else {
+        const prog = parseInt(updates.progress) || 0;
+        item.watched_episodes = prog;
+        if (item.to === void 0) item.to = prog > 0 ? "watching" : "plantowatch";
+      }
+    }
     return payload;
   }
   // Build minimal payload for remove operations (only container and IDs)
@@ -8768,12 +8900,10 @@ var RenderDetailPanel = class {
         content.appendChild(genresSection);
       }
     }
-    if (media.idMal) {
-      const existingLinksSection = content.querySelector(".external-links-section");
-      if (existingLinksSection) {
-        const newLinksSection = this.createExternalLinksSection(media);
-        content.replaceChild(newLinksSection, existingLinksSection);
-      }
+    const existingLinksSection = content.querySelector(".external-links-section");
+    if (existingLinksSection) {
+      const newLinksSection = this.createExternalLinksSection(media);
+      content.replaceChild(newLinksSection, existingLinksSection);
     }
     if (media.averageScore > 0 || malData || imdbData) {
       const existingStats = content.querySelector(".stats-section");
@@ -9034,17 +9164,20 @@ var RenderDetailPanel = class {
       };
       linksContainer.appendChild(malBtn);
     }
-    if (media.id && media.type !== "ANIME" && media.type !== "MANGA") {
-      const simklBtn = document.createElement("button");
-      simklBtn.className = "external-link-btn simkl-btn";
-      simklBtn.innerHTML = "\u{1F517} View on Simkl";
-      simklBtn.onclick = (e) => {
-        e.stopPropagation();
-        const mediaType = media.type === "MOVIE" ? "movies" : "tv";
-        const url = `https://simkl.com/${mediaType}/${media.id}`;
-        window.open(url, "_blank");
-      };
-      linksContainer.appendChild(simklBtn);
+    if (media.type !== "ANIME" && media.type !== "MANGA") {
+      const simklId = media?.ids?.simkl || media?.id;
+      if (simklId) {
+        const simklBtn = document.createElement("button");
+        simklBtn.className = "external-link-btn simkl-btn";
+        simklBtn.innerHTML = "\u{1F517} View on Simkl";
+        simklBtn.onclick = (e) => {
+          e.stopPropagation();
+          const mediaType = media.type === "MOVIE" ? "movies" : "tv";
+          const url = `https://simkl.com/${mediaType}/${simklId}`;
+          window.open(url, "_blank");
+        };
+        linksContainer.appendChild(simklBtn);
+      }
     }
     if (media.idImdb) {
       const imdbBtn = document.createElement("button");
@@ -9199,7 +9332,8 @@ var DetailPanelSource = class {
   shouldFetchDetailedData(media) {
     const missingBasicData = !media.description || !media.genres || !media.averageScore;
     const isAnimeWithoutAiring = media.type === "ANIME" && !media.nextAiringEpisode;
-    return missingBasicData || isAnimeWithoutAiring;
+    const isTmdbMovieOrTv = (media?._zoroMeta?.source || "").toLowerCase() === "tmdb" && (media?.type === "MOVIE" || media?.type === "TV");
+    return missingBasicData || isAnimeWithoutAiring || isTmdbMovieOrTv;
   }
   extractSourceFromEntry(entry) {
     return entry?._zoroMeta?.source || this.plugin.settings.defaultApiSource || "anilist";
@@ -9260,6 +9394,37 @@ var DetailPanelSource = class {
       } else {
         return null;
       }
+    } else if (source === "tmdb" && (resolvedMediaType === "MOVIE" || resolvedMediaType === "TV")) {
+      try {
+        const mediaObj = typeof entryOrSource === "object" && entryOrSource?.media ? entryOrSource.media : null;
+        const tmdbId = Number(mediaObj?.idTmdb || mediaId || mediaObj?.ids?.tmdb || 0) || 0;
+        const imdbId = mediaObj?.idImdb || mediaObj?.ids?.imdb || null;
+        const simklId = await this.resolveSimklIdFromExternal(tmdbId, imdbId, resolvedMediaType);
+        if (simklId) {
+          const detailedSimklData = await this.fetchSimklDetailedData(simklId, resolvedMediaType);
+          if (detailedSimklData) {
+            return {
+              ...mediaObj,
+              ...detailedSimklData,
+              // Preserve original TMDb id on the media object
+              id: mediaObj?.id ?? tmdbId,
+              idImdb: mediaObj?.idImdb || detailedSimklData.ids?.imdb || imdbId || null,
+              idTmdb: mediaObj?.idTmdb || tmdbId || detailedSimklData.ids?.tmdb || null,
+              // Ensure Simkl ids are available under ids
+              ids: {
+                ...detailedSimklData.ids || {},
+                tmdb: mediaObj?.idTmdb || tmdbId || (detailedSimklData.ids?.tmdb ?? null),
+                imdb: mediaObj?.idImdb || imdbId || (detailedSimklData.ids?.imdb ?? null)
+              },
+              description: detailedSimklData.overview || mediaObj?.overview || mediaObj?.description || null,
+              nextAiringEpisode: null
+            };
+          }
+        }
+      } catch {
+      }
+      if (typeof entryOrSource === "object" && entryOrSource?.media) return entryOrSource.media;
+      return null;
     }
     const stableCacheKey = this.plugin.cache.structuredKey("details", "stable", targetId);
     const dynamicCacheKey = this.plugin.cache.structuredKey("details", "airing", targetId);
@@ -9444,7 +9609,7 @@ var DetailPanelSource = class {
       let malDataPromise = null;
       let imdbDataPromise = null;
       if (malId) malDataPromise = this.fetchMALData(malId, detailedMedia.type);
-      if (source === "simkl" && (mediaType === "MOVIE" || mediaType === "TV") && detailedMedia.idImdb) {
+      if ((source === "simkl" || source === "tmdb") && (mediaType === "MOVIE" || mediaType === "TV") && detailedMedia.idImdb) {
         imdbDataPromise = this.fetchIMDBData(detailedMedia.idImdb, detailedMedia.type, detailedMedia);
       }
       let malData = null;
@@ -9476,6 +9641,56 @@ var DetailPanelSource = class {
   getDetailedMediaQuery() {
     return `query($id:Int){Media(id:$id){id type title{romaji english native}description(asHtml:false)format status season seasonYear averageScore genres nextAiringEpisode{airingAt episode timeUntilAiring}idMal}}`;
   }
+};
+DetailPanelSource.prototype.resolveSimklIdFromExternal = async function(tmdbId, imdbId, mediaType) {
+  if (!tmdbId && !imdbId) return null;
+  const type = mediaType === "MOVIE" || mediaType === "MOVIES" ? "movies" : "tv";
+  const cacheKey = this.plugin.cache.structuredKey("simkl", "resolve_external", `${type}_${tmdbId || "none"}_${imdbId || "none"}`);
+  const cached = this.plugin.cache.get(cacheKey, { scope: "mediaDetails", source: "simkl" });
+  if (cached) return cached;
+  try {
+    const params = new URLSearchParams();
+    if (tmdbId) params.set("tmdb", String(tmdbId));
+    if (imdbId) params.set("imdb", String(imdbId));
+    if (this.plugin.settings.simklClientId) params.set("client_id", this.plugin.settings.simklClientId);
+    const url = `https://api.simkl.com/search/id?${params.toString()}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Simkl resolve error: ${res.status}`);
+    const data = await res.json();
+    let simklId = null;
+    const candidates = Array.isArray(data) ? data : [data];
+    for (const item of candidates) {
+      const node = item?.movie || item?.show || item || {};
+      const ids = node.ids || item?.ids || {};
+      const candidate = Number(ids.simkl || ids.id);
+      if (Number.isFinite(candidate) && candidate > 0) {
+        simklId = candidate;
+        break;
+      }
+    }
+    if (simklId) {
+      this.plugin.cache.set(cacheKey, simklId, { scope: "mediaDetails", source: "simkl", tags: ["simkl", "resolve", "external", type] });
+      return simklId;
+    }
+  } catch {
+  }
+  try {
+    const endpoint = mediaType === "MOVIE" || mediaType === "MOVIES" ? "movie" : "tv";
+    const idPart = tmdbId ? `tmdb/${encodeURIComponent(String(tmdbId))}` : `imdb/${encodeURIComponent(String(imdbId))}`;
+    const url = `https://api.simkl.com/${endpoint}/${idPart}${this.plugin.settings.simklClientId ? `?client_id=${this.plugin.settings.simklClientId}` : ""}`;
+    const res = await fetch(url);
+    if (res.ok) {
+      const data = await res.json();
+      const ids = data?.ids || {};
+      const simklId = Number(ids.simkl || ids.id);
+      if (Number.isFinite(simklId) && simklId > 0) {
+        this.plugin.cache.set(cacheKey, simklId, { scope: "mediaDetails", source: "simkl", tags: ["simkl", "resolve", "external", endpoint] });
+        return simklId;
+      }
+    }
+  } catch {
+  }
+  return null;
 };
 
 // src/details/OpenDetailPanel.js
@@ -11108,8 +11323,18 @@ var CardRenderer = class {
     try {
       const typeUpper = String(entryMediaType || "").toUpperCase();
       const isMovieOrTv = typeUpper === "MOVIE" || typeUpper === "MOVIES" || typeUpper === "TV" || typeUpper.includes("SHOW");
-      const updates = entrySource === "simkl" && isMovieOrTv ? { status: "PLANNING", score: 0 } : { status: "PLANNING", progress: 0 };
-      await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, entryMediaType);
+      const updates = entrySource === "simkl" && isMovieOrTv ? { status: "PLANNING", score: 0, _zUseTmdbId: true } : { status: "PLANNING", progress: 0 };
+      if (entrySource === "simkl" && isTmdbItem && isMovieOrTv) {
+        const ids = { tmdb: Number(media.idTmdb || media.id) || void 0, imdb: media.idImdb || void 0 };
+        if (typeof this.plugin?.simklApi?.updateMediaListEntryWithIds === "function") {
+          await this.plugin.simklApi.updateMediaListEntryWithIds(ids, updates, entryMediaType);
+        } else {
+          const idFallback = Number(media.idTmdb || media.id) || 0;
+          await this.apiHelper.updateMediaListEntry(idFallback, updates, entrySource, entryMediaType);
+        }
+      } else {
+        await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, entryMediaType);
+      }
       new import_obsidian25.Notice("\u2705 Added to planning!", 3e3);
       console.log(`[Zoro] Added ${media.id} to planning via add button`);
       addBtn.dataset.loading = "false";
@@ -13066,7 +13291,6 @@ var ZoroSettingTab = class extends import_obsidian30.PluginSettingTab {
     const Setup = section("\u{1F9ED} Setup");
     const Note = section("\u{1F5D2}\uFE0F Note");
     const Display = section("\u{1F4FA} Display");
-    const Theme2 = section("\u{1F313} Theme");
     const More = section("\u2728  More");
     const Shortcut = section("\u{1F6AA} Shortcut");
     const Data = section("\u{1F4BE} Data");
@@ -13241,51 +13465,6 @@ var ZoroSettingTab = class extends import_obsidian30.PluginSettingTab {
         }
       })
     );
-    new import_obsidian30.Setting(Theme2).setName("\u{1F3A8} Apply").setDesc("Choose from available themes").addDropdown(async (dropdown) => {
-      dropdown.addOption("", "Default");
-      const localThemes = await this.plugin.theme.getAvailableThemes();
-      localThemes.forEach((t) => dropdown.addOption(t, t));
-      dropdown.setValue(this.plugin.settings.theme || "");
-      dropdown.onChange(async (name) => {
-        this.plugin.settings.theme = name;
-        await this.plugin.saveSettings();
-        await this.plugin.theme.applyTheme(name);
-      });
-    });
-    new import_obsidian30.Setting(Theme2).setName("\u{1F4E5} Download").setDesc("Download themes from GitHub repository").addDropdown((dropdown) => {
-      dropdown.addOption("", "Select");
-      this.plugin.theme.fetchRemoteThemes().then((remoteThemes) => {
-        remoteThemes.forEach((t) => dropdown.addOption(t, t));
-      });
-      dropdown.onChange(async (name) => {
-        if (!name) return;
-        const success = await this.plugin.theme.downloadTheme(name);
-        if (success) {
-          this.plugin.settings.theme = name;
-          await this.plugin.saveSettings();
-          await this.plugin.theme.applyTheme(name);
-          this.display();
-        }
-        dropdown.setValue("");
-      });
-    });
-    new import_obsidian30.Setting(Theme2).setName("\u{1F5D1} Delete").setDesc("Remove downloaded themes from local storage").addDropdown(async (dropdown) => {
-      dropdown.addOption("", "Select");
-      const localThemes = await this.plugin.theme.getAvailableThemes();
-      localThemes.forEach((t) => dropdown.addOption(t, t));
-      dropdown.onChange(async (name) => {
-        if (!name) return;
-        const success = await this.plugin.theme.deleteTheme(name);
-        if (success) {
-          if (this.plugin.settings.theme === name) {
-            this.plugin.settings.theme = "";
-            await this.plugin.saveSettings();
-            await this.plugin.theme.applyTheme("");
-          }
-        }
-        dropdown.setValue("");
-      });
-    });
     new import_obsidian30.Setting(Cache2).setName("\u{1F4CA} Cache Stats").setDesc("Show live cache usage and hit-rate in a pop-up.").addButton(
       (btn) => btn.setButtonText("Show Stats").onClick(() => {
         const s = this.plugin.cache.getStats();
@@ -13794,5 +13973,5 @@ var ZoroPlugin = class extends import_obsidian31.Plugin {
     if (loader) loader.remove();
   }
 };
-var index_default = ZoroPlugin;
+var src_default = ZoroPlugin;
 //# sourceMappingURL=main.js.map

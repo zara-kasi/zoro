@@ -70,7 +70,10 @@ class DetailPanelSource {
   shouldFetchDetailedData(media) {
     const missingBasicData = !media.description || !media.genres || !media.averageScore;
     const isAnimeWithoutAiring = media.type === 'ANIME' && !media.nextAiringEpisode;
-    return missingBasicData || isAnimeWithoutAiring;
+    // Force fetch for TMDb movies/TV to route through Simkl detail panel
+    const isTmdbMovieOrTv = ((media?._zoroMeta?.source || '').toLowerCase() === 'tmdb')
+      && (media?.type === 'MOVIE' || media?.type === 'TV');
+    return missingBasicData || isAnimeWithoutAiring || isTmdbMovieOrTv;
   }
 
   extractSourceFromEntry(entry) {
@@ -141,6 +144,39 @@ class DetailPanelSource {
               } else {
           return null;
         }
+    } else if (source === 'tmdb' && (resolvedMediaType === 'MOVIE' || resolvedMediaType === 'TV')) {
+      // Route TMDb movies/TV through Simkl detail panel by resolving Simkl ID first
+      try {
+        const mediaObj = (typeof entryOrSource === 'object' && entryOrSource?.media) ? entryOrSource.media : null;
+        const tmdbId = Number(mediaObj?.idTmdb || mediaId || mediaObj?.ids?.tmdb || 0) || 0;
+        const imdbId = mediaObj?.idImdb || mediaObj?.ids?.imdb || null;
+
+        const simklId = await this.resolveSimklIdFromExternal(tmdbId, imdbId, resolvedMediaType);
+        if (simklId) {
+          const detailedSimklData = await this.fetchSimklDetailedData(simklId, resolvedMediaType);
+          if (detailedSimklData) {
+            return {
+              ...mediaObj,
+              ...detailedSimklData,
+              // Preserve original TMDb id on the media object
+              id: mediaObj?.id ?? tmdbId,
+              idImdb: mediaObj?.idImdb || detailedSimklData.ids?.imdb || imdbId || null,
+              idTmdb: mediaObj?.idTmdb || tmdbId || detailedSimklData.ids?.tmdb || null,
+              // Ensure Simkl ids are available under ids
+              ids: {
+                ...(detailedSimklData.ids || {}),
+                tmdb: mediaObj?.idTmdb || tmdbId || (detailedSimklData.ids?.tmdb ?? null),
+                imdb: mediaObj?.idImdb || imdbId || (detailedSimklData.ids?.imdb ?? null)
+              },
+              description: detailedSimklData.overview || mediaObj?.overview || mediaObj?.description || null,
+              nextAiringEpisode: null
+            };
+          }
+        }
+      } catch {}
+      // If resolution fails, just return the original media without changes
+      if (typeof entryOrSource === 'object' && entryOrSource?.media) return entryOrSource.media;
+      return null;
     }
 
     const stableCacheKey = this.plugin.cache.structuredKey('details', 'stable', targetId);
@@ -377,8 +413,8 @@ class DetailPanelSource {
       
       if (malId) malDataPromise = this.fetchMALData(malId, detailedMedia.type);
       
-      // For Simkl movies/TV, fetch IMDB data
-      if (source === 'simkl' && (mediaType === 'MOVIE' || mediaType === 'TV') && detailedMedia.idImdb) {
+      // For Simkl or TMDb movies/TV, fetch IMDB data
+      if ((source === 'simkl' || source === 'tmdb') && (mediaType === 'MOVIE' || mediaType === 'TV') && detailedMedia.idImdb) {
         imdbDataPromise = this.fetchIMDBData(detailedMedia.idImdb, detailedMedia.type, detailedMedia);
       }
       
@@ -421,5 +457,61 @@ class DetailPanelSource {
     return `query($id:Int){Media(id:$id){id type title{romaji english native}description(asHtml:false)format status season seasonYear averageScore genres nextAiringEpisode{airingAt episode timeUntilAiring}idMal}}`;
   }
 }
+
+// Helper: resolve Simkl ID from TMDb/IMDb for MOVIE/TV
+DetailPanelSource.prototype.resolveSimklIdFromExternal = async function(tmdbId, imdbId, mediaType) {
+  if (!tmdbId && !imdbId) return null;
+  const type = (mediaType === 'MOVIE' || mediaType === 'MOVIES') ? 'movies' : 'tv';
+  const cacheKey = this.plugin.cache.structuredKey('simkl', 'resolve_external', `${type}_${tmdbId || 'none'}_${imdbId || 'none'}`);
+  const cached = this.plugin.cache.get(cacheKey, { scope: 'mediaDetails', source: 'simkl' });
+  if (cached) return cached;
+
+  try {
+    const params = new URLSearchParams();
+    if (tmdbId) params.set('tmdb', String(tmdbId));
+    if (imdbId) params.set('imdb', String(imdbId));
+    if (this.plugin.settings.simklClientId) params.set('client_id', this.plugin.settings.simklClientId);
+
+    // Prefer the generic search-by-external-id endpoint
+    const url = `https://api.simkl.com/search/id?${params.toString()}`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`Simkl resolve error: ${res.status}`);
+    const data = await res.json();
+
+    // Try to extract Simkl ID from multiple possible structures
+    let simklId = null;
+    const candidates = Array.isArray(data) ? data : [data];
+    for (const item of candidates) {
+      const node = item?.movie || item?.show || item || {};
+      const ids = node.ids || item?.ids || {};
+      const candidate = Number(ids.simkl || ids.id);
+      if (Number.isFinite(candidate) && candidate > 0) { simklId = candidate; break; }
+    }
+
+    if (simklId) {
+      this.plugin.cache.set(cacheKey, simklId, { scope: 'mediaDetails', source: 'simkl', tags: ['simkl','resolve','external', type] });
+      return simklId;
+    }
+  } catch {}
+
+  // Fallback: try type-specific endpoints if available
+  try {
+    const endpoint = (mediaType === 'MOVIE' || mediaType === 'MOVIES') ? 'movie' : 'tv';
+    const idPart = tmdbId ? `tmdb/${encodeURIComponent(String(tmdbId))}` : `imdb/${encodeURIComponent(String(imdbId))}`;
+    const url = `https://api.simkl.com/${endpoint}/${idPart}${this.plugin.settings.simklClientId ? `?client_id=${this.plugin.settings.simklClientId}` : ''}`;
+    const res = await fetch(url);
+    if (res.ok) {
+      const data = await res.json();
+      const ids = data?.ids || {};
+      const simklId = Number(ids.simkl || ids.id);
+      if (Number.isFinite(simklId) && simklId > 0) {
+        this.plugin.cache.set(cacheKey, simklId, { scope: 'mediaDetails', source: 'simkl', tags: ['simkl','resolve','external', endpoint] });
+        return simklId;
+      }
+    }
+  } catch {}
+
+  return null;
+};
 
 export { DetailPanelSource };

@@ -43,26 +43,25 @@ class SidePanel extends ItemView {
 	renderLayout() {
 		const root = this.containerEl;
 		root.empty();
-		root.addClass('zoro-side-panel');
+		root.addClass('zoro-note-container'); // Use your existing main container class
 
 		// Toolbar (top) - with flexible button container
-		this.toolbarEl = root.createDiv({ cls: 'zoro-panel-toolbar' });
-		this.buttonContainerEl = this.toolbarEl.createDiv({ cls: 'zoro-panel-button-container' });
+		this.toolbarEl = root.createDiv({ cls: 'zoro-note-panel-footer' }); // Reuse your footer styling for toolbar
 		
-		this.createBtn = this.buttonContainerEl.createEl('button', { 
+		this.createBtn = this.toolbarEl.createEl('button', { 
 			text: '📝 Create Note', 
-			cls: 'zoro-panel-btn' 
+			cls: 'zoro-note-create-btn' // Use your existing create button class
 		});
-		this.connectBtn = this.buttonContainerEl.createEl('button', { 
+		this.connectBtn = this.toolbarEl.createEl('button', { 
 			text: '⛓️ Connect Note', 
-			cls: 'zoro-panel-btn' 
+			cls: 'zoro-note-connect-existing-btn' // Use your existing connect button class
 		});
 
 		// Search interface container (fixed position below toolbar)
-		this.searchContainerEl = root.createDiv({ cls: 'zoro-panel-search-container' });
+		this.searchContainerEl = root.createDiv({ cls: 'zoro-note-connect-interface zoro-note-hidden' });
 
 		// Content (center - for notes list)
-		this.contentEl = root.createDiv({ cls: 'zoro-panel-content' });
+		this.contentEl = root.createDiv({ cls: 'zoro-note-panel-content' });
 	}
 
 	showToolbar(show) {
@@ -73,8 +72,8 @@ class SidePanel extends ItemView {
 
 	showSearchContainer(show) {
 		if (!this.searchContainerEl) return;
-		if (show) this.searchContainerEl.removeClass('is-hidden');
-		else this.searchContainerEl.addClass('is-hidden');
+		if (show) this.searchContainerEl.removeClass('zoro-note-hidden');
+		else this.searchContainerEl.addClass('zoro-note-hidden');
 	}
 
 	teardownUI() {
@@ -93,9 +92,9 @@ class SidePanel extends ItemView {
 		this.teardownUI();
 		this.showToolbar(false);
 		this.showSearchContainer(false);
-		const c = this.contentEl.createDiv({ cls: 'zoro-panel-blank' });
+		const c = this.contentEl.createDiv({ cls: 'zoro-note-empty-state' }); // Use your existing empty state class
 		c.createEl('h4', { text: 'Zoro Panel' });
-		c.createEl('div', { text: 'Open this panel from a media card to use actions.' });
+		c.createEl('div', { text: 'Open this panel from a media card to use actions.', cls: 'zoro-note-empty-message' });
 	}
 
 	renderContextualUI(ctx) {
@@ -111,7 +110,7 @@ class SidePanel extends ItemView {
 		};
 		
 		// Build list area in content
-		const listWrap = this.contentEl.createDiv({ cls: 'zoro-note-panel-content' });
+		const listWrap = this.contentEl.createDiv({ cls: 'zoro-note-notes-list' }); // Use your existing notes list class
 		const emptyState = listWrap.createDiv({ cls: 'zoro-note-empty-state' });
 		emptyState.createEl('div', { text: 'Loading…', cls: 'zoro-note-empty-message' });
 		

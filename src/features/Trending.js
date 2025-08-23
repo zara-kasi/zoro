@@ -301,7 +301,11 @@ class Trending {
   }
 
   try {
-    const response = await fetch(url);
+    const response = await this.plugin.requestQueue.add(() => fetch(url), {
+  priority: 'normal',
+  service: 'mal',
+  metadata: { type: 'trending' }
+});
     
     if (!response.ok) {
       const errorText = await response.text();

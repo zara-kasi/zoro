@@ -941,6 +941,17 @@ async handleConnectedNotesClick(e, media, entry, config) {
     new Notice('Failed to open connected notes');
   }
 }
+
+  async openSidePanelWithContext(context) {
+    const leaf = this.app.workspace.getRightLeaf(true);
+    await leaf.setViewState({ type: 'zoro-panel', active: true });
+    const view = leaf.view;
+    if (view && typeof view.setContext === 'function') {
+      view.setContext(context);
+    }
+    this.app.workspace.revealLeaf(leaf);
+    return view;
+  }
 }
 
 export { ConnectedNotes };

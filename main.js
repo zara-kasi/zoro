@@ -22,7 +22,7 @@ __export(src_exports, {
   default: () => src_default
 });
 module.exports = __toCommonJS(src_exports);
-var import_obsidian31 = require("obsidian");
+var import_obsidian32 = require("obsidian");
 
 // src/cache/Cache.js
 var import_obsidian = require("obsidian");
@@ -13524,6 +13524,165 @@ var ConnectedNotes = class {
       new import_obsidian29.Notice("Failed to open connected notes");
     }
   }
+  async openSidePanelWithContext(context) {
+    const leaf = this.app.workspace.getRightLeaf(true);
+    await leaf.setViewState({ type: "zoro-panel", active: true });
+    const view = leaf.view;
+    if (view && typeof view.setContext === "function") {
+      view.setContext(context);
+    }
+    this.app.workspace.revealLeaf(leaf);
+    return view;
+  }
+};
+
+// src/ui/SidePanel.js
+var import_obsidian30 = require("obsidian");
+var ZORO_VIEW_TYPE = "zoro-panel";
+var SidePanel = class extends import_obsidian30.ItemView {
+  constructor(leaf, plugin) {
+    super(leaf);
+    this.plugin = plugin;
+    this.currentMode = "blank";
+    this.currentCleanup = null;
+    this.context = null;
+  }
+  getViewType() {
+    return ZORO_VIEW_TYPE;
+  }
+  getDisplayText() {
+    return "Zoro";
+  }
+  getIcon() {
+    return "book-open";
+  }
+  async onOpen() {
+    this.renderLayout();
+    this.setMode("blank");
+  }
+  async onClose() {
+    this.teardownMode();
+  }
+  setContext(context) {
+    this.context = context || null;
+    if (this.currentMode && this.currentMode !== "blank") {
+      this.setMode(this.currentMode, this.context);
+    }
+  }
+  renderLayout() {
+    const root = this.containerEl;
+    root.empty();
+    root.addClass("zoro-side-panel");
+    this.toolbarEl = root.createDiv({ cls: "zoro-panel-toolbar" });
+    this.connectBtn = this.toolbarEl.createEl("button", { text: "Connect notes", cls: "zoro-panel-btn" });
+    this.createBtn = this.toolbarEl.createEl("button", { text: "Create note", cls: "zoro-panel-btn" });
+    this.blankBtn = this.toolbarEl.createEl("button", { text: "Home", cls: "zoro-panel-btn" });
+    this.connectBtn.onclick = () => this.setMode("connect", this.context);
+    this.createBtn.onclick = () => this.setMode("create", this.context);
+    this.blankBtn.onclick = () => this.setMode("blank");
+    this.modeContainer = root.createDiv({ cls: "zoro-panel-content" });
+  }
+  teardownMode() {
+    try {
+      if (typeof this.currentCleanup === "function") {
+        this.currentCleanup();
+      }
+    } finally {
+      this.currentCleanup = null;
+      if (this.modeContainer) this.modeContainer.empty();
+    }
+  }
+  setMode(mode, context = null) {
+    this.teardownMode();
+    this.currentMode = mode;
+    const ctx = context || this.context || {};
+    [this.connectBtn, this.createBtn, this.blankBtn].forEach((btn) => btn && btn.removeClass("is-active"));
+    if (mode === "connect") this.connectBtn?.addClass("is-active");
+    if (mode === "create") this.createBtn?.addClass("is-active");
+    if (mode === "blank") this.blankBtn?.addClass("is-active");
+    switch (mode) {
+      case "connect":
+        this.currentCleanup = this.renderConnectMode(ctx);
+        break;
+      case "create":
+        this.currentCleanup = this.renderCreateMode(ctx);
+        break;
+      default:
+        this.currentCleanup = this.renderBlankMode();
+    }
+  }
+  renderBlankMode() {
+    const c = this.modeContainer.createDiv({ cls: "zoro-panel-blank" });
+    c.createEl("h4", { text: "Zoro Panel" });
+    c.createEl("div", { text: "Select a mode above to begin." });
+    return () => {
+    };
+  }
+  renderConnectMode(ctx) {
+    const container = this.modeContainer;
+    const header = container.createDiv({ cls: "zoro-panel-section-header" });
+    header.createEl("h4", { text: "Connected Notes" });
+    if (!ctx || !ctx.mediaType || !ctx.searchIds) {
+      const info = container.createDiv({ cls: "zoro-panel-info" });
+      info.createEl("div", { text: "No context provided." });
+      info.createEl("div", { text: "Open the panel from a media card to provide IDs." });
+      return () => {
+      };
+    }
+    const listWrap = container.createDiv({ cls: "zoro-note-panel-content" });
+    const emptyState = listWrap.createDiv({ cls: "zoro-note-empty-state" });
+    emptyState.createEl("div", { text: "Loading\u2026", cls: "zoro-note-empty-message" });
+    const connectInterface = this.plugin.connectedNotes.renderConnectExistingInterface(container, ctx.searchIds, ctx.mediaType);
+    let disposed = false;
+    const load = async () => {
+      const found = await this.plugin.connectedNotes.searchConnectedNotes(ctx.searchIds, ctx.mediaType);
+      if (disposed) return;
+      listWrap.empty();
+      if (!found.length) {
+        const es = listWrap.createDiv({ cls: "zoro-note-empty-state" });
+        es.createEl("div", { text: "No notes linked yet", cls: "zoro-note-empty-message" });
+      } else {
+        const frag = document.createDocumentFragment();
+        found.forEach((note) => {
+          const item = document.createElement("div");
+          item.className = "zoro-note-item";
+          item.createEl("div", { text: note.title, cls: "zoro-note-title" });
+          item.onclick = () => {
+            const mainLeaf = this.app.workspace.getLeaf("tab");
+            mainLeaf.openFile(note.file);
+            this.app.workspace.setActiveLeaf(mainLeaf);
+          };
+          frag.appendChild(item);
+        });
+        listWrap.appendChild(frag);
+      }
+    };
+    load();
+    return () => {
+      disposed = true;
+      connectInterface?.remove?.();
+      listWrap?.remove?.();
+    };
+  }
+  renderCreateMode(ctx) {
+    const container = this.modeContainer;
+    container.createEl("h4", { text: "Create Connected Note" });
+    if (!ctx || !ctx.mediaType || !ctx.searchIds) {
+      const info = container.createDiv({ cls: "zoro-panel-info" });
+      info.createEl("div", { text: "No context provided." });
+      info.createEl("div", { text: "Open the panel from a media card to provide IDs." });
+      return () => {
+      };
+    }
+    const actions = container.createDiv({ cls: "zoro-panel-actions" });
+    const createBtn = actions.createEl("button", { text: "Create note", cls: "zoro-panel-btn" });
+    createBtn.onclick = async () => {
+      await this.plugin.connectedNotes.createNewConnectedNote(ctx.searchIds, ctx.mediaType);
+      new import_obsidian30.Notice("Created connected note");
+    };
+    return () => {
+    };
+  }
 };
 
 // src/core/constants.js
@@ -13576,8 +13735,8 @@ var DEFAULT_SETTINGS = {
 };
 
 // src/settings/ZoroSettingTab.js
-var import_obsidian30 = require("obsidian");
-var ZoroSettingTab = class extends import_obsidian30.PluginSettingTab {
+var import_obsidian31 = require("obsidian");
+var ZoroSettingTab = class extends import_obsidian31.PluginSettingTab {
   constructor(app, plugin) {
     super(app, plugin);
     this.plugin = plugin;
@@ -13608,11 +13767,11 @@ var ZoroSettingTab = class extends import_obsidian30.PluginSettingTab {
     const Cache2 = section("\u{1F501} Cache");
     const Exp = section("\u26A0\uFE0F Beta");
     const About = section("\u2139\uFE0F About");
-    new import_obsidian30.Setting(Account).setName("\u{1F194} Public profile").setDesc("View your AniList profile and stats \u2014 no login needed.").addText((text) => text.setPlaceholder("AniList username").setValue(this.plugin.settings.defaultUsername).onChange(async (value) => {
+    new import_obsidian31.Setting(Account).setName("\u{1F194} Public profile").setDesc("View your AniList profile and stats \u2014 no login needed.").addText((text) => text.setPlaceholder("AniList username").setValue(this.plugin.settings.defaultUsername).onChange(async (value) => {
       this.plugin.settings.defaultUsername = value.trim();
       await this.plugin.saveSettings();
     }));
-    const authSetting = new import_obsidian30.Setting(Account).setName("\u2733\uFE0F AniList").setDesc("Connect your AniList account to manage your anime and manga lists. (Recommended)");
+    const authSetting = new import_obsidian31.Setting(Account).setName("\u2733\uFE0F AniList").setDesc("Connect your AniList account to manage your anime and manga lists. (Recommended)");
     const authDescEl = authSetting.descEl;
     authDescEl.createEl("br");
     const authLinkEl = authDescEl.createEl("a", {
@@ -13629,7 +13788,7 @@ var ZoroSettingTab = class extends import_obsidian30.PluginSettingTab {
         await this.handleAuthButtonClick();
       });
     });
-    const simklAuthSetting = new import_obsidian30.Setting(Account).setName("\u{1F3AC} SIMKL").setDesc("Connect your SIMKL account to manage your anime, movies, and TV shows. (Recommended)");
+    const simklAuthSetting = new import_obsidian31.Setting(Account).setName("\u{1F3AC} SIMKL").setDesc("Connect your SIMKL account to manage your anime, movies, and TV shows. (Recommended)");
     const simklDescEl = simklAuthSetting.descEl;
     simklDescEl.createEl("br");
     const simklLinkEl = simklDescEl.createEl("a", {
@@ -13646,7 +13805,7 @@ var ZoroSettingTab = class extends import_obsidian30.PluginSettingTab {
         await this.handleSimklAuthButtonClick();
       });
     });
-    const malAuthSetting = new import_obsidian30.Setting(Account).setName("\u{1F5FE} MyAnimeList").setDesc("Connect your MAL account to manage your anime and manga lists");
+    const malAuthSetting = new import_obsidian31.Setting(Account).setName("\u{1F5FE} MyAnimeList").setDesc("Connect your MAL account to manage your anime and manga lists");
     const descEl = malAuthSetting.descEl;
     descEl.createEl("br");
     const linkEl = descEl.createEl("a", {
@@ -13663,19 +13822,19 @@ var ZoroSettingTab = class extends import_obsidian30.PluginSettingTab {
         await this.handleMALAuthButtonClick();
       });
     });
-    new import_obsidian30.Setting(Setup).setName("\u26A1 Sample Folder").setDesc("Builds a complete Zoro folder structure with notes, no manual setup needed. (Recommended)").addButton(
+    new import_obsidian31.Setting(Setup).setName("\u26A1 Sample Folder").setDesc("Builds a complete Zoro folder structure with notes, no manual setup needed. (Recommended)").addButton(
       (button) => button.setButtonText("Create").onClick(async () => {
         await this.plugin.sample.createSampleFolders();
       })
     );
-    new import_obsidian30.Setting(Setup).setName("\u{1F579}\uFE0F Default Source").setDesc(
+    new import_obsidian31.Setting(Setup).setName("\u{1F579}\uFE0F Default Source").setDesc(
       "Choose which service to use by default when none is specified.\nAnime \u2014 AniList, MAL, or SIMKL\nManga \u2014 AniList or MAL\nMovies & TV \u2014 Always SIMKL\nRecommended: AniList"
     ).addDropdown((dropdown) => dropdown.addOption("anilist", "AniList").addOption("mal", "MyAnimeList").addOption("simkl", "SIMKL").setValue(this.plugin.settings.defaultApiSource).onChange(async (value) => {
       this.plugin.settings.defaultApiSource = value;
       this.plugin.settings.defaultApiUserOverride = true;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian30.Setting(Note).setName("\u{1F5C2}\uFE0F Note path").setDesc("Folder path where new connected notes will be created").addText((text) => text.setPlaceholder("folder/subfolder").setValue(this.plugin.settings.notePath || "").onChange(async (value) => {
+    new import_obsidian31.Setting(Note).setName("\u{1F5C2}\uFE0F Note path").setDesc("Folder path where new connected notes will be created").addText((text) => text.setPlaceholder("folder/subfolder").setValue(this.plugin.settings.notePath || "").onChange(async (value) => {
       let cleanPath = value.trim();
       if (cleanPath.startsWith("/")) {
         cleanPath = cleanPath.substring(1);
@@ -13686,81 +13845,81 @@ var ZoroSettingTab = class extends import_obsidian30.PluginSettingTab {
       this.plugin.settings.notePath = cleanPath;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian30.Setting(Note).setName("\u{1F3B4} Media block").setDesc("Auto-insert cover, rating, and details in new notes").addToggle((toggle) => toggle.setValue(this.plugin.settings.insertCodeBlockOnNote).onChange(async (value) => {
+    new import_obsidian31.Setting(Note).setName("\u{1F3B4} Media block").setDesc("Auto-insert cover, rating, and details in new notes").addToggle((toggle) => toggle.setValue(this.plugin.settings.insertCodeBlockOnNote).onChange(async (value) => {
       this.plugin.settings.insertCodeBlockOnNote = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian30.Setting(Display).setName("\u{1F9CA} Layout").setDesc("Choose the default layout for media lists").addDropdown((dropdown) => dropdown.addOption("card", "Card Layout").addOption("table", "Table Layout").setValue(this.plugin.settings.defaultLayout).onChange(async (value) => {
+    new import_obsidian31.Setting(Display).setName("\u{1F9CA} Layout").setDesc("Choose the default layout for media lists").addDropdown((dropdown) => dropdown.addOption("card", "Card Layout").addOption("table", "Table Layout").setValue(this.plugin.settings.defaultLayout).onChange(async (value) => {
       this.plugin.settings.defaultLayout = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian30.Setting(Display).setName("\u{1F532} Grid Columns").setDesc("Number of columns in card grid layout").addSlider((slider) => slider.setLimits(1, 6, 1).setValue(this.plugin.settings.gridColumns).setDynamicTooltip().onChange(async (value) => {
+    new import_obsidian31.Setting(Display).setName("\u{1F532} Grid Columns").setDesc("Number of columns in card grid layout").addSlider((slider) => slider.setLimits(1, 6, 1).setValue(this.plugin.settings.gridColumns).setDynamicTooltip().onChange(async (value) => {
       this.plugin.settings.gridColumns = value;
       await this.plugin.saveSettings();
       this.updateGridColumns(value);
     }));
-    new import_obsidian30.Setting(More).setName("\u23F3 Loading Icon").setDesc("Show loading animation during API requests").addToggle((toggle) => toggle.setValue(this.plugin.settings.showLoadingIcon).onChange(async (value) => {
+    new import_obsidian31.Setting(More).setName("\u23F3 Loading Icon").setDesc("Show loading animation during API requests").addToggle((toggle) => toggle.setValue(this.plugin.settings.showLoadingIcon).onChange(async (value) => {
       this.plugin.settings.showLoadingIcon = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian30.Setting(More).setName("\u{1F517} Plain Titles").setDesc("Show titles as plain text instead of clickable links.").addToggle((toggle) => toggle.setValue(this.plugin.settings.hideUrlsInTitles).onChange(async (value) => {
+    new import_obsidian31.Setting(More).setName("\u{1F517} Plain Titles").setDesc("Show titles as plain text instead of clickable links.").addToggle((toggle) => toggle.setValue(this.plugin.settings.hideUrlsInTitles).onChange(async (value) => {
       this.plugin.settings.hideUrlsInTitles = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian30.Setting(More).setName("\u{1F306} Cover").setDesc("Display cover images for anime/manga").addToggle((toggle) => toggle.setValue(this.plugin.settings.showCoverImages).onChange(async (value) => {
+    new import_obsidian31.Setting(More).setName("\u{1F306} Cover").setDesc("Display cover images for anime/manga").addToggle((toggle) => toggle.setValue(this.plugin.settings.showCoverImages).onChange(async (value) => {
       this.plugin.settings.showCoverImages = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian30.Setting(More).setName("\u2B50 Ratings").setDesc("Display user ratings/scores").addToggle((toggle) => toggle.setValue(this.plugin.settings.showRatings).onChange(async (value) => {
+    new import_obsidian31.Setting(More).setName("\u2B50 Ratings").setDesc("Display user ratings/scores").addToggle((toggle) => toggle.setValue(this.plugin.settings.showRatings).onChange(async (value) => {
       this.plugin.settings.showRatings = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian30.Setting(More).setName("\u{1F4C8} Progress").setDesc("Display progress information").addToggle((toggle) => toggle.setValue(this.plugin.settings.showProgress).onChange(async (value) => {
+    new import_obsidian31.Setting(More).setName("\u{1F4C8} Progress").setDesc("Display progress information").addToggle((toggle) => toggle.setValue(this.plugin.settings.showProgress).onChange(async (value) => {
       this.plugin.settings.showProgress = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian30.Setting(More).setName("\u{1F3AD} Genres").setDesc("Display genre tags").addToggle((toggle) => toggle.setValue(this.plugin.settings.showGenres).onChange(async (value) => {
+    new import_obsidian31.Setting(More).setName("\u{1F3AD} Genres").setDesc("Display genre tags").addToggle((toggle) => toggle.setValue(this.plugin.settings.showGenres).onChange(async (value) => {
       this.plugin.settings.showGenres = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian30.Setting(More).setName("\u{1F9EE} Score Scale").setDesc("Ensures all ratings use the 0\u201310 point scale.").addToggle((toggle) => toggle.setValue(this.plugin.settings.forceScoreFormat).onChange(async (value) => {
+    new import_obsidian31.Setting(More).setName("\u{1F9EE} Score Scale").setDesc("Ensures all ratings use the 0\u201310 point scale.").addToggle((toggle) => toggle.setValue(this.plugin.settings.forceScoreFormat).onChange(async (value) => {
       this.plugin.settings.forceScoreFormat = value;
       await this.plugin.saveSettings();
       if (value && this.plugin.auth.isLoggedIn) {
         await this.plugin.auth.forceScoreFormat();
       }
     }));
-    new import_obsidian30.Setting(Shortcut).setName(" Open on site").setDesc("Adds a customizable external-link button to the More Details panel that opens a site-specific search for the current title.").addButton((button) => button.setButtonText("Add Anime URL").setClass("mod-cta").onClick(async () => {
+    new import_obsidian31.Setting(Shortcut).setName(" Open on site").setDesc("Adds a customizable external-link button to the More Details panel that opens a site-specific search for the current title.").addButton((button) => button.setButtonText("Add Anime URL").setClass("mod-cta").onClick(async () => {
       await this.plugin.moreDetailsPanel.customExternalURL.addUrl("ANIME");
       this.refreshCustomUrlSettings();
     }));
     const animeUrlContainer = Shortcut.createDiv("custom-url-container");
     animeUrlContainer.setAttribute("data-media-type", "ANIME");
     this.renderCustomUrls(animeUrlContainer, "ANIME");
-    new import_obsidian30.Setting(Shortcut).addButton((button) => button.setButtonText("Add Manga URL").setClass("mod-cta").onClick(async () => {
+    new import_obsidian31.Setting(Shortcut).addButton((button) => button.setButtonText("Add Manga URL").setClass("mod-cta").onClick(async () => {
       await this.plugin.moreDetailsPanel.customExternalURL.addUrl("MANGA");
       this.refreshCustomUrlSettings();
     }));
     const mangaUrlContainer = Shortcut.createDiv("custom-url-container");
     mangaUrlContainer.setAttribute("data-media-type", "MANGA");
     this.renderCustomUrls(mangaUrlContainer, "MANGA");
-    new import_obsidian30.Setting(Shortcut).addButton((button) => button.setButtonText("Add Movie/TV URL").setClass("mod-cta").onClick(async () => {
+    new import_obsidian31.Setting(Shortcut).addButton((button) => button.setButtonText("Add Movie/TV URL").setClass("mod-cta").onClick(async () => {
       await this.plugin.moreDetailsPanel.customExternalURL.addUrl("MOVIE_TV");
       this.refreshCustomUrlSettings();
     }));
     const movieTvUrlContainer = Shortcut.createDiv("custom-url-container");
     movieTvUrlContainer.setAttribute("data-media-type", "MOVIE_TV");
     this.renderCustomUrls(movieTvUrlContainer, "MOVIE_TV");
-    new import_obsidian30.Setting(Shortcut).setName("\u{1F527} Auto-Format Search URLs").setDesc("Automatically format URLs to search format. When disabled, URLs will be used exactly as entered.").addToggle((toggle) => toggle.setValue(this.plugin.settings.autoFormatSearchUrls).onChange(async (value) => {
+    new import_obsidian31.Setting(Shortcut).setName("\u{1F527} Auto-Format Search URLs").setDesc("Automatically format URLs to search format. When disabled, URLs will be used exactly as entered.").addToggle((toggle) => toggle.setValue(this.plugin.settings.autoFormatSearchUrls).onChange(async (value) => {
       this.plugin.settings.autoFormatSearchUrls = value;
       await this.plugin.saveSettings();
     }));
-    const exportSetting = new import_obsidian30.Setting(Data).setName("\u{1F4E5} Export your data").setDesc("Everything you've watched, rated, and maybe ghosted \u2014 neatly exported into a CSV & standard export format from AniList, MAL and Simkl.").addButton(
+    const exportSetting = new import_obsidian31.Setting(Data).setName("\u{1F4E5} Export your data").setDesc("Everything you've watched, rated, and maybe ghosted \u2014 neatly exported into a CSV & standard export format from AniList, MAL and Simkl.").addButton(
       (btn) => btn.setButtonText("AniList").setClass("mod-cta").onClick(async () => {
         try {
           await this.plugin.export.exportUnifiedListsToCSV();
         } catch (err) {
-          new import_obsidian30.Notice(`\u274C Export failed: ${err.message}`, 6e3);
+          new import_obsidian31.Notice(`\u274C Export failed: ${err.message}`, 6e3);
         }
       })
     );
@@ -13773,19 +13932,19 @@ var ZoroSettingTab = class extends import_obsidian30.PluginSettingTab {
     exportLinkEl.setAttr("target", "_blank");
     exportLinkEl.setAttr("rel", "noopener noreferrer");
     exportLinkEl.style.textDecoration = "none";
-    new import_obsidian30.Setting(Data).addButton(
+    new import_obsidian31.Setting(Data).addButton(
       (btn) => btn.setButtonText("MAL").setClass("mod-cta").onClick(async () => {
         try {
           await this.plugin.export.exportMALListsToCSV();
         } catch (err) {
-          new import_obsidian30.Notice(`\u274C MAL export failed: ${err.message}`, 6e3);
+          new import_obsidian31.Notice(`\u274C MAL export failed: ${err.message}`, 6e3);
         }
       })
     );
-    new import_obsidian30.Setting(Data).addButton(
+    new import_obsidian31.Setting(Data).addButton(
       (btn) => btn.setButtonText("SIMKL").setClass("mod-cta").onClick(async () => {
         if (!this.plugin.simklAuth.isLoggedIn) {
-          new import_obsidian30.Notice("\u274C Please authenticate with SIMKL first.", 4e3);
+          new import_obsidian31.Notice("\u274C Please authenticate with SIMKL first.", 4e3);
           return;
         }
         btn.setDisabled(true);
@@ -13793,30 +13952,30 @@ var ZoroSettingTab = class extends import_obsidian30.PluginSettingTab {
         try {
           await this.plugin.export.exportSimklListsToCSV();
         } catch (err) {
-          new import_obsidian30.Notice(`\u274C SIMKL export failed: ${err.message}`, 6e3);
+          new import_obsidian31.Notice(`\u274C SIMKL export failed: ${err.message}`, 6e3);
         } finally {
           btn.setDisabled(false);
           btn.setButtonText("SIMKL");
         }
       })
     );
-    new import_obsidian30.Setting(Cache2).setName("\u{1F4CA} Cache Stats").setDesc("Show live cache usage and hit-rate in a pop-up.").addButton(
+    new import_obsidian31.Setting(Cache2).setName("\u{1F4CA} Cache Stats").setDesc("Show live cache usage and hit-rate in a pop-up.").addButton(
       (btn) => btn.setButtonText("Show Stats").onClick(() => {
         const s = this.plugin.cache.getStats();
-        new import_obsidian30.Notice(
+        new import_obsidian31.Notice(
           `Cache: ${s.hitRate} | ${s.cacheSize} entries | Hits ${s.hits} | Misses ${s.misses}`,
           8e3
         );
         console.table(s);
       })
     );
-    new import_obsidian30.Setting(Cache2).setName("\u{1F9F9} Clear Cache").setDesc("Delete all cached data (user, media, search results).").addButton(
+    new import_obsidian31.Setting(Cache2).setName("\u{1F9F9} Clear Cache").setDesc("Delete all cached data (user, media, search results).").addButton(
       (btn) => btn.setButtonText("Clear All Cache").setWarning().onClick(async () => {
         const cleared = await this.plugin.cache.clearAll();
-        new import_obsidian30.Notice(`\u2705 Cache cleared (${cleared} entries)`, 3e3);
+        new import_obsidian31.Notice(`\u2705 Cache cleared (${cleared} entries)`, 3e3);
       })
     );
-    new import_obsidian30.Setting(Exp).setName("TMDb API Key").setDesc(
+    new import_obsidian31.Setting(Exp).setName("TMDb API Key").setDesc(
       createFragment((frag) => {
         frag.appendText("Your The Movie Database (TMDb) API key for trending movies & TV shows. ");
         const link = frag.createEl("a", {
@@ -13832,10 +13991,10 @@ var ZoroSettingTab = class extends import_obsidian30.PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
-    new import_obsidian30.Setting(About).setName("Author").setDesc(this.plugin.manifest.author);
-    new import_obsidian30.Setting(About).setName("Version").setDesc(this.plugin.manifest.version);
-    new import_obsidian30.Setting(About).setName("Privacy").setDesc("Zoro only talks to the APIs to fetch & update your media data. Nothing else is sent or shared\u2014your data stays local.");
-    new import_obsidian30.Setting(About).setName("GitHub").setDesc("Get more info or report an issue.").addButton(
+    new import_obsidian31.Setting(About).setName("Author").setDesc(this.plugin.manifest.author);
+    new import_obsidian31.Setting(About).setName("Version").setDesc(this.plugin.manifest.version);
+    new import_obsidian31.Setting(About).setName("Privacy").setDesc("Zoro only talks to the APIs to fetch & update your media data. Nothing else is sent or shared\u2014your data stays local.");
+    new import_obsidian31.Setting(About).setName("GitHub").setDesc("Get more info or report an issue.").addButton(
       (button) => button.setClass("mod-cta").setButtonText("Open GitHub").onClick(() => {
         window.open("https://github.com/zara-kasi/zoro", "_blank");
       })
@@ -14065,7 +14224,7 @@ var ZoroSettingTab = class extends import_obsidian30.PluginSettingTab {
 };
 
 // src/index.js
-var ZoroPlugin = class extends import_obsidian31.Plugin {
+var ZoroPlugin = class extends import_obsidian32.Plugin {
   constructor(app, manifest) {
     super(app, manifest);
     this.globalListeners = [];
@@ -14168,6 +14327,16 @@ var ZoroPlugin = class extends import_obsidian31.Plugin {
     }
     this.registerMarkdownCodeBlockProcessor("zoro", this.processor.processZoroCodeBlock.bind(this.processor));
     this.addSettingTab(new ZoroSettingTab(this.app, this));
+    this.registerView(ZORO_VIEW_TYPE, (leaf) => new SidePanel(leaf, this));
+    this.addCommand({
+      id: "zoro-open-panel",
+      name: "Open Zoro panel",
+      callback: () => {
+        const leaf = this.app.workspace.getRightLeaf(true);
+        leaf.setViewState({ type: ZORO_VIEW_TYPE, active: true });
+        this.app.workspace.revealLeaf(leaf);
+      }
+    });
   }
   validateSettings(settings) {
     return {
@@ -14221,7 +14390,7 @@ var ZoroPlugin = class extends import_obsidian31.Plugin {
       await this.saveData(validSettings);
     } catch (err) {
       console.error("[Zoro] Failed to save settings:", err);
-      new import_obsidian31.Notice("\u26A0\uFE0F Failed to save settings. See console for details.");
+      new import_obsidian32.Notice("\u26A0\uFE0F Failed to save settings. See console for details.");
     }
   }
   async loadSettings() {
@@ -14287,7 +14456,7 @@ var ZoroPlugin = class extends import_obsidian31.Plugin {
     this.cache.stopAutoPrune().stopBackgroundRefresh().destroy();
     this.theme.removeTheme();
     try {
-      const leaves = this.app?.workspace?.getLeavesOfType?.("zoro-panel") || [];
+      const leaves = this.app?.workspace?.getLeavesOfType?.(ZORO_VIEW_TYPE) || [];
       for (const leaf of leaves) {
         leaf.setViewState({ type: "empty" });
       }

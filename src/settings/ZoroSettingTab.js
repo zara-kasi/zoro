@@ -169,7 +169,7 @@ malAuthSetting.addButton(btn => {
         
         new Setting(Note)
   .setName('🎴 Media block')
-.setDesc('Auto-insert cover, rating, and details in new notes')
+.setDesc('Auto-insert a code block to show cover, rating, and details in new notes')
   .addToggle(toggle => toggle
     .setValue(this.plugin.settings.insertCodeBlockOnNote)
     .onChange(async (value) => {

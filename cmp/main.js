@@ -4802,6 +4802,18 @@ getSimklMediaType(mediaType) {
           
           // Only include items with valid IDs for editing operations
           if (mapped && mapped.id > 0) {
+            // Add _zoroMeta to ensure add button functionality works properly
+            if (!mapped._zoroMeta) {
+              mapped._zoroMeta = {
+                source: 'simkl',
+                mediaType: c.type,
+                fetchedAt: Date.now()
+              };
+            } else {
+              mapped._zoroMeta.source = 'simkl';
+              mapped._zoroMeta.mediaType = c.type;
+              mapped._zoroMeta.fetchedAt = Date.now();
+            }
             aggregated.push(mapped);
           }
         }
@@ -4910,6 +4922,18 @@ getSimklMediaType(mediaType) {
     for (const item of searchResults.Page.media) {
       if (item && item.id > 0) {
         // Item already has a valid ID
+        // Ensure _zoroMeta is set for add button functionality
+        if (!item._zoroMeta) {
+          item._zoroMeta = {
+            source: 'simkl',
+            mediaType: mediaType,
+            fetchedAt: Date.now()
+          };
+        } else {
+          item._zoroMeta.source = 'simkl';
+          item._zoroMeta.mediaType = mediaType;
+          item._zoroMeta.fetchedAt = Date.now();
+        }
         enhancedResults.push(item);
       } else if (item && item.title) {
         // Try to resolve ID by title
@@ -4918,6 +4942,18 @@ getSimklMediaType(mediaType) {
           const resolvedId = await this.resolveSimklIdByTitle(item.title, mediaType);
           if (resolvedId) {
             item.id = resolvedId;
+            // Ensure _zoroMeta is set for add button functionality
+            if (!item._zoroMeta) {
+              item._zoroMeta = {
+                source: 'simkl',
+                mediaType: mediaType,
+                fetchedAt: Date.now()
+              };
+            } else {
+              item._zoroMeta.source = 'simkl';
+              item._zoroMeta.mediaType = mediaType;
+              item._zoroMeta.fetchedAt = Date.now();
+            }
             enhancedResults.push(item);
             resolvedCount++;
             console.log(`[Simkl] Successfully resolved ID ${resolvedId} for "${item.title}"`);
@@ -4963,6 +4999,18 @@ getSimklMediaType(mediaType) {
     
     // If it already has a valid ID, return as is
     if (searchResult.id && Number.isFinite(Number(searchResult.id)) && Number(searchResult.id) > 0) {
+      // Ensure _zoroMeta is set for add button functionality
+      if (!searchResult._zoroMeta) {
+        searchResult._zoroMeta = {
+          source: 'simkl',
+          mediaType: mediaType,
+          fetchedAt: Date.now()
+        };
+      } else {
+        searchResult._zoroMeta.source = 'simkl';
+        searchResult._zoroMeta.mediaType = mediaType;
+        searchResult._zoroMeta.fetchedAt = Date.now();
+      }
       return searchResult;
     }
     
@@ -4972,6 +5020,18 @@ getSimklMediaType(mediaType) {
         const resolvedId = await this.resolveSimklIdByTitle(searchResult.title, mediaType);
         if (resolvedId) {
           searchResult.id = resolvedId;
+          // Ensure _zoroMeta is set for add button functionality
+          if (!searchResult._zoroMeta) {
+            searchResult._zoroMeta = {
+              source: 'simkl',
+              mediaType: mediaType,
+              fetchedAt: Date.now()
+            };
+          } else {
+            searchResult._zoroMeta.source = 'simkl';
+            searchResult._zoroMeta.mediaType = mediaType;
+            searchResult._zoroMeta.fetchedAt = Date.now();
+          }
           console.log(`[Simkl] Resolved ID ${resolvedId} for editing: "${searchResult.title}"`);
           return searchResult;
         }
@@ -5034,7 +5094,22 @@ getSimklMediaType(mediaType) {
     
     const transformedItems = items
       .map(item => this.transformMedia(item, config.mediaType))
-      .filter(item => item && item.id > 0); // Only include items with valid IDs for editing operations
+      .filter(item => item && item.id > 0) // Only include items with valid IDs for editing operations
+      .map(item => {
+        // Add _zoroMeta to ensure add button functionality works properly
+        if (!item._zoroMeta) {
+          item._zoroMeta = {
+            source: 'simkl',
+            mediaType: config.mediaType || 'ANIME',
+            fetchedAt: Date.now()
+          };
+        } else {
+          item._zoroMeta.source = 'simkl';
+          item._zoroMeta.mediaType = config.mediaType || 'ANIME';
+          item._zoroMeta.fetchedAt = Date.now();
+        }
+        return item;
+      });
     
     return {
       Page: {
@@ -8065,8 +8140,14 @@ class CardRenderer {
   let entrySource = this.apiHelper.detectSource(entry, config);
   const entryMediaType = this.apiHelper.detectMediaType(entry, config, media);
 
-  const isTmdbItem = (entry?._zoroMeta?.source || '').toLowerCase() === 'tmdb';
-  if (isTmdbItem) {
+  // Check if this is a search item or trending item
+  // Search items come from SIMKL API and should use SIMKL ID
+  // Trending items come from TMDB API and should use TMDB ID
+  const isSearchItem = entry?.isSearch === true || config?.isSearch === true;
+  const isTrendingItem = !isSearchItem;
+  
+  // For trending items (from TMDB), route to SIMKL but use TMDB ID
+  if (isTrendingItem && (entry?._zoroMeta?.source || '').toLowerCase() === 'tmdb') {
     entrySource = 'simkl';
     try {
       const numericId = Number(media.id) || Number(media.idTmdb) || 0;
@@ -8092,10 +8173,27 @@ class CardRenderer {
     const isMovieOrTv = typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper.includes('SHOW');
 
     const updates = (entrySource === 'simkl' && isMovieOrTv)
-      ? { status: 'PLANNING', score: 0 }
+      ? { status: 'PLANNING', score: 0, _zUseTmdbId: isTrendingItem && (entry?._zoroMeta?.source || '').toLowerCase() === 'tmdb' }
       : { status: 'PLANNING', progress: 0 };
 
-    await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, entryMediaType);
+    // For TMDB trending items, use TMDB ID; for SIMKL search items, use SIMKL ID
+    if (entrySource === 'simkl' && isMovieOrTv) {
+      if (isTrendingItem && (entry?._zoroMeta?.source || '').toLowerCase() === 'tmdb') {
+        // TMDB trending item: use TMDB ID
+        const ids = { tmdb: Number(media.idTmdb || media.id) || undefined, imdb: media.idImdb || undefined };
+        if (typeof this.plugin?.simklApi?.updateMediaListEntryWithIds === 'function') {
+          await this.plugin.simklApi.updateMediaListEntryWithIds(ids, updates, entryMediaType);
+        } else {
+          const idFallback = Number(media.idTmdb || media.id) || 0;
+          await this.apiHelper.updateMediaListEntry(idFallback, updates, entrySource, entryMediaType);
+        }
+      } else {
+        // SIMKL search item: use SIMKL ID
+        await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, entryMediaType);
+      }
+    } else {
+      await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, entryMediaType);
+    }
 
     // Success feedback
     new Notice('✅ Added to planning!', 3000);
@@ -13554,6 +13652,7 @@ class Trending {
         },
         releaseDate: isMovie ? item.release_date : item.first_air_date,
         _zoroMeta: {
+          source: 'tmdb', // Add the source field to identify TMDB trending items
           mediaType: mediaType.toUpperCase(),
           fetchedAt: Date.now(),
           trending: {
@@ -13772,16 +13871,16 @@ class Trending {
       );
 
       items.forEach(item => {
-        const isTmdb = ['MOVIE','MOVIES','TV','SHOW','SHOWS'].includes((config.mediaType || '').toUpperCase());
+        const isTmdb = ['MOVIE','MOVIES','TV','SHOW','SHOWS'].includes(normalizedType.toUpperCase());
         if (!item._zoroMeta) {
           item._zoroMeta = {
             source: isTmdb ? 'tmdb' : source,
-            mediaType: config.mediaType || 'ANIME',
+            mediaType: normalizedType.toUpperCase(),
             fetchedAt: Date.now()
           };
         } else {
           item._zoroMeta.source = isTmdb ? 'tmdb' : source;
-          item._zoroMeta.mediaType = config.mediaType || 'ANIME';
+          item._zoroMeta.mediaType = normalizedType.toUpperCase();
           item._zoroMeta.fetchedAt = Date.now();
         }
       });

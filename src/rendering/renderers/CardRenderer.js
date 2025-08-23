@@ -21,6 +21,7 @@ class CardRenderer {
     const entry = isSearch
       ? {
           media,
+          isSearch: true, // Add the isSearch flag to the entry object
           _zoroMeta: data?._zoroMeta || {
             source:
               this.apiHelper.validateAndReturnSource(config?.source) ||
@@ -358,6 +359,18 @@ class CardRenderer {
   const isSearchItem = entry?.isSearch === true || config?.isSearch === true;
   const isTrendingItem = !isSearchItem;
   
+  // Debug logging
+  console.log('[Add Button Debug]', {
+    entryIsSearch: entry?.isSearch,
+    configIsSearch: config?.isSearch,
+    isSearchItem,
+    isTrendingItem,
+    entrySource: entry?._zoroMeta?.source,
+    mediaType: entryMediaType,
+    mediaId: media.id,
+    mediaIdTmdb: media.idTmdb
+  });
+  
   // For trending items (from TMDB), route to SIMKL but use TMDB ID
   if (isTrendingItem && (entry?._zoroMeta?.source || '').toLowerCase() === 'tmdb') {
     entrySource = 'simkl';
@@ -384,9 +397,24 @@ class CardRenderer {
     const typeUpper = String(entryMediaType || '').toUpperCase();
     const isMovieOrTv = typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper.includes('SHOW');
 
-    const updates = (entrySource === 'simkl' && isMovieOrTv)
-      ? { status: 'PLANNING', score: 0, _zUseTmdbId: isTrendingItem && (entry?._zoroMeta?.source || '').toLowerCase() === 'tmdb' }
-      : { status: 'PLANNING', progress: 0 };
+    // Set the correct _zUseTmdbId flag
+    let updates;
+    if (entrySource === 'simkl' && isMovieOrTv) {
+      if (isTrendingItem && (entry?._zoroMeta?.source || '').toLowerCase() === 'tmdb') {
+        // TMDB trending item: use TMDB ID
+        updates = { status: 'PLANNING', score: 0, _zUseTmdbId: true };
+        console.log('[Add Button Debug] TMDB trending item, using TMDB ID');
+      } else {
+        // SIMKL search item: use SIMKL ID
+        updates = { status: 'PLANNING', score: 0, _zUseTmdbId: false };
+        console.log('[Add Button Debug] SIMKL search item, using SIMKL ID');
+      }
+    } else {
+      updates = { status: 'PLANNING', progress: 0 };
+      console.log('[Add Button Debug] Non-SIMKL item, using default updates');
+    }
+    
+    console.log('[Add Button Debug] Final updates:', updates);
 
     // For TMDB trending items, use TMDB ID; for SIMKL search items, use SIMKL ID
     if (entrySource === 'simkl' && isMovieOrTv) {

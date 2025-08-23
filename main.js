@@ -6948,6 +6948,7 @@ var Trending = class {
         },
         releaseDate: isMovie ? item.release_date : item.first_air_date,
         _zoroMeta: {
+          source: 'tmdb', // Add the source field to identify TMDB trending items
           mediaType: mediaType.toUpperCase(),
           fetchedAt: Date.now(),
           trending: {
@@ -7127,16 +7128,16 @@ var Trending = class {
         () => this.fetchTrending(source, normalizedType, limit)
       );
       items.forEach((item) => {
-        const isTmdb = ["MOVIE", "MOVIES", "TV", "SHOW", "SHOWS"].includes((config.mediaType || "").toUpperCase());
+        const isTmdb = ["MOVIE", "MOVIES", "TV", "SHOW", "SHOWS"].includes(normalizedType.toUpperCase());
         if (!item._zoroMeta) {
           item._zoroMeta = {
             source: isTmdb ? "tmdb" : source,
-            mediaType: config.mediaType || "ANIME",
+            mediaType: normalizedType.toUpperCase(),
             fetchedAt: Date.now()
           };
         } else {
           item._zoroMeta.source = isTmdb ? "tmdb" : source;
-          item._zoroMeta.mediaType = config.mediaType || "ANIME";
+          item._zoroMeta.mediaType = normalizedType.toUpperCase();
           item._zoroMeta.fetchedAt = Date.now();
         }
       });

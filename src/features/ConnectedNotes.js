@@ -401,8 +401,8 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
         value.forEach(tag => {
           frontmatterLines.push(`  - ${tag}`);
         });
-      } else if (key === 'url' && Array.isArray(value)) {
-        frontmatterLines.push('url:');
+      } else if (key === 'urls' && Array.isArray(value)) {
+        frontmatterLines.push('urls:');
         value.forEach(url => {
           frontmatterLines.push(`  - "${url}"`);
         });

@@ -154,29 +154,19 @@ class Trending {
     try {
       for (let page = 1; page <= pages; page++) {
         const url = `https://api.themoviedb.org/3/${endpoint}?api_key=${tmdbApiKey}&page=${page}`;
-        
-        const response = await fetch(url, {
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-          }
-        });
-
-        if (!response.ok) {
-          const errorText = await response.text();
+        const requestFn = () => fetch(url, { headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' } });
+        const response = await this.plugin.requestQueue.add(requestFn, { priority: 'normal', service: 'tmdb', metadata: { type: 'trending' } });
+        if (!response || !response.ok) {
+          const errorText = response ? await response.text() : 'No response';
           console.error('[Trending] TMDb error response:', errorText);
-          throw new Error(`TMDb API error: ${response.status} - ${errorText}`);
+          throw new Error(`TMDb API error: ${response ? response.status : 'NO-RESP'} - ${errorText}`);
         }
-
         const data = await response.json();
-        
         if (!data.results || !Array.isArray(data.results)) {
           console.error('[Trending] Invalid TMDb response format:', data);
           throw new Error('Invalid response format from TMDb');
         }
-
         allResults.push(...data.results);
-        
         if (allResults.length >= limit) break;
       }
 
@@ -187,9 +177,13 @@ class Trending {
 
       try {
         const idsToFetch = mediaList.map(m => m.idTmdb).filter(Boolean).slice(0, 20);
-        const fetches = idsToFetch.map(id => fetch(`https://api.themoviedb.org/3/${typeUpper.includes('MOVIE') ? 'movie' : 'tv'}/${id}/external_ids?api_key=${tmdbApiKey}`)
-          .then(r => r.ok ? r.json() : null)
-          .catch(() => null));
+        const fetches = idsToFetch.map(id => {
+          const url = `https://api.themoviedb.org/3/${typeUpper.includes('MOVIE') ? 'movie' : 'tv'}/${id}/external_ids?api_key=${tmdbApiKey}`;
+          const requestFn = () => fetch(url);
+          return this.plugin.requestQueue.add(requestFn, { priority: 'low', service: 'tmdb', metadata: { type: 'external_ids' } })
+            .then(r => r && r.ok ? r.json() : null)
+            .catch(() => null);
+        });
         const results = await Promise.all(fetches);
         const tmdbToImdb = new Map();
         results.forEach((ext, idx) => {
@@ -475,7 +469,10 @@ class Trending {
 
     try {
       const type = (config.mediaType || 'ANIME').toLowerCase();
-      const source = config.source || this.plugin.settings.defaultApiSource || 'anilist';
+      let source = config.source || this.plugin.settings.defaultApiSource || 'anilist';
+      const mt = String(config.mediaType || 'ANIME').toUpperCase();
+      if (['MOVIE','MOVIES','TV','SHOW','SHOWS'].includes(mt)) source = 'simkl';
+      if (mt === 'MANGA' && (source === 'anilist' || source === 'simkl')) source = 'mal';
       const limit = config.limit || 40;
 
       const normalizedType = ['movie','movies','tv','show','shows'].includes(type) ? (type.includes('movie') ? 'MOVIE' : 'TV') : (type === 'manga' ? 'MANGA' : 'ANIME');

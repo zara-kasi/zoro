@@ -31,17 +31,14 @@ extractSearchIds(media, entry, source) {
   } else if (source === 'simkl') {
     ids.simkl_id = media.id;
     
-    // Get media type for SIMKL backup strategy
     const mediaType = this.plugin.apiHelper ? 
       this.plugin.apiHelper.detectMediaType(entry, {}, media) : 
       (entry?._zoroMeta?.mediaType || 'ANIME');
     
-    // For ANIME: use MAL as standard backup (like AniList)
     if (mediaType === 'ANIME' && media.idMal) {
       ids.mal_id = media.idMal;
     }
     
-    // For Movies/TV/other media types: use IMDB and TMDB as backup
     if (mediaType !== 'ANIME' && media.idImdb) {
       ids.imdb_id = media.idImdb;
     }
@@ -298,16 +295,15 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
       return '';
     }
 
-    const codeBlockLines = [
-      '```zoro',
-      'type: single',
-      `source: ${this.currentSource}`,
-      `mediaType: ${this.currentMediaType}`,
-      `mediaId: ${this.currentMedia.id}`,
-      '```'
-    ];
+    const lines = ['```zoro', 'type: single'];
 
-    return codeBlockLines.join('\n');
+    lines.push(`source: ${this.currentSource}`);
+    lines.push(`mediaType: ${this.currentMediaType}`);
+    lines.push(`mediaId: ${this.currentMedia.id}`);
+
+    lines.push('```');
+
+    return lines.join('\n');
   }
 
   /**
@@ -401,8 +397,8 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
         value.forEach(tag => {
           frontmatterLines.push(`  - ${tag}`);
         });
-      } else if (key === 'url' && Array.isArray(value)) {
-        frontmatterLines.push('url:');
+      } else if (key === 'urls' && Array.isArray(value)) {
+        frontmatterLines.push('urls:');
         value.forEach(url => {
           frontmatterLines.push(`  - "${url}"`);
         });
@@ -450,37 +446,30 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
 
 
   /**
-   * Show connected notes in a single dedicated side panel
+   * Show connected notes in the permanent SidePanel
    */
   async showConnectedNotes(searchIds, mediaType) {
     try {
-      // Search for connected notes
-      const connectedNotes = await this.searchConnectedNotes(searchIds, mediaType);
-
-      // Look for existing Zoro panel first
-      let zoroLeaf = null;
-      this.app.workspace.iterateAllLeaves((leaf) => {
-        if (leaf.view.titleEl && leaf.view.titleEl.textContent === 'Zoro') {
-          zoroLeaf = leaf;
-          return false; // Stop iteration
-        }
-      });
-
-      // If no existing Zoro panel, create new one
-      if (!zoroLeaf) {
-        zoroLeaf = this.app.workspace.getRightLeaf(false);
-      }
-
-      // Render content and set title
-      this.renderConnectedNotesInView(zoroLeaf.view, connectedNotes, searchIds, mediaType);
-      
-      // Ensure the side panel is visible
-      this.app.workspace.revealLeaf(zoroLeaf);
-      
+      const context = { searchIds, mediaType };
+      await this.openSidePanelWithContext(context);
     } catch (error) {
       console.error('[ConnectedNotes] Error showing connected notes:', error);
       new Notice('Failed to load connected notes');
     }
+  }
+
+  /**
+   * Safely close the Zoro side panel by swapping the view to empty
+   */
+  closePanelSafely(view) {
+    try {
+      const leaf = view?.leaf;
+      if (leaf && typeof leaf.setViewState === 'function') {
+        leaf.setViewState({ type: 'empty' });
+        return true;
+      }
+    } catch {}
+    return false;
   }
 
   /**
@@ -931,6 +920,26 @@ async handleConnectedNotesClick(e, media, entry, config) {
     new Notice('Failed to open connected notes');
   }
 }
+
+  async openSidePanelWithContext(context) {
+    // Reuse existing zoro-panel leaf if present; detach extras
+    const leaves = this.app.workspace.getLeavesOfType?.('zoro-panel') || [];
+    let leaf = leaves[0] || this.app.workspace.getRightLeaf(true);
+    // Detach duplicate zoro-panel leaves (keep only one)
+    if (leaves.length > 1) {
+      for (let i = 1; i < leaves.length; i++) {
+        try { leaves[i].detach(); } catch {}
+      }
+    }
+
+    await leaf.setViewState({ type: 'zoro-panel', active: true });
+    const view = leaf.view;
+    if (view && typeof view.setContext === 'function') {
+      view.setContext(context);
+    }
+    this.app.workspace.revealLeaf(leaf);
+    return view;
+  }
 }
 
 export { ConnectedNotes };

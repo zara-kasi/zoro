@@ -21,6 +21,7 @@ import { Prompt } from './features/Prompt.js';
 import { Render } from './rendering/core/Render.js';
 import { EmojiIconMapper } from './rendering/helpers/EmojiIconMapper.js';
 import { ConnectedNotes } from './features/ConnectedNotes.js';
+import { SidePanel, ZORO_VIEW_TYPE } from './ui/SidePanel.js';
 
 import { DEFAULT_SETTINGS, getDefaultGridColumns } from './core/constants.js';
 import { ZoroSettingTab } from './settings/ZoroSettingTab.js';
@@ -149,6 +150,18 @@ class ZoroPlugin extends Plugin {
 
 		this.registerMarkdownCodeBlockProcessor('zoro', this.processor.processZoroCodeBlock.bind(this.processor));
 		this.addSettingTab(new ZoroSettingTab(this.app, this));
+
+		// Register Zoro side panel view
+		this.registerView(ZORO_VIEW_TYPE, (leaf) => new SidePanel(leaf, this));
+		this.addCommand({
+			id: 'zoro-open-panel',
+			name: 'Open Zoro panel',
+			callback: () => {
+				const leaf = this.app.workspace.getRightLeaf(true);
+				leaf.setViewState({ type: ZORO_VIEW_TYPE, active: true });
+				this.app.workspace.revealLeaf(leaf);
+			}
+		});
 	}
 
 	validateSettings(settings) {
@@ -278,6 +291,13 @@ class ZoroPlugin extends Plugin {
 	onunload() {
 		this.cache.stopAutoPrune().stopBackgroundRefresh().destroy();
 		this.theme.removeTheme();
+		// Convert any zoro-panel leaves to empty to avoid orphaned tabs
+		try {
+			const leaves = this.app?.workspace?.getLeavesOfType?.(ZORO_VIEW_TYPE) || [];
+			for (const leaf of leaves) {
+				leaf.setViewState({ type: 'empty' });
+			}
+		} catch {}
 		const styleId = 'zoro-plugin-styles';
 		const existingStyle = document.getElementById(styleId);
 		if (existingStyle) {

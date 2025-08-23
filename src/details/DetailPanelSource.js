@@ -69,8 +69,12 @@ class DetailPanelSource {
 
   shouldFetchDetailedData(media) {
     const missingBasicData = !media.description || !media.genres || !media.averageScore;
-    const isAnimeWithoutAiring = media.type === 'ANIME' && !media.nextAiringEpisode;
-    return missingBasicData || isAnimeWithoutAiring;
+    const mediaKind = media?.type || media?.format;
+    const isAnimeWithoutAiring = mediaKind === 'ANIME' && !media.nextAiringEpisode;
+    // Force fetch for TMDb movies/TV to route through Simkl detail panel
+    const isTmdbMovieOrTv = ((media?._zoroMeta?.source || '').toLowerCase() === 'tmdb')
+      && (mediaKind === 'MOVIE' || mediaKind === 'TV');
+    return missingBasicData || isAnimeWithoutAiring || isTmdbMovieOrTv;
   }
 
   extractSourceFromEntry(entry) {
@@ -126,6 +130,8 @@ class DetailPanelSource {
           return {
             ...entryOrSource.media,
             ...detailedSimklData,
+            // Ensure explicit media type for correct panel rendering
+            type: resolvedMediaType,
             // Ensure we keep the original ID and other essential fields
             id: entryOrSource.media.id,
             idImdb: entryOrSource.media.idImdb || detailedSimklData.ids?.imdb || null,
@@ -141,6 +147,41 @@ class DetailPanelSource {
               } else {
           return null;
         }
+    } else if (source === 'tmdb' && (resolvedMediaType === 'MOVIE' || resolvedMediaType === 'TV')) {
+      // Route TMDb movies/TV through Simkl detail panel by resolving Simkl ID first
+      try {
+        const mediaObj = (typeof entryOrSource === 'object' && entryOrSource?.media) ? entryOrSource.media : null;
+        const tmdbId = Number(mediaObj?.idTmdb || mediaId || mediaObj?.ids?.tmdb || 0) || 0;
+        const imdbId = mediaObj?.idImdb || mediaObj?.ids?.imdb || null;
+
+        const simklId = await this.resolveSimklIdFromExternal(tmdbId, imdbId, resolvedMediaType);
+        if (simklId) {
+          const detailedSimklData = await this.fetchSimklDetailedData(simklId, resolvedMediaType);
+          if (detailedSimklData) {
+            return {
+              ...mediaObj,
+              ...detailedSimklData,
+              // Ensure explicit media type for correct panel rendering
+              type: resolvedMediaType,
+              // Preserve original TMDb id on the media object
+              id: mediaObj?.id ?? tmdbId,
+              idImdb: mediaObj?.idImdb || detailedSimklData.ids?.imdb || imdbId || null,
+              idTmdb: mediaObj?.idTmdb || tmdbId || detailedSimklData.ids?.tmdb || null,
+              // Ensure Simkl ids are available under ids
+              ids: {
+                ...(detailedSimklData.ids || {}),
+                tmdb: mediaObj?.idTmdb || tmdbId || (detailedSimklData.ids?.tmdb ?? null),
+                imdb: mediaObj?.idImdb || imdbId || (detailedSimklData.ids?.imdb ?? null)
+              },
+              description: detailedSimklData.overview || mediaObj?.overview || mediaObj?.description || null,
+              nextAiringEpisode: null
+            };
+          }
+        }
+      } catch {}
+      // If resolution fails, just return the original media without changes
+      if (typeof entryOrSource === 'object' && entryOrSource?.media) return entryOrSource.media;
+      return null;
     }
 
     const stableCacheKey = this.plugin.cache.structuredKey('details', 'stable', targetId);
@@ -297,10 +338,15 @@ class DetailPanelSource {
     if (cached) return cached;
 
     try {
+      console.log('[Details][OMDb] Fetching OMDb data', { imdbId, mediaType });
       // Use OMDB API to get IMDB data (free and reliable)
       const response = await fetch(`https://www.omdbapi.com/?i=${imdbId}&apikey=fc1fef96`);
-      if (!response.ok) throw new Error(`OMDB API error: ${response.status}`);
+      if (!response.ok) {
+        console.log('[Details][OMDb] HTTP error', response.status);
+        throw new Error(`OMDB API error: ${response.status}`);
+      }
       const data = await response.json();
+      console.log('[Details][OMDb] Response', data?.Response, { imdbRating: data?.imdbRating, imdbVotes: data?.imdbVotes });
       
       if (data.Response === 'True') {
         // Transform OMDB data to match our expected format
@@ -329,7 +375,8 @@ class DetailPanelSource {
         return transformedData;
       }
       return null;
-    } catch {
+    } catch (e) {
+      console.log('[Details][OMDb] Fetch failed', e?.message || e);
       return null;
     }
   }
@@ -356,11 +403,46 @@ class DetailPanelSource {
       const cachedDetailPanel = this.plugin.cache.get(detailPanelCacheKey, { scope: 'mediaDetails', source: 'detailPanel' });
       
       if (cachedDetailPanel) {
-        // Use cached data if available
+        // Use cached data if available, but try to enrich with OMDb if missing
         const { detailedMedia, malData, imdbData } = cachedDetailPanel;
         if (this.hasMoreData(detailedMedia)) callback(detailedMedia, null, null);
         if (malData) callback(detailedMedia, malData, null);
-        if (imdbData) callback(detailedMedia, null, imdbData);
+        if (imdbData) {
+          callback(detailedMedia, null, imdbData);
+        } else {
+          // Attempt OMDb fetch if this is a TMDb/Simkl movie/TV and we have/ can resolve IMDb id
+          const typeUpperCached = (mediaType || detailedMedia?.type || '').toString().toUpperCase();
+          const isMovieOrTvCached = typeUpperCached.includes('MOVIE') || typeUpperCached === 'TV' || typeUpperCached.includes('SHOW');
+          const isTmdbOrSimkl = (source === 'tmdb' || source === 'simkl');
+          if (isTmdbOrSimkl && isMovieOrTvCached) {
+            let imdbIdLocal = null;
+            if (typeof entryOrSource === 'object' && entryOrSource?.media) {
+              imdbIdLocal = entryOrSource.media.idImdb || entryOrSource.media.ids?.imdb || null;
+              if (imdbIdLocal) console.log('[Details][OMDb][Cache] Using IMDb from entry.media', imdbIdLocal);
+            }
+            if (!imdbIdLocal) {
+              imdbIdLocal = detailedMedia?.idImdb || detailedMedia?.ids?.imdb || null;
+              if (imdbIdLocal) console.log('[Details][OMDb][Cache] Using IMDb from cached detailedMedia', imdbIdLocal);
+            }
+            if (!imdbIdLocal && source === 'tmdb') {
+              try {
+                const tmdbId = detailedMedia?.idTmdb || detailedMedia?.ids?.tmdb || mediaId;
+                console.log('[Details][OMDb][Cache] Resolving IMDb via TMDb external_ids', { tmdbId, mediaType });
+                imdbIdLocal = await this.fetchImdbIdFromTmdb(tmdbId, typeUpperCached);
+                if (imdbIdLocal) console.log('[Details][OMDb][Cache] Resolved IMDb via TMDb', imdbIdLocal);
+              } catch (e) { console.log('[Details][OMDb][Cache] Resolve failed', e?.message || e); }
+            }
+            if (imdbIdLocal) {
+              const imdbDataResolved = await this.fetchIMDBData(imdbIdLocal, detailedMedia?.type || typeUpperCached, detailedMedia);
+              if (imdbDataResolved) {
+                // Update cache and callback
+                const updated = { detailedMedia, malData, imdbData: imdbDataResolved };
+                this.plugin.cache.set(detailPanelCacheKey, updated, { scope: 'mediaDetails', source: 'detailPanel', tags: ['detailPanel','combined', source, mediaType] });
+                callback(detailedMedia, null, imdbDataResolved);
+              }
+            }
+          }
+        }
         return;
       }
 
@@ -377,9 +459,40 @@ class DetailPanelSource {
       
       if (malId) malDataPromise = this.fetchMALData(malId, detailedMedia.type);
       
-      // For Simkl movies/TV, fetch IMDB data
-      if (source === 'simkl' && (mediaType === 'MOVIE' || mediaType === 'TV') && detailedMedia.idImdb) {
-        imdbDataPromise = this.fetchIMDBData(detailedMedia.idImdb, detailedMedia.type, detailedMedia);
+      // For Simkl or TMDb movies/TV, fetch IMDB data
+      const typeUpper = (mediaType || detailedMedia.type || '').toString().toUpperCase();
+      const isMovieOrTv = typeUpper.includes('MOVIE') || typeUpper === 'TV' || typeUpper.includes('SHOW');
+      if ((source === 'simkl' || source === 'tmdb') && isMovieOrTv) {
+        let imdbIdLocal = null;
+        // 1) Prefer IMDb from the original TMDb entry (entry.media)
+        if (source === 'tmdb' && typeof entryOrSource === 'object' && entryOrSource?.media) {
+          imdbIdLocal = entryOrSource.media.idImdb || entryOrSource.media.ids?.imdb || null;
+          if (imdbIdLocal) console.log('[Details][OMDb] Using IMDb from TMDb entry.media', imdbIdLocal);
+        }
+        // 2) Fallback to detailed media (merged result)
+        if (!imdbIdLocal) {
+          imdbIdLocal = detailedMedia.idImdb || detailedMedia.ids?.imdb || null;
+          if (imdbIdLocal) console.log('[Details][OMDb] Using IMDb from detailedMedia', imdbIdLocal);
+        }
+        // 3) Final fallback: resolve from TMDb external_ids
+        if (!imdbIdLocal && source === 'tmdb') {
+          try {
+            const tmdbId = detailedMedia.idTmdb || detailedMedia.ids?.tmdb || mediaId;
+            console.log('[Details][OMDb] Missing IMDb id; resolving from TMDb external_ids', { tmdbId, mediaType });
+            imdbIdLocal = await this.fetchImdbIdFromTmdb(tmdbId, typeUpper);
+            if (imdbIdLocal) {
+              detailedMedia.idImdb = imdbIdLocal;
+              console.log('[Details][OMDb] Resolved IMDb id from TMDb', imdbIdLocal);
+            }
+          } catch (e) {
+            console.log('[Details][OMDb] Failed to resolve IMDb id from TMDb', e?.message || e);
+          }
+        }
+        if (imdbIdLocal) {
+          imdbDataPromise = this.fetchIMDBData(imdbIdLocal, detailedMedia.type || typeUpper, detailedMedia);
+        } else {
+          console.log('[Details][OMDb] IMDb id not found; skipping OMDb');
+        }
       }
       
       // Collect all data
@@ -421,5 +534,80 @@ class DetailPanelSource {
     return `query($id:Int){Media(id:$id){id type title{romaji english native}description(asHtml:false)format status season seasonYear averageScore genres nextAiringEpisode{airingAt episode timeUntilAiring}idMal}}`;
   }
 }
+
+// Helper: resolve Simkl ID from TMDb/IMDb for MOVIE/TV
+DetailPanelSource.prototype.resolveSimklIdFromExternal = async function(tmdbId, imdbId, mediaType) {
+  if (!tmdbId && !imdbId) return null;
+  const type = (mediaType === 'MOVIE' || mediaType === 'MOVIES') ? 'movies' : 'tv';
+  const cacheKey = this.plugin.cache.structuredKey('simkl', 'resolve_external', `${type}_${tmdbId || 'none'}_${imdbId || 'none'}`);
+  const cached = this.plugin.cache.get(cacheKey, { scope: 'mediaDetails', source: 'simkl' });
+  if (cached) return cached;
+
+  try {
+    const params = {};
+    if (tmdbId) params.tmdb = String(tmdbId);
+    if (imdbId) params.imdb = String(imdbId);
+    if (this.plugin.settings.simklClientId) params.client_id = this.plugin.settings.simklClientId;
+
+    const base = 'https://api.simkl.com/search/id';
+    const url = this.plugin.simklApi?.buildFullUrl ? this.plugin.simklApi.buildFullUrl(base, params) : `${base}?${new URLSearchParams(params).toString()}`;
+    const headers = this.plugin.simklApi?.getHeaders ? this.plugin.simklApi.getHeaders({ type: 'search' }) : { 'Accept': 'application/json' };
+    const data = this.plugin.simklApi && this.plugin.simklApi.makeRequest
+      ? await this.plugin.simklApi.makeRequest({ url, method: 'GET', headers, priority: 'normal' })
+      : await (await fetch(url)).json();
+
+    // Try to extract Simkl ID from multiple possible structures
+    let simklId = null;
+    const candidates = Array.isArray(data) ? data : [data];
+    for (const item of candidates) {
+      const node = item?.movie || item?.show || item || {};
+      const ids = node.ids || item?.ids || {};
+      const candidate = Number(ids.simkl || ids.id);
+      if (Number.isFinite(candidate) && candidate > 0) { simklId = candidate; break; }
+    }
+
+    if (simklId) {
+      this.plugin.cache.set(cacheKey, simklId, { scope: 'mediaDetails', source: 'simkl', tags: ['simkl','resolve','external', type] });
+      return simklId;
+    }
+  } catch {}
+
+  // Fallback: try type-specific endpoints if available
+  try {
+    const endpoint = (mediaType === 'MOVIE' || mediaType === 'MOVIES') ? 'movie' : 'tv';
+    const idPart = tmdbId ? `tmdb/${encodeURIComponent(String(tmdbId))}` : `imdb/${encodeURIComponent(String(imdbId))}`;
+    const url = `https://api.simkl.com/${endpoint}/${idPart}${this.plugin.settings.simklClientId ? `?client_id=${this.plugin.settings.simklClientId}` : ''}`;
+    const headers = this.plugin.simklApi?.getHeaders ? this.plugin.simklApi.getHeaders({ type: 'search' }) : { 'Accept': 'application/json' };
+    const data = this.plugin.simklApi && this.plugin.simklApi.makeRequest
+      ? await this.plugin.simklApi.makeRequest({ url, method: 'GET', headers, priority: 'normal' })
+      : await (await fetch(url)).json();
+    const ids = data?.ids || {};
+    const simklId = Number(ids.simkl || ids.id);
+    if (Number.isFinite(simklId) && simklId > 0) {
+      this.plugin.cache.set(cacheKey, simklId, { scope: 'mediaDetails', source: 'simkl', tags: ['simkl','resolve','external', endpoint] });
+      return simklId;
+    }
+  } catch {}
+
+  return null;
+};
+
+// Helper: resolve IMDb id from TMDb external_ids
+DetailPanelSource.prototype.fetchImdbIdFromTmdb = async function(tmdbId, mediaType) {
+  if (!tmdbId) return null;
+  const key = this.plugin.settings.tmdbApiKey;
+  if (!key) return null;
+  const typePath = (mediaType === 'MOVIE' || mediaType === 'MOVIES') ? 'movie' : 'tv';
+  const url = `https://api.themoviedb.org/3/${typePath}/${tmdbId}/external_ids?api_key=${encodeURIComponent(key)}`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const imdb = data?.imdb_id || data?.imdb || null;
+    return imdb || null;
+  } catch {
+    return null;
+  }
+};
 
 export { DetailPanelSource };

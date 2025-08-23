@@ -166,8 +166,8 @@ async handleSearchOperation(api, config) {
 }
 
 async handleSingleOperation(api, config) {
-  if (!config.mediaId) {
-    throw new Error('❌ Media ID is required for single media view');
+  if (!config.mediaId && !config.externalIds) {
+    throw new Error('❌ Media ID or externalIds is required for single media view');
   }
 
   if (config.source === 'mal') {
@@ -270,7 +270,8 @@ async renderData(el, data, config) {
           this.plugin.render.renderSearchResults(el, data, {
             layout: config.layout || 'card',
             mediaType: config.mediaType || 'ANIME',
-            source: config.source
+            source: config.source,
+            type: 'trending'
           });
         } else if (data && data.isTrendingOperation) {
           // Fallback to the old render method if needed
@@ -413,8 +414,16 @@ async executeProcessing(el, config, retryFn) {
   }
 
   applyConfigDefaults(config) {
+  const mt = String(config.mediaType || 'ANIME').toUpperCase();
   if (!config.source) {
-    config.source = this.plugin.settings.defaultApiSource || 'anilist';
+    if (mt === 'MOVIE' || mt === 'MOVIES' || mt === 'TV' || mt === 'SHOW' || mt === 'SHOWS') {
+      config.source = 'simkl';
+    } else if (mt === 'MANGA') {
+      const def = this.plugin.settings.defaultApiSource || 'anilist';
+      config.source = def === 'simkl' ? 'mal' : def;
+    } else {
+      config.source = this.plugin.settings.defaultApiSource || 'anilist';
+    }
   }
 
   if (config.type === 'trending') {
@@ -422,7 +431,10 @@ async executeProcessing(el, config, retryFn) {
     config.layout = config.layout || this.plugin.settings.defaultLayout || 'card';
     config.limit = config.limit || config.perPage || 40;  // Changed from 20 to 40
     
-    if (config.mediaType.toUpperCase() === 'MANGA' && config.source === 'anilist') {
+    const mtUpper = config.mediaType.toUpperCase();
+    if (['MOVIE','MOVIES','TV','SHOW','SHOWS'].includes(mtUpper)) {
+      config.source = 'simkl';
+    } else if (mtUpper === 'MANGA' && (config.source === 'anilist' || config.source === 'simkl')) {
       config.source = 'mal';
     }
     

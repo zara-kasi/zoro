@@ -17,22 +17,35 @@ class RenderDetailPanel {
 
     const sections = [];
 
+    const src = (entry?._zoroMeta?.source || '').toLowerCase();
+    const mediaKind = media?.type || media?.format;
+    const deferDetailsToSimkl = src === 'tmdb' && (mediaKind === 'MOVIE' || mediaKind === 'TV');
+
     sections.push(this.createHeaderSection(media));
-    sections.push(this.createMetadataSection(media, entry));
-   
-   if (media.type === 'ANIME' && media.nextAiringEpisode) {
-      sections.push(this.createAiringSection(media.nextAiringEpisode));
+
+    if (!deferDetailsToSimkl) {
+      sections.push(this.createMetadataSection(media, entry));
+     
+     if (media.type === 'ANIME' && media.nextAiringEpisode) {
+        sections.push(this.createAiringSection(media.nextAiringEpisode));
+      }
+
+      if (media.averageScore > 0) {
+        sections.push(this.createStatisticsSection(media));
+      }
+
+      if (media.genres?.length > 0) {
+        const mappedInitialGenres = this.mapTmdbGenresIfNeeded(media.genres, mediaKind);
+        console.log('[Details][Genres][Initial] Mapped genres:', mappedInitialGenres);
+        sections.push(this.createGenresSection(mappedInitialGenres));
+      }
+
+      sections.push(this.createSynopsisSection(media.description));
+    } else {
+      // Show loading placeholder for TMDb movie/TV until Simkl details are fetched
+      sections.push(this.createLoadingSection());
     }
 
-    if (media.averageScore > 0) {
-      sections.push(this.createStatisticsSection(media));
-    }
-
-    if (media.genres?.length > 0) {
-      sections.push(this.createGenresSection(media.genres));
-    }
-
-    sections.push(this.createSynopsisSection(media.description));
     sections.push(this.createExternalLinksSection(media));
 
     sections.forEach(section => content.appendChild(section));
@@ -197,6 +210,9 @@ class RenderDetailPanel {
 
   updatePanelContent(panel, media, malData = null, imdbData = null) {
     const content = panel.querySelector('.panel-content');
+    // Remove loading placeholder if present
+    const loadingSection = content.querySelector('.loading-section');
+    if (loadingSection) loadingSection.remove();
     if (media.type === 'ANIME' && media.nextAiringEpisode && !content.querySelector('.airing-section')) {
       const airingSection = this.createAiringSection(media.nextAiringEpisode);
       const metadataSection = content.querySelector('.metadata-section');
@@ -216,35 +232,50 @@ class RenderDetailPanel {
       if (existingSynopsis) {
         const newSynopsis = this.createSynopsisSection(media.description);
         content.replaceChild(newSynopsis, existingSynopsis);
-      }
-    }
-
-    if (media.genres?.length > 0 && !content.querySelector('.genres-section')) {
-      const genresSection = this.createGenresSection(media.genres);
-      const synopsisSection = content.querySelector('.synopsis-section');
-      if (synopsisSection) {
-        content.insertBefore(genresSection, synopsisSection);
       } else {
-        content.appendChild(genresSection);
+        // If synopsis did not exist (TMDb defer), append it before links
+        const linksSection = content.querySelector('.external-links-section');
+        const synopsis = this.createSynopsisSection(media.description);
+        if (linksSection) content.insertBefore(synopsis, linksSection);
+        else content.appendChild(synopsis);
       }
     }
 
-    if (media.idMal) {
-      const existingLinksSection = content.querySelector('.external-links-section');
-      if (existingLinksSection) {
-        const newLinksSection = this.createExternalLinksSection(media);
-        content.replaceChild(newLinksSection, existingLinksSection);
+    if (media.genres?.length > 0) {
+      console.log('[Details][Genres] Incoming genres before mapping:', media.genres);
+      const mappedGenres = this.mapTmdbGenresIfNeeded(media.genres, media.type);
+      console.log('[Details][Genres] Mapped genres:', mappedGenres);
+      const existingGenres = content.querySelector('.genres-section');
+      const genresSection = this.createGenresSection(mappedGenres);
+      if (existingGenres) {
+        content.replaceChild(genresSection, existingGenres);
+      } else {
+        const synopsisSection = content.querySelector('.synopsis-section');
+        if (synopsisSection) {
+          content.insertBefore(genresSection, synopsisSection);
+        } else {
+          content.appendChild(genresSection);
+        }
       }
     }
 
-    if (media.averageScore > 0 || malData || imdbData) {
+    // Always rebuild external links after updates (ids like Simkl/TMDb may appear later)
+    const existingLinksSection = content.querySelector('.external-links-section');
+    if (existingLinksSection) {
+      const newLinksSection = this.createExternalLinksSection(media);
+      content.replaceChild(newLinksSection, existingLinksSection);
+    }
+
+    // Show stats for anime (AniList/MAL) or for movies/TV (OMDb/IMDb; else TMDb fallback)
+    const shouldShowStats = (media.type === 'ANIME' && media.averageScore > 0) || malData || imdbData || (media.type !== 'ANIME' && (imdbData || typeof media.averageScore === 'number'));
+    if (shouldShowStats) {
+      console.log('[Details][Stats] Building stats section', { type: media.type, hasImdb: !!imdbData, averageScore: media.averageScore });
       const existingStats = content.querySelector('.stats-section');
+      const newStats = this.createStatisticsSection(media, malData, imdbData);
       if (existingStats) {
-        const newStats = this.createStatisticsSection(media, malData, imdbData);
         content.replaceChild(newStats, existingStats);
       } else {
         // Add statistics section if it doesn't exist (for Simkl entries)
-        const newStats = this.createStatisticsSection(media, malData, imdbData);
         const synopsisSection = content.querySelector('.synopsis-section');
         if (synopsisSection) {
           content.insertBefore(newStats, synopsisSection);
@@ -429,35 +460,47 @@ class RenderDetailPanel {
     const statsGrid = document.createElement('div');
     statsGrid.className = 'stats-grid';
 
-    // AniList rating (for anime)
-    if (media.averageScore > 0) {
-      const scoreOutOf10 = (media.averageScore / 10).toFixed(1);
-      this.addStatItem(statsGrid, 'AniList Score', `${scoreOutOf10}`, 'score-stat anilist-stat');
-    }
+    if (media.type === 'ANIME' || media.type === 'MANGA') {
+      if (media.averageScore > 0) {
+        const scoreOutOf10 = (media.averageScore / 10).toFixed(1);
+        console.log('[Details][Stats] AniList score used', scoreOutOf10);
+        this.addStatItem(statsGrid, 'AniList Score', `${scoreOutOf10}`, 'score-stat anilist-stat');
+      }
+      if (malData) {
+        if (malData.score) {
+          console.log('[Details][Stats] MAL score used', malData.score);
+          this.addStatItem(statsGrid, 'MAL Score', `${malData.score}`, 'score-stat mal-stat');
+        }
+        if (malData.scored_by) {
+          this.addStatItem(statsGrid, 'MAL Ratings', malData.scored_by.toLocaleString(), 'count-stat');
+        }
+        if (malData.rank) {
+          this.addStatItem(statsGrid, 'MAL Rank', `#${malData.rank}`, 'rank-stat');
+        }
+      }
+    } else {
+      // Movies/TV: prefer OMDb (IMDb). If missing, fallback to TMDb data on entry
+      const tmdbVoteAverage = typeof media.averageScore === 'number' ? (media.averageScore / 10) : null;
+      const tmdbVoteCount = media?._zoroMeta?.trending?.voteCount || null;
 
-    // MAL data (for anime)
-    if (malData) {
-      if (malData.score) {
-        this.addStatItem(statsGrid, 'MAL Score', `${malData.score}`, 'score-stat mal-stat');
+      // IMDb (OMDb) stats if available
+      if (imdbData) {
+        if (imdbData.score) {
+          console.log('[Details][Stats] IMDb (OMDb) score', imdbData.score);
+          this.addStatItem(statsGrid, 'IMDB Score', `${imdbData.score}`, 'score-stat imdb-stat');
+        }
+        if (imdbData.scored_by) {
+          this.addStatItem(statsGrid, 'IMDB Ratings', imdbData.scored_by.toLocaleString(), 'count-stat');
+        }
       }
-      
-      if (malData.scored_by) {
-        this.addStatItem(statsGrid, 'MAL Ratings', malData.scored_by.toLocaleString(), 'count-stat');
-      }
-      
-      if (malData.rank) {
-        this.addStatItem(statsGrid, 'MAL Rank', `#${malData.rank}`, 'rank-stat');
-      }
-    }
 
-    // IMDB data (for movies/TV)
-    if (imdbData) {
-      if (imdbData.score) {
-        this.addStatItem(statsGrid, 'IMDB Score', `${imdbData.score}`, 'score-stat imdb-stat');
-      }
-      
-      if (imdbData.scored_by) {
-        this.addStatItem(statsGrid, 'IMDB Ratings', imdbData.scored_by.toLocaleString(), 'count-stat');
+      // TMDb stats alongside IMDb when present
+      if (tmdbVoteAverage != null) {
+        console.log('[Details][Stats] TMDb score', tmdbVoteAverage, 'votes', tmdbVoteCount);
+        this.addStatItem(statsGrid, 'TMDb Score', `${tmdbVoteAverage.toFixed(1)}`, 'score-stat tmdb-stat');
+        if (tmdbVoteCount != null) {
+          this.addStatItem(statsGrid, 'TMDb Ratings', Number(tmdbVoteCount).toLocaleString(), 'count-stat');
+        }
       }
     }
 
@@ -525,13 +568,55 @@ class RenderDetailPanel {
     const section = document.createElement('div');
     section.className = 'panel-section genres-section';
 
+    const displayGenres = Array.isArray(genres) ? genres.map(g => String(g)) : [];
+    console.log('[Details][Genres] Rendering genres (final):', displayGenres);
+
     section.innerHTML = `
       <h3 class="section-title">Genres</h3>
       <div class="genres-container">
-        ${genres.map(genre => `<span class="genre-tag">${genre}</span>`).join('')}
+        ${displayGenres.map(genre => `<span class="genre-tag">${genre}</span>`).join('')}
       </div>
     `;
 
+    return section;
+  }
+
+  mapTmdbGenresIfNeeded(genres, mediaType) {
+    if (!Array.isArray(genres)) return [];
+    // If already strings, return as is
+    const areStrings = genres.every(g => typeof g === 'string');
+    if (areStrings) return genres;
+    // Convert numbers / numeric strings to names using TMDb maps
+    const movieMap = {
+      28: 'Action', 12: 'Adventure', 16: 'Animation', 35: 'Comedy', 80: 'Crime', 99: 'Documentary',
+      18: 'Drama', 10751: 'Family', 14: 'Fantasy', 36: 'History', 27: 'Horror', 10402: 'Music',
+      9648: 'Mystery', 10749: 'Romance', 878: 'Science Fiction', 10770: 'TV Movie', 53: 'Thriller',
+      10752: 'War', 37: 'Western'
+    };
+    const tvMap = {
+      10759: 'Action & Adventure', 16: 'Animation', 35: 'Comedy', 80: 'Crime', 99: 'Documentary', 18: 'Drama',
+      10751: 'Family', 10762: 'Kids', 9648: 'Mystery', 10763: 'News', 10764: 'Reality', 10765: 'Sci-Fi & Fantasy',
+      10766: 'Soap', 10767: 'Talk', 10768: 'War & Politics', 37: 'Western'
+    };
+    const useTv = (mediaType === 'TV');
+    const map = useTv ? tvMap : movieMap;
+    return genres.map(g => {
+      const id = typeof g === 'string' ? parseInt(g) : g;
+      return map[id] || String(g);
+    });
+  }
+
+  createLoadingSection() {
+    const section = document.createElement('div');
+    section.className = 'panel-section loading-section';
+    const title = document.createElement('h3');
+    title.className = 'section-title';
+    title.textContent = 'Loading details…';
+    section.appendChild(title);
+    const body = document.createElement('div');
+    body.className = 'loading-body';
+    body.textContent = 'Fetching details from Simkl…';
+    section.appendChild(body);
     return section;
   }
 
@@ -574,17 +659,20 @@ class RenderDetailPanel {
     }
 
     // Simkl button (for movies and TV only, not anime or manga)
-if (media.id && media.type !== 'ANIME' && media.type !== 'MANGA') {
-  const simklBtn = document.createElement('button');
-  simklBtn.className = 'external-link-btn simkl-btn';
-  simklBtn.innerHTML = '🔗 View on Simkl';
-  simklBtn.onclick = (e) => {
-    e.stopPropagation();
-    const mediaType = media.type === 'MOVIE' ? 'movies' : 'tv';
-    const url = `https://simkl.com/${mediaType}/${media.id}`;
-    window.open(url, '_blank');
-  };
-  linksContainer.appendChild(simklBtn);
+if (media.type !== 'ANIME' && media.type !== 'MANGA') {
+  const simklId = media?.ids?.simkl || media?.id;
+  if (simklId) {
+    const simklBtn = document.createElement('button');
+    simklBtn.className = 'external-link-btn simkl-btn';
+    simklBtn.innerHTML = '🔗 View on Simkl';
+    simklBtn.onclick = (e) => {
+      e.stopPropagation();
+      const mediaType = media.type === 'MOVIE' ? 'movies' : 'tv';
+      const url = `https://simkl.com/${mediaType}/${simklId}`;
+      window.open(url, '_blank');
+    };
+    linksContainer.appendChild(simklBtn);
+  }
 }
 
     // IMDB button (for movies/TV)
@@ -600,14 +688,18 @@ if (media.id && media.type !== 'ANIME' && media.type !== 'MANGA') {
     }
 
     // TMDB button (for movies/TV)
-    if (media.idTmdb) {
+    if (media.idTmdb || media?.ids?.tmdb) {
       const tmdbBtn = document.createElement('button');
       tmdbBtn.className = 'external-link-btn tmdb-btn';
       tmdbBtn.innerHTML = '🔗 View on TMDB';
       tmdbBtn.onclick = (e) => {
         e.stopPropagation();
-        const mediaType = media.type === 'MOVIE' ? 'movie' : 'tv';
-        window.open(`https://www.themoviedb.org/${mediaType}/${media.idTmdb}`, '_blank');
+        const typeHint = (media.type || media.format || media?._zoroMeta?.mediaType || '').toString().toUpperCase();
+        const isMovie = typeHint.includes('MOVIE');
+        const mediaType = isMovie ? 'movie' : 'tv';
+        const tmdbId = media.idTmdb || media?.ids?.tmdb;
+        console.log('[Details][Links] Opening TMDb', { mediaType, tmdbId, typeHint });
+        window.open(`https://www.themoviedb.org/${mediaType}/${tmdbId}`, '_blank');
       };
       linksContainer.appendChild(tmdbBtn);
     }

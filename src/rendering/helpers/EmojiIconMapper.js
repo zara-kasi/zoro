@@ -48,7 +48,6 @@ class EmojiIconMapper {
       '🧿': 'list',
       '🧨': 'zap',
       'ℹ': 'info',
-      '⚠️': 'alert-triangle',
       '➕': 'circle-plus',
       '📝': 'square-pen',
       '⛓️': 'workflow',
@@ -64,6 +63,8 @@ class EmojiIconMapper {
       '📋': 'clipboard-list',
       '🔖': 'bookmark',
       '📑': 'bookmark-check',
+      '⚠️': 'triangle-alert',
+      '🕹️': 'settings-2',
       ...Object.fromEntries(opts.map || [])
     }));
     

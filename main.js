@@ -13514,7 +13514,16 @@ var ConnectedNotes = class {
     }
   }
   async openSidePanelWithContext(context) {
-    const leaf = this.app.workspace.getRightLeaf(true);
+    const leaves = this.app.workspace.getLeavesOfType?.("zoro-panel") || [];
+    let leaf = leaves[0] || this.app.workspace.getRightLeaf(true);
+    if (leaves.length > 1) {
+      for (let i = 1; i < leaves.length; i++) {
+        try {
+          leaves[i].detach();
+        } catch {
+        }
+      }
+    }
     await leaf.setViewState({ type: "zoro-panel", active: true });
     const view = leaf.view;
     if (view && typeof view.setContext === "function") {

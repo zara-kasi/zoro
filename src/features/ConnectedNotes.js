@@ -922,7 +922,16 @@ async handleConnectedNotesClick(e, media, entry, config) {
 }
 
   async openSidePanelWithContext(context) {
-    const leaf = this.app.workspace.getRightLeaf(true);
+    // Reuse existing zoro-panel leaf if present; detach extras
+    const leaves = this.app.workspace.getLeavesOfType?.('zoro-panel') || [];
+    let leaf = leaves[0] || this.app.workspace.getRightLeaf(true);
+    // Detach duplicate zoro-panel leaves (keep only one)
+    if (leaves.length > 1) {
+      for (let i = 1; i < leaves.length; i++) {
+        try { leaves[i].detach(); } catch {}
+      }
+    }
+
     await leaf.setViewState({ type: 'zoro-panel', active: true });
     const view = leaf.view;
     if (view && typeof view.setContext === 'function') {

@@ -29,29 +29,21 @@ extractSearchIds(media, entry, source) {
     // Always add anilist_id as backup
     ids.anilist_id = media.id;
   } else if (source === 'simkl') {
-    // Determine if this is a TMDB item being routed via Simkl for movies/TV
+    ids.simkl_id = media.id;
+    
     const mediaType = this.plugin.apiHelper ? 
       this.plugin.apiHelper.detectMediaType(entry, {}, media) : 
       (entry?._zoroMeta?.mediaType || 'ANIME');
-    const isMovieOrTv = (mediaType !== 'ANIME');
-    const isTmdbSourced = ((entry?._zoroMeta?.source || '').toLowerCase() === 'tmdb') || !!(media?.idTmdb || media?.ids?.tmdb);
-
-    if (!isMovieOrTv || !isTmdbSourced) {
-      // Pure Simkl (or anime via Simkl) -> keep simkl id
-      ids.simkl_id = media.id;
-    }
     
-    // For ANIME: use MAL as standard backup (like AniList)
     if (mediaType === 'ANIME' && media.idMal) {
       ids.mal_id = media.idMal;
     }
     
-    // For Movies/TV: write IMDB and TMDB, omit simkl_id when TMDB-sourced
-    if (isMovieOrTv && media.idImdb) {
+    if (mediaType !== 'ANIME' && media.idImdb) {
       ids.imdb_id = media.idImdb;
     }
-    if (isMovieOrTv && (media.idTmdb || media.id)) {
-      ids.tmdb_id = media.idTmdb || media.id;
+    if (mediaType !== 'ANIME' && media.idTmdb) {
+      ids.tmdb_id = media.idTmdb;
     }
   } else if (source === 'tmdb') {
     if (media.idTmdb || media.id) ids.tmdb_id = media.idTmdb || media.id;
@@ -305,22 +297,9 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
 
     const lines = ['```zoro', 'type: single'];
 
-    // For Simkl movies/TV that originated from TMDb, prefer externalIds
-    const isSimkl = src === 'simkl';
-    const isMovieOrTv = (typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper === 'SHOW' || typeUpper === 'SHOWS');
-    const isTmdbSourced = !!(this.currentMedia?.idTmdb || this.currentMedia?.ids?.tmdb || (this.currentMedia?._zoroMeta?.source || '').toLowerCase() === 'tmdb');
-
     lines.push(`source: ${this.currentSource}`);
     lines.push(`mediaType: ${this.currentMediaType}`);
-
-    if (isSimkl && isMovieOrTv && isTmdbSourced) {
-      // Provide externalIds instead of mediaId
-      const tmdb = this.currentMedia.idTmdb || this.currentMedia.ids?.tmdb || this.currentMedia.id || null;
-      const imdb = this.currentMedia.idImdb || this.currentMedia.ids?.imdb || null;
-      if (tmdb) lines.push(`externalIds: tmdb=${tmdb}${imdb ? `, imdb=${imdb}` : ''}`);
-    } else {
-      lines.push(`mediaId: ${this.currentMedia.id}`);
-    }
+    lines.push(`mediaId: ${this.currentMedia.id}`);
 
     lines.push('```');
 

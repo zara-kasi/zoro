@@ -6,7 +6,6 @@ class SidePanel extends ItemView {
 	constructor(leaf, plugin) {
 		super(leaf);
 		this.plugin = plugin;
-		this.currentMode = 'blank';
 		this.currentCleanup = null;
 		this.context = null; // { media, entry, source, mediaType, searchIds }
 	}
@@ -25,18 +24,19 @@ class SidePanel extends ItemView {
 
 	async onOpen() {
 		this.renderLayout();
-		this.setMode('blank');
+		this.resetToBlank();
 	}
 
 	async onClose() {
-		this.teardownMode();
+		this.teardownUI();
 	}
 
 	setContext(context) {
 		this.context = context || null;
-		// If a mode is active, re-render it with new context
-		if (this.currentMode && this.currentMode !== 'blank') {
-			this.setMode(this.currentMode, this.context);
+		if (this.context && this.context.mediaType && this.context.searchIds) {
+			this.renderContextualUI(this.context);
+		} else {
+			this.resetToBlank();
 		}
 	}
 
@@ -47,79 +47,63 @@ class SidePanel extends ItemView {
 
 		// Toolbar (top)
 		this.toolbarEl = root.createDiv({ cls: 'zoro-panel-toolbar' });
-		this.connectBtn = this.toolbarEl.createEl('button', { text: 'Connect notes', cls: 'zoro-panel-btn' });
-		this.createBtn = this.toolbarEl.createEl('button', { text: 'Create note', cls: 'zoro-panel-btn' });
-		this.blankBtn = this.toolbarEl.createEl('button', { text: 'Home', cls: 'zoro-panel-btn' });
-
-		this.connectBtn.onclick = () => this.setMode('connect', this.context);
-		this.createBtn.onclick = () => this.setMode('create', this.context);
-		this.blankBtn.onclick = () => this.setMode('blank');
+		this.createBtn = this.toolbarEl.createEl('button', { text: '📝', cls: 'zoro-panel-btn' });
+		this.connectBtn = this.toolbarEl.createEl('button', { text: '⛓️', cls: 'zoro-panel-btn' });
 
 		// Content (center)
-		this.modeContainer = root.createDiv({ cls: 'zoro-panel-content' });
+		this.contentEl = root.createDiv({ cls: 'zoro-panel-content' });
 	}
 
-	teardownMode() {
+	showToolbar(show) {
+		if (!this.toolbarEl) return;
+		if (show) this.toolbarEl.removeClass('is-hidden');
+		else this.toolbarEl.addClass('is-hidden');
+	}
+
+	teardownUI() {
 		try {
 			if (typeof this.currentCleanup === 'function') {
 				this.currentCleanup();
 			}
 		} finally {
 			this.currentCleanup = null;
-			if (this.modeContainer) this.modeContainer.empty();
+			if (this.contentEl) this.contentEl.empty();
 		}
 	}
 
-	setMode(mode, context = null) {
-		this.teardownMode();
-		this.currentMode = mode;
-		const ctx = context || this.context || {};
-
-		// Highlight active button
-		[this.connectBtn, this.createBtn, this.blankBtn].forEach(btn => btn && btn.removeClass('is-active'));
-		if (mode === 'connect') this.connectBtn?.addClass('is-active');
-		if (mode === 'create') this.createBtn?.addClass('is-active');
-		if (mode === 'blank') this.blankBtn?.addClass('is-active');
-
-		switch (mode) {
-			case 'connect':
-				this.currentCleanup = this.renderConnectMode(ctx);
-				break;
-			case 'create':
-				this.currentCleanup = this.renderCreateMode(ctx);
-				break;
-			default:
-				this.currentCleanup = this.renderBlankMode();
-		}
-	}
-
-	renderBlankMode() {
-		const c = this.modeContainer.createDiv({ cls: 'zoro-panel-blank' });
+	resetToBlank() {
+		this.teardownUI();
+		this.showToolbar(false);
+		const c = this.contentEl.createDiv({ cls: 'zoro-panel-blank' });
 		c.createEl('h4', { text: 'Zoro Panel' });
-		c.createEl('div', { text: 'Select a mode above to begin.' });
-		return () => {};
+		c.createEl('div', { text: 'Open this panel from a media card to use actions.' });
 	}
 
-	renderConnectMode(ctx) {
-		const container = this.modeContainer;
-		const header = container.createDiv({ cls: 'zoro-panel-section-header' });
-		header.createEl('h4', { text: 'Connected Notes' });
+	renderContextualUI(ctx) {
+		this.teardownUI();
+		this.showToolbar(true);
 
-		// Guard: no context
-		if (!ctx || !ctx.mediaType || !ctx.searchIds) {
-			const info = container.createDiv({ cls: 'zoro-panel-info' });
-			info.createEl('div', { text: 'No context provided.' });
-			info.createEl('div', { text: 'Open the panel from a media card to provide IDs.' });
-			return () => {};
-		}
-
-		// Notes list container
-		const listWrap = container.createDiv({ cls: 'zoro-note-panel-content' });
+		// Hook up actions
+		this.createBtn.onclick = async () => {
+			await this.plugin.connectedNotes.createNewConnectedNote(ctx.searchIds, ctx.mediaType);
+			new Notice('Created connected note');
+			await this.reloadNotesList(ctx);
+		};
+		
+		// Build list area and connect interface (hidden by default)
+		const listWrap = this.contentEl.createDiv({ cls: 'zoro-note-panel-content' });
 		const emptyState = listWrap.createDiv({ cls: 'zoro-note-empty-state' });
 		emptyState.createEl('div', { text: 'Loading…', cls: 'zoro-note-empty-message' });
+		const connectInterface = this.plugin.connectedNotes.renderConnectExistingInterface(this.contentEl, ctx.searchIds, ctx.mediaType);
+		connectInterface.classList.add('zoro-note-hidden');
 
-		// Connect interface (hidden toggle desired). For simplicity, keep visible.
-		const connectInterface = this.plugin.connectedNotes.renderConnectExistingInterface(container, ctx.searchIds, ctx.mediaType);
+		this.connectBtn.onclick = () => {
+			connectInterface.classList.toggle('zoro-note-hidden');
+			if (!connectInterface.classList.contains('zoro-note-hidden')) {
+				const inp = connectInterface.querySelector('.zoro-note-search-input');
+				setTimeout(() => inp?.focus(), 100);
+			}
+		};
 
 		let disposed = false;
 		const load = async () => {
@@ -130,7 +114,6 @@ class SidePanel extends ItemView {
 				const es = listWrap.createDiv({ cls: 'zoro-note-empty-state' });
 				es.createEl('div', { text: 'No notes linked yet', cls: 'zoro-note-empty-message' });
 			} else {
-				// Reuse renderer to build a list region
 				const frag = document.createDocumentFragment();
 				found.forEach(note => {
 					const item = document.createElement('div');
@@ -148,30 +131,16 @@ class SidePanel extends ItemView {
 		};
 		load();
 
-		return () => {
+		this.currentCleanup = () => {
 			disposed = true;
 			connectInterface?.remove?.();
 			listWrap?.remove?.();
 		};
 	}
 
-	renderCreateMode(ctx) {
-		const container = this.modeContainer;
-		container.createEl('h4', { text: 'Create Connected Note' });
-		// Guard: no context
-		if (!ctx || !ctx.mediaType || !ctx.searchIds) {
-			const info = container.createDiv({ cls: 'zoro-panel-info' });
-			info.createEl('div', { text: 'No context provided.' });
-			info.createEl('div', { text: 'Open the panel from a media card to provide IDs.' });
-			return () => {};
-		}
-		const actions = container.createDiv({ cls: 'zoro-panel-actions' });
-		const createBtn = actions.createEl('button', { text: 'Create note', cls: 'zoro-panel-btn' });
-		createBtn.onclick = async () => {
-			await this.plugin.connectedNotes.createNewConnectedNote(ctx.searchIds, ctx.mediaType);
-			new Notice('Created connected note');
-		};
-		return () => {};
+	async reloadNotesList(ctx) {
+		if (!ctx) return;
+		this.setContext(ctx); // simple re-render
 	}
 }
 

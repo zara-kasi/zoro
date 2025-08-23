@@ -7111,7 +7111,10 @@ var Trending = class {
     el.appendChild(this.plugin.render.createListSkeleton(10));
     try {
       const type = (config.mediaType || "ANIME").toLowerCase();
-      const source = config.source || this.plugin.settings.defaultApiSource || "anilist";
+      let source = config.source || this.plugin.settings.defaultApiSource || "anilist";
+      const mt = String(config.mediaType || "ANIME").toUpperCase();
+      if (["MOVIE", "MOVIES", "TV", "SHOW", "SHOWS"].includes(mt)) source = "simkl";
+      if (mt === "MANGA" && (source === "anilist" || source === "simkl")) source = "mal";
       const limit = config.limit || 40;
       const normalizedType = ["movie", "movies", "tv", "show", "shows"].includes(type) ? type.includes("movie") ? "MOVIE" : "TV" : type === "manga" ? "MANGA" : "ANIME";
       const items = await this.plugin.requestQueue.add(
@@ -7508,14 +7511,25 @@ var Processor = class {
     }
   }
   applyConfigDefaults(config) {
+    const mt = String(config.mediaType || "ANIME").toUpperCase();
     if (!config.source) {
-      config.source = this.plugin.settings.defaultApiSource || "anilist";
+      if (mt === "MOVIE" || mt === "MOVIES" || mt === "TV" || mt === "SHOW" || mt === "SHOWS") {
+        config.source = "simkl";
+      } else if (mt === "MANGA") {
+        const def = this.plugin.settings.defaultApiSource || "anilist";
+        config.source = def === "simkl" ? "mal" : def;
+      } else {
+        config.source = this.plugin.settings.defaultApiSource || "anilist";
+      }
     }
     if (config.type === "trending") {
       config.mediaType = config.mediaType || "ANIME";
       config.layout = config.layout || this.plugin.settings.defaultLayout || "card";
       config.limit = config.limit || config.perPage || 40;
-      if (config.mediaType.toUpperCase() === "MANGA" && config.source === "anilist") {
+      const mtUpper = config.mediaType.toUpperCase();
+      if (["MOVIE", "MOVIES", "TV", "SHOW", "SHOWS"].includes(mtUpper)) {
+        config.source = "simkl";
+      } else if (mtUpper === "MANGA" && (config.source === "anilist" || config.source === "simkl")) {
         config.source = "mal";
       }
       return config;

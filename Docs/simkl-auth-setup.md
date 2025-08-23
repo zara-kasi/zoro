@@ -4,6 +4,11 @@ To login, you'll need to create your own **Client ID** and **Client Secret** fro
 
 ---
 
+## 🎥 Watch the Video Guide
+[![Watch the YouTube Short](https://img.youtube.com/vi/GiAPkSijeo8/0.jpg)](https://m.youtube.com/shorts/GiAPkSijeo8)
+
+---
+
 ## 📌 Step-by-Step Instructions
 
 1. **Go to the Simkl Developer Page**  

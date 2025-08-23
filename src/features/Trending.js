@@ -472,7 +472,7 @@ class Trending {
       let source = config.source || this.plugin.settings.defaultApiSource || 'anilist';
       const mt = String(config.mediaType || 'ANIME').toUpperCase();
       if (['MOVIE','MOVIES','TV','SHOW','SHOWS'].includes(mt)) source = 'simkl';
-      if (mt === 'MANGA' && source === 'simkl') source = 'mal';
+      if (mt === 'MANGA' && (source === 'anilist' || source === 'simkl')) source = 'mal';
       const limit = config.limit || 40;
 
       const normalizedType = ['movie','movies','tv','show','shows'].includes(type) ? (type.includes('movie') ? 'MOVIE' : 'TV') : (type === 'manga' ? 'MANGA' : 'ANIME');

@@ -74,7 +74,7 @@ class EmojiIconMapper {
     this._colonRegex = /:([a-z0-9-]+):/gi;
     this._patches = new Map();
     this._patched = false;
-    this.iconSize = opts.iconSize ?? 30;
+    this.iconSize = opts.iconSize ?? 25;
     this.gap = opts.gap ?? 6;
     this._iconStyle = `display:inline-flex;align-items:center;justify-content:center;width:${this.iconSize}px;height:${this.iconSize}px;vertical-align:middle`;
   }

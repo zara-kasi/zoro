@@ -50,7 +50,10 @@ class SidePanel extends ItemView {
 		this.createBtn = this.toolbarEl.createEl('button', { text: '📝', cls: 'zoro-panel-btn' });
 		this.connectBtn = this.toolbarEl.createEl('button', { text: '⛓️', cls: 'zoro-panel-btn' });
 
-		// Content (center)
+		// Search interface container (fixed position below toolbar)
+		this.searchContainerEl = root.createDiv({ cls: 'zoro-panel-search-container' });
+
+		// Content (center - for notes list)
 		this.contentEl = root.createDiv({ cls: 'zoro-panel-content' });
 	}
 
@@ -58,6 +61,12 @@ class SidePanel extends ItemView {
 		if (!this.toolbarEl) return;
 		if (show) this.toolbarEl.removeClass('is-hidden');
 		else this.toolbarEl.addClass('is-hidden');
+	}
+
+	showSearchContainer(show) {
+		if (!this.searchContainerEl) return;
+		if (show) this.searchContainerEl.removeClass('is-hidden');
+		else this.searchContainerEl.addClass('is-hidden');
 	}
 
 	teardownUI() {
@@ -68,12 +77,14 @@ class SidePanel extends ItemView {
 		} finally {
 			this.currentCleanup = null;
 			if (this.contentEl) this.contentEl.empty();
+			if (this.searchContainerEl) this.searchContainerEl.empty();
 		}
 	}
 
 	resetToBlank() {
 		this.teardownUI();
 		this.showToolbar(false);
+		this.showSearchContainer(false);
 		const c = this.contentEl.createDiv({ cls: 'zoro-panel-blank' });
 		c.createEl('h4', { text: 'Zoro Panel' });
 		c.createEl('div', { text: 'Open this panel from a media card to use actions.' });
@@ -82,6 +93,7 @@ class SidePanel extends ItemView {
 	renderContextualUI(ctx) {
 		this.teardownUI();
 		this.showToolbar(true);
+		this.showSearchContainer(false); // Initially hidden
 
 		// Hook up actions
 		this.createBtn.onclick = async () => {
@@ -90,15 +102,22 @@ class SidePanel extends ItemView {
 			await this.reloadNotesList(ctx);
 		};
 		
-		// Build list area and connect interface (hidden by default)
+		// Build list area in content
 		const listWrap = this.contentEl.createDiv({ cls: 'zoro-note-panel-content' });
 		const emptyState = listWrap.createDiv({ cls: 'zoro-note-empty-state' });
 		emptyState.createEl('div', { text: 'Loading…', cls: 'zoro-note-empty-message' });
-		const connectInterface = this.plugin.connectedNotes.renderConnectExistingInterface(this.contentEl, ctx.searchIds, ctx.mediaType);
+		
+		// Build connect interface in the fixed search container
+		const connectInterface = this.plugin.connectedNotes.renderConnectExistingInterface(this.searchContainerEl, ctx.searchIds, ctx.mediaType);
 		connectInterface.classList.add('zoro-note-hidden');
 
 		this.connectBtn.onclick = () => {
+			const isCurrentlyHidden = connectInterface.classList.contains('zoro-note-hidden');
 			connectInterface.classList.toggle('zoro-note-hidden');
+			
+			// Show/hide the search container based on interface visibility
+			this.showSearchContainer(!isCurrentlyHidden);
+			
 			if (!connectInterface.classList.contains('zoro-note-hidden')) {
 				const inp = connectInterface.querySelector('.zoro-note-search-input');
 				setTimeout(() => inp?.focus(), 100);

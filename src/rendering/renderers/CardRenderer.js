@@ -347,113 +347,109 @@ class CardRenderer {
   }
 
   async handleAddClick(e, media, entry, config, addBtn) {
-  e.preventDefault(); e.stopPropagation();
+    e.preventDefault(); e.stopPropagation();
 
-  let entrySource = this.apiHelper.detectSource(entry, config);
-  const entryMediaType = this.apiHelper.detectMediaType(entry, config, media);
+    let entrySource = this.apiHelper.detectSource(entry, config);
+    const entryMediaType = this.apiHelper.detectMediaType(entry, config, media);
 
-  const isTmdbItem = ((entry?._zoroMeta?.source || '').toLowerCase() === 'tmdb') || !!(media?.idTmdb || media?.ids?.tmdb);
-  if (isTmdbItem) {
-    entrySource = 'simkl';
+    const isTmdbItem = ((entry?._zoroMeta?.source || '').toLowerCase() === 'tmdb') || !!(media?.idTmdb || media?.ids?.tmdb);
+    if (isTmdbItem) {
+      entrySource = 'simkl';
+      try {
+        const numericId = Number(media.id) || Number(media.idTmdb) || 0;
+        if (numericId > 0) {
+          this.plugin.cache.set(String(numericId), { media }, { scope: 'mediaData' });
+        }
+      } catch {}
+    }
+
+    if (!this.apiHelper.isAuthenticated(entrySource)) {
+      console.log(`[Zoro] Not authenticated with ${entrySource}`);
+      this.plugin.prompt.createAuthenticationPrompt(entrySource);
+      return;
+    }
+
+    // show spinner
+    addBtn.dataset.loading = 'true';
+    addBtn.innerHTML = DOMHelper.createLoadingSpinner();
+    addBtn.style.pointerEvents = 'none';
+
     try {
-      const numericId = Number(media.id) || Number(media.idTmdb) || 0;
-      if (numericId > 0) {
-        this.plugin.cache.set(String(numericId), { media }, { scope: 'mediaData' });
-      }
-    } catch {}
-  }
+      const typeUpper = String(entryMediaType || '').toUpperCase();
+      const isMovieOrTv = typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper.includes('SHOW');
 
-  if (!this.apiHelper.isAuthenticated(entrySource)) {
-    console.log(`[Zoro] Not authenticated with ${entrySource}`);
-    this.plugin.prompt.createAuthenticationPrompt(entrySource);
-    return;
-  }
+      const updates = { status: 'PLANNING' };
 
-  // show spinner
-  addBtn.dataset.loading = 'true';
-  addBtn.innerHTML = DOMHelper.createLoadingSpinner();
-  addBtn.style.pointerEvents = 'none';
-
-  try {
-    const typeUpper = String(entryMediaType || '').toUpperCase();
-    const isMovieOrTv = typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper.includes('SHOW');
-
-    // Only use TMDb identifiers when the item actually came from TMDb
-    const updates = (entrySource === 'simkl' && isTmdbItem && isMovieOrTv)
-      ? { status: 'PLANNING', score: 0, _zUseTmdbId: true }
-      : { status: 'PLANNING', progress: 0 };
-
-    // For TMDb movie/TV routed to Simkl, call the same update path used by Simkl search
-    // but use the TMDb id instead of Simkl id
-    if (entrySource === 'simkl' && isTmdbItem && isMovieOrTv) {
-      const ids = { tmdb: Number(media.idTmdb || media.id) || undefined, imdb: media.idImdb || undefined };
-      if (typeof this.plugin?.simklApi?.updateMediaListEntryWithIds === 'function') {
-        await this.plugin.simklApi.updateMediaListEntryWithIds(ids, updates, entryMediaType);
+      // For TMDb movie/TV routed to Simkl, call the explicit ID update path
+      if (entrySource === 'simkl' && isTmdbItem && isMovieOrTv) {
+        const ids = { tmdb: Number(media.idTmdb || media.id) || undefined, imdb: media.idImdb || undefined };
+        if (typeof this.plugin?.simklApi?.updateMediaListEntryWithIds === 'function') {
+          await this.plugin.simklApi.updateMediaListEntryWithIds(ids, updates, entryMediaType);
+        } else {
+          const idFallback = Number(media.idTmdb || media.id) || 0;
+          await this.apiHelper.updateMediaListEntry(idFallback, updates, entrySource, entryMediaType);
+        }
       } else {
-        const idFallback = Number(media.idTmdb || media.id) || 0;
-        await this.apiHelper.updateMediaListEntry(idFallback, updates, entrySource, entryMediaType);
+        await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, entryMediaType);
       }
-    } else {
-      await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, entryMediaType);
-    }
 
-    // Success feedback
-    new Notice('✅ Added to planning!', 3000);
-    console.log(`[Zoro] Added ${media.id} to planning via add button`);
+      // Success feedback
+      new Notice('✅ Added to planning!', 3000);
+      console.log(`[Zoro] Added ${media.id} to planning via add button`);
 
-    // ---- STOP SPINNER & SHOW SUCCESS ICON ----
-    addBtn.dataset.loading = 'false';
+      // ---- STOP SPINNER & SHOW SUCCESS ICON ----
+      addBtn.dataset.loading = 'false';
 
-    // remove spinner and all children (this is the key step)
-    if (typeof addBtn.replaceChildren === 'function') {
-      addBtn.replaceChildren();
-    } else {
-      addBtn.innerHTML = '';
-    }
+      // remove spinner and all children (this is the key step)
+      if (typeof addBtn.replaceChildren === 'function') {
+        addBtn.replaceChildren();
+      } else {
+        addBtn.innerHTML = '';
+      }
 
-    // Add success icon via mapper/createEl/fallback
-    const mapper = globalThis.__emojiIconMapper;
-    if (mapper) {
-      const frag = mapper.parseToFragment('📑');
-      if (frag) {
-        addBtn.appendChild(frag);
-      } else if (typeof addBtn.createEl === 'function') {
-        addBtn.createEl('span', { text: '📑' });
+      // Add success icon via mapper/createEl/fallback
+      const mapper = globalThis.__emojiIconMapper;
+      if (mapper) {
+        const frag = mapper.parseToFragment('📑');
+        if (frag) {
+          addBtn.appendChild(frag);
+        } else if (typeof addBtn.createEl === 'function') {
+          addBtn.createEl('span', { text: '📑' });
+        } else {
+          addBtn.textContent = '📑';
+        }
+      } else if (typeof setIcon === 'function') {
+        const span = document.createElement('span');
+        setIcon(span, 'bookmark');
+        addBtn.appendChild(span);
       } else {
         addBtn.textContent = '📑';
       }
-    } else if (typeof setIcon === 'function') {
-      const span = document.createElement('span');
-      setIcon(span, 'bookmark'); // choose appropriate icon name
-      addBtn.appendChild(span);
-    } else {
-      addBtn.textContent = '📑';
+
+      // update classes cleanly
+      addBtn.classList.remove('zoro-add-button-cover');
+      addBtn.classList.add('zoro-add-button-cover');
+
+      // leave pointer events disabled so user can't re-add; change to 'auto' if you want clickable
+      addBtn.style.pointerEvents = 'none';
+
+      // Refresh UI
+      this.parent.refreshActiveViews();
+
+    } catch (error) {
+      console.error('[Zoro] Add failed:', error);
+
+      // Reset button on error
+      addBtn.dataset.loading = 'false';
+      addBtn.innerHTML = '';
+      addBtn.classList.remove('zoro-add-button-cover');
+      addBtn.classList.add('zoro-add-button-cover');
+      addBtn.textContent = 'Add';
+      addBtn.style.pointerEvents = 'auto';
+
+      new Notice(`❌ Failed to add: ${error.message}`, 5000);
     }
-
-    // update classes cleanly
-    addBtn.classList.remove('zoro-add-button-cover');
-    addBtn.classList.add('zoro-add-button-cover');
-
-    // leave pointer events disabled so user can't re-add; change to 'auto' if you want clickable
-    addBtn.style.pointerEvents = 'none';
-
-    // Refresh UI
-    this.parent.refreshActiveViews();
-
-  } catch (error) {
-    console.error('[Zoro] Add failed:', error);
-
-    // Reset button on error
-    addBtn.dataset.loading = 'false';
-    addBtn.innerHTML = '';
-    addBtn.classList.remove('zoro-add-button-cover');
-    addBtn.classList.add('zoro-add-button-cover');
-    addBtn.textContent = 'Add';
-    addBtn.style.pointerEvents = 'auto';
-
-    new Notice(`❌ Failed to add: ${error.message}`, 5000);
   }
-}
 
   async handleEditClick(e, media, entry, config, editBtn) {
     e.preventDefault();

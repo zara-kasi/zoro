@@ -11534,7 +11534,7 @@ var CardRenderer = class {
     try {
       const typeUpper = String(entryMediaType || "").toUpperCase();
       const isMovieOrTv = typeUpper === "MOVIE" || typeUpper === "MOVIES" || typeUpper === "TV" || typeUpper.includes("SHOW");
-      const updates = entrySource === "simkl" && isTmdbItem && isMovieOrTv ? { status: "PLANNING", score: 0, _zUseTmdbId: true } : { status: "PLANNING", progress: 0 };
+      const updates = { status: "PLANNING" };
       if (entrySource === "simkl" && isTmdbItem && isMovieOrTv) {
         const ids = { tmdb: Number(media.idTmdb || media.id) || void 0, imdb: media.idImdb || void 0 };
         if (typeof this.plugin?.simklApi?.updateMediaListEntryWithIds === "function") {

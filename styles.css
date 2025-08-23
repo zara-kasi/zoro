@@ -2950,3 +2950,17 @@ body.theme-light .zoro-heart.favorited::before {
   padding-left: 40px !important; /* Space for icon */
   width: 100%;
 }
+
+.zoro-panel-search-container {
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding: 8px;
+}
+
+.zoro-panel-search-container.is-hidden {
+  display: none;
+}
+
+.zoro-panel-content {
+  flex: 1;
+  overflow-y: auto;
+}

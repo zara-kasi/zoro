@@ -11512,7 +11512,7 @@ var CardRenderer = class {
     e.stopPropagation();
     let entrySource = this.apiHelper.detectSource(entry, config);
     const entryMediaType = this.apiHelper.detectMediaType(entry, config, media);
-    const isTmdbItem = (entry?._zoroMeta?.source || "").toLowerCase() === "tmdb";
+    const isTmdbItem = (entry?._zoroMeta?.source || "").toLowerCase() === "tmdb" || !!(media?.idTmdb || media?.ids?.tmdb);
     if (isTmdbItem) {
       entrySource = "simkl";
       try {

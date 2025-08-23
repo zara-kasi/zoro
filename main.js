@@ -7396,7 +7396,8 @@ var Processor = class {
             this.plugin.render.renderSearchResults(el, data, {
               layout: config.layout || "card",
               mediaType: config.mediaType || "ANIME",
-              source: config.source
+              source: config.source,
+              type: "trending"
             });
           } else if (data && data.isTrendingOperation) {
             console.log("[Processor] Using fallback trending render method");
@@ -11537,8 +11538,13 @@ var CardRenderer = class {
       const statusBadge = this.createStatusBadge(entry, config);
       details.appendChild(statusBadge);
     }
-    const connectedNotesBtn = this.plugin.connectedNotes.createConnectedNotesButton(media, entry, config);
-    details.appendChild(connectedNotesBtn);
+    const mt = String(config?.mediaType || "").toUpperCase();
+    const isMovieOrTv = mt === "MOVIE" || mt === "MOVIES" || mt === "TV" || mt === "SHOW" || mt === "SHOWS";
+    const isTrending = String(config?.type || "").toLowerCase() === "trending";
+    if (!(isTrending && isMovieOrTv)) {
+      const connectedNotesBtn = this.plugin.connectedNotes.createConnectedNotesButton(media, entry, config);
+      details.appendChild(connectedNotesBtn);
+    }
     return details;
   }
   createStatusBadge(entry, config) {

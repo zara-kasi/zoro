@@ -275,9 +275,14 @@ class CardRenderer {
       details.appendChild(statusBadge);
     }
 
-    // CONNECTED NOTES BUTTON - ADD THIS
-    const connectedNotesBtn = this.plugin.connectedNotes.createConnectedNotesButton(media, entry, config);
-    details.appendChild(connectedNotesBtn);
+    // CONNECTED NOTES BUTTON - hide for trending movies/TV
+    const mt = String(config?.mediaType || '').toUpperCase();
+    const isMovieOrTv = mt === 'MOVIE' || mt === 'MOVIES' || mt === 'TV' || mt === 'SHOW' || mt === 'SHOWS';
+    const isTrending = String(config?.type || '').toLowerCase() === 'trending';
+    if (!(isTrending && isMovieOrTv)) {
+      const connectedNotesBtn = this.plugin.connectedNotes.createConnectedNotesButton(media, entry, config);
+      details.appendChild(connectedNotesBtn);
+    }
 
     return details;
   }

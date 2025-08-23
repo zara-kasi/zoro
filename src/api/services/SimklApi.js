@@ -1453,17 +1453,20 @@ getSimklMediaType(mediaType) {
         // Enforce via ratings if score not provided
         if (updates.score === undefined || updates.score === null) {
           const statusMapped = this.mapAniListStatusToSimkl(updates.status);
-          const statusToRating = { watching: 8, completed: 9, hold: 6, dropped: 3, plantowatch: 1 };
-          const derived = statusToRating[statusMapped];
-          if (derived) {
-            const ratingsPayload = this.buildUpdatePayloadFromIdentifiers(identifiers, { score: derived }, mediaType);
-            await this.makeRequest({
-              url: `${this.baseUrl}/sync/ratings`,
-              method: 'POST',
-              headers: this.getHeaders({ type: 'update' }),
-              body: JSON.stringify(ratingsPayload),
-              priority: 'high'
-            });
+          // Do not send ratings for planning; ratings can imply "seen" on Simkl
+          if (statusMapped && statusMapped !== 'plantowatch') {
+            const statusToRating = { watching: 8, completed: 9, hold: 6, dropped: 3, plantowatch: 1 };
+            const derived = statusToRating[statusMapped];
+            if (derived) {
+              const ratingsPayload = this.buildUpdatePayloadFromIdentifiers(identifiers, { score: derived }, mediaType);
+              await this.makeRequest({
+                url: `${this.baseUrl}/sync/ratings`,
+                method: 'POST',
+                headers: this.getHeaders({ type: 'update' }),
+                body: JSON.stringify(ratingsPayload),
+                priority: 'high'
+              });
+            }
           }
         }
       }
@@ -1540,18 +1543,21 @@ async executeUpdate(mediaId, updates, mediaType) {
     // Enforce status via ratings if no explicit score was provided  
     if (updates.score === undefined || updates.score === null) {  
       const statusMapped = this.mapAniListStatusToSimkl(updates.status);  
-      const statusToRating = { watching: 8, completed: 9, hold: 6, dropped: 3, plantowatch: 1 };  
-      const derived = statusToRating[statusMapped];  
-      if (derived) {  
-        const ratingsPayload = this.buildUpdatePayload(normalizedId, { score: derived }, mediaType);  
-        console.log('[Simkl][Update] derived ratings payload for status', ratingsPayload);  
-        await this.makeRequest({  
-          url: `${this.baseUrl}/sync/ratings`,  
-          method: 'POST',  
-          headers: this.getHeaders({ type: 'update' }),  
-          body: JSON.stringify(ratingsPayload),  
-          priority: 'high'  
-        });  
+      // Do not send ratings for planning; ratings can imply "seen" on Simkl
+      if (statusMapped && statusMapped !== 'plantowatch') {  
+        const statusToRating = { watching: 8, completed: 9, hold: 6, dropped: 3, plantowatch: 1 };  
+        const derived = statusToRating[statusMapped];  
+        if (derived) {  
+          const ratingsPayload = this.buildUpdatePayload(normalizedId, { score: derived }, mediaType);  
+          console.log('[Simkl][Update] derived ratings payload for status', ratingsPayload);  
+          await this.makeRequest({  
+            url: `${this.baseUrl}/sync/ratings`,  
+            method: 'POST',  
+            headers: this.getHeaders({ type: 'update' }),  
+            body: JSON.stringify(ratingsPayload),  
+            priority: 'high'  
+          });  
+        }  
       }  
     }  
     // If marking a show as completed without progress, push remaining episodes to history  

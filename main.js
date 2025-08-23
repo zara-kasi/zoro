@@ -4733,17 +4733,19 @@ var SimklApi = class {
         });
         if (updates.score === void 0 || updates.score === null) {
           const statusMapped = this.mapAniListStatusToSimkl(updates.status);
-          const statusToRating = { watching: 8, completed: 9, hold: 6, dropped: 3, plantowatch: 1 };
-          const derived = statusToRating[statusMapped];
-          if (derived) {
-            const ratingsPayload = this.buildUpdatePayloadFromIdentifiers(identifiers, { score: derived }, mediaType);
-            await this.makeRequest({
-              url: `${this.baseUrl}/sync/ratings`,
-              method: "POST",
-              headers: this.getHeaders({ type: "update" }),
-              body: JSON.stringify(ratingsPayload),
-              priority: "high"
-            });
+          if (statusMapped && statusMapped !== "plantowatch") {
+            const statusToRating = { watching: 8, completed: 9, hold: 6, dropped: 3, plantowatch: 1 };
+            const derived = statusToRating[statusMapped];
+            if (derived) {
+              const ratingsPayload = this.buildUpdatePayloadFromIdentifiers(identifiers, { score: derived }, mediaType);
+              await this.makeRequest({
+                url: `${this.baseUrl}/sync/ratings`,
+                method: "POST",
+                headers: this.getHeaders({ type: "update" }),
+                body: JSON.stringify(ratingsPayload),
+                priority: "high"
+              });
+            }
           }
         }
       }
@@ -4807,18 +4809,20 @@ var SimklApi = class {
       }
       if (updates.score === void 0 || updates.score === null) {
         const statusMapped = this.mapAniListStatusToSimkl(updates.status);
-        const statusToRating = { watching: 8, completed: 9, hold: 6, dropped: 3, plantowatch: 1 };
-        const derived = statusToRating[statusMapped];
-        if (derived) {
-          const ratingsPayload = this.buildUpdatePayload(normalizedId, { score: derived }, mediaType);
-          console.log("[Simkl][Update] derived ratings payload for status", ratingsPayload);
-          await this.makeRequest({
-            url: `${this.baseUrl}/sync/ratings`,
-            method: "POST",
-            headers: this.getHeaders({ type: "update" }),
-            body: JSON.stringify(ratingsPayload),
-            priority: "high"
-          });
+        if (statusMapped && statusMapped !== "plantowatch") {
+          const statusToRating = { watching: 8, completed: 9, hold: 6, dropped: 3, plantowatch: 1 };
+          const derived = statusToRating[statusMapped];
+          if (derived) {
+            const ratingsPayload = this.buildUpdatePayload(normalizedId, { score: derived }, mediaType);
+            console.log("[Simkl][Update] derived ratings payload for status", ratingsPayload);
+            await this.makeRequest({
+              url: `${this.baseUrl}/sync/ratings`,
+              method: "POST",
+              headers: this.getHeaders({ type: "update" }),
+              body: JSON.stringify(ratingsPayload),
+              priority: "high"
+            });
+          }
         }
       }
       if (!isMovie && String(updates.status).toUpperCase() === "COMPLETED" && updates.progress === void 0) {

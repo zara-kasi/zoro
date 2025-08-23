@@ -3768,6 +3768,13 @@ var SimklApi = class {
         return cached;
       }
     }
+    if (normalizedConfig.type === "single" && normalizedConfig.externalIds) {
+      const transformed = await this.fetchSingleByExternalIds(normalizedConfig.externalIds, normalizedConfig.mediaType);
+      if (transformed && !normalizedConfig.nocache) {
+        this.cache.set(cacheKey, transformed, { scope: cacheScope });
+      }
+      return transformed;
+    }
     if (this.requiresAuth(normalizedConfig.type)) {
       await this.ensureValidToken();
     }
@@ -5622,6 +5629,37 @@ var SimklApi = class {
   async getMediaType(mediaId) {
     return "anime";
   }
+  // Resolve single media by external identifiers (TMDb/IMDb) using public endpoints
+  async fetchSingleByExternalIds(externalIds, mediaType) {
+    try {
+      const params = {};
+      const tmdb = externalIds?.tmdb || externalIds?.tmdb_id || null;
+      const imdb = externalIds?.imdb || externalIds?.imdb_id || null;
+      if (tmdb) params.tmdb = String(tmdb);
+      if (imdb) params.imdb = String(imdb);
+      if (!params.tmdb && !params.imdb) {
+        return { MediaList: null };
+      }
+      if (this.plugin.settings.simklClientId) params.client_id = this.plugin.settings.simklClientId;
+      const url = this.buildFullUrl(`${this.baseUrl}/search/id`, params);
+      const headers = this.getHeaders({ type: "search" });
+      const raw = await this.makeRequest({ url, method: "GET", headers, priority: "normal" });
+      let node = raw;
+      if (Array.isArray(raw)) {
+        const pick = raw[0] || null;
+        node = pick?.movie || pick?.show || pick || null;
+      } else {
+        node = raw?.movie || raw?.show || raw || null;
+      }
+      if (!node) return { MediaList: null };
+      const transformedMedia = this.transformMedia(node, mediaType);
+      const entry = { id: null, status: null, score: null, progress: 0, media: transformedMedia };
+      return { MediaList: entry };
+    } catch (e) {
+      console.warn("[Simkl] fetchSingleByExternalIds failed:", e?.message || e);
+      return { MediaList: null };
+    }
+  }
 };
 
 // src/auth/Authentication.js
@@ -7306,8 +7344,8 @@ var Processor = class {
     return { isSearchInterface: true, config };
   }
   async handleSingleOperation(api, config) {
-    if (!config.mediaId) {
-      throw new Error("\u274C Media ID is required for single media view");
+    if (!config.mediaId && !config.externalIds) {
+      throw new Error("\u274C Media ID or externalIds is required for single media view");
     }
     if (config.source === "mal") {
       const response = await api.fetchMALData({ ...config, type: "item" });
@@ -12884,16 +12922,20 @@ var ConnectedNotes = class {
       }
       ids.anilist_id = media.id;
     } else if (source === "simkl") {
-      ids.simkl_id = media.id;
       const mediaType = this.plugin.apiHelper ? this.plugin.apiHelper.detectMediaType(entry, {}, media) : entry?._zoroMeta?.mediaType || "ANIME";
+      const isMovieOrTv = mediaType !== "ANIME";
+      const isTmdbSourced = (entry?._zoroMeta?.source || "").toLowerCase() === "tmdb" || !!(media?.idTmdb || media?.ids?.tmdb);
+      if (!isMovieOrTv || !isTmdbSourced) {
+        ids.simkl_id = media.id;
+      }
       if (mediaType === "ANIME" && media.idMal) {
         ids.mal_id = media.idMal;
       }
-      if (mediaType !== "ANIME" && media.idImdb) {
+      if (isMovieOrTv && media.idImdb) {
         ids.imdb_id = media.idImdb;
       }
-      if (mediaType !== "ANIME" && media.idTmdb) {
-        ids.tmdb_id = media.idTmdb;
+      if (isMovieOrTv && (media.idTmdb || media.id)) {
+        ids.tmdb_id = media.idTmdb || media.id;
       }
     } else if (source === "tmdb") {
       if (media.idTmdb || media.id) ids.tmdb_id = media.idTmdb || media.id;
@@ -13083,15 +13125,21 @@ var ConnectedNotes = class {
     if (src === "tmdb" && (typeUpper === "MOVIE" || typeUpper === "MOVIES" || typeUpper === "TV" || typeUpper === "SHOW" || typeUpper === "SHOWS")) {
       return "";
     }
-    const codeBlockLines = [
-      "```zoro",
-      "type: single",
-      `source: ${this.currentSource}`,
-      `mediaType: ${this.currentMediaType}`,
-      `mediaId: ${this.currentMedia.id}`,
-      "```"
-    ];
-    return codeBlockLines.join("\n");
+    const lines = ["```zoro", "type: single"];
+    const isSimkl = src === "simkl";
+    const isMovieOrTv = typeUpper === "MOVIE" || typeUpper === "MOVIES" || typeUpper === "TV" || typeUpper === "SHOW" || typeUpper === "SHOWS";
+    const isTmdbSourced = !!(this.currentMedia?.idTmdb || this.currentMedia?.ids?.tmdb || (this.currentMedia?._zoroMeta?.source || "").toLowerCase() === "tmdb");
+    lines.push(`source: ${this.currentSource}`);
+    lines.push(`mediaType: ${this.currentMediaType}`);
+    if (isSimkl && isMovieOrTv && isTmdbSourced) {
+      const tmdb = this.currentMedia.idTmdb || this.currentMedia.ids?.tmdb || this.currentMedia.id || null;
+      const imdb = this.currentMedia.idImdb || this.currentMedia.ids?.imdb || null;
+      if (tmdb) lines.push(`externalIds: tmdb=${tmdb}${imdb ? `, imdb=${imdb}` : ""}`);
+    } else {
+      lines.push(`mediaId: ${this.currentMedia.id}`);
+    }
+    lines.push("```");
+    return lines.join("\n");
   }
   /**
    * Add metadata to existing note

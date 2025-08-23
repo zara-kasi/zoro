@@ -166,8 +166,8 @@ async handleSearchOperation(api, config) {
 }
 
 async handleSingleOperation(api, config) {
-  if (!config.mediaId) {
-    throw new Error('❌ Media ID is required for single media view');
+  if (!config.mediaId && !config.externalIds) {
+    throw new Error('❌ Media ID or externalIds is required for single media view');
   }
 
   if (config.source === 'mal') {

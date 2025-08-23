@@ -88,6 +88,15 @@ class SimklApi {
       }
     }
 
+    // Public shortcut: allow single fetch by external IDs without auth
+    if (normalizedConfig.type === 'single' && normalizedConfig.externalIds) {
+      const transformed = await this.fetchSingleByExternalIds(normalizedConfig.externalIds, normalizedConfig.mediaType);
+      if (transformed && !normalizedConfig.nocache) {
+        this.cache.set(cacheKey, transformed, { scope: cacheScope });
+      }
+      return transformed;
+    }
+    
     // Ensure authentication for user-specific requests
     if (this.requiresAuth(normalizedConfig.type)) {
       await this.ensureValidToken();
@@ -2471,6 +2480,37 @@ async removeMediaListEntry(mediaId, mediaType) {
     return 'anime'; // Default fallback
   }
 
+  // Resolve single media by external identifiers (TMDb/IMDb) using public endpoints
+  async fetchSingleByExternalIds(externalIds, mediaType) {
+    try {
+      const params = {};
+      const tmdb = externalIds?.tmdb || externalIds?.tmdb_id || null;
+      const imdb = externalIds?.imdb || externalIds?.imdb_id || null;
+      if (tmdb) params.tmdb = String(tmdb);
+      if (imdb) params.imdb = String(imdb);
+      if (!params.tmdb && !params.imdb) {
+        return { MediaList: null };
+      }
+      if (this.plugin.settings.simklClientId) params.client_id = this.plugin.settings.simklClientId;
+      const url = this.buildFullUrl(`${this.baseUrl}/search/id`, params);
+      const headers = this.getHeaders({ type: 'search' });
+      const raw = await this.makeRequest({ url, method: 'GET', headers, priority: 'normal' });
+      let node = raw;
+      if (Array.isArray(raw)) {
+        const pick = raw[0] || null;
+        node = pick?.movie || pick?.show || pick || null;
+      } else {
+        node = raw?.movie || raw?.show || raw || null;
+      }
+      if (!node) return { MediaList: null };
+      const transformedMedia = this.transformMedia(node, mediaType);
+      const entry = { id: null, status: null, score: null, progress: 0, media: transformedMedia };
+      return { MediaList: entry };
+    } catch (e) {
+      console.warn('[Simkl] fetchSingleByExternalIds failed:', e?.message || e);
+      return { MediaList: null };
+    }
+  }
 
 }
 

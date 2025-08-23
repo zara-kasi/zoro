@@ -446,33 +446,12 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
 
 
   /**
-   * Show connected notes in a single dedicated side panel
+   * Show connected notes in the permanent SidePanel
    */
   async showConnectedNotes(searchIds, mediaType) {
     try {
-      // Search for connected notes
-      const connectedNotes = await this.searchConnectedNotes(searchIds, mediaType);
-
-      // Look for existing Zoro panel first
-      let zoroLeaf = null;
-      this.app.workspace.iterateAllLeaves((leaf) => {
-        if (leaf.view.titleEl && leaf.view.titleEl.textContent === 'Zoro') {
-          zoroLeaf = leaf;
-          return false; // Stop iteration
-        }
-      });
-
-      // If no existing Zoro panel, create new one
-      if (!zoroLeaf) {
-        zoroLeaf = this.app.workspace.getRightLeaf(false);
-      }
-
-      // Render content and set title
-      this.renderConnectedNotesInView(zoroLeaf.view, connectedNotes, searchIds, mediaType);
-      
-      // Ensure the side panel is visible
-      this.app.workspace.revealLeaf(zoroLeaf);
-      
+      const context = { searchIds, mediaType };
+      await this.openSidePanelWithContext(context);
     } catch (error) {
       console.error('[ConnectedNotes] Error showing connected notes:', error);
       new Notice('Failed to load connected notes');

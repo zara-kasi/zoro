@@ -13186,23 +13186,12 @@ var ConnectedNotes = class {
     }
   }
   /**
-   * Show connected notes in a single dedicated side panel
+   * Show connected notes in the permanent SidePanel
    */
   async showConnectedNotes(searchIds, mediaType) {
     try {
-      const connectedNotes = await this.searchConnectedNotes(searchIds, mediaType);
-      let zoroLeaf = null;
-      this.app.workspace.iterateAllLeaves((leaf) => {
-        if (leaf.view.titleEl && leaf.view.titleEl.textContent === "Zoro") {
-          zoroLeaf = leaf;
-          return false;
-        }
-      });
-      if (!zoroLeaf) {
-        zoroLeaf = this.app.workspace.getRightLeaf(false);
-      }
-      this.renderConnectedNotesInView(zoroLeaf.view, connectedNotes, searchIds, mediaType);
-      this.app.workspace.revealLeaf(zoroLeaf);
+      const context = { searchIds, mediaType };
+      await this.openSidePanelWithContext(context);
     } catch (error) {
       console.error("[ConnectedNotes] Error showing connected notes:", error);
       new import_obsidian29.Notice("Failed to load connected notes");

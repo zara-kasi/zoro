@@ -118,26 +118,24 @@ class SimklRequest {
   }
 
   getRetryDelay(attempt) {
-    const baseDelay = 1500; // Slightly longer than AniList
-    const maxDelay = 12000;
+    const baseDelay = 600; // faster base for Simkl
+    const maxDelay = 6000;
     
     const timeSinceLastRequest = Date.now() - this.authState.lastRequest;
-    if (timeSinceLastRequest < 1000) {
-      return Math.max(baseDelay, 2000);
+    if (timeSinceLastRequest < 500) {
+      return Math.max(baseDelay, 800);
     }
     
-    // Longer delays for auth failures
     if (this.authState.consecutiveAuthFailures > 0) {
-      return baseDelay * (1 + this.authState.consecutiveAuthFailures * 0.7);
+      return baseDelay * (1 + this.authState.consecutiveAuthFailures * 0.5);
     }
     
-    // Rate limit specific delays
     if (this.lastErrorWasRateLimit) {
-      return Math.max(baseDelay * 2, 5000);
+      return Math.max(baseDelay * 2, 3000);
     }
     
     const exponentialDelay = baseDelay * Math.pow(2, attempt - 1);
-    const jitter = Math.random() * 1500;
+    const jitter = Math.random() * 800;
     return Math.min(exponentialDelay + jitter, maxDelay);
   }
 

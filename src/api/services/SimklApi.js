@@ -88,6 +88,7 @@ class SimklApi {
       }
     }
 
+
     // Ensure authentication for user-specific requests
     if (this.requiresAuth(normalizedConfig.type)) {
       await this.ensureValidToken();
@@ -273,7 +274,9 @@ getSimklMediaType(mediaType) {
     try {
       const response = await this.requestQueue.add(requestFn, {
         priority: requestParams.priority || 'normal',
-        timeout: 30000
+        timeout: 25000,
+        service: 'simkl',
+        metadata: { type: requestParams.type || 'update' }
       });
 
 
@@ -1447,23 +1450,27 @@ getSimklMediaType(mediaType) {
           method: 'POST',
           headers: this.getHeaders({ type: 'update' }),
           body: JSON.stringify(payload),
-          priority: 'high'
+          priority: 'high',
+          type: 'update'
         });
 
         // Enforce via ratings if score not provided
         if (updates.score === undefined || updates.score === null) {
           const statusMapped = this.mapAniListStatusToSimkl(updates.status);
-          const statusToRating = { watching: 8, completed: 9, hold: 6, dropped: 3, plantowatch: 1 };
-          const derived = statusToRating[statusMapped];
-          if (derived) {
-            const ratingsPayload = this.buildUpdatePayloadFromIdentifiers(identifiers, { score: derived }, mediaType);
-            await this.makeRequest({
-              url: `${this.baseUrl}/sync/ratings`,
-              method: 'POST',
-              headers: this.getHeaders({ type: 'update' }),
-              body: JSON.stringify(ratingsPayload),
-              priority: 'high'
-            });
+          // Do not send ratings for planning; ratings can imply "seen" on Simkl
+          if (statusMapped && statusMapped !== 'plantowatch') {
+            const statusToRating = { watching: 8, completed: 9, hold: 6, dropped: 3, plantowatch: 1 };
+            const derived = statusToRating[statusMapped];
+            if (derived) {
+              const ratingsPayload = this.buildUpdatePayloadFromIdentifiers(identifiers, { score: derived }, mediaType);
+              await this.makeRequest({
+                url: `${this.baseUrl}/sync/ratings`,
+                method: 'POST',
+                headers: this.getHeaders({ type: 'update' }),
+                body: JSON.stringify(ratingsPayload),
+                priority: 'high'
+              });
+            }
           }
         }
       }
@@ -1540,18 +1547,21 @@ async executeUpdate(mediaId, updates, mediaType) {
     // Enforce status via ratings if no explicit score was provided  
     if (updates.score === undefined || updates.score === null) {  
       const statusMapped = this.mapAniListStatusToSimkl(updates.status);  
-      const statusToRating = { watching: 8, completed: 9, hold: 6, dropped: 3, plantowatch: 1 };  
-      const derived = statusToRating[statusMapped];  
-      if (derived) {  
-        const ratingsPayload = this.buildUpdatePayload(normalizedId, { score: derived }, mediaType);  
-        console.log('[Simkl][Update] derived ratings payload for status', ratingsPayload);  
-        await this.makeRequest({  
-          url: `${this.baseUrl}/sync/ratings`,  
-          method: 'POST',  
-          headers: this.getHeaders({ type: 'update' }),  
-          body: JSON.stringify(ratingsPayload),  
-          priority: 'high'  
-        });  
+      // Do not send ratings for planning; ratings can imply "seen" on Simkl
+      if (statusMapped && statusMapped !== 'plantowatch') {  
+        const statusToRating = { watching: 8, completed: 9, hold: 6, dropped: 3, plantowatch: 1 };  
+        const derived = statusToRating[statusMapped];  
+        if (derived) {  
+          const ratingsPayload = this.buildUpdatePayload(normalizedId, { score: derived }, mediaType);  
+          console.log('[Simkl][Update] derived ratings payload for status', ratingsPayload);  
+          await this.makeRequest({  
+            url: `${this.baseUrl}/sync/ratings`,  
+            method: 'POST',  
+            headers: this.getHeaders({ type: 'update' }),  
+            body: JSON.stringify(ratingsPayload),  
+            priority: 'high'  
+          });  
+        }  
       }  
     }  
     // If marking a show as completed without progress, push remaining episodes to history  
@@ -1984,7 +1994,7 @@ async removeMediaListEntry(mediaId, mediaType) {
         body: JSON.stringify(body)
       });
 
-      const response = await this.requestQueue.add(requestFn, { priority: 'high' });
+      const response = await this.requestQueue.add(requestFn, { priority: 'high', service: 'simkl', metadata: { type: 'auth' } });
       
       if (!response?.json || typeof response.json !== 'object') {
         throw new Error('Invalid auth response from Simkl');
@@ -2461,6 +2471,7 @@ async removeMediaListEntry(mediaId, mediaType) {
     // we'll need to search across different types or use context
     return 'anime'; // Default fallback
   }
+
 
 
 }

@@ -2,6 +2,7 @@
 import { AniListRequest } from './AniListRequest.js';
 import { MALRequest } from './MALRequest.js';
 import { SimklRequest } from './SimklRequest.js';
+import { TMDbRequest } from './TMDbRequest.js';
 
 class RequestQueue {
   constructor(plugin) {
@@ -29,10 +30,10 @@ class RequestQueue {
         maxAuthRetries: 2
       },
       simklConfig: {
-        baseDelay: 1200,
-        maxConcurrent: 2,
-        rateLimitBuffer: 0.75,
-        authRetryDelay: 2500,
+        baseDelay: 500,
+        maxConcurrent: 3,
+        rateLimitBuffer: 0.9,
+        authRetryDelay: 2000,
         maxAuthRetries: 3
       }
     };
@@ -48,7 +49,8 @@ class RequestQueue {
     this.services = {
       anilist: new AniListRequest(this.config),
       mal: new MALRequest(this.config, plugin),
-      simkl: new SimklRequest(this.config, plugin)
+      simkl: new SimklRequest(this.config, plugin),
+      tmdb: new TMDbRequest(this.config)
     };
     
     this.metrics = {

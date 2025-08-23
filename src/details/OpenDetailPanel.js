@@ -13,6 +13,21 @@ class OpenDetailPanel {
 
 	async showPanel(media, entry = null, triggerElement) {
 		this.closePanel();
+		// If this is a TMDb trending MOVIE/TV item, resolve Simkl details first before rendering
+		try {
+			const mediaKind = media?.type || media?.format;
+			const hasTmdbId = (Number(media?.idTmdb) > 0) || (Number(media?.ids?.tmdb) > 0) || (Number(media?.id) > 0 && (entry?._zoroMeta?.source || '').toLowerCase() === 'tmdb');
+			const isMovieOrTv = mediaKind === 'MOVIE' || mediaKind === 'TV';
+			if (hasTmdbId && isMovieOrTv) {
+				const tmdbId = Number(media?.idTmdb || media?.ids?.tmdb || media?.id);
+				const imdbId = media?.idImdb || media?.ids?.imdb || null;
+				const resolved = await this.dataSource.resolveSimklIdFromExternal(tmdbId, imdbId, mediaKind);
+				if (resolved) {
+					// Enrich media with resolved Simkl id for downstream links
+					media = { ...media, ids: { ...(media.ids || {}), simkl: resolved } };
+				}
+			}
+		} catch {}
 		const panel = this.renderer.createPanel(media, entry);
 		this.currentPanel = panel;
 		this.renderer.positionPanel(panel, triggerElement);

@@ -1158,6 +1158,66 @@ var SimklRequest = class {
   }
 };
 
+// src/api/requests/TMDbRequest.js
+var TMDbRequest = class {
+  constructor(config) {
+    this.config = config;
+    this.rateLimiter = {
+      requests: [],
+      windowMs: 6e4,
+      maxRequests: 100,
+      remaining: 100
+    };
+    this.metrics = {
+      requests: 0,
+      errors: 0,
+      avgTime: 0
+    };
+  }
+  checkRateLimit() {
+    const now = Date.now();
+    this.rateLimiter.requests = this.rateLimiter.requests.filter(
+      (time) => now - time < this.rateLimiter.windowMs
+    );
+    const buffer = (this.config?.tmdbConfig?.rateLimitBuffer ?? this.config.rateLimitBuffer) || 0.9;
+    const maxAllowed = Math.floor(this.rateLimiter.maxRequests * buffer);
+    if (this.rateLimiter.requests.length >= maxAllowed) {
+      const oldestRequest = Math.min(...this.rateLimiter.requests);
+      const waitTime = this.rateLimiter.windowMs - (now - oldestRequest);
+      return { allowed: false, waitTime: Math.max(waitTime, 500) };
+    }
+    this.rateLimiter.requests.push(now);
+    return { allowed: true, waitTime: 0 };
+  }
+  shouldRetry(error, attempt, maxAttempts) {
+    if (attempt >= maxAttempts) return false;
+    const msg = String(error?.message || "").toLowerCase();
+    if (msg.includes("timeout") || msg.includes("network")) return true;
+    if (msg.includes("429") || msg.includes("rate limit")) return attempt < 2;
+    if (error.status >= 500 && error.status < 600) return true;
+    if (error.status >= 400 && error.status < 500) return false;
+    return true;
+  }
+  getRetryDelay(attempt) {
+    const baseDelay = 500;
+    const maxDelay = 8e3;
+    const exponentialDelay = baseDelay * Math.pow(2, attempt - 1);
+    const jitter = Math.random() * 800;
+    return Math.min(exponentialDelay + jitter, maxDelay);
+  }
+  updateMetrics(processingTime, isError = false) {
+    this.metrics.requests++;
+    if (isError) {
+      this.metrics.errors++;
+    } else {
+      this.metrics.avgTime = (this.metrics.avgTime + processingTime) / 2;
+    }
+  }
+  getUtilization() {
+    return `${(this.rateLimiter.requests.length / this.rateLimiter.maxRequests * 100).toFixed(1)}%`;
+  }
+};
+
 // src/api/requests/RequestQueue.js
 var RequestQueue = class {
   constructor(plugin) {
@@ -1200,7 +1260,8 @@ var RequestQueue = class {
     this.services = {
       anilist: new AniListRequest(this.config),
       mal: new MALRequest(this.config, plugin),
-      simkl: new SimklRequest(this.config, plugin)
+      simkl: new SimklRequest(this.config, plugin),
+      tmdb: new TMDbRequest(this.config)
     };
     this.metrics = {
       requestsQueued: 0,
@@ -6785,16 +6846,12 @@ var Trending = class {
     try {
       for (let page = 1; page <= pages; page++) {
         const url = `https://api.themoviedb.org/3/${endpoint}?api_key=${tmdbApiKey}&page=${page}`;
-        const response = await fetch(url, {
-          headers: {
-            "Accept": "application/json",
-            "Content-Type": "application/json"
-          }
-        });
-        if (!response.ok) {
-          const errorText = await response.text();
+        const requestFn = () => fetch(url, { headers: { "Accept": "application/json", "Content-Type": "application/json" } });
+        const response = await this.plugin.requestQueue.add(requestFn, { priority: "normal", service: "tmdb", metadata: { type: "trending" } });
+        if (!response || !response.ok) {
+          const errorText = response ? await response.text() : "No response";
           console.error("[Trending] TMDb error response:", errorText);
-          throw new Error(`TMDb API error: ${response.status} - ${errorText}`);
+          throw new Error(`TMDb API error: ${response ? response.status : "NO-RESP"} - ${errorText}`);
         }
         const data = await response.json();
         if (!data.results || !Array.isArray(data.results)) {
@@ -6807,7 +6864,11 @@ var Trending = class {
       const mediaList = allResults.slice(0, limit).map((item) => this.transformTMDbMedia(item, mediaType)).filter(Boolean);
       try {
         const idsToFetch = mediaList.map((m) => m.idTmdb).filter(Boolean).slice(0, 20);
-        const fetches = idsToFetch.map((id) => fetch(`https://api.themoviedb.org/3/${typeUpper.includes("MOVIE") ? "movie" : "tv"}/${id}/external_ids?api_key=${tmdbApiKey}`).then((r) => r.ok ? r.json() : null).catch(() => null));
+        const fetches = idsToFetch.map((id) => {
+          const url = `https://api.themoviedb.org/3/${typeUpper.includes("MOVIE") ? "movie" : "tv"}/${id}/external_ids?api_key=${tmdbApiKey}`;
+          const requestFn = () => fetch(url);
+          return this.plugin.requestQueue.add(requestFn, { priority: "low", service: "tmdb", metadata: { type: "external_ids" } }).then((r) => r && r.ok ? r.json() : null).catch(() => null);
+        });
         const results = await Promise.all(fetches);
         const tmdbToImdb = /* @__PURE__ */ new Map();
         results.forEach((ext, idx) => {

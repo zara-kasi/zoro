@@ -2,6 +2,7 @@
 import { AniListRequest } from './AniListRequest.js';
 import { MALRequest } from './MALRequest.js';
 import { SimklRequest } from './SimklRequest.js';
+import { TMDbRequest } from './TMDbRequest.js';
 
 class RequestQueue {
   constructor(plugin) {
@@ -48,7 +49,8 @@ class RequestQueue {
     this.services = {
       anilist: new AniListRequest(this.config),
       mal: new MALRequest(this.config, plugin),
-      simkl: new SimklRequest(this.config, plugin)
+      simkl: new SimklRequest(this.config, plugin),
+      tmdb: new TMDbRequest(this.config)
     };
     
     this.metrics = {

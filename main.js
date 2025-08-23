@@ -11589,8 +11589,12 @@ var CardRenderer = class {
     e.stopPropagation();
     let entrySource = this.apiHelper.detectSource(entry, config);
     const entryMediaType = this.apiHelper.detectMediaType(entry, config, media);
-    const isTmdbItem = (entry?._zoroMeta?.source || "").toLowerCase() === "tmdb";
-    if (isTmdbItem) {
+    
+    // Check if this is a TMDB trending item that should use TMDB ID
+    const isTmdbTrendingItem = (entry?._zoroMeta?.source || "").toLowerCase() === "tmdb";
+    
+    if (isTmdbTrendingItem) {
+      // For TMDB trending items, route to SIMKL but use TMDB ID
       entrySource = "simkl";
       try {
         const numericId = Number(media.id) || Number(media.idTmdb) || 0;
@@ -11600,25 +11604,39 @@ var CardRenderer = class {
       } catch {
       }
     }
+    
     if (!this.apiHelper.isAuthenticated(entrySource)) {
       console.log(`[Zoro] Not authenticated with ${entrySource}`);
       this.plugin.prompt.createAuthenticationPrompt(entrySource);
       return;
     }
+    
     addBtn.dataset.loading = "true";
     addBtn.innerHTML = DOMHelper.createLoadingSpinner();
     addBtn.style.pointerEvents = "none";
+    
     try {
       const typeUpper = String(entryMediaType || "").toUpperCase();
       const isMovieOrTv = typeUpper === "MOVIE" || typeUpper === "MOVIES" || typeUpper === "TV" || typeUpper.includes("SHOW");
-      const updates = entrySource === "simkl" && isMovieOrTv ? { status: "PLANNING", score: 0, _zUseTmdbId: true } : { status: "PLANNING", progress: 0 };
-      if (entrySource === "simkl" && isTmdbItem && isMovieOrTv) {
-        const ids = { tmdb: Number(media.idTmdb || media.id) || void 0, imdb: media.idImdb || void 0 };
-        if (typeof this.plugin?.simklApi?.updateMediaListEntryWithIds === "function") {
-          await this.plugin.simklApi.updateMediaListEntryWithIds(ids, updates, entryMediaType);
+      
+      const updates = entrySource === "simkl" && isMovieOrTv 
+        ? { status: "PLANNING", score: 0, _zUseTmdbId: isTmdbTrendingItem } 
+        : { status: "PLANNING", progress: 0 };
+      
+      // For TMDB trending items, use TMDB ID; for SIMKL search items, use SIMKL ID
+      if (entrySource === "simkl" && isMovieOrTv) {
+        if (isTmdbTrendingItem) {
+          // TMDB trending item: use TMDB ID
+          const ids = { tmdb: Number(media.idTmdb || media.id) || void 0, imdb: media.idImdb || void 0 };
+          if (typeof this.plugin?.simklApi?.updateMediaListEntryWithIds === "function") {
+            await this.plugin.simklApi.updateMediaListEntryWithIds(ids, updates, entryMediaType);
+          } else {
+            const idFallback = Number(media.idTmdb || media.id) || 0;
+            await this.apiHelper.updateMediaListEntry(idFallback, updates, entrySource, entryMediaType);
+          }
         } else {
-          const idFallback = Number(media.idTmdb || media.id) || 0;
-          await this.apiHelper.updateMediaListEntry(idFallback, updates, entrySource, entryMediaType);
+          // SIMKL search item: use SIMKL ID
+          await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, entryMediaType);
         }
       } else {
         await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, entryMediaType);

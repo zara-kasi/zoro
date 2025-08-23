@@ -352,8 +352,11 @@ class CardRenderer {
   let entrySource = this.apiHelper.detectSource(entry, config);
   const entryMediaType = this.apiHelper.detectMediaType(entry, config, media);
 
-  const isTmdbItem = (entry?._zoroMeta?.source || '').toLowerCase() === 'tmdb';
-  if (isTmdbItem) {
+  // Check if this is a TMDB trending item that should use TMDB ID
+  const isTmdbTrendingItem = (entry?._zoroMeta?.source || '').toLowerCase() === 'tmdb';
+  
+  if (isTmdbTrendingItem) {
+    // For TMDB trending items, route to SIMKL but use TMDB ID
     entrySource = 'simkl';
     try {
       const numericId = Number(media.id) || Number(media.idTmdb) || 0;
@@ -379,18 +382,23 @@ class CardRenderer {
     const isMovieOrTv = typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper.includes('SHOW');
 
     const updates = (entrySource === 'simkl' && isMovieOrTv)
-      ? { status: 'PLANNING', score: 0, _zUseTmdbId: true }
+      ? { status: 'PLANNING', score: 0, _zUseTmdbId: isTmdbTrendingItem }
       : { status: 'PLANNING', progress: 0 };
 
-    // For TMDb movie/TV routed to Simkl, call the same update path used by Simkl search
-    // but use the TMDb id instead of Simkl id
-    if (entrySource === 'simkl' && isTmdbItem && isMovieOrTv) {
-      const ids = { tmdb: Number(media.idTmdb || media.id) || undefined, imdb: media.idImdb || undefined };
-      if (typeof this.plugin?.simklApi?.updateMediaListEntryWithIds === 'function') {
-        await this.plugin.simklApi.updateMediaListEntryWithIds(ids, updates, entryMediaType);
+    // For TMDB trending items, use TMDB ID; for SIMKL search items, use SIMKL ID
+    if (entrySource === 'simkl' && isMovieOrTv) {
+      if (isTmdbTrendingItem) {
+        // TMDB trending item: use TMDB ID
+        const ids = { tmdb: Number(media.idTmdb || media.id) || undefined, imdb: media.idImdb || undefined };
+        if (typeof this.plugin?.simklApi?.updateMediaListEntryWithIds === 'function') {
+          await this.plugin.simklApi.updateMediaListEntryWithIds(ids, updates, entryMediaType);
+        } else {
+          const idFallback = Number(media.idTmdb || media.id) || 0;
+          await this.apiHelper.updateMediaListEntry(idFallback, updates, entrySource, entryMediaType);
+        }
       } else {
-        const idFallback = Number(media.idTmdb || media.id) || 0;
-        await this.apiHelper.updateMediaListEntry(idFallback, updates, entrySource, entryMediaType);
+        // SIMKL search item: use SIMKL ID
+        await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, entryMediaType);
       }
     } else {
       await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, entryMediaType);

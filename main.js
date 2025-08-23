@@ -1080,20 +1080,20 @@ var SimklRequest = class {
     return true;
   }
   getRetryDelay(attempt) {
-    const baseDelay = 1500;
-    const maxDelay = 12e3;
+    const baseDelay = 600;
+    const maxDelay = 6e3;
     const timeSinceLastRequest = Date.now() - this.authState.lastRequest;
-    if (timeSinceLastRequest < 1e3) {
-      return Math.max(baseDelay, 2e3);
+    if (timeSinceLastRequest < 500) {
+      return Math.max(baseDelay, 800);
     }
     if (this.authState.consecutiveAuthFailures > 0) {
-      return baseDelay * (1 + this.authState.consecutiveAuthFailures * 0.7);
+      return baseDelay * (1 + this.authState.consecutiveAuthFailures * 0.5);
     }
     if (this.lastErrorWasRateLimit) {
-      return Math.max(baseDelay * 2, 5e3);
+      return Math.max(baseDelay * 2, 3e3);
     }
     const exponentialDelay = baseDelay * Math.pow(2, attempt - 1);
-    const jitter = Math.random() * 1500;
+    const jitter = Math.random() * 800;
     return Math.min(exponentialDelay + jitter, maxDelay);
   }
   updateMetrics(processingTime, isError = false) {
@@ -1183,10 +1183,10 @@ var RequestQueue = class {
         maxAuthRetries: 2
       },
       simklConfig: {
-        baseDelay: 1200,
-        maxConcurrent: 2,
-        rateLimitBuffer: 0.75,
-        authRetryDelay: 2500,
+        baseDelay: 500,
+        maxConcurrent: 3,
+        rateLimitBuffer: 0.9,
+        authRetryDelay: 2e3,
         maxAuthRetries: 3
       }
     };
@@ -3844,7 +3844,9 @@ var SimklApi = class {
     try {
       const response = await this.requestQueue.add(requestFn, {
         priority: requestParams.priority || "normal",
-        timeout: 3e4
+        timeout: 25e3,
+        service: "simkl",
+        metadata: { type: requestParams.type || "update" }
       });
       if (!response) {
         console.log("[Simkl][HTTP] Empty response object");
@@ -4729,7 +4731,8 @@ var SimklApi = class {
           method: "POST",
           headers: this.getHeaders({ type: "update" }),
           body: JSON.stringify(payload),
-          priority: "high"
+          priority: "high",
+          type: "update"
         });
         if (updates.score === void 0 || updates.score === null) {
           const statusMapped = this.mapAniListStatusToSimkl(updates.status);
@@ -5186,7 +5189,7 @@ var SimklApi = class {
         },
         body: JSON.stringify(body)
       });
-      const response = await this.requestQueue.add(requestFn, { priority: "high" });
+      const response = await this.requestQueue.add(requestFn, { priority: "high", service: "simkl", metadata: { type: "auth" } });
       if (!response?.json || typeof response.json !== "object") {
         throw new Error("Invalid auth response from Simkl");
       }

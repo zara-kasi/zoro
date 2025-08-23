@@ -29,10 +29,10 @@ class RequestQueue {
         maxAuthRetries: 2
       },
       simklConfig: {
-        baseDelay: 1200,
-        maxConcurrent: 2,
-        rateLimitBuffer: 0.75,
-        authRetryDelay: 2500,
+        baseDelay: 500,
+        maxConcurrent: 3,
+        rateLimitBuffer: 0.9,
+        authRetryDelay: 2000,
         maxAuthRetries: 3
       }
     };

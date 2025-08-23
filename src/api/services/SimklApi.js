@@ -273,7 +273,9 @@ getSimklMediaType(mediaType) {
     try {
       const response = await this.requestQueue.add(requestFn, {
         priority: requestParams.priority || 'normal',
-        timeout: 30000
+        timeout: 25000,
+        service: 'simkl',
+        metadata: { type: requestParams.type || 'update' }
       });
 
 
@@ -1447,7 +1449,8 @@ getSimklMediaType(mediaType) {
           method: 'POST',
           headers: this.getHeaders({ type: 'update' }),
           body: JSON.stringify(payload),
-          priority: 'high'
+          priority: 'high',
+          type: 'update'
         });
 
         // Enforce via ratings if score not provided
@@ -1990,7 +1993,7 @@ async removeMediaListEntry(mediaId, mediaType) {
         body: JSON.stringify(body)
       });
 
-      const response = await this.requestQueue.add(requestFn, { priority: 'high' });
+      const response = await this.requestQueue.add(requestFn, { priority: 'high', service: 'simkl', metadata: { type: 'auth' } });
       
       if (!response?.json || typeof response.json !== 'object') {
         throw new Error('Invalid auth response from Simkl');

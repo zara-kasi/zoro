@@ -11590,11 +11590,14 @@ var CardRenderer = class {
     let entrySource = this.apiHelper.detectSource(entry, config);
     const entryMediaType = this.apiHelper.detectMediaType(entry, config, media);
     
-    // Check if this is a TMDB trending item that should use TMDB ID
-    const isTmdbTrendingItem = (entry?._zoroMeta?.source || "").toLowerCase() === "tmdb";
+    // Check if this is a search item or trending item
+    // Search items come from SIMKL API and should use SIMKL ID
+    // Trending items come from TMDB API and should use TMDB ID
+    const isSearchItem = entry?.isSearch === true || config?.isSearch === true;
+    const isTrendingItem = !isSearchItem;
     
-    if (isTmdbTrendingItem) {
-      // For TMDB trending items, route to SIMKL but use TMDB ID
+    // For trending items (from TMDB), route to SIMKL but use TMDB ID
+    if (isTrendingItem && (entry?._zoroMeta?.source || "").toLowerCase() === "tmdb") {
       entrySource = "simkl";
       try {
         const numericId = Number(media.id) || Number(media.idTmdb) || 0;
@@ -11620,12 +11623,12 @@ var CardRenderer = class {
       const isMovieOrTv = typeUpper === "MOVIE" || typeUpper === "MOVIES" || typeUpper === "TV" || typeUpper.includes("SHOW");
       
       const updates = entrySource === "simkl" && isMovieOrTv 
-        ? { status: "PLANNING", score: 0, _zUseTmdbId: isTmdbTrendingItem } 
+        ? { status: "PLANNING", score: 0, _zUseTmdbId: isTrendingItem && (entry?._zoroMeta?.source || "").toLowerCase() === "tmdb" } 
         : { status: "PLANNING", progress: 0 };
       
       // For TMDB trending items, use TMDB ID; for SIMKL search items, use SIMKL ID
       if (entrySource === "simkl" && isMovieOrTv) {
-        if (isTmdbTrendingItem) {
+        if (isTrendingItem && (entry?._zoroMeta?.source || "").toLowerCase() === "tmdb") {
           // TMDB trending item: use TMDB ID
           const ids = { tmdb: Number(media.idTmdb || media.id) || void 0, imdb: media.idImdb || void 0 };
           if (typeof this.plugin?.simklApi?.updateMediaListEntryWithIds === "function") {

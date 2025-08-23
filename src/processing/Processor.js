@@ -434,9 +434,9 @@ async executeProcessing(el, config, retryFn) {
     const mtUpper = config.mediaType.toUpperCase();
     if (['MOVIE','MOVIES','TV','SHOW','SHOWS'].includes(mtUpper)) {
       config.source = 'simkl';
-    } else if (mtUpper === 'MANGA' && (config.source === 'anilist' || config.source === 'simkl')) {
-      config.source = 'mal';
-    }
+    } else if (mtUpper === 'MANGA' && config.source === 'simkl') {
+  config.source = 'mal';
+}
     
     return config;
   }

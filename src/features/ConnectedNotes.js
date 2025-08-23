@@ -480,6 +480,20 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
   }
 
   /**
+   * Safely close the Zoro side panel by swapping the view to empty
+   */
+  closePanelSafely(view) {
+    try {
+      const leaf = view?.leaf;
+      if (leaf && typeof leaf.setViewState === 'function') {
+        leaf.setViewState({ type: 'empty' });
+        return true;
+      }
+    } catch {}
+    return false;
+  }
+
+  /**
    * Render the connect existing notes interface
    */
   renderConnectExistingInterface(container, searchIds, mediaType) {

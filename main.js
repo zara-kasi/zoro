@@ -13209,6 +13209,20 @@ var ConnectedNotes = class {
     }
   }
   /**
+   * Safely close the Zoro side panel by swapping the view to empty
+   */
+  closePanelSafely(view) {
+    try {
+      const leaf = view?.leaf;
+      if (leaf && typeof leaf.setViewState === "function") {
+        leaf.setViewState({ type: "empty" });
+        return true;
+      }
+    } catch {
+    }
+    return false;
+  }
+  /**
    * Render the connect existing notes interface
    */
   renderConnectExistingInterface(container, searchIds, mediaType) {
@@ -14272,6 +14286,13 @@ var ZoroPlugin = class extends import_obsidian31.Plugin {
   onunload() {
     this.cache.stopAutoPrune().stopBackgroundRefresh().destroy();
     this.theme.removeTheme();
+    try {
+      const leaves = this.app?.workspace?.getLeavesOfType?.("zoro-panel") || [];
+      for (const leaf of leaves) {
+        leaf.setViewState({ type: "empty" });
+      }
+    } catch {
+    }
     const styleId = "zoro-plugin-styles";
     const existingStyle = document.getElementById(styleId);
     if (existingStyle) {

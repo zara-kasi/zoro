@@ -278,6 +278,13 @@ class ZoroPlugin extends Plugin {
 	onunload() {
 		this.cache.stopAutoPrune().stopBackgroundRefresh().destroy();
 		this.theme.removeTheme();
+		// Convert any zoro-panel leaves to empty to avoid orphaned tabs
+		try {
+			const leaves = this.app?.workspace?.getLeavesOfType?.('zoro-panel') || [];
+			for (const leaf of leaves) {
+				leaf.setViewState({ type: 'empty' });
+			}
+		} catch {}
 		const styleId = 'zoro-plugin-styles';
 		const existingStyle = document.getElementById(styleId);
 		if (existingStyle) {

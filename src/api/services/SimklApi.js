@@ -88,7 +88,6 @@ class SimklApi {
       }
     }
 
-
     // Ensure authentication for user-specific requests
     if (this.requiresAuth(normalizedConfig.type)) {
       await this.ensureValidToken();
@@ -274,9 +273,7 @@ getSimklMediaType(mediaType) {
     try {
       const response = await this.requestQueue.add(requestFn, {
         priority: requestParams.priority || 'normal',
-        timeout: 25000,
-        service: 'simkl',
-        metadata: { type: requestParams.type || 'update' }
+        timeout: 30000
       });
 
 
@@ -1450,8 +1447,7 @@ getSimklMediaType(mediaType) {
           method: 'POST',
           headers: this.getHeaders({ type: 'update' }),
           body: JSON.stringify(payload),
-          priority: 'high',
-          type: 'update'
+          priority: 'high'
         });
 
         // Enforce via ratings if score not provided
@@ -1994,7 +1990,7 @@ async removeMediaListEntry(mediaId, mediaType) {
         body: JSON.stringify(body)
       });
 
-      const response = await this.requestQueue.add(requestFn, { priority: 'high', service: 'simkl', metadata: { type: 'auth' } });
+      const response = await this.requestQueue.add(requestFn, { priority: 'high' });
       
       if (!response?.json || typeof response.json !== 'object') {
         throw new Error('Invalid auth response from Simkl');
@@ -2471,7 +2467,6 @@ async removeMediaListEntry(mediaId, mediaType) {
     // we'll need to search across different types or use context
     return 'anime'; // Default fallback
   }
-
 
 
 }

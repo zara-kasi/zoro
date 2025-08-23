@@ -378,7 +378,8 @@ class CardRenderer {
     const typeUpper = String(entryMediaType || '').toUpperCase();
     const isMovieOrTv = typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper.includes('SHOW');
 
-    const updates = (entrySource === 'simkl' && isMovieOrTv)
+    // Only use TMDb identifiers when the item actually came from TMDb
+    const updates = (entrySource === 'simkl' && isTmdbItem && isMovieOrTv)
       ? { status: 'PLANNING', score: 0, _zUseTmdbId: true }
       : { status: 'PLANNING', progress: 0 };
 

@@ -17,11 +17,11 @@ var __copyProps = (to, from, except, desc) => {
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // src/index.js
-var index_exports = {};
-__export(index_exports, {
-  default: () => index_default
+var src_exports = {};
+__export(src_exports, {
+  default: () => src_default
 });
-module.exports = __toCommonJS(index_exports);
+module.exports = __toCommonJS(src_exports);
 var import_obsidian31 = require("obsidian");
 
 // src/cache/Cache.js
@@ -11534,7 +11534,7 @@ var CardRenderer = class {
     try {
       const typeUpper = String(entryMediaType || "").toUpperCase();
       const isMovieOrTv = typeUpper === "MOVIE" || typeUpper === "MOVIES" || typeUpper === "TV" || typeUpper.includes("SHOW");
-      const updates = entrySource === "simkl" && isMovieOrTv ? { status: "PLANNING", score: 0, _zUseTmdbId: true } : { status: "PLANNING", progress: 0 };
+      const updates = entrySource === "simkl" && isTmdbItem && isMovieOrTv ? { status: "PLANNING", score: 0, _zUseTmdbId: true } : { status: "PLANNING", progress: 0 };
       if (entrySource === "simkl" && isTmdbItem && isMovieOrTv) {
         const ids = { tmdb: Number(media.idTmdb || media.id) || void 0, imdb: media.idImdb || void 0 };
         if (typeof this.plugin?.simklApi?.updateMediaListEntryWithIds === "function") {
@@ -13068,8 +13068,8 @@ var ConnectedNotes = class {
           value.forEach((tag) => {
             frontmatterLines.push(`  - ${tag}`);
           });
-        } else if (key === "url" && Array.isArray(value)) {
-          frontmatterLines.push("url:");
+        } else if (key === "urls" && Array.isArray(value)) {
+          frontmatterLines.push("urls:");
           value.forEach((url) => {
             frontmatterLines.push(`  - "${url}"`);
           });
@@ -14196,5 +14196,5 @@ var ZoroPlugin = class extends import_obsidian31.Plugin {
     if (loader) loader.remove();
   }
 };
-var index_default = ZoroPlugin;
+var src_default = ZoroPlugin;
 //# sourceMappingURL=main.js.map

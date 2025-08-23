@@ -3920,6 +3920,18 @@ var SimklApi = class {
         for (const item of items) {
           const mapped = this.transformMedia(item, c.type);
           if (mapped && mapped.id > 0) {
+            // Add _zoroMeta to ensure add button functionality works properly
+            if (!mapped._zoroMeta) {
+              mapped._zoroMeta = {
+                source: 'simkl',
+                mediaType: c.type,
+                fetchedAt: Date.now()
+              };
+            } else {
+              mapped._zoroMeta.source = 'simkl';
+              mapped._zoroMeta.mediaType = c.type;
+              mapped._zoroMeta.fetchedAt = Date.now();
+            }
             aggregated.push(mapped);
           }
         }
@@ -3996,6 +4008,18 @@ var SimklApi = class {
     let resolvedCount = 0;
     for (const item of searchResults.Page.media) {
       if (item && item.id > 0) {
+        // Ensure _zoroMeta is set for add button functionality
+        if (!item._zoroMeta) {
+          item._zoroMeta = {
+            source: 'simkl',
+            mediaType: mediaType,
+            fetchedAt: Date.now()
+          };
+        } else {
+          item._zoroMeta.source = 'simkl';
+          item._zoroMeta.mediaType = mediaType;
+          item._zoroMeta.fetchedAt = Date.now();
+        }
         enhancedResults.push(item);
       } else if (item && item.title) {
         try {
@@ -4003,6 +4027,18 @@ var SimklApi = class {
           const resolvedId = await this.resolveSimklIdByTitle(item.title, mediaType);
           if (resolvedId) {
             item.id = resolvedId;
+            // Ensure _zoroMeta is set for add button functionality
+            if (!item._zoroMeta) {
+              item._zoroMeta = {
+                source: 'simkl',
+                mediaType: mediaType,
+                fetchedAt: Date.now()
+              };
+            } else {
+              item._zoroMeta.source = 'simkl';
+              item._zoroMeta.mediaType = mediaType;
+              item._zoroMeta.fetchedAt = Date.now();
+            }
             enhancedResults.push(item);
             resolvedCount++;
             console.log(`[Simkl] Successfully resolved ID ${resolvedId} for "${item.title}"`);
@@ -4040,6 +4076,18 @@ var SimklApi = class {
   async validateSearchResultForEditing(searchResult, mediaType) {
     if (!searchResult) return null;
     if (searchResult.id && Number.isFinite(Number(searchResult.id)) && Number(searchResult.id) > 0) {
+      // Ensure _zoroMeta is set for add button functionality
+      if (!searchResult._zoroMeta) {
+        searchResult._zoroMeta = {
+          source: 'simkl',
+          mediaType: mediaType,
+          fetchedAt: Date.now()
+        };
+      } else {
+        searchResult._zoroMeta.source = 'simkl';
+        searchResult._zoroMeta.mediaType = mediaType;
+        searchResult._zoroMeta.fetchedAt = Date.now();
+      }
       return searchResult;
     }
     if (searchResult.title) {
@@ -4047,6 +4095,18 @@ var SimklApi = class {
         const resolvedId = await this.resolveSimklIdByTitle(searchResult.title, mediaType);
         if (resolvedId) {
           searchResult.id = resolvedId;
+          // Ensure _zoroMeta is set for add button functionality
+          if (!searchResult._zoroMeta) {
+            searchResult._zoroMeta = {
+              source: 'simkl',
+              mediaType: mediaType,
+              fetchedAt: Date.now()
+            };
+          } else {
+            searchResult._zoroMeta.source = 'simkl';
+            searchResult._zoroMeta.mediaType = mediaType;
+            searchResult._zoroMeta.fetchedAt = Date.now();
+          }
           console.log(`[Simkl] Resolved ID ${resolvedId} for editing: "${searchResult.title}"`);
           return searchResult;
         }
@@ -4091,7 +4151,24 @@ var SimklApi = class {
         }
       }
     }
-    const transformedItems = items.map((item) => this.transformMedia(item, config.mediaType)).filter((item) => item && item.id > 0);
+    const transformedItems = items
+      .map((item) => this.transformMedia(item, config.mediaType))
+      .filter((item) => item && item.id > 0)
+      .map(item => {
+        // Add _zoroMeta to ensure add button functionality works properly
+        if (!item._zoroMeta) {
+          item._zoroMeta = {
+            source: 'simkl',
+            mediaType: config.mediaType || 'ANIME',
+            fetchedAt: Date.now()
+          };
+        } else {
+          item._zoroMeta.source = 'simkl';
+          item._zoroMeta.mediaType = config.mediaType || 'ANIME';
+          item._zoroMeta.fetchedAt = Date.now();
+        }
+        return item;
+      });
     return {
       Page: {
         media: transformedItems

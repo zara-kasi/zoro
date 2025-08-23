@@ -57,7 +57,7 @@ class APISourceHelper {
         perPage: 5 
       });
     } else if (normalizedSource === 'simkl') {
-      return await this.plugin.simklApi.fetchSimklData({ 
+      const searchResults = await this.plugin.simklApi.fetchSimklData({ 
         ...config, 
         type: 'search',
         search: term, 
@@ -65,6 +65,25 @@ class APISourceHelper {
         page: 1, 
         perPage: 5 
       });
+      
+      // Add _zoroMeta to search results for proper add button functionality
+      if (searchResults?.Page?.media && Array.isArray(searchResults.Page.media)) {
+        searchResults.Page.media.forEach(item => {
+          if (!item._zoroMeta) {
+            item._zoroMeta = {
+              source: 'simkl',
+              mediaType: config.mediaType || 'ANIME',
+              fetchedAt: Date.now()
+            };
+          } else {
+            item._zoroMeta.source = 'simkl';
+            item._zoroMeta.mediaType = config.mediaType || 'ANIME';
+            item._zoroMeta.fetchedAt = Date.now();
+          }
+        });
+      }
+      
+      return searchResults;
     } else {
       return await this.plugin.api.fetchAniListData({ 
         ...config, 

@@ -23,7 +23,7 @@ import { EmojiIconMapper } from './rendering/helpers/EmojiIconMapper.js';
 import { ConnectedNotes } from './features/ConnectedNotes.js';
 import { SidePanel, ZORO_VIEW_TYPE } from './ui/SidePanel.js';
 
-import { DEFAULT_SETTINGS, getDefaultGridColumns } from './core/constants.js';
+import { DEFAULT_SETTINGS, getDefaultGridColumns, GRID_COLUMN_OPTIONS } from './core/constants.js';
 import { ZoroSettingTab } from './settings/ZoroSettingTab.js';
 
 class ZoroPlugin extends Plugin {
@@ -177,7 +177,7 @@ class ZoroPlugin extends Plugin {
 			showProgress: typeof settings?.showProgress === 'boolean' ? settings.showProgress : true,
 			showGenres: typeof settings?.showGenres === 'boolean' ? settings.showGenres : false,
 			showLoadingIcon: typeof settings?.showLoadingIcon === 'boolean' ? settings.showLoadingIcon : true,
-			gridColumns: Number.isInteger(settings?.gridColumns) ? settings.gridColumns : getDefaultGridColumns(),
+			gridColumns: this.migrateGridColumnsSetting(settings?.gridColumns),
 			theme: typeof settings?.theme === 'string' ? settings.theme : '',
 			hideUrlsInTitles: typeof settings?.hideUrlsInTitles === 'boolean' ? settings.hideUrlsInTitles : true,
 			forceScoreFormat: typeof settings?.forceScoreFormat === 'boolean' ? settings.forceScoreFormat : true,
@@ -209,6 +209,31 @@ class ZoroPlugin extends Plugin {
 			},
 			tmdbApiKey: typeof settings?.tmdbApiKey === 'string' ? settings.tmdbApiKey : ''
 		};
+	}
+
+	migrateGridColumnsSetting(value) {
+		// Handle migration from old numeric system to new string system
+		if (typeof value === 'number' && Number.isInteger(value)) {
+			// Convert old numeric values to new string values
+			if (value >= 1 && value <= 6) {
+				return String(value);
+			} else {
+				// Invalid numeric value, use default
+				return GRID_COLUMN_OPTIONS.DEFAULT;
+			}
+		} else if (typeof value === 'string') {
+			// Validate string values
+			const validOptions = Object.values(GRID_COLUMN_OPTIONS);
+			if (validOptions.includes(value)) {
+				return value;
+			} else {
+				// Invalid string value, use default
+				return GRID_COLUMN_OPTIONS.DEFAULT;
+			}
+		} else {
+			// No value or invalid type, use default
+			return GRID_COLUMN_OPTIONS.DEFAULT;
+		}
 	}
 
 	async saveSettings() {

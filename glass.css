@@ -206,6 +206,22 @@
   list-style: none;
 }
 
+/* Responsive grid behavior for "Default" setting */
+@media (min-width: 600px) { 
+  .zoro-cards-grid { 
+    --zoro-grid-columns: 3; 
+  } 
+}
+@media (min-width: 900px) { 
+  .zoro-cards-grid { 
+    --zoro-grid-columns: 4; 
+  } 
+}
+@media (min-width: 1200px) { 
+  .zoro-cards-grid { 
+    --zoro-grid-columns: 5; 
+  } 
+}
 @media (max-width: 480px) {
   .zoro-cards-grid {
     gap: var(--zoro-grid-gap-mobile);

@@ -151,7 +151,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
 
       // Priority 4: Check URL array matching (fallback option)
       if (!hasMatchingId && this.currentUrls) {
-        if (this.hasMatchingUrl(frontmatter.url, this.currentUrls)) {
+        if (this.hasMatchingUrl(frontmatter.urls, this.currentUrls)) {
           hasMatchingId = true;
         }
       }
@@ -205,7 +205,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
         
         // Check URL array matching if not already connected
         if (!alreadyConnected && this.currentUrls) {
-          if (this.hasMatchingUrl(frontmatter.url, this.currentUrls)) {
+          if (this.hasMatchingUrl(frontmatter.urls, this.currentUrls)) {
             alreadyConnected = true;
           }
         }
@@ -337,7 +337,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
                           existingFrontmatter.imdb_id ||
                           existingFrontmatter.tmdb_id ||
                           existingFrontmatter.media_type ||
-                          existingFrontmatter.url;
+                          existingFrontmatter.urls;
     
     const isAlreadyConnected = hasZoroTag && hasExistingIds;
     
@@ -350,7 +350,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
       
       // Only merge URL arrays
       if (this.currentUrls && this.currentUrls.length > 0) {
-        updatedFrontmatter.url = this.mergeUrlArrays(existingFrontmatter.url, this.currentUrls);
+        updatedFrontmatter.urls = this.mergeUrlArrays(existingFrontmatter.urls, this.currentUrls);
       }
       
       // Ensure Zoro tag is present (in case it was removed)
@@ -373,7 +373,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
       
       // Merge URL arrays
       if (this.currentUrls && this.currentUrls.length > 0) {
-        updatedFrontmatter.url = this.mergeUrlArrays(existingFrontmatter.url, this.currentUrls);
+        updatedFrontmatter.urls = this.mergeUrlArrays(existingFrontmatter.urls, this.currentUrls);
       }
       
       // Add media type

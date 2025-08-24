@@ -1,5 +1,5 @@
 import { setIcon } from 'obsidian';
-
+import { GRID_COLUMN_OPTIONS } from '../../core/constants.js';
 class DOMHelper {
   static createLoadingSpinner() {
     return `
@@ -34,23 +34,36 @@ class DOMHelper {
   const grid = document.createElement('div');
   grid.className = 'zoro-cards-grid';
   
-  // Get grid columns from settings (fallback to 2)
-  let gridColumns = 2;
+ // Get grid columns from settings (fallback to default)
+  let gridSetting = GRID_COLUMN_OPTIONS.DEFAULT;
+  let gridColumns = 2; // Default fallback for skeleton
   try {
     if (window.zoroPlugin?.settings?.gridColumns) {
-      gridColumns = Number(window.zoroPlugin.settings.gridColumns) || 2;
+      gridSetting = window.zoroPlugin.settings.gridColumns;
+      if (gridSetting === GRID_COLUMN_OPTIONS.DEFAULT) {
+        // For "Default", use responsive behavior - create 2 rows of 3 columns for skeleton
+        gridColumns = 3;
+      } else {
+        // For fixed column values, use the specified number
+        gridColumns = Number(gridSetting) || 2;
+      }
     }
   } catch (e) {
     // Fallback to default
   }
   
-  // Use inline styles with !important to override CSS
-  grid.style.setProperty('--zoro-grid-columns', String(gridColumns), 'important');
-  grid.style.setProperty('--grid-cols', String(gridColumns), 'important');
-  grid.style.setProperty('--zoro-grid-gap', 'var(--size-4-4)', 'important');
-  
-  // Also set the grid template directly as a backup
-  grid.style.gridTemplateColumns = `repeat(${gridColumns}, minmax(0, 1fr)) !important`;
+  // Set grid styles based on the setting
+  if (gridSetting === GRID_COLUMN_OPTIONS.DEFAULT) {
+    // For "Default", let CSS handle responsive behavior
+    grid.style.setProperty('--zoro-grid-gap', 'var(--size-4-4)', 'important');
+  } else {
+    // For fixed column values, set the CSS variables
+    grid.style.setProperty('--zoro-grid-columns', String(gridSetting), 'important');
+    grid.style.setProperty('--grid-cols', String(gridSetting), 'important');
+    grid.style.setProperty('--zoro-grid-gap', 'var(--size-4-4)', 'important');
+    // Also set grid-template-columns directly to ensure it takes precedence
+    grid.style.setProperty('grid-template-columns', `repeat(${gridSetting}, minmax(0, 1fr))`, 'important');
+  }
   
   // Create exactly 2 rows of skeleton cards
   const totalCards = gridColumns * 2;

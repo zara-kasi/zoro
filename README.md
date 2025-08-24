@@ -356,75 +356,144 @@ The configuration system is very flexible and user-friendly, supporting various 
 
 ## ⚙️ Configuration
 
-### **Basic Settings**
+The Zoro plugin settings are organized into several sections in **Settings → Zoro**. Here's what each setting does:
 
-```yaml
-# In Obsidian Settings → Zoro
-defaultApiSource: anilist  # anilist | mal | simkl
-defaultUsername: your_username
-defaultLayout: card       # card | table
-showCoverImages: true
-showRatings: true
-showProgress: true
-showGenres: false
-```
+### **👤 Account Section**
 
-### **Display Settings**
+**🆔 Public profile**
+- **What it does**: Sets your AniList username for viewing public profiles and stats without authentication
+- **When to use**: If you want to view public AniList data without logging in
+- **Example**: Enter your AniList username to view public lists
 
-```yaml
-# Grid Layout
-gridColumns: default      # default | 1 | 2 | 3 | 4 | 5 | 6
+**✳️ AniList, 🗾 MyAnimeList, 🎬 SIMKL**
+- **What they do**: Connect your accounts for full feature access
+- **When to use**: Required for editing lists, accessing private data, and using all features
+- **Setup**: Click the authentication buttons and follow the guides
 
-# Visual Options
-theme: auto              # auto | light | dark
-statsLayout: enhanced    # enhanced | compact | minimal
-hideUrlsInTitles: true
-forceScoreFormat: true   # Forces 0-10 scale
-showLoadingIcon: true
-```
+### **🧭 Setup Section**
 
-### **Advanced Settings**
+**⚡ Sample Folder**
+- **What it does**: Creates a complete Zoro folder structure with pre-configured notes
+- **When to use**: Recommended for new users to get started quickly
+- **Creates**: Anime, Manga, Movie, and TV folders with template files
 
-```yaml
-# Cache & Performance
-cacheTTL: 1800000        # 30 minutes
-maxCacheSize: 10000
-backgroundRefresh: true
+**🕹️ Default Source**
+- **What it does**: Chooses which service to use when none is specified in code blocks
+- **Options**: AniList, MyAnimeList, SIMKL
+- **Recommendation**: AniList (most comprehensive)
 
-# Note Integration
-notePath: Zoro/Note
-insertCodeBlockOnNote: true
+### **🗒️ Note Section**
 
-# External URLs
-autoFormatSearchUrls: true
-customSearchUrls: {
-  ANIME: [],
-  MANGA: [],
-  MOVIE_TV: []
-}
-```
+**🗂️ Note path**
+- **What it does**: Sets the folder where connected notes will be created
+- **Default**: `Zoro/Note`
+- **Example**: `Anime/Reviews` would create notes in that folder
 
-### **Authentication Settings**
+**🎴 Media block**
+- **What it does**: Automatically inserts a code block showing cover, rating, and details in new notes
+- **When to use**: If you want media information automatically added to connected notes
 
-```yaml
-# AniList
-clientId: your_anilist_client_id
-clientSecret: your_anilist_client_secret
-accessToken: auto_generated
+### **📺 Display Section**
 
-# MyAnimeList
-malClientId: your_mal_client_id
-malClientSecret: your_mal_client_secret
-malAccessToken: auto_generated
+**🧊 Layout**
+- **What it does**: Sets the default layout for media lists
+- **Options**: Card Layout, Table Layout
+- **Card Layout**: Grid-based with cover images and hover effects
+- **Table Layout**: Compact tabular view with sortable columns
 
-# SIMKL
-simklClientId: your_simkl_client_id
-simklClientSecret: your_simkl_client_secret
-simklAccessToken: auto_generated
+**🔲 Grid Columns**
+- **What it does**: Controls how many columns appear in card layouts
+- **Options**:
+  - **Default (Responsive)**: Automatically adapts to screen size
+  - **1-6 Columns**: Forces a specific number regardless of screen size
+- **Responsive behavior**:
+  - Mobile (< 600px): 2 columns
+  - Tablet (600px+): 3 columns
+  - Desktop (900px+): 4 columns
+  - Large Desktop (1200px+): 5 columns
 
-# TMDb (for enhanced movie/TV features)
-tmdbApiKey: your_tmdb_api_key
-```
+### **✨ More Section**
+
+**⏳ Loading Icon**
+- **What it does**: Shows loading animation during API requests
+- **When to use**: Keep enabled for visual feedback during operations
+
+**🔗 Plain Titles**
+- **What it does**: Shows titles as plain text instead of clickable links
+- **When to use**: If you prefer simpler text without external links
+
+**🌆 Cover**
+- **What it does**: Displays cover images for anime/manga
+- **When to use**: Disable for better performance on slower devices
+
+**⭐ Ratings**
+- **What it does**: Displays user ratings/scores
+- **When to use**: Keep enabled to see your scores and average ratings
+
+**📈 Progress**
+- **What it does**: Shows progress information (episodes watched, chapters read)
+- **When to use**: Essential for tracking your progress
+
+**🎭 Genres**
+- **What it does**: Displays genre tags on media cards
+- **When to use**: Enable to see genre information at a glance
+
+**🧮 Score Scale**
+- **What it does**: Ensures all ratings use the 0–10 point scale
+- **When to use**: Keep enabled for consistent rating display
+
+### **🚪 Shortcut Section**
+
+**Open on site**
+- **What it does**: Adds customizable external-link buttons to the More Details panel
+- **Options**: Add Anime URL, Add Manga URL, Add Movie/TV URL
+- **When to use**: If you want quick access to external platform pages
+
+### **💾 Data Section**
+
+**📊 Export to CSV**
+- **What it does**: Exports your lists to CSV format for backup or analysis
+- **When to use**: For data backup, migration, or external analysis
+
+**📊 Export to XML**
+- **What it does**: Exports your lists to XML format compatible with MAL import tools
+- **When to use**: For migrating data to MyAnimeList
+
+### **🔁 Cache Section**
+
+**📊 Cache Stats**
+- **What it does**: Shows live cache usage and hit-rate information
+- **When to use**: For monitoring performance and debugging
+
+**🧹 Clear Cache**
+- **What it does**: Deletes all cached data (user, media, search results)
+- **When to use**: If you're experiencing issues or want fresh data
+
+### **⚠️ Beta Section**
+
+**TMDb API Key**
+- **What it does**: Your The Movie Database API key for enhanced movie & TV features
+- **When to use**: If you want additional movie/TV metadata and trending data
+- **Get one**: Free at [TMDb](https://www.themoviedb.org/settings/api)
+
+### **Configuration Tips**
+
+**For New Users:**
+1. Start with **Sample Folder** to get a complete setup
+2. Set **Default Source** to AniList
+3. Choose your preferred **Layout** (Card is recommended)
+4. Enable **Loading Icon** and **Cover** for best experience
+
+**For Performance:**
+- Disable **Cover** if you have a slow connection
+- Use **Table Layout** for large lists
+- Clear cache periodically if you experience issues
+
+**For Power Users:**
+- Set up **Note path** for connected notes
+- Enable **Media block** for automatic note creation
+- Configure **Custom External URLs** for your preferred sites
+- Use **Cache Stats** to monitor performance
 
 ---
 

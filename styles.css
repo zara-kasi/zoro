@@ -182,16 +182,6 @@
   }
 }
 
-/* === Grid Column Count via CSS Variable (no inline JS) ========== */
-.zoro-cards-grid {
-  --zoro-grid-columns: 2;      /* default value */
-}
-
-@media (min-width: 768px) {
-  .zoro-cards-grid {
-    --zoro-grid-columns: 5;    /* desktop value */
-  }
-}
 
 
 /* Cards */
@@ -2900,8 +2890,27 @@ body.theme-light .zoro-heart.favorited::before {
   justify-content: center;
 }
 
+.zoro-panel-blank,
 .zoro-note-empty-message {
-  /* No additional styles needed */
+  /* Flexbox for perfect centering */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  
+  /* Take full available space */
+  flex: 1;
+  
+  /* Typography */
+  font-size: 15px;
+  text-align: center; /* Centers text if it wraps to multiple lines */
+  
+  /* Side padding - adjust values as needed */
+  padding-left: 2rem;   /* 32px */
+  padding-right: 2rem;  /* 32px */
+  
+  /* Optional: Top/bottom padding for better vertical spacing */
+  padding-top: 1rem;    /* 16px */
+  padding-bottom: 1rem; /* 16px */
 }
 
 /* Notes List */

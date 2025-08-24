@@ -1,5 +1,6 @@
 import { setIcon } from 'obsidian';
 import { DOMHelper } from '../helpers/DOMHelper.js';
+import { GRID_COLUMN_OPTIONS } from '../../core/constants.js';
 
 class SearchRenderer {
   constructor(parentRenderer) {
@@ -85,11 +86,19 @@ class SearchRenderer {
 
     const grid = el.createDiv({ cls: 'zoro-cards-grid' });
     try {
-  const cols = Number(this.plugin.settings.gridColumns) || 2;
-  grid.style.setProperty('--zoro-grid-columns', String(cols));
-  grid.style.setProperty('--grid-cols', String(cols));
-  grid.style.setProperty('--zoro-grid-gap', 'var(--size-4-4)');
-} catch {}
+      const gridSetting = this.plugin.settings.gridColumns || GRID_COLUMN_OPTIONS.DEFAULT;
+      if (gridSetting === GRID_COLUMN_OPTIONS.DEFAULT) {
+        // For "Default", let CSS handle responsive behavior
+        grid.style.setProperty('--zoro-grid-gap', 'var(--size-4-4)');
+      } else {
+        // For fixed column values, set the CSS variables
+        grid.style.setProperty('--zoro-grid-columns', String(gridSetting));
+        grid.style.setProperty('--grid-cols', String(gridSetting));
+        grid.style.setProperty('--zoro-grid-gap', 'var(--size-4-4)');
+        // Also set grid-template-columns directly to ensure it takes precedence
+        grid.style.setProperty('grid-template-columns', `repeat(${gridSetting}, minmax(0, 1fr))`, 'important');
+      }
+    } catch {}
     const fragment = document.createDocumentFragment();
     
     media.forEach(item => {

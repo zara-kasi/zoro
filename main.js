@@ -6971,7 +6971,11 @@ var Trending = class {
       url = `https://api.jikan.moe/v4/top/${type}?filter=airing&limit=${Math.min(limit, 25)}`;
     }
     try {
-      const response = await fetch(url);
+      const response = await this.plugin.requestQueue.add(() => fetch(url), {
+        priority: "normal",
+        service: "mal",
+        metadata: { type: "trending" }
+      });
       if (!response.ok) {
         const errorText = await response.text();
         console.error("[Trending] Jikan error response:", errorText);
@@ -7530,7 +7534,7 @@ var Processor = class {
       const mtUpper = config.mediaType.toUpperCase();
       if (["MOVIE", "MOVIES", "TV", "SHOW", "SHOWS"].includes(mtUpper)) {
         config.source = "simkl";
-      } else if (mtUpper === "MANGA" && (config.source === "anilist" || config.source === "simkl")) {
+      } else if (mtUpper === "MANGA" && config.source === "simkl") {
         config.source = "mal";
       }
       return config;
@@ -8083,6 +8087,73 @@ var import_obsidian19 = require("obsidian");
 
 // src/rendering/helpers/DOMHelper.js
 var import_obsidian18 = require("obsidian");
+
+// src/core/constants.js
+var GRID_COLUMN_OPTIONS = {
+  DEFAULT: "default",
+  ONE: "1",
+  TWO: "2",
+  THREE: "3",
+  FOUR: "4",
+  FIVE: "5",
+  SIX: "6"
+};
+var GRID_COLUMN_LABELS = {
+  [GRID_COLUMN_OPTIONS.DEFAULT]: "Default (Responsive)",
+  [GRID_COLUMN_OPTIONS.ONE]: "1 Column",
+  [GRID_COLUMN_OPTIONS.TWO]: "2 Columns",
+  [GRID_COLUMN_OPTIONS.THREE]: "3 Columns",
+  [GRID_COLUMN_OPTIONS.FOUR]: "4 Columns",
+  [GRID_COLUMN_OPTIONS.FIVE]: "5 Columns",
+  [GRID_COLUMN_OPTIONS.SIX]: "6 Columns"
+};
+var DEFAULT_SETTINGS = {
+  defaultApiSource: "anilist",
+  defaultApiUserOverride: false,
+  defaultUsername: "",
+  defaultLayout: "card",
+  notePath: "Zoro/Note",
+  insertCodeBlockOnNote: true,
+  showCoverImages: true,
+  showRatings: true,
+  showProgress: true,
+  showGenres: false,
+  showLoadingIcon: true,
+  gridColumns: GRID_COLUMN_OPTIONS.DEFAULT,
+  // Changed from numeric to string option
+  theme: "",
+  hideUrlsInTitles: true,
+  forceScoreFormat: true,
+  showAvatar: true,
+  showFavorites: true,
+  showBreakdowns: true,
+  showTimeStats: true,
+  statsLayout: "enhanced",
+  statsTheme: "auto",
+  clientId: "",
+  clientSecret: "",
+  redirectUri: "https://anilist.co/api/v2/oauth/pin",
+  accessToken: "",
+  malClientId: "",
+  malClientSecret: "",
+  malAccessToken: "",
+  malRefreshToken: "",
+  malTokenExpiry: null,
+  malUserInfo: null,
+  simklClientId: "",
+  simklClientSecret: "",
+  simklAccessToken: "",
+  simklUserInfo: null,
+  autoFormatSearchUrls: true,
+  customSearchUrls: {
+    ANIME: [],
+    MANGA: [],
+    MOVIE_TV: []
+  },
+  tmdbApiKey: ""
+};
+
+// src/rendering/helpers/DOMHelper.js
 var DOMHelper = class {
   static createLoadingSpinner() {
     return `
@@ -8112,21 +8183,46 @@ var DOMHelper = class {
   }
   static createListSkeleton(count = 6) {
     const fragment = document.createDocumentFragment();
-    for (let i = 0; i < count; i++) {
+    const grid = document.createElement("div");
+    grid.className = "zoro-cards-grid";
+    let gridSetting = GRID_COLUMN_OPTIONS.DEFAULT;
+    let gridColumns = 2;
+    try {
+      if (window.zoroPlugin?.settings?.gridColumns) {
+        gridSetting = window.zoroPlugin.settings.gridColumns;
+        if (gridSetting === GRID_COLUMN_OPTIONS.DEFAULT) {
+          gridColumns = 3;
+        } else {
+          gridColumns = Number(gridSetting) || 2;
+        }
+      }
+    } catch (e) {
+    }
+    if (gridSetting === GRID_COLUMN_OPTIONS.DEFAULT) {
+      grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)", "important");
+    } else {
+      grid.style.setProperty("--zoro-grid-columns", String(gridSetting), "important");
+      grid.style.setProperty("--grid-cols", String(gridSetting), "important");
+      grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)", "important");
+      grid.style.setProperty("grid-template-columns", `repeat(${gridSetting}, minmax(0, 1fr))`, "important");
+    }
+    const totalCards = gridColumns * 2;
+    for (let i = 0; i < totalCards; i++) {
       const skeleton = document.createElement("div");
       skeleton.className = "zoro-card zoro-skeleton";
       skeleton.innerHTML = `
-        <div class="skeleton-cover"></div>
-        <div class="media-info">
-          <div class="skeleton-title"></div>
-          <div class="skeleton-details">
-            <span class="skeleton-badge"></span>
-            <span class="skeleton-badge"></span>
-          </div>
+      <div class="skeleton-cover"></div>
+      <div class="media-info">
+        <div class="skeleton-title"></div>
+        <div class="skeleton-details">
+          <span class="skeleton-badge"></span>
+          <span class="skeleton-badge"></span>
         </div>
-      `;
-      fragment.appendChild(skeleton);
+      </div>
+    `;
+      grid.appendChild(skeleton);
     }
+    fragment.appendChild(grid);
     return fragment;
   }
   static createStatsSkeleton() {
@@ -11013,6 +11109,16 @@ var Sample = class {
         name: "Manga",
         files: ["Reading.md", "Planning.md", "Re-reading.md", "On Hold.md", "Completed.md", "Dropped.md", "Trending.md", "Stats.md"],
         firstFile: "Reading.md"
+      },
+      {
+        name: "Movie",
+        files: ["Planning.md", "Completed.md", "Dropped.md", "Stats.md"],
+        firstFile: "Planning.md"
+      },
+      {
+        name: "TV",
+        files: ["Watching.md", "Planning.md", "On Hold.md", "Completed.md", "Dropped.md", "Stats.md"],
+        firstFile: "Watching.md"
       }
     ];
     if (!vault.getAbstractFileByPath(parentFolder)) {
@@ -11277,7 +11383,11 @@ var FormatterHelper = class {
       case "POINT_100":
         return `${Math.round(score * 10)}/100`;
       case "POINT_10":
-        return `${(score / 10).toFixed(1)}/10`;
+        if (score <= 10) {
+          return `${Math.round(score)}/10`;
+        }
+        return `${Math.round(score / 10)}/10`;
+      // Changed from .toFixed(1) to Math.round()
       case "POINT_5":
         return `${Math.round(score / 20)}/5`;
       case "POINT_3":
@@ -11846,10 +11956,15 @@ var SearchRenderer = class {
     }
     const grid = el.createDiv({ cls: "zoro-cards-grid" });
     try {
-      const cols = Number(this.plugin.settings.gridColumns) || 2;
-      grid.style.setProperty("--zoro-grid-columns", String(cols));
-      grid.style.setProperty("--grid-cols", String(cols));
-      grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)");
+      const gridSetting = this.plugin.settings.gridColumns || GRID_COLUMN_OPTIONS.DEFAULT;
+      if (gridSetting === GRID_COLUMN_OPTIONS.DEFAULT) {
+        grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)");
+      } else {
+        grid.style.setProperty("--zoro-grid-columns", String(gridSetting));
+        grid.style.setProperty("--grid-cols", String(gridSetting));
+        grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)");
+        grid.style.setProperty("grid-template-columns", `repeat(${gridSetting}, minmax(0, 1fr))`, "important");
+      }
     } catch {
     }
     const fragment = document.createDocumentFragment();
@@ -11943,10 +12058,15 @@ var MediaListRenderer = class {
     }
     const grid = el.createDiv({ cls: "zoro-cards-grid" });
     try {
-      const cols = Number(this.plugin.settings.gridColumns) || 2;
-      grid.style.setProperty("--zoro-grid-columns", String(cols));
-      grid.style.setProperty("--grid-cols", String(cols));
-      grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)");
+      const gridSetting = this.plugin.settings.gridColumns || GRID_COLUMN_OPTIONS.DEFAULT;
+      if (gridSetting === GRID_COLUMN_OPTIONS.DEFAULT) {
+        grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)");
+      } else {
+        grid.style.setProperty("--zoro-grid-columns", String(gridSetting));
+        grid.style.setProperty("--grid-cols", String(gridSetting));
+        grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)");
+        grid.style.setProperty("grid-template-columns", `repeat(${gridSetting}, minmax(0, 1fr))`, "important");
+      }
     } catch {
     }
     const fragment = document.createDocumentFragment();
@@ -11960,10 +12080,15 @@ var MediaListRenderer = class {
     el.className = "zoro-container";
     const grid = el.createDiv({ cls: "zoro-cards-grid" });
     try {
-      const cols = Number(this.plugin.settings.gridColumns) || 2;
-      grid.style.setProperty("--zoro-grid-columns", String(cols));
-      grid.style.setProperty("--grid-cols", String(cols));
-      grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)");
+      const gridSetting = this.plugin.settings.gridColumns || GRID_COLUMN_OPTIONS.DEFAULT;
+      if (gridSetting === GRID_COLUMN_OPTIONS.DEFAULT) {
+        grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)");
+      } else {
+        grid.style.setProperty("--zoro-grid-columns", String(gridSetting));
+        grid.style.setProperty("--grid-cols", String(gridSetting));
+        grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)");
+        grid.style.setProperty("grid-template-columns", `repeat(${gridSetting}, minmax(0, 1fr))`, "important");
+      }
     } catch {
     }
     let index = 0;
@@ -11994,10 +12119,15 @@ var MediaListRenderer = class {
     el.className = "zoro-container";
     const grid = el.createDiv({ cls: "zoro-cards-grid" });
     try {
-      const cols = Number(this.plugin.settings.gridColumns) || 2;
-      grid.style.setProperty("--zoro-grid-columns", String(cols));
-      grid.style.setProperty("--grid-cols", String(cols));
-      grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)");
+      const gridSetting = this.plugin.settings.gridColumns || GRID_COLUMN_OPTIONS.DEFAULT;
+      if (gridSetting === GRID_COLUMN_OPTIONS.DEFAULT) {
+        grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)");
+      } else {
+        grid.style.setProperty("--zoro-grid-columns", String(gridSetting));
+        grid.style.setProperty("--grid-cols", String(gridSetting));
+        grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)");
+        grid.style.setProperty("grid-template-columns", `repeat(${gridSetting}, minmax(0, 1fr))`, "important");
+      }
     } catch {
     }
     const card = this.cardRenderer.createMediaCard(media, config, { isSearch: true });
@@ -13573,14 +13703,27 @@ var SidePanel = class extends import_obsidian30.ItemView {
     root.empty();
     root.addClass("zoro-side-panel");
     this.toolbarEl = root.createDiv({ cls: "zoro-panel-toolbar" });
-    this.createBtn = this.toolbarEl.createEl("button", { text: "\u{1F4DD}", cls: "zoro-panel-btn" });
-    this.connectBtn = this.toolbarEl.createEl("button", { text: "\u26D3\uFE0F", cls: "zoro-panel-btn" });
+    this.buttonContainerEl = this.toolbarEl.createDiv({ cls: "zoro-panel-button-container" });
+    this.createBtn = this.buttonContainerEl.createEl("button", {
+      text: "\u{1F4DD}",
+      cls: "zoro-panel-btn"
+    });
+    this.connectBtn = this.buttonContainerEl.createEl("button", {
+      text: "\u26D3\uFE0F",
+      cls: "zoro-panel-btn"
+    });
+    this.searchContainerEl = root.createDiv({ cls: "zoro-panel-search-container" });
     this.contentEl = root.createDiv({ cls: "zoro-panel-content" });
   }
   showToolbar(show) {
     if (!this.toolbarEl) return;
     if (show) this.toolbarEl.removeClass("is-hidden");
     else this.toolbarEl.addClass("is-hidden");
+  }
+  showSearchContainer(show) {
+    if (!this.searchContainerEl) return;
+    if (show) this.searchContainerEl.removeClass("is-hidden");
+    else this.searchContainerEl.addClass("is-hidden");
   }
   teardownUI() {
     try {
@@ -13590,18 +13733,20 @@ var SidePanel = class extends import_obsidian30.ItemView {
     } finally {
       this.currentCleanup = null;
       if (this.contentEl) this.contentEl.empty();
+      if (this.searchContainerEl) this.searchContainerEl.empty();
     }
   }
   resetToBlank() {
     this.teardownUI();
     this.showToolbar(false);
+    this.showSearchContainer(false);
     const c = this.contentEl.createDiv({ cls: "zoro-panel-blank" });
-    c.createEl("h4", { text: "Zoro Panel" });
     c.createEl("div", { text: "Open this panel from a media card to use actions." });
   }
   renderContextualUI(ctx) {
     this.teardownUI();
     this.showToolbar(true);
+    this.showSearchContainer(false);
     this.createBtn.onclick = async () => {
       await this.plugin.connectedNotes.createNewConnectedNote(ctx.searchIds, ctx.mediaType);
       new import_obsidian30.Notice("Created connected note");
@@ -13610,10 +13755,12 @@ var SidePanel = class extends import_obsidian30.ItemView {
     const listWrap = this.contentEl.createDiv({ cls: "zoro-note-panel-content" });
     const emptyState = listWrap.createDiv({ cls: "zoro-note-empty-state" });
     emptyState.createEl("div", { text: "Loading\u2026", cls: "zoro-note-empty-message" });
-    const connectInterface = this.plugin.connectedNotes.renderConnectExistingInterface(this.contentEl, ctx.searchIds, ctx.mediaType);
+    const connectInterface = this.plugin.connectedNotes.renderConnectExistingInterface(this.searchContainerEl, ctx.searchIds, ctx.mediaType);
     connectInterface.classList.add("zoro-note-hidden");
     this.connectBtn.onclick = () => {
+      const isCurrentlyHidden = connectInterface.classList.contains("zoro-note-hidden");
       connectInterface.classList.toggle("zoro-note-hidden");
+      this.showSearchContainer(!isCurrentlyHidden);
       if (!connectInterface.classList.contains("zoro-note-hidden")) {
         const inp = connectInterface.querySelector(".zoro-note-search-input");
         setTimeout(() => inp?.focus(), 100);
@@ -13654,55 +13801,6 @@ var SidePanel = class extends import_obsidian30.ItemView {
     if (!ctx) return;
     this.setContext(ctx);
   }
-};
-
-// src/core/constants.js
-var getDefaultGridColumns = () => {
-  return window.innerWidth >= 768 ? 5 : 2;
-};
-var DEFAULT_SETTINGS = {
-  defaultApiSource: "anilist",
-  defaultApiUserOverride: false,
-  defaultUsername: "",
-  defaultLayout: "card",
-  notePath: "Zoro/Note",
-  insertCodeBlockOnNote: true,
-  showCoverImages: true,
-  showRatings: true,
-  showProgress: true,
-  showGenres: false,
-  showLoadingIcon: true,
-  gridColumns: getDefaultGridColumns(),
-  theme: "",
-  hideUrlsInTitles: true,
-  forceScoreFormat: true,
-  showAvatar: true,
-  showFavorites: true,
-  showBreakdowns: true,
-  showTimeStats: true,
-  statsLayout: "enhanced",
-  statsTheme: "auto",
-  clientId: "",
-  clientSecret: "",
-  redirectUri: "https://anilist.co/api/v2/oauth/pin",
-  accessToken: "",
-  malClientId: "",
-  malClientSecret: "",
-  malAccessToken: "",
-  malRefreshToken: "",
-  malTokenExpiry: null,
-  malUserInfo: null,
-  simklClientId: "",
-  simklClientSecret: "",
-  simklAccessToken: "",
-  simklUserInfo: null,
-  autoFormatSearchUrls: true,
-  customSearchUrls: {
-    ANIME: [],
-    MANGA: [],
-    MOVIE_TV: []
-  },
-  tmdbApiKey: ""
 };
 
 // src/settings/ZoroSettingTab.js
@@ -13816,7 +13914,7 @@ var ZoroSettingTab = class extends import_obsidian31.PluginSettingTab {
       this.plugin.settings.notePath = cleanPath;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian31.Setting(Note).setName("\u{1F3B4} Media block").setDesc("Auto-insert cover, rating, and details in new notes").addToggle((toggle) => toggle.setValue(this.plugin.settings.insertCodeBlockOnNote).onChange(async (value) => {
+    new import_obsidian31.Setting(Note).setName("\u{1F3B4} Media block").setDesc("Auto-insert a code block to show cover, rating, and details in new notes").addToggle((toggle) => toggle.setValue(this.plugin.settings.insertCodeBlockOnNote).onChange(async (value) => {
       this.plugin.settings.insertCodeBlockOnNote = value;
       await this.plugin.saveSettings();
     }));
@@ -13824,11 +13922,22 @@ var ZoroSettingTab = class extends import_obsidian31.PluginSettingTab {
       this.plugin.settings.defaultLayout = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian31.Setting(Display).setName("\u{1F532} Grid Columns").setDesc("Number of columns in card grid layout").addSlider((slider) => slider.setLimits(1, 6, 1).setValue(this.plugin.settings.gridColumns).setDynamicTooltip().onChange(async (value) => {
-      this.plugin.settings.gridColumns = value;
-      await this.plugin.saveSettings();
-      this.updateGridColumns(value);
-    }));
+    new import_obsidian31.Setting(Display).setName("\u{1F532} Grid Columns").setDesc("Choose grid layout: Default uses responsive columns, or force a specific number of columns").addDropdown((dropdown) => {
+      Object.entries(GRID_COLUMN_LABELS).forEach(([value, label]) => {
+        dropdown.addOption(value, label);
+      });
+      const currentValue = this.plugin.settings.gridColumns;
+      if (typeof currentValue === "number") {
+        dropdown.setValue(String(currentValue));
+      } else {
+        dropdown.setValue(currentValue || GRID_COLUMN_OPTIONS.DEFAULT);
+      }
+      dropdown.onChange(async (value) => {
+        this.plugin.settings.gridColumns = value;
+        await this.plugin.saveSettings();
+        this.updateGridColumns(value);
+      });
+    });
     new import_obsidian31.Setting(More).setName("\u23F3 Loading Icon").setDesc("Show loading animation during API requests").addToggle((toggle) => toggle.setValue(this.plugin.settings.showLoadingIcon).onChange(async (value) => {
       this.plugin.settings.showLoadingIcon = value;
       await this.plugin.saveSettings();
@@ -14116,8 +14225,15 @@ var ZoroSettingTab = class extends import_obsidian31.PluginSettingTab {
     const gridElements = document.querySelectorAll(".zoro-cards-grid");
     gridElements.forEach((grid) => {
       try {
-        grid.style.setProperty("--zoro-grid-columns", String(value));
-        grid.style.setProperty("--grid-cols", String(value));
+        if (value === GRID_COLUMN_OPTIONS.DEFAULT) {
+          grid.style.removeProperty("--zoro-grid-columns");
+          grid.style.removeProperty("--grid-cols");
+          grid.style.removeProperty("grid-template-columns");
+        } else {
+          grid.style.setProperty("--zoro-grid-columns", String(value));
+          grid.style.setProperty("--grid-cols", String(value));
+          grid.style.setProperty("grid-template-columns", `repeat(${value}, minmax(0, 1fr))`, "important");
+        }
       } catch {
       }
     });
@@ -14322,7 +14438,7 @@ var ZoroPlugin = class extends import_obsidian32.Plugin {
       showProgress: typeof settings?.showProgress === "boolean" ? settings.showProgress : true,
       showGenres: typeof settings?.showGenres === "boolean" ? settings.showGenres : false,
       showLoadingIcon: typeof settings?.showLoadingIcon === "boolean" ? settings.showLoadingIcon : true,
-      gridColumns: Number.isInteger(settings?.gridColumns) ? settings.gridColumns : getDefaultGridColumns(),
+      gridColumns: this.migrateGridColumnsSetting(settings?.gridColumns),
       theme: typeof settings?.theme === "string" ? settings.theme : "",
       hideUrlsInTitles: typeof settings?.hideUrlsInTitles === "boolean" ? settings.hideUrlsInTitles : true,
       forceScoreFormat: typeof settings?.forceScoreFormat === "boolean" ? settings.forceScoreFormat : true,
@@ -14354,6 +14470,24 @@ var ZoroPlugin = class extends import_obsidian32.Plugin {
       },
       tmdbApiKey: typeof settings?.tmdbApiKey === "string" ? settings.tmdbApiKey : ""
     };
+  }
+  migrateGridColumnsSetting(value) {
+    if (typeof value === "number" && Number.isInteger(value)) {
+      if (value >= 1 && value <= 6) {
+        return String(value);
+      } else {
+        return GRID_COLUMN_OPTIONS.DEFAULT;
+      }
+    } else if (typeof value === "string") {
+      const validOptions = Object.values(GRID_COLUMN_OPTIONS);
+      if (validOptions.includes(value)) {
+        return value;
+      } else {
+        return GRID_COLUMN_OPTIONS.DEFAULT;
+      }
+    } else {
+      return GRID_COLUMN_OPTIONS.DEFAULT;
+    }
   }
   async saveSettings() {
     try {

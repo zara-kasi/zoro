@@ -24,12 +24,13 @@ class Sample {
             },
              {
                 name: 'Movie',
-                files: ['Planning.md', 'Completed.md', 'Dropped.md','Stats.md'],
+                files: ['Planning.md', 'Completed.md', 'Dropped.md', 'Trending.md', 'Stats.md'],
                 firstFile: 'Planning.md'
             },
             {
                 name: 'TV',
-                files: ['Watching.md', 'Planning.md', 'On Hold.md', 'Completed.md', 'Dropped.md', 'Stats.md'],
+                files: ['Watching.md', 'Planning.md', 'On Hold.md', 'Completed.md', 'Dropped.md',
+                'Trending.md', 'Stats.md'],
                 firstFile: 'Watching.md'
             }
             

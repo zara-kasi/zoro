@@ -65,6 +65,7 @@ class EmojiIconMapper {
       '📑': 'bookmark-check',
       '⚠️': 'triangle-alert',
       '🕹️': 'settings-2',
+      '☑️': 'list-checks',
       ...Object.fromEntries(opts.map || [])
     }));
     

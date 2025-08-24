@@ -834,7 +834,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
       
       // Add URL array to frontmatter
       if (this.currentUrls && this.currentUrls.length > 0) {
-        frontmatterLines.push('url:');
+        frontmatterLines.push('urls:');
         this.currentUrls.forEach(url => {
           frontmatterLines.push(`  - "${url}"`);
         });

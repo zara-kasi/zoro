@@ -293,7 +293,7 @@ class CardRenderer {
     const statusText = this.formatter.getStatusText(entry.status);
     
     statusBadge.className = `status-badge status-${statusClass} clickable-status`;
-    statusBadge.createEl('span', { text: '📝' });
+    statusBadge.createEl('span', { text: '☑️' });
     statusBadge.onclick = (e) => this.handleStatusClick(e, entry, statusBadge, config);
     
     return statusBadge;

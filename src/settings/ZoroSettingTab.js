@@ -1,5 +1,6 @@
 import { PluginSettingTab, Setting, Notice, setIcon } from 'obsidian';
 import { AuthModal } from '../auth/AuthModal.js';
+import { GRID_COLUMN_OPTIONS, GRID_COLUMN_LABELS } from '../core/constants.js';
 
 class ZoroSettingTab extends PluginSettingTab {
   constructor(app, plugin) {
@@ -192,16 +193,28 @@ malAuthSetting.addButton(btn => {
 
     new Setting(Display)
       .setName('🔲 Grid Columns')
-      .setDesc('Number of columns in card grid layout')
-      .addSlider(slider => slider
-        .setLimits(1, 6, 1)
-        .setValue(this.plugin.settings.gridColumns)
-        .setDynamicTooltip()
-        .onChange(async (value) => {
+      .setDesc('Choose grid layout: Default uses responsive columns, or force a specific number of columns')
+      .addDropdown(dropdown => {
+        // Add all options to the dropdown
+        Object.entries(GRID_COLUMN_LABELS).forEach(([value, label]) => {
+          dropdown.addOption(value, label);
+        });
+        
+        // Set current value, with fallback for legacy numeric values
+        const currentValue = this.plugin.settings.gridColumns;
+        if (typeof currentValue === 'number') {
+          // Migrate from old numeric system to new string system
+          dropdown.setValue(String(currentValue));
+        } else {
+          dropdown.setValue(currentValue || GRID_COLUMN_OPTIONS.DEFAULT);
+        }
+        
+        dropdown.onChange(async (value) => {
           this.plugin.settings.gridColumns = value;
           await this.plugin.saveSettings();
           this.updateGridColumns(value);
-        }));
+        });
+      });
         
         
         new Setting(More)
@@ -686,8 +699,18 @@ new Setting(Data)
     const gridElements = document.querySelectorAll('.zoro-cards-grid');
     gridElements.forEach(grid => {
       try {
-        grid.style.setProperty('--zoro-grid-columns', String(value));
-        grid.style.setProperty('--grid-cols', String(value));
+        if (value === GRID_COLUMN_OPTIONS.DEFAULT) {
+          // For "Default", remove the inline styles to let CSS handle responsive behavior
+          grid.style.removeProperty('--zoro-grid-columns');
+          grid.style.removeProperty('--grid-cols');
+          grid.style.removeProperty('grid-template-columns');
+        } else {
+          // For fixed column values, set the CSS variables
+          grid.style.setProperty('--zoro-grid-columns', String(value));
+          grid.style.setProperty('--grid-cols', String(value));
+          // Also set grid-template-columns directly to ensure it takes precedence
+          grid.style.setProperty('grid-template-columns', `repeat(${value}, minmax(0, 1fr))`, 'important');
+        }
       } catch {}
     });
   }

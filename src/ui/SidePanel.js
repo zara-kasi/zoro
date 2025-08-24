@@ -94,7 +94,6 @@ class SidePanel extends ItemView {
 		this.showToolbar(false);
 		this.showSearchContainer(false);
 		const c = this.contentEl.createDiv({ cls: 'zoro-panel-blank' });
-		c.createEl('h4', { text: 'Zoro Panel' });
 		c.createEl('div', { text: 'Open this panel from a media card to use actions.' });
 	}
 

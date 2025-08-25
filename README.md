@@ -9,46 +9,7 @@
 
 ---
 
-## Table of Contents
-
-###  Getting Started
-
-- [Quick summary ](quick-summary)
-- [Quick Start ](quick-start)
-- [Quick Look ](#-quick-look)
-- [Recommendation ](#-Recommendation)
-- [Authentication ](#-authentication)
-
-### Core Features
-
-- [Feature Overview](#-feature-overview)
-- [Connected Notes](#-connected-notes)
-- [Search](#-search)
-- [Media Lists](#-media-list)
-- [Statistics](#-statistics)
-- [Trending](#-trending)
-- [Details Panel](#-details-panel)
-- [Side Panel](#-side-panel)
-- [Single Media](#-single-media)
-- [Shortcuts](#-shortcuts)
-- [Export](#-export)
-
-### Customization
-
-- [Code Block ](#-code-block)
-- [Settings](#-settings)
-
-### Development
-
-- [Upcoming](#-upcoming)
-- [Report Bugs](#-report-bugs)
-- [Feature Requests](#-feature-requests)
-- [Acknowledgements](#-acknowledgements)
-- [License](#-license)
-
----
-
-## Getting Started
+# Trial
 
 ### Quick summary 
 
@@ -68,6 +29,34 @@
 ![Trending anime](Assets/trending_anime.png)
 - Open the **Trending** note inside `Zoro/Anime/` or `Zoro/Manga/`.  
 - You’ll instantly get a preview of how media cards are displayed — no authentication needed.
+
+--- 
+
+## Table of Contents
+
+
+- [Recommendation ](#-Recommendation)
+- [Authentication ](#-authentication)
+- [Feature Overview](#-feature-overview)
+- [Connected Notes](#-connected-notes)
+- [Search](#-search)
+- [Media Lists](#-media-list)
+- [Statistics](#-statistics)
+- [Trending](#-trending)
+- [Details Panel](#-details-panel)
+- [Side Panel](#-side-panel)
+- [Single Media](#-single-media)
+- [Shortcuts](#-shortcuts)
+- [Export](#-export)
+- [Code Block ](#-code-block)
+- [Settings](#-settings)
+- [Upcoming](#-upcoming)
+- [Report Bugs](#-report-bugs)
+- [Feature Requests](#-feature-requests)
+- [Acknowledgements](#-acknowledgements)
+- [License](#-license)
+
+---
 
 ###  Recommendation
 

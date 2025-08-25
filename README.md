@@ -60,12 +60,12 @@
 
 ### Quick Start
 
-![create sample note](Assets/create_sample_note.png)
+![create sample note](Assets/sample_folder.png)
 
 - **Zoro** →Settings →  **Setup → Sample Folder** → **Create** to scaffold `Zoro/Anime/`, `Zoro/Manga/`, `Zoro/Movie/`, `Zoro/TV/` and helpful templates.
 
 ### Quick Look
-
+![Trending anime](Assets/trending_anime.png)
 - Open the **Trending** note inside `Zoro/Anime/` or `Zoro/Manga/`.  
 - You’ll instantly get a preview of how media cards are displayed — no authentication needed.
 

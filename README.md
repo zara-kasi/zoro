@@ -60,7 +60,7 @@
 
 ### Quick Start
 
-![create sample note](Assets/ create_sample_note.png)
+![create sample note](Assets/create_sample_note.png)
 
 - **Zoro** →Settings →  **Setup → Sample Folder** → **Create** to scaffold `Zoro/Anime/`, `Zoro/Manga/`, `Zoro/Movie/`, `Zoro/TV/` and helpful templates.
 

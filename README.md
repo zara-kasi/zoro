@@ -13,8 +13,8 @@
 
 ###  Getting Started
 
-- [Quick summary ](#-quick-summary)
-- [Quick Start ](#-quick-start)
+- [Quick summary ](quick-summary)
+- [Quick Start ](quick-start)
 - [Quick Look ](#-quick-look)
 - [Recommendation ](#-Recommendation)
 - [Authentication ](#-authentication)

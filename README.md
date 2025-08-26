@@ -9,6 +9,18 @@
 
 ---
 
+# Quick Links
+
+- [Trial](#-trial)
+- [Recommendation ](#-Recommendation)
+- [Authentication ](#-authentication)
+- [Feature Overview](#-feature-overview)
+- [Code Block ](#-code-block)
+- [Settings](#-settings)
+- [Developement](#-developement)
+
+--- 
+
 # Trial
 
 ### Quick summary 
@@ -30,34 +42,9 @@
 - Open the **Trending** note inside `Zoro/Anime/` or `Zoro/Manga/`.  
 - You’ll instantly get a preview of how media cards are displayed — no authentication needed.
 
---- 
-
-# Quick Links
-
-- [Recommendation ](#-Recommendation)
-- [Authentication ](#-authentication)
-- [Feature Overview](#-feature-overview)
-- [Connected Notes](#-connected-notes)
-- [Search](#-search)
-- [Media Lists](#-media-list)
-- [Statistics](#-statistics)
-- [Trending](#-trending)
-- [Details Panel](#-details-panel)
-- [Side Panel](#-side-panel)
-- [Single Media](#-single-media)
-- [Shortcuts](#-shortcuts)
-- [Export](#-export)
-- [Code Block ](#-code-block)
-- [Settings](#-settings)
-- [Upcoming](#-upcoming)
-- [Report Bugs](#-report-bugs)
-- [Feature Requests](#-feature-requests)
-- [Acknowledgements](#-acknowledgements)
-- [License](#-license)
-
 ---
 
-###  Recommendation
+#  Recommendation
 
 #### **For Anime & Manga Only:**
 *Recommended: AniList*
@@ -76,14 +63,7 @@
 - AniList for anime and manga
 - Best coverage across all media types
 
-#### **For Casual Users:**
-*Recommended: AniList*
-- Public access without authentication
-- Easy to use interface
-- Good for exploration and discovery
-- No commitment required
-
-### Authentication
+# Authentication
 
 These guides provide step-by-step instructions with video for setting up secure connections to your media tracking platforms. It takes only 2 mins if you already have a account.
 
@@ -93,12 +73,9 @@ These guides provide step-by-step instructions with video for setting up secure 
 
 - [MAL Authentication](https://github.com/zara-kasi/zoro/blob/main/Docs/mal-auth-setup.md)
   
-
 --- 
 
-## Core Features
-
-### Feature Overview
+# Feature Overview
 
 - Connected Notes — Create note or link notes for media.
 - Search — Find anime, manga, movies, or TV.
@@ -111,9 +88,7 @@ These guides provide step-by-step instructions with video for setting up secure 
 - Shortcuts — Add custom external link to reviews, streaming services, social media, or news sites.  
 - Export — Easily export your data from AniList, MyAnimeList, or Simkl with one click into proper formats (CSV and MAL-compatible XML for anime and manga).
 
-
-
-## Developement
+# Developement
 
 ### Upcoming
 

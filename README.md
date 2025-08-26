@@ -77,16 +77,16 @@ These guides provide step-by-step instructions with video for setting up secure 
 
 # Feature Overview
 
-- Connected Notes — Create note or link notes for media.
-- Search — Find anime, manga, movies, or TV.
-- Media Lists — Track current, completed, planned, on-hold, dropped, rewatching, or all media in one place.
-- Statistics — View detailed analytics of your media.
-- Trending — Discover popular anime, manga, movies, and TV.
-- Editing — Update progress, status, ratings, and notes directly inside Obsidian.
-- Details Panel — Long-press cover image for quick access to more details about the item. 
-- Single Media— View details, ratings, and metadata for individual titles.    
-- Shortcuts — Add custom external link to reviews, streaming services, social media, or news sites.  
-- Export — Easily export your data from AniList, MyAnimeList, or Simkl with one click into proper formats (CSV and MAL-compatible XML for anime and manga).
+- [Connected Notes](https://github.com/zara-kasi/zoro/blob/release-v1.1.0/Docs%2Fconnected_note.md) — Create note or link notes for media.
+- [Search](https://github.com/zara-kasi/zoro/blob/release-v1.1.0/Docs%2Fsearch.md) — Find anime, manga, movies, or TV.
+- [Media Lists](https://github.com/zara-kasi/zoro/blob/release-v1.1.0/Docs%2Fmedia_list.md) — Track current, completed, planned, on-hold, dropped, rewatching, or all media in one place.
+- [Statistics](https://github.com/zara-kasi/zoro/blob/release-v1.1.0/Docs%2Fstatistics.md) — View detailed analytics of your media.
+- [Trending](https://github.com/zara-kasi/zoro/blob/release-v1.1.0/Docs%2Ftrending.md) — Discover popular anime, manga, movies, and TV.
+- [Editing](https://github.com/zara-kasi/zoro/blob/release-v1.1.0/Docs%2Fedit_panel.md) — Update progress, status, ratings, and notes directly inside Obsidian.
+- [Details Panel](https://github.com/zara-kasi/zoro/blob/release-v1.1.0/Docs%2Fdetail_panel.md) — Long-press cover image for quick access to more details about the item. 
+- [Single Media](https://github.com/zara-kasi/zoro/blob/release-v1.1.0/Docs%2Fsingle_media.md) — View details, ratings, and metadata for individual titles.    
+- [Shortcuts](https://github.com/zara-kasi/zoro/blob/release-v1.1.0/Docs%2Fshortcuts.md) — Add custom external link to reviews, streaming services, social media, or news sites.  
+- [Export](https://github.com/zara-kasi/zoro/blob/release-v1.1.0/Docs%2Fexport_overview.md) — Easily export your data from AniList, MyAnimeList, or Simkl with one click into proper formats (CSV and MAL-compatible XML for anime and manga).
 
 # Developement
 
@@ -112,7 +112,6 @@ These guides provide step-by-step instructions with video for setting up secure 
 - **[Simkl](https://simkl.com/)** - Modern tracking platform for all media types
 - **[TMDb](https://www.themoviedb.org/)** - Movie and TV database for enhanced metadata
 
-This work would not be possible without these essential tools and services.
 
 
 ### License

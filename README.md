@@ -12,7 +12,7 @@
 # Quick Links      
       
 - [Quick Start](#-quick-start)      
-- [Recommendation](#-Recommendation)      
+- [Recommendation](#-recommendation)      
 - [Authentication](#-authentication)      
 - [Feature Overview](#-feature-overview)            
 - [Development](#-development)      
@@ -35,10 +35,9 @@
       
 ## Quick Look      
 
-![Trending anime](Assets/trending_anime.png)      
-
 - Open the **Trending** note inside `Zoro/Anime/` or `Zoro/Manga/`.        
-- You’ll instantly get a preview of how media cards are displayed — no authentication needed.   
+![Trending anime](Assets/trending_anime.png)  
+> *You’ll instantly get a preview of how media cards are displayed — no authentication needed.*
 
 ---    
 
@@ -102,4 +101,4 @@ These guides provide step-by-step instructions with video for setting up secure 
       
 **This project is licensed under the MIT License.**      
       
----
+---      

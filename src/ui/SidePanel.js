@@ -75,8 +75,8 @@ class SidePanel extends ItemView {
 		// Search interface container (fixed position below toolbar)
 		this.searchContainerEl = root.createDiv({ cls: 'zoro-panel-search-container' });
 
-		// Inline embed container for details/edit UIs
-		this.embedEl = root.createDiv({ cls: 'zoro-panel-embed is-hidden' });
+		// Inline embed container for details/edit UIs (rendered BELOW the buttons, inside the search container area)
+		this.embedEl = this.searchContainerEl.createDiv({ cls: 'zoro-panel-embed is-hidden' });
 
 		// Content (center - for notes list)
 		this.contentEl = root.createDiv({ cls: 'zoro-panel-content' });
@@ -102,8 +102,13 @@ class SidePanel extends ItemView {
 
 	showEmbedContainer(show) {
 		if (!this.embedEl) return;
-		if (show) this.embedEl.removeClass('is-hidden');
-		else this.embedEl.addClass('is-hidden');
+		if (show) {
+			this.embedEl.removeClass('is-hidden');
+			// Ensure search container is visible when showing embeds (to render directly below toolbar)
+			this.showSearchContainer(true);
+		} else {
+			this.embedEl.addClass('is-hidden');
+		}
 	}
 
 	clearEmbed() {
@@ -259,7 +264,6 @@ class SidePanel extends ItemView {
 		if (!this.embedEl) return;
 		this.embedEl.empty();
 		this.showContentContainer(false);
-		this.showSearchContainer(false);
 		this.showEmbedContainer(true);
 		try {
 			await this.plugin.moreDetailsPanel.showPanel(media, entry, null, this.embedEl);
@@ -274,7 +278,6 @@ class SidePanel extends ItemView {
 		if (!this.embedEl) return;
 		this.embedEl.empty();
 		this.showContentContainer(false);
-		this.showSearchContainer(false);
 		this.showEmbedContainer(true);
 		try {
 			const source = config?.source || entry?._zoroMeta?.source || this.plugin?.settings?.defaultApiSource || 'anilist';

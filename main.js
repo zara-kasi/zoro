@@ -13679,7 +13679,7 @@ var SidePanel = class extends import_obsidian30.ItemView {
       cls: "zoro-panel-btn"
     });
     this.searchContainerEl = root.createDiv({ cls: "zoro-panel-search-container" });
-    this.embedEl = root.createDiv({ cls: "zoro-panel-embed is-hidden" });
+    this.embedEl = this.searchContainerEl.createDiv({ cls: "zoro-panel-embed is-hidden" });
     this.contentEl = root.createDiv({ cls: "zoro-panel-content" });
   }
   showToolbar(show) {
@@ -13699,8 +13699,12 @@ var SidePanel = class extends import_obsidian30.ItemView {
   }
   showEmbedContainer(show) {
     if (!this.embedEl) return;
-    if (show) this.embedEl.removeClass("is-hidden");
-    else this.embedEl.addClass("is-hidden");
+    if (show) {
+      this.embedEl.removeClass("is-hidden");
+      this.showSearchContainer(true);
+    } else {
+      this.embedEl.addClass("is-hidden");
+    }
   }
   clearEmbed() {
     if (this.embedEl) this.embedEl.empty();
@@ -13834,7 +13838,6 @@ var SidePanel = class extends import_obsidian30.ItemView {
     if (!this.embedEl) return;
     this.embedEl.empty();
     this.showContentContainer(false);
-    this.showSearchContainer(false);
     this.showEmbedContainer(true);
     try {
       await this.plugin.moreDetailsPanel.showPanel(media, entry, null, this.embedEl);
@@ -13848,7 +13851,6 @@ var SidePanel = class extends import_obsidian30.ItemView {
     if (!this.embedEl) return;
     this.embedEl.empty();
     this.showContentContainer(false);
-    this.showSearchContainer(false);
     this.showEmbedContainer(true);
     try {
       const source = config?.source || entry?._zoroMeta?.source || this.plugin?.settings?.defaultApiSource || "anilist";

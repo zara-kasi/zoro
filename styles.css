@@ -2885,8 +2885,6 @@ body.theme-light .zoro-heart.favorited::before {
 /* Inline embed area within Side Panel for Details/Edit */
 .zoro-panel-embed {
   padding: 8px 0;
-  position: relative;
-  z-index: 0;
 }
 
 /* Inline variants remove fixed positioning/overlay visuals */

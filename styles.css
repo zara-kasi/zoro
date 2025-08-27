@@ -2899,6 +2899,49 @@ body.theme-light .zoro-heart.favorited::before {
   flex-direction: column;
 }
 
+/* Inline embed area within Side Panel for Details/Edit */
+.zoro-panel-embed {
+  padding: 8px 0;
+}
+
+/* Inline variants remove fixed positioning/overlay visuals */
+.zoro-inline.zoro-edit-modal {
+  position: static;
+  z-index: auto;
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.zoro-inline .zoro-modal-content {
+  max-width: 100%;
+  width: 100%;
+  box-shadow: none;
+  border: 1px solid var(--background-modifier-border);
+}
+
+.zoro-inline .zoro-modal-overlay {
+  display: none;
+}
+
+/* Inline details panel variant */
+.zoro-inline.zoro-more-details-panel {
+  position: static;
+  transform: none;
+  max-width: 100%;
+  width: 100%;
+  max-height: none;
+  box-shadow: none;
+}
+
+.zoro-inline.zoro-more-details-panel::before {
+  display: none;
+}
+
+.zoro-inline .panel-content {
+  max-height: none;
+}
+
 /* Empty State */
 .zoro-note-empty-state {
   flex: 1;

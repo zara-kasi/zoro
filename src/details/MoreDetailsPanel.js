@@ -10,8 +10,8 @@ class MoreDetailsPanel {
   
   }
 
-  async showPanel(media, entry = null, triggerElement) {
-    return await this.openDetailPanel.showPanel(media, entry, triggerElement);
+  async showPanel(media, entry = null, triggerElement, mountContainer = null) {
+    return await this.openDetailPanel.showPanel(media, entry, triggerElement, mountContainer);
   }
 
   closePanel() {

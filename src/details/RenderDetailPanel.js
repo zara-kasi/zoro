@@ -773,7 +773,10 @@ if (media.type !== 'ANIME' && media.type !== 'MANGA') {
   }
 
   positionPanel(panel, triggerElement) {
-    panel.className = 'zoro-more-details-panel';
+    // Ensure base class is present without overwriting any existing classes (e.g., zoro-inline)
+    if (!panel.classList.contains('zoro-more-details-panel')) {
+      panel.classList.add('zoro-more-details-panel');
+    }
   }
 
   cleanupCountdowns(panel) {

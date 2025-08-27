@@ -11,7 +11,7 @@ class OpenDetailPanel {
 		this.dataSource = new DetailPanelSource(plugin);
 	}
 
-	async showPanel(media, entry = null, triggerElement) {
+	async showPanel(media, entry = null, triggerElement, mountContainer = null) {
 		this.closePanel();
 		// If this is a TMDb trending MOVIE/TV item, resolve Simkl details first before rendering
 		try {
@@ -30,11 +30,22 @@ class OpenDetailPanel {
 		} catch {}
 		const panel = this.renderer.createPanel(media, entry);
 		this.currentPanel = panel;
-		this.renderer.positionPanel(panel, triggerElement);
-		const closeBtn = panel.querySelector('.panel-close-btn');
-		if (closeBtn) closeBtn.onclick = () => this.closePanel();
-		document.body.appendChild(panel);
-		document.addEventListener('click', this.boundOutsideClickHandler);
+		// If a mount container is provided, render inline inside it; otherwise, use overlay
+		if (mountContainer && mountContainer.appendChild) {
+			// Inline mode
+			panel.classList.add('zoro-inline');
+			this.renderer.positionPanel(panel, null);
+			const closeBtn = panel.querySelector('.panel-close-btn');
+			if (closeBtn) closeBtn.onclick = () => this.closePanel();
+			mountContainer.appendChild(panel);
+		} else {
+			// Overlay mode (existing behavior)
+			this.renderer.positionPanel(panel, triggerElement);
+			const closeBtn = panel.querySelector('.panel-close-btn');
+			if (closeBtn) closeBtn.onclick = () => this.closePanel();
+			document.body.appendChild(panel);
+			document.addEventListener('click', this.boundOutsideClickHandler);
+		}
 		this.plugin.requestQueue.showGlobalLoader();
 
 		if (this.dataSource.shouldFetchDetailedData(media)) {

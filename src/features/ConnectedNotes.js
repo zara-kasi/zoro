@@ -448,9 +448,9 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
   /**
    * Show connected notes in the permanent SidePanel
    */
-  async showConnectedNotes(searchIds, mediaType) {
+  async showConnectedNotes(searchIds, mediaType, media = null, entry = null, source = null) {
     try {
-      const context = { searchIds, mediaType };
+      const context = { searchIds, mediaType, media, entry, source };
       await this.openSidePanelWithContext(context);
     } catch (error) {
       console.error('[ConnectedNotes] Error showing connected notes:', error);
@@ -912,8 +912,8 @@ async handleConnectedNotesClick(e, media, entry, config) {
     // Extract search IDs
     const searchIds = this.extractSearchIds(media, entry, source);
     
-    // Show connected notes
-    await this.showConnectedNotes(searchIds, mediaType);
+    // Show connected notes and pass media/entry/source for Side Panel inline actions
+    await this.showConnectedNotes(searchIds, mediaType, media, entry, source);
     
   } catch (error) {
     console.error('[ConnectedNotes] Button click error:', error);

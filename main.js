@@ -6243,86 +6243,6 @@ var import_obsidian10 = require("obsidian");
 
 // src/auth/SimklPinModal.js
 var import_obsidian9 = require("obsidian");
-var SimklPinModal = class extends import_obsidian9.Modal {
-  constructor(app, deviceData, onCancel) {
-    super(app);
-    this.deviceData = deviceData;
-    this.onCancel = onCancel;
-    this.countdownInterval = null;
-  }
-  onOpen() {
-    const { contentEl } = this;
-    contentEl.empty();
-    contentEl.addClass("simkl-pin-modal");
-    contentEl.createEl("h2", {
-      text: "\u{1F510} SIMKL Authentication",
-      attr: { style: "text-align: center; margin-bottom: 20px;" }
-    });
-    const instructionsEl = contentEl.createEl("div", {
-      attr: { style: "text-align: center; padding: 20px;" }
-    });
-    instructionsEl.createEl("h3", {
-      text: "Your PIN Code:",
-      attr: { style: "margin-bottom: 15px;" }
-    });
-    const codeEl = instructionsEl.createEl("div", {
-      text: this.deviceData.user_code,
-      cls: "simkl-pin-code",
-      attr: {
-        style: "font-size: 3em; font-weight: bold; color: var(--interactive-accent); margin: 30px 0; padding: 20px; border: 3px solid var(--interactive-accent); border-radius: 12px; font-family: monospace; letter-spacing: 5px;"
-      }
-    });
-    const steps = instructionsEl.createEl("ol", {
-      attr: { style: "text-align: left; max-width: 400px; margin: 0 auto 20px auto;" }
-    });
-    steps.createEl("li", { text: "The SIMKL PIN page should have opened in your browser" });
-    steps.createEl("li", { text: "Enter the code shown above" });
-    steps.createEl("li", { text: "This dialog will close automatically when complete" });
-    const buttonContainer = instructionsEl.createEl("div", {
-      attr: { style: "margin-top: 20px;" }
-    });
-    const copyButton = buttonContainer.createEl("button", {
-      text: "\u{1F4CB} Copy Code",
-      cls: "mod-cta",
-      attr: { style: "margin: 5px;" }
-    });
-    const cancelButton = buttonContainer.createEl("button", {
-      text: "Cancel",
-      attr: { style: "margin: 5px;" }
-    });
-    const countdownEl = instructionsEl.createEl("div", {
-      attr: { style: "margin-top: 15px; font-size: 0.9em; color: var(--text-muted);" }
-    });
-    copyButton.onclick = () => {
-      navigator.clipboard.writeText(this.deviceData.user_code);
-      new Notice("\u{1F4CB} Code copied to clipboard!");
-    };
-    cancelButton.onclick = () => {
-      this.close();
-      if (this.onCancel) this.onCancel();
-      new Notice("Authentication cancelled.");
-    };
-    let timeLeft = this.deviceData.expires_in || 900;
-    const updateCountdown = () => {
-      const minutes = Math.floor(timeLeft / 60);
-      const seconds = timeLeft % 60;
-      countdownEl.textContent = `\u23F0 Code expires in: ${minutes}:${seconds.toString().padStart(2, "0")}`;
-      if (timeLeft > 0) {
-        timeLeft--;
-      } else {
-        this.close();
-        if (this.onCancel) this.onCancel();
-      }
-    };
-    updateCountdown();
-    this.countdownInterval = setInterval(updateCountdown, 1e3);
-  }
-  onClose() {
-    if (this.countdownInterval) {
-      clearInterval(this.countdownInterval);
-    }
-  }
-};
 
 // src/auth/SimklAuthentication.js
 var SimklAuthentication = class _SimklAuthentication {
@@ -6378,10 +6298,6 @@ var SimklAuthentication = class _SimklAuthentication {
       } else {
         window.open(pinPageUrl, "_blank");
       }
-      const modal = new SimklPinModal(this.plugin.app, deviceData, async () => {
-        this.stopPolling();
-      });
-      modal.open();
       this.startPolling(deviceData);
     } catch (error) {
       console.error("SIMKL authentication failed:", error);
@@ -6971,7 +6887,11 @@ var Trending = class {
       url = `https://api.jikan.moe/v4/top/${type}?filter=airing&limit=${Math.min(limit, 25)}`;
     }
     try {
-      const response = await fetch(url);
+      const response = await this.plugin.requestQueue.add(() => fetch(url), {
+        priority: "normal",
+        service: "mal",
+        metadata: { type: "trending" }
+      });
       if (!response.ok) {
         const errorText = await response.text();
         console.error("[Trending] Jikan error response:", errorText);
@@ -7530,7 +7450,7 @@ var Processor = class {
       const mtUpper = config.mediaType.toUpperCase();
       if (["MOVIE", "MOVIES", "TV", "SHOW", "SHOWS"].includes(mtUpper)) {
         config.source = "simkl";
-      } else if (mtUpper === "MANGA" && (config.source === "anilist" || config.source === "simkl")) {
+      } else if (mtUpper === "MANGA" && config.source === "simkl") {
         config.source = "mal";
       }
       return config;
@@ -8083,6 +8003,73 @@ var import_obsidian19 = require("obsidian");
 
 // src/rendering/helpers/DOMHelper.js
 var import_obsidian18 = require("obsidian");
+
+// src/core/constants.js
+var GRID_COLUMN_OPTIONS = {
+  DEFAULT: "default",
+  ONE: "1",
+  TWO: "2",
+  THREE: "3",
+  FOUR: "4",
+  FIVE: "5",
+  SIX: "6"
+};
+var GRID_COLUMN_LABELS = {
+  [GRID_COLUMN_OPTIONS.DEFAULT]: "Default (Responsive)",
+  [GRID_COLUMN_OPTIONS.ONE]: "1 Column",
+  [GRID_COLUMN_OPTIONS.TWO]: "2 Columns",
+  [GRID_COLUMN_OPTIONS.THREE]: "3 Columns",
+  [GRID_COLUMN_OPTIONS.FOUR]: "4 Columns",
+  [GRID_COLUMN_OPTIONS.FIVE]: "5 Columns",
+  [GRID_COLUMN_OPTIONS.SIX]: "6 Columns"
+};
+var DEFAULT_SETTINGS = {
+  defaultApiSource: "anilist",
+  defaultApiUserOverride: false,
+  defaultUsername: "",
+  defaultLayout: "card",
+  notePath: "Zoro/Note",
+  insertCodeBlockOnNote: true,
+  showCoverImages: true,
+  showRatings: true,
+  showProgress: true,
+  showGenres: false,
+  showLoadingIcon: true,
+  gridColumns: GRID_COLUMN_OPTIONS.DEFAULT,
+  // Changed from numeric to string option
+  theme: "",
+  hideUrlsInTitles: true,
+  forceScoreFormat: true,
+  showAvatar: true,
+  showFavorites: true,
+  showBreakdowns: true,
+  showTimeStats: true,
+  statsLayout: "enhanced",
+  statsTheme: "auto",
+  clientId: "",
+  clientSecret: "",
+  redirectUri: "https://anilist.co/api/v2/oauth/pin",
+  accessToken: "",
+  malClientId: "",
+  malClientSecret: "",
+  malAccessToken: "",
+  malRefreshToken: "",
+  malTokenExpiry: null,
+  malUserInfo: null,
+  simklClientId: "",
+  simklClientSecret: "",
+  simklAccessToken: "",
+  simklUserInfo: null,
+  autoFormatSearchUrls: true,
+  customSearchUrls: {
+    ANIME: [],
+    MANGA: [],
+    MOVIE_TV: []
+  },
+  tmdbApiKey: ""
+};
+
+// src/rendering/helpers/DOMHelper.js
 var DOMHelper = class {
   static createLoadingSpinner() {
     return `
@@ -8112,21 +8099,46 @@ var DOMHelper = class {
   }
   static createListSkeleton(count = 6) {
     const fragment = document.createDocumentFragment();
-    for (let i = 0; i < count; i++) {
+    const grid = document.createElement("div");
+    grid.className = "zoro-cards-grid";
+    let gridSetting = GRID_COLUMN_OPTIONS.DEFAULT;
+    let gridColumns = 2;
+    try {
+      if (window.zoroPlugin?.settings?.gridColumns) {
+        gridSetting = window.zoroPlugin.settings.gridColumns;
+        if (gridSetting === GRID_COLUMN_OPTIONS.DEFAULT) {
+          gridColumns = 3;
+        } else {
+          gridColumns = Number(gridSetting) || 2;
+        }
+      }
+    } catch (e) {
+    }
+    if (gridSetting === GRID_COLUMN_OPTIONS.DEFAULT) {
+      grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)", "important");
+    } else {
+      grid.style.setProperty("--zoro-grid-columns", String(gridSetting), "important");
+      grid.style.setProperty("--grid-cols", String(gridSetting), "important");
+      grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)", "important");
+      grid.style.setProperty("grid-template-columns", `repeat(${gridSetting}, minmax(0, 1fr))`, "important");
+    }
+    const totalCards = gridColumns * 2;
+    for (let i = 0; i < totalCards; i++) {
       const skeleton = document.createElement("div");
       skeleton.className = "zoro-card zoro-skeleton";
       skeleton.innerHTML = `
-        <div class="skeleton-cover"></div>
-        <div class="media-info">
-          <div class="skeleton-title"></div>
-          <div class="skeleton-details">
-            <span class="skeleton-badge"></span>
-            <span class="skeleton-badge"></span>
-          </div>
+      <div class="skeleton-cover"></div>
+      <div class="media-info">
+        <div class="skeleton-title"></div>
+        <div class="skeleton-details">
+          <span class="skeleton-badge"></span>
+          <span class="skeleton-badge"></span>
         </div>
-      `;
-      fragment.appendChild(skeleton);
+      </div>
+    `;
+      grid.appendChild(skeleton);
     }
+    fragment.appendChild(grid);
     return fragment;
   }
   static createStatsSkeleton() {
@@ -8445,6 +8457,92 @@ var Edit = class {
       favoriteBtn.style.display = "none";
     }
     return modal;
+  }
+  createInlineEdit(entry, onSave, onCancel, source = "anilist", mountContainer = null) {
+    if (!mountContainer || !mountContainer.appendChild) {
+      return this.createEditModal(entry, onSave, onCancel, source);
+    }
+    const isTmdb = (entry._zoroMeta?.source || source) === "tmdb";
+    const mt = (entry._zoroMeta?.mediaType || "").toUpperCase();
+    const actualSource = isTmdb && (mt === "MOVIE" || mt === "MOVIES" || mt === "TV" || mt === "SHOW" || mt === "SHOWS") ? "simkl" : entry._zoroMeta?.source || source;
+    const provider = this.providers[actualSource];
+    const container = document.createElement("div");
+    container.className = "zoro-edit-modal zoro-inline";
+    const content = document.createElement("div");
+    content.className = "zoro-modal-content";
+    const form = document.createElement("form");
+    form.className = "zoro-edit-form";
+    content.appendChild(form);
+    container.appendChild(content);
+    const title = this.renderer.createTitle(entry);
+    const closeBtn = this.renderer.createCloseButton(() => {
+      try {
+        container.remove();
+      } catch {
+      }
+      if (typeof onCancel === "function") onCancel();
+    });
+    const favoriteBtn = this.renderer.createFavoriteButton(entry, actualSource, (entryToFav, btn, src) => this.toggleFavorite(entryToFav, btn, src));
+    const formFields = this.renderer.createFormFields(entry, actualSource);
+    const quickButtons = this.renderer.createQuickProgressButtons(entry, formFields.progress.input, formFields.status.input);
+    const actionButtons = this.renderer.createActionButtons(entry, () => this.handleRemoveInline(entry, container, actualSource), this.config, actualSource);
+    this.renderer.assembleModal(content, form, {
+      title,
+      closeBtn,
+      favoriteBtn,
+      formFields,
+      quickButtons,
+      actionButtons
+    });
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      if (this.saving) return;
+      this.saving = true;
+      this.support.setSavingState(actionButtons.save);
+      try {
+        const updates = this.support.extractFormData(formFields);
+        await provider.updateEntry(entry, updates, onSave);
+        provider.invalidateCache(entry);
+        this.support.refreshUI(entry);
+        new import_obsidian20.Notice("\u2705 Saved");
+      } catch (err) {
+        this.support.showModalError(form, `Save failed: ${err.message}`);
+        this.support.resetSaveButton(actionButtons.save);
+        this.saving = false;
+        return;
+      }
+      this.support.resetSaveButton(actionButtons.save);
+      this.saving = false;
+    };
+    if (provider.supportsFeature("favorites")) {
+      this.initializeFavoriteButton(entry, favoriteBtn, actualSource);
+    } else {
+      favoriteBtn.style.display = "none";
+    }
+    mountContainer.appendChild(container);
+    return { container, content, form };
+  }
+  async handleRemoveInline(entry, container, source) {
+    if (!confirm("Remove this entry?")) return;
+    const removeBtn = container.querySelector(".zoro-remove-btn");
+    this.support.setRemovingState(removeBtn);
+    try {
+      const provider = this.providers[source];
+      if (!provider.supportsFeature("remove")) {
+        throw new Error(`${source.toUpperCase()} does not support removing entries via API`);
+      }
+      await provider.removeEntry(entry);
+      provider.invalidateCache(entry);
+      this.support.refreshUI(entry);
+      try {
+        container.remove();
+      } catch {
+      }
+      new import_obsidian20.Notice("\u2705 Removed");
+    } catch (e) {
+      this.support.showModalError(container.querySelector(".zoro-edit-form"), `Remove failed: ${e.message}`);
+      this.support.resetRemoveButton(removeBtn);
+    }
   }
   async initializeFavoriteButton(entry, favBtn, source) {
     const provider = this.providers[source];
@@ -9982,7 +10080,7 @@ var OpenDetailPanel = class {
     this.renderer = new RenderDetailPanel(plugin);
     this.dataSource = new DetailPanelSource(plugin);
   }
-  async showPanel(media, entry = null, triggerElement) {
+  async showPanel(media, entry = null, triggerElement, mountContainer = null) {
     this.closePanel();
     try {
       const mediaKind = media?.type || media?.format;
@@ -10000,11 +10098,19 @@ var OpenDetailPanel = class {
     }
     const panel = this.renderer.createPanel(media, entry);
     this.currentPanel = panel;
-    this.renderer.positionPanel(panel, triggerElement);
-    const closeBtn = panel.querySelector(".panel-close-btn");
-    if (closeBtn) closeBtn.onclick = () => this.closePanel();
-    document.body.appendChild(panel);
-    document.addEventListener("click", this.boundOutsideClickHandler);
+    if (mountContainer && mountContainer.appendChild) {
+      panel.classList.add("zoro-inline");
+      this.renderer.positionPanel(panel, null);
+      const closeBtn = panel.querySelector(".panel-close-btn");
+      if (closeBtn) closeBtn.onclick = () => this.closePanel();
+      mountContainer.appendChild(panel);
+    } else {
+      this.renderer.positionPanel(panel, triggerElement);
+      const closeBtn = panel.querySelector(".panel-close-btn");
+      if (closeBtn) closeBtn.onclick = () => this.closePanel();
+      document.body.appendChild(panel);
+      document.addEventListener("click", this.boundOutsideClickHandler);
+    }
     this.plugin.requestQueue.showGlobalLoader();
     if (this.dataSource.shouldFetchDetailedData(media)) {
       this.dataSource.fetchAndUpdateData(media.id, entry, (detailedMedia, malData, imdbData) => {
@@ -10035,8 +10141,8 @@ var MoreDetailsPanel = class {
     this.openDetailPanel = new OpenDetailPanel(plugin);
     this.customExternalURL = new CustomExternalURL(plugin);
   }
-  async showPanel(media, entry = null, triggerElement) {
-    return await this.openDetailPanel.showPanel(media, entry, triggerElement);
+  async showPanel(media, entry = null, triggerElement, mountContainer = null) {
+    return await this.openDetailPanel.showPanel(media, entry, triggerElement, mountContainer);
   }
   closePanel() {
     this.openDetailPanel.closePanel();
@@ -11007,12 +11113,30 @@ var Sample = class {
           "Trending.md",
           "Stats.md"
         ],
-        firstFile: "Watching.md"
+        firstFile: "Trending.md"
       },
       {
         name: "Manga",
         files: ["Reading.md", "Planning.md", "Re-reading.md", "On Hold.md", "Completed.md", "Dropped.md", "Trending.md", "Stats.md"],
-        firstFile: "Reading.md"
+        firstFile: "Trending.md"
+      },
+      {
+        name: "Movie",
+        files: ["Planning.md", "Completed.md", "Dropped.md", "Trending.md", "Stats.md"],
+        firstFile: "Planning.md"
+      },
+      {
+        name: "TV",
+        files: [
+          "Watching.md",
+          "Planning.md",
+          "On Hold.md",
+          "Completed.md",
+          "Dropped.md",
+          "Trending.md",
+          "Stats.md"
+        ],
+        firstFile: "Watching.md"
       }
     ];
     if (!vault.getAbstractFileByPath(parentFolder)) {
@@ -11277,7 +11401,11 @@ var FormatterHelper = class {
       case "POINT_100":
         return `${Math.round(score * 10)}/100`;
       case "POINT_10":
-        return `${(score / 10).toFixed(1)}/10`;
+        if (score <= 10) {
+          return `${Math.round(score)}/10`;
+        }
+        return `${Math.round(score / 10)}/10`;
+      // Changed from .toFixed(1) to Math.round()
       case "POINT_5":
         return `${Math.round(score / 20)}/5`;
       case "POINT_3":
@@ -11552,7 +11680,7 @@ var CardRenderer = class {
     const statusClass = this.formatter.getStatusClass(entry.status);
     const statusText = this.formatter.getStatusText(entry.status);
     statusBadge.className = `status-badge status-${statusClass} clickable-status`;
-    statusBadge.createEl("span", { text: "\u{1F4DD}" });
+    statusBadge.createEl("span", { text: "\u2611\uFE0F" });
     statusBadge.onclick = (e) => this.handleStatusClick(e, entry, statusBadge, config);
     return statusBadge;
   }
@@ -11846,10 +11974,15 @@ var SearchRenderer = class {
     }
     const grid = el.createDiv({ cls: "zoro-cards-grid" });
     try {
-      const cols = Number(this.plugin.settings.gridColumns) || 2;
-      grid.style.setProperty("--zoro-grid-columns", String(cols));
-      grid.style.setProperty("--grid-cols", String(cols));
-      grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)");
+      const gridSetting = this.plugin.settings.gridColumns || GRID_COLUMN_OPTIONS.DEFAULT;
+      if (gridSetting === GRID_COLUMN_OPTIONS.DEFAULT) {
+        grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)");
+      } else {
+        grid.style.setProperty("--zoro-grid-columns", String(gridSetting));
+        grid.style.setProperty("--grid-cols", String(gridSetting));
+        grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)");
+        grid.style.setProperty("grid-template-columns", `repeat(${gridSetting}, minmax(0, 1fr))`, "important");
+      }
     } catch {
     }
     const fragment = document.createDocumentFragment();
@@ -11943,10 +12076,15 @@ var MediaListRenderer = class {
     }
     const grid = el.createDiv({ cls: "zoro-cards-grid" });
     try {
-      const cols = Number(this.plugin.settings.gridColumns) || 2;
-      grid.style.setProperty("--zoro-grid-columns", String(cols));
-      grid.style.setProperty("--grid-cols", String(cols));
-      grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)");
+      const gridSetting = this.plugin.settings.gridColumns || GRID_COLUMN_OPTIONS.DEFAULT;
+      if (gridSetting === GRID_COLUMN_OPTIONS.DEFAULT) {
+        grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)");
+      } else {
+        grid.style.setProperty("--zoro-grid-columns", String(gridSetting));
+        grid.style.setProperty("--grid-cols", String(gridSetting));
+        grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)");
+        grid.style.setProperty("grid-template-columns", `repeat(${gridSetting}, minmax(0, 1fr))`, "important");
+      }
     } catch {
     }
     const fragment = document.createDocumentFragment();
@@ -11960,10 +12098,15 @@ var MediaListRenderer = class {
     el.className = "zoro-container";
     const grid = el.createDiv({ cls: "zoro-cards-grid" });
     try {
-      const cols = Number(this.plugin.settings.gridColumns) || 2;
-      grid.style.setProperty("--zoro-grid-columns", String(cols));
-      grid.style.setProperty("--grid-cols", String(cols));
-      grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)");
+      const gridSetting = this.plugin.settings.gridColumns || GRID_COLUMN_OPTIONS.DEFAULT;
+      if (gridSetting === GRID_COLUMN_OPTIONS.DEFAULT) {
+        grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)");
+      } else {
+        grid.style.setProperty("--zoro-grid-columns", String(gridSetting));
+        grid.style.setProperty("--grid-cols", String(gridSetting));
+        grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)");
+        grid.style.setProperty("grid-template-columns", `repeat(${gridSetting}, minmax(0, 1fr))`, "important");
+      }
     } catch {
     }
     let index = 0;
@@ -11994,10 +12137,15 @@ var MediaListRenderer = class {
     el.className = "zoro-container";
     const grid = el.createDiv({ cls: "zoro-cards-grid" });
     try {
-      const cols = Number(this.plugin.settings.gridColumns) || 2;
-      grid.style.setProperty("--zoro-grid-columns", String(cols));
-      grid.style.setProperty("--grid-cols", String(cols));
-      grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)");
+      const gridSetting = this.plugin.settings.gridColumns || GRID_COLUMN_OPTIONS.DEFAULT;
+      if (gridSetting === GRID_COLUMN_OPTIONS.DEFAULT) {
+        grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)");
+      } else {
+        grid.style.setProperty("--zoro-grid-columns", String(gridSetting));
+        grid.style.setProperty("--grid-cols", String(gridSetting));
+        grid.style.setProperty("--zoro-grid-gap", "var(--size-4-4)");
+        grid.style.setProperty("grid-template-columns", `repeat(${gridSetting}, minmax(0, 1fr))`, "important");
+      }
     } catch {
     }
     const card = this.cardRenderer.createMediaCard(media, config, { isSearch: true });
@@ -12665,6 +12813,7 @@ var EmojiIconMapper = class {
       "\u{1F4D1}": "bookmark-check",
       "\u26A0\uFE0F": "triangle-alert",
       "\u{1F579}\uFE0F": "settings-2",
+      "\u2611\uFE0F": "list-checks",
       ...Object.fromEntries(opts.map || [])
     }));
     this._sortedKeys = [...this.map.keys()].sort((a, b) => b.length - a.length);
@@ -12978,7 +13127,7 @@ var ConnectedNotes = class {
         }
       }
       if (!hasMatchingId && this.currentUrls) {
-        if (this.hasMatchingUrl(frontmatter.url, this.currentUrls)) {
+        if (this.hasMatchingUrl(frontmatter.urls, this.currentUrls)) {
           hasMatchingId = true;
         }
       }
@@ -13018,7 +13167,7 @@ var ConnectedNotes = class {
           }
         }
         if (!alreadyConnected && this.currentUrls) {
-          if (this.hasMatchingUrl(frontmatter.url, this.currentUrls)) {
+          if (this.hasMatchingUrl(frontmatter.urls, this.currentUrls)) {
             alreadyConnected = true;
           }
         }
@@ -13114,13 +13263,13 @@ var ConnectedNotes = class {
         }
       }
       const hasZoroTag = metadata?.tags?.some((tag) => tag.tag === "#Zoro") || Array.isArray(existingFrontmatter.tags) && existingFrontmatter.tags.includes("Zoro");
-      const hasExistingIds = existingFrontmatter.mal_id || existingFrontmatter.anilist_id || existingFrontmatter.simkl_id || existingFrontmatter.imdb_id || existingFrontmatter.tmdb_id || existingFrontmatter.media_type || existingFrontmatter.url;
+      const hasExistingIds = existingFrontmatter.mal_id || existingFrontmatter.anilist_id || existingFrontmatter.simkl_id || existingFrontmatter.imdb_id || existingFrontmatter.tmdb_id || existingFrontmatter.media_type || existingFrontmatter.urls;
       const isAlreadyConnected = hasZoroTag && hasExistingIds;
       const updatedFrontmatter = { ...existingFrontmatter };
       if (isAlreadyConnected) {
         console.log(`[ConnectedNotes] Note "${file.basename}" is already connected, only adding URLs`);
         if (this.currentUrls && this.currentUrls.length > 0) {
-          updatedFrontmatter.url = this.mergeUrlArrays(existingFrontmatter.url, this.currentUrls);
+          updatedFrontmatter.urls = this.mergeUrlArrays(existingFrontmatter.urls, this.currentUrls);
         }
         if (!updatedFrontmatter.tags) {
           updatedFrontmatter.tags = ["Zoro"];
@@ -13135,7 +13284,7 @@ var ConnectedNotes = class {
           updatedFrontmatter[key] = value;
         });
         if (this.currentUrls && this.currentUrls.length > 0) {
-          updatedFrontmatter.url = this.mergeUrlArrays(existingFrontmatter.url, this.currentUrls);
+          updatedFrontmatter.urls = this.mergeUrlArrays(existingFrontmatter.urls, this.currentUrls);
         }
         updatedFrontmatter.media_type = mediaType;
         if (!updatedFrontmatter.tags) {
@@ -13188,9 +13337,9 @@ var ConnectedNotes = class {
   /**
    * Show connected notes in the permanent SidePanel
    */
-  async showConnectedNotes(searchIds, mediaType) {
+  async showConnectedNotes(searchIds, mediaType, media = null, entry = null, source = null) {
     try {
-      const context = { searchIds, mediaType };
+      const context = { searchIds, mediaType, media, entry, source };
       await this.openSidePanelWithContext(context);
     } catch (error) {
       console.error("[ConnectedNotes] Error showing connected notes:", error);
@@ -13460,7 +13609,7 @@ var ConnectedNotes = class {
         `media_type: "${mediaType}"`
       ];
       if (this.currentUrls && this.currentUrls.length > 0) {
-        frontmatterLines.push("url:");
+        frontmatterLines.push("urls:");
         this.currentUrls.forEach((url) => {
           frontmatterLines.push(`  - "${url}"`);
         });
@@ -13507,7 +13656,7 @@ var ConnectedNotes = class {
       this.currentMediaType = mediaType;
       this.currentUrls = this.buildCurrentUrls(media, mediaType, source);
       const searchIds = this.extractSearchIds(media, entry, source);
-      await this.showConnectedNotes(searchIds, mediaType);
+      await this.showConnectedNotes(searchIds, mediaType, media, entry, source);
     } catch (error) {
       console.error("[ConnectedNotes] Button click error:", error);
       new import_obsidian29.Notice("Failed to open connected notes");
@@ -13543,6 +13692,9 @@ var SidePanel = class extends import_obsidian30.ItemView {
     this.plugin = plugin;
     this.currentCleanup = null;
     this.context = null;
+    this.embedEl = null;
+    this.detailsBtn = null;
+    this.editInlineBtn = null;
   }
   getViewType() {
     return ZORO_VIEW_TYPE;
@@ -13573,14 +13725,36 @@ var SidePanel = class extends import_obsidian30.ItemView {
     root.empty();
     root.addClass("zoro-side-panel");
     this.toolbarEl = root.createDiv({ cls: "zoro-panel-toolbar" });
-    this.createBtn = this.toolbarEl.createEl("button", { text: "\u{1F4DD}", cls: "zoro-panel-btn" });
-    this.connectBtn = this.toolbarEl.createEl("button", { text: "\u26D3\uFE0F", cls: "zoro-panel-btn" });
+    this.buttonContainerEl = this.toolbarEl.createDiv({ cls: "zoro-panel-button-container" });
+    this.createBtn = this.buttonContainerEl.createEl("button", {
+      text: "\u{1F4DD}",
+      cls: "zoro-panel-btn"
+    });
+    this.connectBtn = this.buttonContainerEl.createEl("button", {
+      text: "\u26D3\uFE0F",
+      cls: "zoro-panel-btn"
+    });
+    this.detailsBtn = this.buttonContainerEl.createEl("button", {
+      text: "\u2139\uFE0F",
+      cls: "zoro-panel-btn"
+    });
+    this.editInlineBtn = this.buttonContainerEl.createEl("button", {
+      text: "\u270F\uFE0F",
+      cls: "zoro-panel-btn"
+    });
+    this.searchContainerEl = root.createDiv({ cls: "zoro-panel-search-container" });
+    this.embedEl = root.createDiv({ cls: "zoro-panel-embed" });
     this.contentEl = root.createDiv({ cls: "zoro-panel-content" });
   }
   showToolbar(show) {
     if (!this.toolbarEl) return;
     if (show) this.toolbarEl.removeClass("is-hidden");
     else this.toolbarEl.addClass("is-hidden");
+  }
+  showSearchContainer(show) {
+    if (!this.searchContainerEl) return;
+    if (show) this.searchContainerEl.removeClass("is-hidden");
+    else this.searchContainerEl.addClass("is-hidden");
   }
   teardownUI() {
     try {
@@ -13590,18 +13764,21 @@ var SidePanel = class extends import_obsidian30.ItemView {
     } finally {
       this.currentCleanup = null;
       if (this.contentEl) this.contentEl.empty();
+      if (this.searchContainerEl) this.searchContainerEl.empty();
+      if (this.embedEl) this.embedEl.empty();
     }
   }
   resetToBlank() {
     this.teardownUI();
     this.showToolbar(false);
+    this.showSearchContainer(false);
     const c = this.contentEl.createDiv({ cls: "zoro-panel-blank" });
-    c.createEl("h4", { text: "Zoro Panel" });
     c.createEl("div", { text: "Open this panel from a media card to use actions." });
   }
   renderContextualUI(ctx) {
     this.teardownUI();
     this.showToolbar(true);
+    this.showSearchContainer(false);
     this.createBtn.onclick = async () => {
       await this.plugin.connectedNotes.createNewConnectedNote(ctx.searchIds, ctx.mediaType);
       new import_obsidian30.Notice("Created connected note");
@@ -13610,13 +13787,51 @@ var SidePanel = class extends import_obsidian30.ItemView {
     const listWrap = this.contentEl.createDiv({ cls: "zoro-note-panel-content" });
     const emptyState = listWrap.createDiv({ cls: "zoro-note-empty-state" });
     emptyState.createEl("div", { text: "Loading\u2026", cls: "zoro-note-empty-message" });
-    const connectInterface = this.plugin.connectedNotes.renderConnectExistingInterface(this.contentEl, ctx.searchIds, ctx.mediaType);
+    const connectInterface = this.plugin.connectedNotes.renderConnectExistingInterface(this.searchContainerEl, ctx.searchIds, ctx.mediaType);
     connectInterface.classList.add("zoro-note-hidden");
     this.connectBtn.onclick = () => {
+      const isCurrentlyHidden = connectInterface.classList.contains("zoro-note-hidden");
       connectInterface.classList.toggle("zoro-note-hidden");
+      this.showSearchContainer(!isCurrentlyHidden);
       if (!connectInterface.classList.contains("zoro-note-hidden")) {
         const inp = connectInterface.querySelector(".zoro-note-search-input");
         setTimeout(() => inp?.focus(), 100);
+      }
+    };
+    this.detailsBtn.onclick = async () => {
+      try {
+        const media = ctx?.media || ctx?.entry?.media || null;
+        if (!media) {
+          new import_obsidian30.Notice("No media selected");
+          return;
+        }
+        await this.showDetailsForMedia(media, ctx?.entry || null);
+      } catch (e) {
+        console.error("[Zoro][SidePanel] Failed to show details inline", e);
+      }
+    };
+    this.editInlineBtn.onclick = async () => {
+      try {
+        let entry = ctx?.entry || null;
+        let source = ctx?.entry?._zoroMeta?.source || ctx?.source || this.plugin?.settings?.defaultApiSource || "anilist";
+        if (!entry) {
+          const media = ctx?.media || null;
+          if (!media) {
+            new import_obsidian30.Notice("No entry to edit");
+            return;
+          }
+          entry = {
+            media,
+            status: "PLANNING",
+            progress: 0,
+            score: null,
+            id: null,
+            _zoroMeta: { source, mediaType: media.type || media.format || ctx?.mediaType || "ANIME" }
+          };
+        }
+        await this.showEditForEntry(entry, { source });
+      } catch (e) {
+        console.error("[Zoro][SidePanel] Failed to show edit inline", e);
       }
     };
     let disposed = false;
@@ -13650,59 +13865,51 @@ var SidePanel = class extends import_obsidian30.ItemView {
       listWrap?.remove?.();
     };
   }
+  async showDetailsForMedia(media, entry = null) {
+    if (!this.embedEl) return;
+    this.embedEl.empty();
+    try {
+      await this.plugin.moreDetailsPanel.showPanel(media, entry, null, this.embedEl);
+    } catch (e) {
+      console.error("[Zoro][SidePanel] Inline details failed", e);
+      new import_obsidian30.Notice("Failed to load details");
+    }
+  }
+  async showEditForEntry(entry, config = {}) {
+    if (!this.embedEl) return;
+    this.embedEl.empty();
+    try {
+      const source = config?.source || entry?._zoroMeta?.source || this.plugin?.settings?.defaultApiSource || "anilist";
+      await this.plugin.edit.createInlineEdit(
+        entry,
+        async (updates) => {
+          try {
+            if (source === "mal") {
+              await this.plugin.malApi.updateMediaListEntry(entry.media.id, updates);
+            } else if (source === "simkl") {
+              await this.plugin.simklApi.updateMediaListEntry(entry.media.id, updates, entry?._zoroMeta?.mediaType);
+            } else {
+              await this.plugin.api.updateMediaListEntry(entry.media.id, updates);
+            }
+          } catch (err) {
+            console.error("[Zoro][SidePanel] Update failed", err);
+            throw err;
+          }
+        },
+        () => {
+        },
+        source,
+        this.embedEl
+      );
+    } catch (e) {
+      console.error("[Zoro][SidePanel] Inline edit failed", e);
+      new import_obsidian30.Notice("Failed to open edit form");
+    }
+  }
   async reloadNotesList(ctx) {
     if (!ctx) return;
     this.setContext(ctx);
   }
-};
-
-// src/core/constants.js
-var getDefaultGridColumns = () => {
-  return window.innerWidth >= 768 ? 5 : 2;
-};
-var DEFAULT_SETTINGS = {
-  defaultApiSource: "anilist",
-  defaultApiUserOverride: false,
-  defaultUsername: "",
-  defaultLayout: "card",
-  notePath: "Zoro/Note",
-  insertCodeBlockOnNote: true,
-  showCoverImages: true,
-  showRatings: true,
-  showProgress: true,
-  showGenres: false,
-  showLoadingIcon: true,
-  gridColumns: getDefaultGridColumns(),
-  theme: "",
-  hideUrlsInTitles: true,
-  forceScoreFormat: true,
-  showAvatar: true,
-  showFavorites: true,
-  showBreakdowns: true,
-  showTimeStats: true,
-  statsLayout: "enhanced",
-  statsTheme: "auto",
-  clientId: "",
-  clientSecret: "",
-  redirectUri: "https://anilist.co/api/v2/oauth/pin",
-  accessToken: "",
-  malClientId: "",
-  malClientSecret: "",
-  malAccessToken: "",
-  malRefreshToken: "",
-  malTokenExpiry: null,
-  malUserInfo: null,
-  simklClientId: "",
-  simklClientSecret: "",
-  simklAccessToken: "",
-  simklUserInfo: null,
-  autoFormatSearchUrls: true,
-  customSearchUrls: {
-    ANIME: [],
-    MANGA: [],
-    MOVIE_TV: []
-  },
-  tmdbApiKey: ""
 };
 
 // src/settings/ZoroSettingTab.js
@@ -13816,7 +14023,7 @@ var ZoroSettingTab = class extends import_obsidian31.PluginSettingTab {
       this.plugin.settings.notePath = cleanPath;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian31.Setting(Note).setName("\u{1F3B4} Media block").setDesc("Auto-insert cover, rating, and details in new notes").addToggle((toggle) => toggle.setValue(this.plugin.settings.insertCodeBlockOnNote).onChange(async (value) => {
+    new import_obsidian31.Setting(Note).setName("\u{1F3B4} Media block").setDesc("Auto-insert a code block to show cover, rating, and details in new notes").addToggle((toggle) => toggle.setValue(this.plugin.settings.insertCodeBlockOnNote).onChange(async (value) => {
       this.plugin.settings.insertCodeBlockOnNote = value;
       await this.plugin.saveSettings();
     }));
@@ -13824,11 +14031,22 @@ var ZoroSettingTab = class extends import_obsidian31.PluginSettingTab {
       this.plugin.settings.defaultLayout = value;
       await this.plugin.saveSettings();
     }));
-    new import_obsidian31.Setting(Display).setName("\u{1F532} Grid Columns").setDesc("Number of columns in card grid layout").addSlider((slider) => slider.setLimits(1, 6, 1).setValue(this.plugin.settings.gridColumns).setDynamicTooltip().onChange(async (value) => {
-      this.plugin.settings.gridColumns = value;
-      await this.plugin.saveSettings();
-      this.updateGridColumns(value);
-    }));
+    new import_obsidian31.Setting(Display).setName("\u{1F532} Grid Columns").setDesc("Choose grid layout: Default uses responsive columns, or force a specific number of columns").addDropdown((dropdown) => {
+      Object.entries(GRID_COLUMN_LABELS).forEach(([value, label]) => {
+        dropdown.addOption(value, label);
+      });
+      const currentValue = this.plugin.settings.gridColumns;
+      if (typeof currentValue === "number") {
+        dropdown.setValue(String(currentValue));
+      } else {
+        dropdown.setValue(currentValue || GRID_COLUMN_OPTIONS.DEFAULT);
+      }
+      dropdown.onChange(async (value) => {
+        this.plugin.settings.gridColumns = value;
+        await this.plugin.saveSettings();
+        this.updateGridColumns(value);
+      });
+    });
     new import_obsidian31.Setting(More).setName("\u23F3 Loading Icon").setDesc("Show loading animation during API requests").addToggle((toggle) => toggle.setValue(this.plugin.settings.showLoadingIcon).onChange(async (value) => {
       this.plugin.settings.showLoadingIcon = value;
       await this.plugin.saveSettings();
@@ -14116,8 +14334,15 @@ var ZoroSettingTab = class extends import_obsidian31.PluginSettingTab {
     const gridElements = document.querySelectorAll(".zoro-cards-grid");
     gridElements.forEach((grid) => {
       try {
-        grid.style.setProperty("--zoro-grid-columns", String(value));
-        grid.style.setProperty("--grid-cols", String(value));
+        if (value === GRID_COLUMN_OPTIONS.DEFAULT) {
+          grid.style.removeProperty("--zoro-grid-columns");
+          grid.style.removeProperty("--grid-cols");
+          grid.style.removeProperty("grid-template-columns");
+        } else {
+          grid.style.setProperty("--zoro-grid-columns", String(value));
+          grid.style.setProperty("--grid-cols", String(value));
+          grid.style.setProperty("grid-template-columns", `repeat(${value}, minmax(0, 1fr))`, "important");
+        }
       } catch {
       }
     });
@@ -14322,7 +14547,7 @@ var ZoroPlugin = class extends import_obsidian32.Plugin {
       showProgress: typeof settings?.showProgress === "boolean" ? settings.showProgress : true,
       showGenres: typeof settings?.showGenres === "boolean" ? settings.showGenres : false,
       showLoadingIcon: typeof settings?.showLoadingIcon === "boolean" ? settings.showLoadingIcon : true,
-      gridColumns: Number.isInteger(settings?.gridColumns) ? settings.gridColumns : getDefaultGridColumns(),
+      gridColumns: this.migrateGridColumnsSetting(settings?.gridColumns),
       theme: typeof settings?.theme === "string" ? settings.theme : "",
       hideUrlsInTitles: typeof settings?.hideUrlsInTitles === "boolean" ? settings.hideUrlsInTitles : true,
       forceScoreFormat: typeof settings?.forceScoreFormat === "boolean" ? settings.forceScoreFormat : true,
@@ -14354,6 +14579,24 @@ var ZoroPlugin = class extends import_obsidian32.Plugin {
       },
       tmdbApiKey: typeof settings?.tmdbApiKey === "string" ? settings.tmdbApiKey : ""
     };
+  }
+  migrateGridColumnsSetting(value) {
+    if (typeof value === "number" && Number.isInteger(value)) {
+      if (value >= 1 && value <= 6) {
+        return String(value);
+      } else {
+        return GRID_COLUMN_OPTIONS.DEFAULT;
+      }
+    } else if (typeof value === "string") {
+      const validOptions = Object.values(GRID_COLUMN_OPTIONS);
+      if (validOptions.includes(value)) {
+        return value;
+      } else {
+        return GRID_COLUMN_OPTIONS.DEFAULT;
+      }
+    } else {
+      return GRID_COLUMN_OPTIONS.DEFAULT;
+    }
   }
   async saveSettings() {
     try {

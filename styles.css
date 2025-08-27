@@ -2758,6 +2758,13 @@ body.theme-light .zoro-heart.favorited::before {
   border-color: transparent;
 }
 
+/* Ensure toolbar sits above any embedded inline panels */
+.zoro-panel-toolbar {
+  position: relative;
+  z-index: 10;
+  background: var(--background-primary);
+}
+
 .zoro-side-panel .zoro-panel-btn {
   flex: 1;
   min-width: 0;
@@ -2879,7 +2886,7 @@ body.theme-light .zoro-heart.favorited::before {
 .zoro-panel-embed {
   padding: 8px 0;
   position: relative;
-  z-index: 1;
+  z-index: 0;
 }
 
 /* Inline variants remove fixed positioning/overlay visuals */

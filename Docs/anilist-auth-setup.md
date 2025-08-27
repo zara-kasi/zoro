@@ -12,8 +12,8 @@ Watch a short tutorial here:
 1. Go to the AniList Developer Page: [https://anilist.co/settings/developer](https://anilist.co/settings/developer)  
 2. Click **Create New Client** at the top.  
 3. Fill in only these fields:  
-  - **App Name**: `Zoro`  
-  - **Redirect URI**: `https://anilist.co/api/v2/oauth/pin` 
+    - **App Name**: `Zoro`  
+    - **Redirect URI**: `https://anilist.co/api/v2/oauth/pin` 
   
 4. Click **Save**.  
 5. Copy your **Client ID** and **Client Secret**.

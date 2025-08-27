@@ -127,7 +127,7 @@ class SidePanel extends ItemView {
 		} finally {
 			this.currentCleanup = null;
 			if (this.contentEl) this.contentEl.empty();
-			if (this.searchContainerEl) this.searchContainerEl.empty();
+			// Do not empty searchContainerEl to preserve the persistent embed container
 			if (this.embedEl) this.embedEl.empty();
 		}
 	}

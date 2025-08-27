@@ -13721,7 +13721,6 @@ var SidePanel = class extends import_obsidian30.ItemView {
     } finally {
       this.currentCleanup = null;
       if (this.contentEl) this.contentEl.empty();
-      if (this.searchContainerEl) this.searchContainerEl.empty();
       if (this.embedEl) this.embedEl.empty();
     }
   }

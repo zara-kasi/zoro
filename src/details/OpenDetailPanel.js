@@ -28,9 +28,10 @@ class OpenDetailPanel {
 				}
 			}
 		} catch {}
-		const panel = this.renderer.createPanel(media, entry);
-		this.currentPanel = panel;
+		// Only create a DOM panel when we actually have a container to mount into.
 		if (mountContainer && mountContainer.appendChild) {
+			const panel = this.renderer.createPanel(media, entry);
+			this.currentPanel = panel;
 			panel.classList.add('zoro-inline');
 			this.renderer.positionPanel(panel, null);
 			const closeBtn = panel.querySelector('.panel-close-btn');
@@ -43,21 +44,24 @@ class OpenDetailPanel {
 				const source = (entry?._zoroMeta?.source || 'anilist');
 				const view = await this.plugin.connectedNotes.openSidePanelWithContext({ media, entry, source, mediaType });
 				await view.showDetailsForMedia(media, entry);
-				return this.currentPanel;
+				return null;
 			} catch (err) {
 				console.error('[Zoro][Details] Failed to open Side Panel for details', err);
 			}
 		}
-		this.plugin.requestQueue.showGlobalLoader();
-
-		if (this.dataSource.shouldFetchDetailedData(media)) {
-			this.dataSource.fetchAndUpdateData(media.id, entry, (detailedMedia, malData, imdbData) => {
-				if (this.currentPanel === panel) this.renderer.updatePanelContent(panel, detailedMedia, malData, imdbData);
-			}).finally(() => this.plugin.requestQueue.hideGlobalLoader());
-		} else {
-			this.plugin.requestQueue.hideGlobalLoader();
+		// If we mounted inline, also perform async data updates for that panel instance
+		if (this.currentPanel) {
+			this.plugin.requestQueue.showGlobalLoader();
+			if (this.dataSource.shouldFetchDetailedData(media)) {
+				this.dataSource.fetchAndUpdateData(media.id, entry, (detailedMedia, malData, imdbData) => {
+					if (this.currentPanel) this.renderer.updatePanelContent(this.currentPanel, detailedMedia, malData, imdbData);
+				}).finally(() => this.plugin.requestQueue.hideGlobalLoader());
+			} else {
+				this.plugin.requestQueue.hideGlobalLoader();
+			}
+			return this.currentPanel;
 		}
-		return panel;
+		return null;
 	}
 
 	handleOutsideClick(event) {

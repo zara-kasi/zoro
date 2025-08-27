@@ -44,7 +44,7 @@ class Edit {
   }
 
   createEditModal(entry, onSave, onCancel, source = 'anilist') {
-    // Route to Side Panel inline always
+    // Force side panel inline; never produce an overlay/modal DOM here
     try {
       const media = entry?.media;
       const mediaType = entry?._zoroMeta?.mediaType || media?.type || media?.format || 'ANIME';

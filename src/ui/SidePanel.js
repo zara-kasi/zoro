@@ -61,16 +61,17 @@ class SidePanel extends ItemView {
 			text: '⛓️', 
 			cls: 'zoro-panel-btn' 
 		});
-
+   
+   this.editInlineBtn = this.buttonContainerEl.createEl('button', {
+			text: '️☑️',
+			cls: 'zoro-panel-btn'
+		});
 		// New inline Details and Edit buttons
 		this.detailsBtn = this.buttonContainerEl.createEl('button', {
-			text: 'ℹ️',
+			text: '🫔',
 			cls: 'zoro-panel-btn'
 		});
-		this.editInlineBtn = this.buttonContainerEl.createEl('button', {
-			text: '✏️',
-			cls: 'zoro-panel-btn'
-		});
+		
 
 		// Search interface container (fixed position below toolbar)
 		this.searchContainerEl = root.createDiv({ cls: 'zoro-panel-search-container' });

@@ -2,7 +2,7 @@
       
 [![Obsidian Plugin](https://img.shields.io/badge/Obsidian-Plugin-blueviolet?style=flat-square&logo=obsidian)](https://obsidian.md/plugins?id=zoro) [![GitHub release](https://img.shields.io/github/v/release/zara-kasi/zoro?style=flat-square)](https://github.com/zara-kasi/zoro/releases) ![GitHub Stars](https://img.shields.io/github/stars/zara-kasi/zoro?style=flat-square) ![GitHub Issues](https://img.shields.io/github/issues-raw/zara-kasi/zoro?style=flat-square)
       
-> "Zoro — Track anime, manga, movies and TV inside Obsidian"      
+> "Zoro — Track anime, manga, movies and TV with AniList, MyAnimeList and Simkl."      
       
 ---      
 

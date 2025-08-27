@@ -162,6 +162,80 @@ class ZoroPlugin extends Plugin {
 				this.app.workspace.revealLeaf(leaf);
 			}
 		});
+
+		// Ensure all panels render inline inside the Side Panel (no overlays)
+		try {
+			this._installInlinePanelIntegration();
+		} catch (e) {
+			console.warn('[Zoro] Failed to install inline panel integration', e);
+		}
+	}
+
+	/**
+	 * Force all Details/Edit entry points to render inside the Side Panel's embed container.
+	 * This defends against callers that omit a mount container and would otherwise create overlays.
+	 */
+	_installInlinePanelIntegration() {
+		const plugin = this;
+
+		// Guard: require ConnectedNotes helper with openSidePanelWithContext
+		if (!plugin.connectedNotes || typeof plugin.connectedNotes.openSidePanelWithContext !== 'function') return;
+
+		// Patch MoreDetailsPanel.showPanel to always route to Side Panel when no container provided
+		if (plugin.moreDetailsPanel && typeof plugin.moreDetailsPanel.showPanel === 'function') {
+			const originalShowPanel = plugin.moreDetailsPanel.showPanel.bind(plugin.moreDetailsPanel);
+			plugin.moreDetailsPanel.showPanel = async function(media, entry = null, triggerElement, mountContainer = null) {
+				if (mountContainer && mountContainer.appendChild) {
+					return await originalShowPanel(media, entry, triggerElement, mountContainer);
+				}
+				try {
+					const mediaType = (entry?._zoroMeta?.mediaType || media?.type || media?.format || 'ANIME');
+					const source = (entry?._zoroMeta?.source || 'anilist');
+					const view = await plugin.connectedNotes.openSidePanelWithContext({ media, entry, source, mediaType });
+					await view.showDetailsForMedia(media, entry);
+					return null;
+				} catch (err) {
+					console.error('[Zoro] Inline routing failed for details; falling back to original modal is disabled', err);
+					return null;
+				}
+			};
+		}
+
+		// Patch Edit.createEditModal to always route inline into Side Panel
+		if (plugin.edit && typeof plugin.edit.createEditModal === 'function') {
+			plugin.edit.createEditModal = function(entry, onSave, onCancel, source = 'anilist') {
+				try {
+					const media = entry?.media;
+					const mediaType = entry?._zoroMeta?.mediaType || media?.type || media?.format || 'ANIME';
+					const resolvedSource = entry?._zoroMeta?.source || source || 'anilist';
+					plugin.connectedNotes.openSidePanelWithContext({ media, entry, source: resolvedSource, mediaType })
+						.then(view => view.showEditForEntry(entry, { source: resolvedSource }));
+				} catch (e) {
+					console.error('[Zoro] Failed to route Edit modal into Side Panel', e);
+				}
+				return null;
+			};
+		}
+
+		// Patch Edit.createInlineEdit to route to Side Panel when no mount container is provided
+		if (plugin.edit && typeof plugin.edit.createInlineEdit === 'function') {
+			const originalCreateInlineEdit = plugin.edit.createInlineEdit.bind(plugin.edit);
+			plugin.edit.createInlineEdit = function(entry, onSave, onCancel, source = 'anilist', mountContainer = null) {
+				if (mountContainer && mountContainer.appendChild) {
+					return originalCreateInlineEdit(entry, onSave, onCancel, source, mountContainer);
+				}
+				try {
+					const media = entry?.media;
+					const mediaType = entry?._zoroMeta?.mediaType || media?.type || media?.format || 'ANIME';
+					const resolvedSource = entry?._zoroMeta?.source || source || 'anilist';
+					plugin.connectedNotes.openSidePanelWithContext({ media, entry, source: resolvedSource, mediaType })
+						.then(view => view.showEditForEntry(entry, { source: resolvedSource }));
+				} catch (e) {
+					console.error('[Zoro] Failed to route Inline Edit into Side Panel', e);
+				}
+				return null;
+			};
+		}
 	}
 
 	validateSettings(settings) {

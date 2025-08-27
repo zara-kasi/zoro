@@ -270,24 +270,13 @@ class ZoroPlugin extends Plugin {
 	handleEditClick(e, entry, statusEl, config = {}) {
     e.preventDefault();
     e.stopPropagation();
-
-    this.edit.createEditModal(
-      entry,
-      async updates => {
-        // Use appropriate API based on source
-        if (config.source === 'mal') {
-          await this.malApi.updateMediaListEntry(entry.media.id, updates);
-        } else if (config.source === 'simkl') {
-          await this.simklApi.updateMediaListEntry(entry.media.id, updates);
-        } else {
-          await this.api.updateMediaListEntry(entry.media.id, updates);
-        }
-      },
-      () => {
-        // Callback after successful update
-      },
-      config.source || 'anilist'
-    );
+    const source = config.source || entry?._zoroMeta?.source || this.settings?.defaultApiSource || 'anilist';
+    const mediaType = config.mediaType || entry?._zoroMeta?.mediaType || 'ANIME';
+    const media = entry?.media;
+    (async () => {
+      const view = await this.connectedNotes.openSidePanelWithContext({ media, entry, source, mediaType });
+      await view.showEditForEntry(entry, { source });
+    })();
   }
 
 	injectCSS() {

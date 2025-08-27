@@ -7,21 +7,14 @@ class RenderEditModal {
 
   createModalStructure() {
     const container = document.createElement('div');
-    container.className = 'zoro-edit-modal';
-    
-    const overlay = document.createElement('div');
-    overlay.className = 'zoro-modal-overlay';
-    
+    container.className = 'zoro-edit-modal zoro-inline';
     const content = document.createElement('div');
     content.className = 'zoro-modal-content';
-    
     const form = document.createElement('form');
     form.className = 'zoro-edit-form';
-    
     content.appendChild(form);
-    container.append(overlay, content);
-    
-    return { container, overlay, content, form };
+    container.append(content);
+    return { container, overlay: null, content, form };
   }
   
   createTitle(entry) {
@@ -32,10 +25,8 @@ class RenderEditModal {
   }
   
   createCloseButton(onClick) {
-    const btn = document.createElement('button');
-    btn.className = 'panel-close-btn';
-    btn.innerHTML = '×';
-    btn.title = 'Close';
+    const btn = document.createElement('span');
+    btn.style.display = 'none';
     btn.onclick = onClick;
     return btn;
   }

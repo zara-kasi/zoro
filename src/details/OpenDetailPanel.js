@@ -11,8 +11,9 @@ class OpenDetailPanel {
 		this.dataSource = new DetailPanelSource(plugin);
 	}
 
-	async showPanel(media, entry = null, triggerElement) {
+	async showPanel(media, entry = null, triggerElement, mountContainer = null) {
 		this.closePanel();
+		
 		// If this is a TMDb trending MOVIE/TV item, resolve Simkl details first before rendering
 		try {
 			const mediaKind = media?.type || media?.format;
@@ -28,13 +29,43 @@ class OpenDetailPanel {
 				}
 			}
 		} catch {}
+
 		const panel = this.renderer.createPanel(media, entry);
 		this.currentPanel = panel;
-		this.renderer.positionPanel(panel, triggerElement);
-		const closeBtn = panel.querySelector('.panel-close-btn');
-		if (closeBtn) closeBtn.onclick = () => this.closePanel();
-		document.body.appendChild(panel);
-		document.addEventListener('click', this.boundOutsideClickHandler);
+
+		if (mountContainer && mountContainer.appendChild) {
+			// Direct mount to provided container
+			panel.classList.add('zoro-inline');
+			this.renderer.positionPanel(panel, null);
+			const closeBtn = panel.querySelector('.panel-close-btn');
+			if (closeBtn) closeBtn.onclick = () => this.closePanel();
+			mountContainer.appendChild(panel);
+		} else {
+			// Route to Side Panel - but actually mount the panel to the sidebar's embed container
+			try {
+				const mediaType = (entry?._zoroMeta?.mediaType || media?.type || media?.format || 'ANIME');
+				const source = (entry?._zoroMeta?.source || 'anilist');
+				const view = await this.plugin.connectedNotes.openSidePanelWithContext({ media, entry, source, mediaType });
+				
+				// FIXED: Actually mount the panel to the sidebar's embed container
+				panel.classList.add('zoro-inline');
+				this.renderer.positionPanel(panel, null);
+				const closeBtn = panel.querySelector('.panel-close-btn');
+				if (closeBtn) closeBtn.onclick = () => this.closePanel();
+				
+				// Mount to the sidebar's embed container instead of calling showDetailsForMedia
+				if (view.embedEl) {
+					view.embedEl.appendChild(panel);
+					view.currentMode = 'details';
+					view.showContentContainer(false);
+					view.showEmbedContainer(true);
+				}
+				
+			} catch (err) {
+				console.error('[Zoro][Details] Failed to open Side Panel for details', err);
+			}
+		}
+
 		this.plugin.requestQueue.showGlobalLoader();
 
 		if (this.dataSource.shouldFetchDetailedData(media)) {
@@ -44,6 +75,7 @@ class OpenDetailPanel {
 		} else {
 			this.plugin.requestQueue.hideGlobalLoader();
 		}
+
 		return panel;
 	}
 

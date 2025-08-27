@@ -86,7 +86,16 @@ class CardRenderer {
       
       pressTimer = setTimeout(() => {
         if (isPressed) {
-          this.plugin.moreDetailsPanel.showPanel(media, entry, img);
+          (async () => {
+            try {
+              const source = this.apiHelper.detectSource(entry, config);
+              const mediaType = this.apiHelper.detectMediaType(entry, config, media);
+              const view = await this.plugin.connectedNotes.openSidePanelWithContext({ media, entry, source, mediaType });
+              await view.showDetailsForMedia(media, entry);
+            } catch (err) {
+              console.error('[Zoro] Failed to open inline details', err);
+            }
+          })();
           img.classList.remove('pressed');
           isPressed = false;
         }
@@ -125,7 +134,16 @@ class CardRenderer {
       pressTimer = setTimeout(() => {
         if (isPressed) {
           e.preventDefault();
-          this.plugin.moreDetailsPanel.showPanel(media, entry, img);
+          (async () => {
+            try {
+              const source = this.apiHelper.detectSource(entry, config);
+              const mediaType = this.apiHelper.detectMediaType(entry, config, media);
+              const view = await this.plugin.connectedNotes.openSidePanelWithContext({ media, entry, source, mediaType });
+              await view.showDetailsForMedia(media, entry);
+            } catch (err) {
+              console.error('[Zoro] Failed to open inline details (touch)', err);
+            }
+          })();
           img.classList.remove('pressed');
           isPressed = false;
         }
@@ -348,6 +366,7 @@ class CardRenderer {
       return;
     }
     
+    // Prefer Side Panel inline edit; fallback is handled inside handleEditClick
     this.plugin.handleEditClick(e, entry, badge, { source, mediaType });
   }
 
@@ -509,44 +528,13 @@ class CardRenderer {
       editBtn.dataset.loading = 'false';
       editBtn.style.pointerEvents = 'auto';
 
-      console.log(`[Zoro] Opening edit modal for ${isNewEntry ? 'new' : 'existing'} entry`);
-
-      this.plugin.edit.createEditModal(
-        entryToEdit,
-        async (updates) => {
-          try {
-            // Ensure we have a numeric id before attempting update
-            const updateId = Number(media.id) || 0;
-            if (entrySource === 'simkl' && updateId <= 0) {
-              const retryId = await this.plugin.simklApi.resolveSimklIdByTitle(this.formatter.formatTitle(media), entryMediaType);
-              if (retryId > 0) media.id = retryId;
-            }
-            console.log(`[Zoro] Updating media ${media.id} with:`, updates);
-            await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, this.apiHelper.detectMediaType(entry, config, media));
-            
-            const successMessage = isNewEntry ? '✅ Added to list!' : '✅ Updated!';
-            new Notice(successMessage, 3000);
-            console.log(`[Zoro] ${successMessage}`);
-            
-            editBtn.textContent = 'Edit';
-            editBtn.className = 'status-badge status-edit clickable-status';
-            
-            this.parent.refreshActiveViews();
-            
-          } catch (updateError) {
-            console.error('[Zoro] Update failed:', updateError);
-            new Notice(`❌ Update failed: ${updateError.message}`, 5000);
-          }
-        },
-        () => {
-          console.log('[Zoro] Edit modal cancelled');
-          editBtn.textContent = 'Edit';
-          editBtn.className = 'status-badge status-edit clickable-status';
-          editBtn.dataset.loading = 'false';
-          editBtn.style.pointerEvents = 'auto';
-        },
-        entrySource
-      );
+      console.log(`[Zoro] Opening edit in Side Panel for ${isNewEntry ? 'new' : 'existing'} entry`);
+      try {
+        const view = await this.plugin.connectedNotes.openSidePanelWithContext({ media, entry: entryToEdit, source: entrySource, mediaType: entryMediaType });
+        await view.showEditForEntry(entryToEdit, { source: entrySource });
+      } catch (err) {
+        console.error('[Zoro] Failed to open inline edit in Side Panel from card', err);
+      }
 
     } catch (error) {
       console.error('[Zoro] User entry check failed:', error);
@@ -565,23 +553,8 @@ class CardRenderer {
         id: null
       };
 
-      this.plugin.edit.createEditModal(
-        defaultEntry,
-        async (updates) => {
-          try {
-            await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource);
-            new Notice('✅ Added to list!', 3000);
-            this.parent.refreshActiveViews();
-          } catch (updateError) {
-            console.error('[Zoro] Update failed:', updateError);
-            new Notice(`❌ Failed to add: ${updateError.message}`, 5000);
-          }
-        },
-        () => {
-          console.log('[Zoro] Fallback edit modal cancelled');
-        },
-        entrySource
-      );
+      const view = await this.plugin.connectedNotes.openSidePanelWithContext({ media, entry: defaultEntry, source: entrySource, mediaType: entryMediaType });
+      await view.showEditForEntry(defaultEntry, { source: entrySource });
     }
   }
 }

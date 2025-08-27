@@ -32,7 +32,8 @@
 - **Zoro** →Settings →  **Setup → Sample Folder** → **Create** 
 
 ![create sample note](Assets/sample_folder.png)      
-           
+
+>*Creates a complete folder structure for Anime, Manga, Movies, and TV.*     
       
 ## Quick Look      
 

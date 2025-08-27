@@ -39,14 +39,14 @@ Naming pattern: `Zoro_[Platform]_[Type].extension`
 
 ---
 
-## Quick Import Links
+## Quick Import & Export Links
 
+- [MAL Export](https://myanimelist.net/panel.php?go=export)
 - [MAL Import](https://myanimelist.net/import.php)  
-- [AniList Import](https://anilist.co/settings/import)  
-- [IMDb Import](https://www.imdb.com/list/ratings-import)  
-- [Simkl Import](https://simkl.com/apps/import/)  
+- [AniList Import](https://anilist.co/settings/import)
+- [Simkl Import](https://simkl.com/apps/import/)
 
-(Simkl export → use Zoro, imports work fine)
+> For missing exports links use Zoro: Settings → Data → Export your data
 
 ---
 

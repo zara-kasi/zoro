@@ -772,12 +772,43 @@ if (media.type !== 'ANIME' && media.type !== 'MANGA') {
     return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
   }
 
-  positionPanel(panel, triggerElement) {
-    // Ensure base class is present without overwriting any existing classes (e.g., zoro-inline)
-    if (!panel.classList.contains('zoro-more-details-panel')) {
-      panel.classList.add('zoro-more-details-panel');
+  // Add this method to your RenderDetailPanel class or update the existing one
+
+positionPanel(panel, triggerElement) {
+  // Ensure base class is present without overwriting any existing classes (e.g., zoro-inline)
+  if (!panel.classList.contains('zoro-more-details-panel')) {
+    panel.classList.add('zoro-more-details-panel');
+  }
+  
+  // If panel has zoro-inline class, apply inline-specific styles
+  if (panel.classList.contains('zoro-inline')) {
+    // Remove any overlay positioning styles
+    panel.style.position = 'static';
+    panel.style.top = 'auto';
+    panel.style.left = 'auto';
+    panel.style.right = 'auto';
+    panel.style.bottom = 'auto';
+    panel.style.transform = 'none';
+    panel.style.zIndex = 'auto';
+    
+    // Apply inline styles
+    panel.style.width = '100%';
+    panel.style.height = 'auto';
+    panel.style.maxHeight = 'none';
+    panel.style.margin = '0';
+    panel.style.padding = '10px';
+    panel.style.border = 'none';
+    panel.style.borderRadius = '0';
+    panel.style.boxShadow = 'none';
+    panel.style.background = 'transparent';
+    
+    // Hide the close button for inline panels
+    const closeBtn = panel.querySelector('.panel-close-btn');
+    if (closeBtn) {
+      closeBtn.style.display = 'none';
     }
   }
+}
 
   cleanupCountdowns(panel) {
     const countdownElements = panel.querySelectorAll('.countdown-value[data-interval-id]');

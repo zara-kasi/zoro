@@ -14,10 +14,11 @@ Watch a short tutorial here:
 3. Fill in only these fields:  
    - **App Name**: `Zoro`  
    - **Redirect URI**: `https://anilist.co/api/v2/oauth/pin` 
-
->Make sure the Redirect URI is exactly as shown; authentication will fail otherwise.  
+  
 4. Click **Save**.  
 5. Copy your **Client ID** and **Client Secret**.
+
+>Make sure the Redirect URI is exactly as shown; authentication will fail otherwise.
 
 ---
 

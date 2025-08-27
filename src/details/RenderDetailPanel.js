@@ -796,7 +796,7 @@ positionPanel(panel, triggerElement) {
     panel.style.height = 'auto';
     panel.style.maxHeight = 'none';
     panel.style.margin = '0';
-    panel.style.padding = '10px';
+    panel.style.padding = '4px';
     panel.style.border = 'none';
     panel.style.borderRadius = '0';
     panel.style.boxShadow = 'none';

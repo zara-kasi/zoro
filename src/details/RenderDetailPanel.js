@@ -772,43 +772,247 @@ if (media.type !== 'ANIME' && media.type !== 'MANGA') {
     return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
   }
 
-  // Add this method to your RenderDetailPanel class or update the existing one
-
-positionPanel(panel, triggerElement) {
-  // Ensure base class is present without overwriting any existing classes (e.g., zoro-inline)
+  // Improved CSS-based positionPanel method
+positionPanel(panel, triggerElement, options = {}) {
+  // Ensure base class is present
   if (!panel.classList.contains('zoro-more-details-panel')) {
     panel.classList.add('zoro-more-details-panel');
   }
   
-  // If panel has zoro-inline class, apply inline-specific styles
-  if (panel.classList.contains('zoro-inline')) {
-    // Remove any overlay positioning styles
-    panel.style.position = 'static';
-    panel.style.top = 'auto';
-    panel.style.left = 'auto';
-    panel.style.right = 'auto';
-    panel.style.bottom = 'auto';
-    panel.style.transform = 'none';
-    panel.style.zIndex = 'auto';
-    
-    // Apply inline styles
-    panel.style.width = '100%';
-    panel.style.height = 'auto';
-    panel.style.maxHeight = 'none';
-    panel.style.margin = '0';
-    panel.style.padding = '10px';
-    panel.style.border = 'none';
-    panel.style.borderRadius = '0';
-    panel.style.boxShadow = 'none';
-    panel.style.background = 'transparent';
-    
-    // Hide the close button for inline panels
-    const closeBtn = panel.querySelector('.panel-close-btn');
-    if (closeBtn) {
-      closeBtn.style.display = 'none';
-    }
+  // Remove any existing state classes first
+  panel.classList.remove(
+    'zoro-modal', 'zoro-inline', 'zoro-compact', 'zoro-fullscreen', 
+    'zoro-hidden', 'zoro-loading', 'zoro-error', 'zoro-mobile', 'zoro-tablet'
+  );
+  
+  // Determine panel type based on options or existing classes
+  const panelType = options.type || this.determinePanelType(panel, triggerElement);
+  
+  // Apply appropriate state class
+  switch (panelType) {
+    case 'inline':
+      panel.classList.add('zoro-inline');
+      this.handleInlinePanel(panel);
+      break;
+      
+    case 'compact':
+      panel.classList.add('zoro-modal', 'zoro-compact');
+      this.handleModalPanel(panel);
+      break;
+      
+    case 'fullscreen':
+      panel.classList.add('zoro-modal', 'zoro-fullscreen');
+      this.handleModalPanel(panel);
+      break;
+      
+    default: // 'modal'
+      panel.classList.add('zoro-modal');
+      this.handleModalPanel(panel);
+  }
+  
+  // Apply responsive classes based on viewport
+  this.applyResponsiveClasses(panel);
+  
+  // Apply theme classes if needed
+  this.applyThemeClasses(panel, options.theme);
+  
+  // Handle special states
+  if (options.loading) {
+    panel.classList.add('zoro-loading');
+  }
+  
+  if (options.error) {
+    panel.classList.add('zoro-error');
   }
 }
+
+// Helper method to determine panel type automatically
+determinePanelType(panel, triggerElement) {
+  // Check for explicit class hints
+  if (panel.classList.contains('zoro-inline')) return 'inline';
+  if (panel.classList.contains('zoro-compact')) return 'compact';
+  if (panel.classList.contains('zoro-fullscreen')) return 'fullscreen';
+  
+  // Check viewport size
+  if (window.innerWidth <= 480) return 'fullscreen';
+  if (window.innerWidth <= 768) return 'compact';
+  
+  // Check if triggered from within a container that suggests inline
+  if (triggerElement && this.isInlineContext(triggerElement)) {
+    return 'inline';
+  }
+  
+  // Default to modal
+  return 'modal';
+}
+
+// Check if trigger element suggests inline display
+isInlineContext(element) {
+  // Look for parent containers that suggest inline display
+  const inlineParents = [
+    '.workspace-leaf-content',
+    '.markdown-preview-view', 
+    '.inline-embed',
+    '.block-embed'
+  ];
+  
+  return inlineParents.some(selector => element.closest(selector));
+}
+
+// Handle modal-specific setup
+handleModalPanel(panel) {
+  // Lock body scroll
+  document.body.style.overflow = 'hidden';
+  panel._bodyScrollLocked = true;
+  
+  // Store original body overflow if not already stored
+  if (!panel._originalBodyOverflow) {
+    panel._originalBodyOverflow = document.body.style.overflow || 'auto';
+  }
+  
+  // Add escape key handler
+  this.addEscapeHandler(panel);
+  
+  // Add backdrop click handler
+  this.addBackdropHandler(panel);
+}
+
+// Handle inline-specific setup  
+handleInlinePanel(panel) {
+  // Ensure body scroll is not locked
+  if (panel._bodyScrollLocked) {
+    document.body.style.overflow = panel._originalBodyOverflow || 'auto';
+    panel._bodyScrollLocked = false;
+  }
+  
+  // Remove modal handlers
+  this.removeEscapeHandler(panel);
+  this.removeBackdropHandler(panel);
+}
+
+// Apply responsive classes based on viewport
+applyResponsiveClasses(panel) {
+  const width = window.innerWidth;
+  
+  if (width <= 480) {
+    panel.classList.add('zoro-mobile');
+  } else if (width <= 768) {
+    panel.classList.add('zoro-tablet');
+  }
+}
+
+// Apply theme classes
+applyThemeClasses(panel, theme) {
+  // Remove existing theme classes
+  panel.classList.remove('zoro-dark-theme', 'zoro-light-theme');
+  
+  if (theme) {
+    panel.classList.add(`zoro-${theme}-theme`);
+  } else {
+    // Auto-detect theme from body or document
+    const isDark = document.body.classList.contains('theme-dark') || 
+                   document.documentElement.classList.contains('theme-dark') ||
+                   window.matchMedia('(prefers-color-scheme: dark)').matches;
+    
+    panel.classList.add(isDark ? 'zoro-dark-theme' : 'zoro-light-theme');
+  }
+}
+
+// Escape key handler for modal panels
+addEscapeHandler(panel) {
+  if (!panel._escapeHandler) {
+    panel._escapeHandler = (e) => {
+      if (e.key === 'Escape' && panel.classList.contains('zoro-modal')) {
+        this.closePanel(panel);
+      }
+    };
+    document.addEventListener('keydown', panel._escapeHandler);
+  }
+}
+
+removeEscapeHandler(panel) {
+  if (panel._escapeHandler) {
+    document.removeEventListener('keydown', panel._escapeHandler);
+    panel._escapeHandler = null;
+  }
+}
+
+// Backdrop click handler for modal panels
+addBackdropHandler(panel) {
+  if (!panel._backdropHandler) {
+    panel._backdropHandler = (e) => {
+      if (e.target === panel && panel.classList.contains('zoro-modal')) {
+        this.closePanel(panel);
+      }
+    };
+    panel.addEventListener('click', panel._backdropHandler);
+  }
+}
+
+removeBackdropHandler(panel) {
+  if (panel._backdropHandler) {
+    panel.removeEventListener('click', panel._backdropHandler);
+    panel._backdropHandler = null;
+  }
+}
+
+// Enhanced cleanup method
+cleanupPanel(panel) {
+  // Cleanup countdowns
+  this.cleanupCountdowns(panel);
+  
+  // Restore body scroll if it was locked
+  if (panel._bodyScrollLocked) {
+    document.body.style.overflow = panel._originalBodyOverflow || 'auto';
+    panel._bodyScrollLocked = false;
+  }
+  
+  // Remove event handlers
+  this.removeEscapeHandler(panel);
+  this.removeBackdropHandler(panel);
+  
+  // Cancel any pending copy button timeouts
+  const copyButtons = panel.querySelectorAll('.zoro-copy-btn');
+  copyButtons.forEach(btn => {
+    if (btn._copyTimeout) {
+      clearTimeout(btn._copyTimeout);
+      btn._copyTimeout = null;
+    }
+  });
+  
+  // Remove all state classes
+  panel.classList.remove(
+    'zoro-modal', 'zoro-inline', 'zoro-compact', 'zoro-fullscreen',
+    'zoro-hidden', 'zoro-loading', 'zoro-error', 'zoro-mobile', 'zoro-tablet',
+    'zoro-dark-theme', 'zoro-light-theme'
+  );
+}
+
+// Method to change panel state dynamically
+changePanelState(panel, newState, options = {}) {
+  // Add transition class for smooth state changes
+  panel.classList.add('zoro-transitioning');
+  
+  // Apply new positioning
+  this.positionPanel(panel, null, { type: newState, ...options });
+  
+  // Remove transition class after animation
+  setTimeout(() => {
+    panel.classList.remove('zoro-transitioning');
+  }, 300);
+}
+
+// Method to close panel with animation
+closePanel(panel) {
+  panel.classList.add('zoro-hidden');
+  
+  setTimeout(() => {
+    this.cleanupPanel(panel);
+    panel.remove();
+  }, 300);
+}
+
+
 
   cleanupCountdowns(panel) {
     const countdownElements = panel.querySelectorAll('.countdown-value[data-interval-id]');

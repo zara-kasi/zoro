@@ -28,14 +28,15 @@
 - Card/table layouts, stats dashboards, connected notes and exports.      
 
 ## Quick Setup      
-      
+
+- **Zoro** →Settings →  **Setup → Sample Folder** → **Create** 
+
 ![create sample note](Assets/sample_folder.png)      
-      
-- **Zoro** →Settings →  **Setup → Sample Folder** → **Create** to scaffold `Zoro/Anime/`, `Zoro/Manga/`, `Zoro/Movie/`, `Zoro/TV/` and helpful templates.      
+           
       
 ## Quick Look      
 
-- Open the **Trending** note inside `Zoro/Anime/` or `Zoro/Manga/`.        
+- Open the **Trending** note inside `Zoro/Anime/` or `Zoro/Manga/`.       
 ![Trending anime](Assets/trending_anime.png)  
 
 > *You’ll instantly get a preview of how media cards are displayed — no authentication needed.*

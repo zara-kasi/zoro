@@ -10,7 +10,6 @@ static THEME_REPO_URL = 'https://api.github.com/repos/zara-kasi/zoro/contents/Th
       '.zoro-container',
       '.zoro-search-container',
       '.zoro-dashboard-container',
-      '.zoro-modal-overlay',
       '.zoro-edit-modal',
       '.zoro-auth-modal'
     ];

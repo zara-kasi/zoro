@@ -7,13 +7,10 @@ class Prompt {
 
   createAuthenticationPrompt() {
     const modal = document.createElement('div');
-    modal.className = 'zoro-edit-modal';
+    modal.className = 'zoro-edit-modal zoro-inline';
     modal.setAttribute('role', 'dialog');
     modal.setAttribute('aria-modal', 'true');
     modal.setAttribute('aria-label', 'Authentication Required');
-
-    const overlay = document.createElement('div');
-    overlay.className = 'zoro-modal-overlay';
 
     const content = document.createElement('div');
     content.className = 'zoro-modal-content auth-prompt';
@@ -75,14 +72,11 @@ class Prompt {
     content.appendChild(featuresDiv);
     content.appendChild(buttonContainer);
 
-    modal.appendChild(overlay);
     modal.appendChild(content);
     document.body.appendChild(modal);
 
     authenticateBtn.focus();
     this.plugin.addGlobalListener(document, 'keydown', handleKeyDown);
-
-    overlay.onclick = closeModal;
 
     function closeModal() {
       if (modal.parentNode) modal.parentNode.removeChild(modal);

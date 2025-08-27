@@ -6433,7 +6433,6 @@ var Theme = class _Theme {
       ".zoro-container",
       ".zoro-search-container",
       ".zoro-dashboard-container",
-      ".zoro-modal-overlay",
       ".zoro-edit-modal",
       ".zoro-auth-modal"
     ];
@@ -7509,16 +7508,14 @@ var RenderEditModal = class {
   }
   createModalStructure() {
     const container = document.createElement("div");
-    container.className = "zoro-edit-modal";
-    const overlay = document.createElement("div");
-    overlay.className = "zoro-modal-overlay";
+    container.className = "zoro-edit-modal zoro-inline";
     const content = document.createElement("div");
     content.className = "zoro-modal-content";
     const form = document.createElement("form");
     form.className = "zoro-edit-form";
     content.appendChild(form);
-    container.append(overlay, content);
-    return { container, overlay, content, form };
+    container.append(content);
+    return { container, overlay: null, content, form };
   }
   createTitle(entry) {
     const title = document.createElement("h3");
@@ -8290,36 +8287,11 @@ var SupportEditModal = class {
       progress: parseInt(formFields.progress.input.value) || 0
     };
   }
-  setupModalInteractions(modal, overlay, onCancel) {
-    overlay.onclick = () => this.closeModal(modal.container, onCancel);
-  }
   setupFormSubmission(form, handleSaveFunction) {
     form.onsubmit = async (e) => {
       e.preventDefault();
       await handleSaveFunction();
     };
-  }
-  setupEscapeListener(onCancel, modal, saveFunction) {
-    const escListener = (e) => {
-      if (e.key === "Escape") {
-        this.closeModal(modal.container, onCancel);
-      }
-      if (e.key === "Enter" && e.ctrlKey) {
-        saveFunction();
-      }
-    };
-    this.plugin.addGlobalListener(document, "keydown", escListener);
-    modal._escListener = escListener;
-  }
-  closeModal(modalElement, onCancel) {
-    if (modalElement && modalElement.parentNode) {
-      modalElement.parentNode.removeChild(modalElement);
-    }
-    if (modalElement._escListener) {
-      document.removeEventListener("keydown", modalElement._escListener);
-    }
-    this.plugin.removeAllGlobalListeners();
-    onCancel();
   }
   showModalError(form, msg) {
     form.querySelector(".zoro-modal-error")?.remove();
@@ -11173,12 +11145,10 @@ var Prompt = class {
   }
   createAuthenticationPrompt() {
     const modal = document.createElement("div");
-    modal.className = "zoro-edit-modal";
+    modal.className = "zoro-edit-modal zoro-inline";
     modal.setAttribute("role", "dialog");
     modal.setAttribute("aria-modal", "true");
     modal.setAttribute("aria-label", "Authentication Required");
-    const overlay = document.createElement("div");
-    overlay.className = "zoro-modal-overlay";
     const content = document.createElement("div");
     content.className = "zoro-modal-content auth-prompt";
     const title = document.createElement("h3");
@@ -11224,12 +11194,10 @@ var Prompt = class {
     content.appendChild(message);
     content.appendChild(featuresDiv);
     content.appendChild(buttonContainer);
-    modal.appendChild(overlay);
     modal.appendChild(content);
     document.body.appendChild(modal);
     authenticateBtn.focus();
     this.plugin.addGlobalListener(document, "keydown", handleKeyDown);
-    overlay.onclick = closeModal;
     function closeModal() {
       if (modal.parentNode) modal.parentNode.removeChild(modal);
       document.removeEventListener("keydown", handleKeyDown);

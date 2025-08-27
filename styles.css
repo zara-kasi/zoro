@@ -178,12 +178,12 @@
 }
 
 /* Responsive grid behavior for "Default" setting */
-@media (min-width: 768px) { 
+@media (min-width: 800px) { 
   .zoro-cards-grid { 
     --zoro-grid-columns: 4; 
   } 
 }
-@media (min-width: 992px) { 
+@media (min-width: 1000px) { 
   .zoro-cards-grid { 
     --zoro-grid-columns: 5; 
   } 
@@ -193,7 +193,7 @@
     --zoro-grid-columns: 6; 
   } 
 }
-@media (max-width: 480px) {
+@media (max-width: 300px) {
   .zoro-cards-grid {
     gap: var(--zoro-grid-gap-mobile);
   }

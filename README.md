@@ -37,6 +37,7 @@
 
 - Open the **Trending** note inside `Zoro/Anime/` or `Zoro/Manga/`.        
 ![Trending anime](Assets/trending_anime.png)  
+
 > *You’ll instantly get a preview of how media cards are displayed — no authentication needed.*
 
 ---    
@@ -68,6 +69,7 @@ These guides provide step-by-step instructions with video for setting up secure 
 # Feature Overview      
 
 ![Features screenshot](Assets/features.png)
+
 >*All your media features — lists, stats, search, editing, and more — inside Obsidian.*
 
 - [Connected Notes](https://github.com/zara-kasi/zoro/blob/release-v1.1.0/Docs%2Fconnected_note.md) — *Create note or link notes for media.*      

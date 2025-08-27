@@ -2760,8 +2760,9 @@ body.theme-light .zoro-heart.favorited::before {
 
 /* Ensure toolbar sits above any embedded inline panels */
 .zoro-panel-toolbar {
-  position: relative;
-  z-index: 10;
+  position: sticky;
+  top: 0;
+  z-index: 1001;
   background: var(--background-primary);
 }
 
@@ -2927,6 +2928,19 @@ body.theme-light .zoro-heart.favorited::before {
 .zoro-inline .panel-content {
   max-height: none;
 }
+
+/* Safety: when rendered inside the side panel, never overlay the toolbar */
+.zoro-side-panel { position: relative; }
+.zoro-side-panel .zoro-more-details-panel,
+.zoro-side-panel .zoro-edit-modal {
+  position: static !important;
+  transform: none !important;
+  z-index: 0 !important;
+  box-shadow: none !important;
+}
+.zoro-side-panel .zoro-more-details-panel::before { display: none !important; }
+.zoro-side-panel .zoro-panel-embed { position: relative; z-index: 0; }
+.zoro-side-panel .zoro-panel-toolbar, .zoro-side-panel .zoro-panel-btn { pointer-events: auto; }
 
 /* Empty State */
 .zoro-note-empty-state {

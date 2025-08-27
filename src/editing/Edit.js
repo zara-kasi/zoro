@@ -58,21 +58,7 @@ class Edit {
   }
 
   createInlineEdit(entry, onSave, onCancel, source = 'anilist', mountContainer = null) {
-    // Always inline; if no container, route to Side Panel and render there
-    if (!mountContainer || !mountContainer.appendChild) {
-      try {
-        const media = entry?.media;
-        const mediaType = entry?._zoroMeta?.mediaType || media?.type || media?.format || 'ANIME';
-        const resolvedSource = entry?._zoroMeta?.source || source || 'anilist';
-        this.plugin.connectedNotes.openSidePanelWithContext({ media, entry, source: resolvedSource, mediaType })
-          .then(view => view.showEditForEntry(entry, { source: resolvedSource }));
-        return null;
-      } catch (e) {
-        console.error('[Zoro][Edit] Failed to route to Side Panel for inline edit', e);
-      }
-    }
-
-    // Force TMDb movie/TV to use Simkl provider for editing (same logic as modal)
+    // Force TMDb movie/TV to use Simkl provider for editing
     const isTmdb = (entry._zoroMeta?.source || source) === 'tmdb';
     const mt = (entry._zoroMeta?.mediaType || '').toUpperCase();
     const actualSource = (isTmdb && (mt === 'MOVIE' || mt === 'MOVIES' || mt === 'TV' || mt === 'SHOW' || mt === 'SHOWS'))
@@ -142,8 +128,31 @@ class Edit {
       favoriteBtn.style.display = 'none';
     }
 
-    // Mount into provided container
-    mountContainer.appendChild(container);
+    if (mountContainer && mountContainer.appendChild) {
+      // Direct mount to provided container
+      mountContainer.appendChild(container);
+    } else {
+      // Route to Side Panel - but actually mount the form to the sidebar's embed container
+      try {
+        const media = entry?.media;
+        const mediaType = entry?._zoroMeta?.mediaType || media?.type || media?.format || 'ANIME';
+        const resolvedSource = entry?._zoroMeta?.source || source || 'anilist';
+        
+        this.plugin.connectedNotes.openSidePanelWithContext({ media, entry, source: resolvedSource, mediaType })
+          .then(view => {
+            // FIXED: Mount the existing form instead of calling showEditForEntry
+            if (view.embedEl) {
+              view.embedEl.appendChild(container);
+              view.currentMode = 'edit';
+              view.showContentContainer(false);
+              view.showEmbedContainer(true);
+            }
+          });
+      } catch (e) {
+        console.error('[Zoro][Edit] Failed to route to Side Panel for inline edit', e);
+      }
+    }
+
     return { container, content, form };
   }
 

@@ -75,7 +75,7 @@ class SidePanel extends ItemView {
 		this.searchContainerEl = root.createDiv({ cls: 'zoro-panel-search-container' });
 
 		// Inline embed container for details/edit UIs
-		this.embedEl = root.createDiv({ cls: 'zoro-panel-embed' });
+		this.embedEl = root.createDiv({ cls: 'zoro-panel-embed is-hidden' });
 
 		// Content (center - for notes list)
 		this.contentEl = root.createDiv({ cls: 'zoro-panel-content' });
@@ -91,6 +91,18 @@ class SidePanel extends ItemView {
 		if (!this.searchContainerEl) return;
 		if (show) this.searchContainerEl.removeClass('is-hidden');
 		else this.searchContainerEl.addClass('is-hidden');
+	}
+
+	showContentContainer(show) {
+		if (!this.contentEl) return;
+		if (show) this.contentEl.removeClass('is-hidden');
+		else this.contentEl.addClass('is-hidden');
+	}
+
+	showEmbedContainer(show) {
+		if (!this.embedEl) return;
+		if (show) this.embedEl.removeClass('is-hidden');
+		else this.embedEl.addClass('is-hidden');
 	}
 
 	teardownUI() {
@@ -110,6 +122,8 @@ class SidePanel extends ItemView {
 		this.teardownUI();
 		this.showToolbar(false);
 		this.showSearchContainer(false);
+		this.showEmbedContainer(false);
+		this.showContentContainer(true);
 		const c = this.contentEl.createDiv({ cls: 'zoro-panel-blank' });
 		c.createEl('div', { text: 'Open this panel from a media card to use actions.' });
 	}
@@ -118,6 +132,8 @@ class SidePanel extends ItemView {
 		this.teardownUI();
 		this.showToolbar(true);
 		this.showSearchContainer(false); // Initially hidden
+		this.showEmbedContainer(false);
+		this.showContentContainer(true);
 
 		// Hook up actions
 		this.createBtn.onclick = async () => {
@@ -225,6 +241,9 @@ class SidePanel extends ItemView {
 	async showDetailsForMedia(media, entry = null) {
 		if (!this.embedEl) return;
 		this.embedEl.empty();
+		this.showContentContainer(false);
+		this.showSearchContainer(false);
+		this.showEmbedContainer(true);
 		try {
 			await this.plugin.moreDetailsPanel.showPanel(media, entry, null, this.embedEl);
 		} catch (e) {
@@ -236,6 +255,9 @@ class SidePanel extends ItemView {
 	async showEditForEntry(entry, config = {}) {
 		if (!this.embedEl) return;
 		this.embedEl.empty();
+		this.showContentContainer(false);
+		this.showSearchContainer(false);
+		this.showEmbedContainer(true);
 		try {
 			const source = config?.source || entry?._zoroMeta?.source || this.plugin?.settings?.defaultApiSource || 'anilist';
 			await this.plugin.edit.createInlineEdit(

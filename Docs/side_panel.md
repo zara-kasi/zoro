@@ -1,65 +1,89 @@
-Zoro Side Panel — Create Note & Connect Note
-This side panel helps you turn any media item into a first-class note in your vault and keep it linked. It focuses on two core actions: Create Note and Connect Note.
+# Zoro Side Panel — Create & Connect Notes  
 
-How to open
-From any Zoro list/search/trending view, select a card and click the “note” icon (or open the panel via the Zoro ribbon/command, if available).
-The panel shows controls contextual to the selected media.
-What the panel does
-Shows whether this media is already linked to a note.
-Lets you create a new connected note with one click.
-Lets you connect an existing note if you already wrote one.
-Helps you resolve duplicates or ambiguous matches safely.
-Connected state overview
-Linked status: Shows the currently connected note’s title and path.
-Quick actions: Open note, reveal in folder, disconnect, refresh links.
-Metadata snapshot: Which IDs/URLs are driving the connection.
-Create Note
-One click creates a new note under your configured Note path (Settings → Zoro → Note → “Note path”).
-The note includes:
-Frontmatter with stable identifiers:
-media_type (ANIME | MANGA | MOVIE | TV)
-Known IDs (e.g., mal_id, anilist_id, simkl_id, plus any other available IDs)
-url: a list of authoritative platform URLs (AniList/MAL/SIMKL/etc.)
-Optional Zoro media block if enabled (Settings → Zoro → Note → “Media block”).
-File naming: Uses a clean, readable title (with disambiguators if needed).
-After creation, the side panel updates to “Connected”.
-Connect Note (link an existing note)
-Use when you already have a note for this title.
-The panel proposes likely matches using:
-Exact ID match (highest priority): MAL → AniList → others
-URL match: any overlap between note frontmatter url array and current media URLs
-Title/tag hints: presence of #Zoro tag or title similarity (fallback)
-You can:
-Pick from suggested matches
-Search by filename
-Manually choose a note from your vault
-On connect, Zoro updates the note’s frontmatter to include the appropriate IDs and media_type (if missing) to make the link stable.
-Disconnect (Unlink)
-Breaks the association without deleting the note.
-Leaves the note intact (frontmatter remains unless you choose to clean it up).
-Refresh links
-Re-runs matching in case you changed frontmatter or renamed notes.
-Useful after editing a note’s frontmatter or adding URLs/IDs.
-Matching logic (how Zoro finds your notes)
+The **Zoro Side Panel** lets you turn any media item into a note in your vault and keep it linked.  
+It focuses on two main actions: **Create Note** and **Connect Note**.  
+
+---
+
+## Opening the Panel  
+You can open the panel :  
+- From any Zoro **list, search, or trending view**: select a card and click the “note” icon.  
 
 
-Priority order:
+---
 
-MAL ID + media_type
-AniList ID + media_type
-Other known IDs + media_type (e.g., simkl/tmdb/imdb if present)
-URL overlap between frontmatter url array and current media URLs
-Fallback hints: #Zoro tag, filename/title
-Notes:
+## Core Features  
 
-Matching is strict on media_type to avoid cross-type collisions.
-URL checks support single string or array in frontmatter; arrays are recommended.
-Frontmatter reference (what Zoro writes/reads)
-Required for strong linking:
-media_type: ANIME | MANGA | MOVIE | TV
-Platform IDs when available: mal_id, anilist_id, simkl_id, tmdb_id, imdb_id, etc.
-url: one or more canonical URLs (array preferred)
-Example:
+### 1. Create Note  
+- Creates a new note in your configured path:  
+  `Settings → Zoro → Note → "Note path"`.  
+- The note includes frontmatter with stable identifiers:  
+  - `media_type`: ANIME | MANGA | MOVIE | TV  
+  - Known IDs (e.g. `mal_id`, `anilist_id`, `simkl_id`)  
+  - `url`: list of canonical platform URLs  
+- File naming: clean, readable titles (with disambiguators if needed).  
+- Optional: auto-inserts a Zoro media block if enabled in settings.  
+- After creation, the panel updates to **Connected**.  
+
+---
+
+### 2. Connect Note (link an existing note)  
+Use when you already have a note for the media.  
+
+Zoro suggests matches based on:  
+1. Exact ID match (priority: MAL → AniList → others)  
+2. URL overlap between note frontmatter and media URLs  
+3. Title/tag hints (`#Zoro` tag or title similarity)  
+
+You can:  
+- Pick from suggested matches  
+- Search by filename  
+- Manually select a note from your vault  
+
+On connect, Zoro updates the note’s frontmatter to include IDs and `media_type` if missing.  
+
+---
+
+### 3. Connected State Overview  
+Once linked, the panel shows:  
+- **Linked status:** note title and path  
+- **Quick actions:** open note, reveal in folder, disconnect, refresh links  
+- **Metadata snapshot:** which IDs/URLs are driving the connection  
+
+---
+
+### 4. Disconnect (Unlink)  
+- Breaks the association without deleting the note.  
+- The note remains intact; frontmatter is unchanged unless you edit it manually.  
+
+---
+
+### 5. Refresh Links  
+- Re-runs matching after frontmatter or file changes.  
+- Useful if you edited IDs, URLs, or renamed notes.  
+
+---
+
+## Matching Logic  
+
+Priority order:  
+1. `mal_id` + `media_type`  
+2. `anilist_id` + `media_type`  
+3. Other IDs + `media_type` (simkl/tmdb/imdb)  
+4. URL overlap in frontmatter  
+5. Fallback: `#Zoro` tag or title/filename similarity  
+
+**Notes:**  
+- `media_type` is strictly required to prevent cross-type mismatches.  
+- `url` supports both single string and array (arrays recommended).  
+
+---
+
+## Frontmatter Reference  
+
+Zoro writes/reads these fields:  
+
+```yaml
 ---
 media_type: ANIME
 mal_id: 5114
@@ -69,27 +93,74 @@ url:
   - https://anilist.co/anime/5114
 tags: [Zoro]
 ---
-Media block insertion (optional)
-When enabled, new notes get an embedded zoro code block showing cover, rating, and details.
-You can remove/modify it later; the panel link remains via frontmatter.
-Typical workflows
-From a list: Open a show → “Create Note” to draft impressions; or “Connect Note” to link your existing write-up.
-From search/trending: Find a title → use “Create Note” to spin up a new note instantly.
-From an existing note: Add IDs/URLs/frontmatter, then “Refresh links” or “Connect Note” to link it.
-Settings that affect the panel
-Settings → Zoro → Note:
-“Note path”: destination folder for new notes
-“Media block”: auto-insert Zoro block in new notes
-Settings → Zoro → Shortcut:
-Custom external URLs appear in the linked More Details panel for quick jumps (complimentary to your connected note flow).
-Best practices
-Prefer arrays for url in frontmatter (easier matching).
-Include both MAL and AniList IDs when possible for bulletproof linking.
-Keep media_type accurate; it’s part of match validation.
-Add #Zoro to legacy notes to help discovery.
-Troubleshooting
-Not seeing a match: Ensure media_type is set and at least one stable ID (or a canonical URL) is present in frontmatter.
-Wrong note matched: Disconnect, refine frontmatter (IDs/URLs), then Connect again.
-Duplicate matches: Use the disambiguation list; pick the correct note and clean the other’s frontmatter if needed.
-Note not created in the right place: Update “Note path” in settings, then Create again.
-This side panel is your control center for turning viewing into knowledge: make notes quickly, anchor them with stable IDs, and keep everything connected as your vault grows.
+```
+
+---
+
+## Media Block (Optional)
+
+If enabled in settings, new notes get a **Zoro media block** showing cover, rating, and details.  
+This can be removed or edited without affecting the link.
+
+---
+
+## Workflows
+
+- **From a list:** open a title → “Create Note” to draft impressions or “Connect Note” to link an existing note.
+    
+- **From search/trending:** find a title → “Create Note” for instant capture.
+    
+- **From an existing note:** add IDs/URLs in frontmatter, then “Refresh links” or “Connect Note”.
+    
+
+---
+
+## Settings That Affect the Panel
+
+- **Note path:** destination folder for new notes  
+    `Settings → Zoro → Note → "Note path"`
+    
+- **Media block:** toggle auto-insertion of the Zoro block in new notes
+    
+- **Shortcuts:** custom external URLs shown in the More Details panel
+    
+
+---
+
+## Best Practices
+
+- Prefer arrays for `urls` in frontmatter.
+    
+- Include both MAL and AniList IDs for stronger linking.
+    
+- Keep `media_type` accurate.
+    
+- Tag legacy notes with `#Zoro` to improve matching.
+    
+
+---
+
+## Troubleshooting
+
+- **No match found:** Ensure `media_type` and at least one ID or canonical URL are in frontmatter.
+    
+- **Wrong note matched:** Disconnect, refine IDs/URLs, then reconnect.
+    
+- **Duplicate matches:** Use the disambiguation list; clean up extra frontmatter.
+    
+- **Note in wrong folder:** Update `"Note path"` in settings and recreate.
+    
+
+---
+
+## Summary
+
+The Zoro Side Panel is your control hub for note management:
+
+- Create new notes with stable identifiers
+    
+- Connect existing notes with reliable matching
+    
+- Keep everything linked as your vault grows
+    
+

@@ -50,9 +50,9 @@ class RenderDetailPanel {
 
     sections.forEach(section => content.appendChild(section));
 
-    const closeBtn = document.createElement('button');
+    const closeBtn = document.createElement('span');
     closeBtn.className = 'panel-close-btn';
-    closeBtn.innerHTML = '×';
+    closeBtn.style.display = 'none';
 
     panel.appendChild(closeBtn);
     panel.appendChild(content);

@@ -25,10 +25,8 @@ class RenderEditModal {
   }
   
   createCloseButton(onClick) {
-    const btn = document.createElement('button');
-    btn.className = 'panel-close-btn';
-    btn.innerHTML = '×';
-    btn.title = 'Close';
+    const btn = document.createElement('span');
+    btn.style.display = 'none';
     btn.onclick = onClick;
     return btn;
   }

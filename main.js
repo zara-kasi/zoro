@@ -7524,10 +7524,8 @@ var RenderEditModal = class {
     return title;
   }
   createCloseButton(onClick) {
-    const btn = document.createElement("button");
-    btn.className = "panel-close-btn";
-    btn.innerHTML = "\xD7";
-    btn.title = "Close";
+    const btn = document.createElement("span");
+    btn.style.display = "none";
     btn.onclick = onClick;
     return btn;
   }
@@ -8904,9 +8902,9 @@ var RenderDetailPanel = class {
     }
     sections.push(this.createExternalLinksSection(media));
     sections.forEach((section) => content.appendChild(section));
-    const closeBtn = document.createElement("button");
+    const closeBtn = document.createElement("span");
     closeBtn.className = "panel-close-btn";
-    closeBtn.innerHTML = "\xD7";
+    closeBtn.style.display = "none";
     panel.appendChild(closeBtn);
     panel.appendChild(content);
     this.addCopyStyles();
@@ -13632,6 +13630,7 @@ var SidePanel = class extends import_obsidian30.ItemView {
     this.embedEl = null;
     this.detailsBtn = null;
     this.editInlineBtn = null;
+    this.currentMode = null;
   }
   getViewType() {
     return ZORO_VIEW_TYPE;
@@ -13703,6 +13702,13 @@ var SidePanel = class extends import_obsidian30.ItemView {
     if (show) this.embedEl.removeClass("is-hidden");
     else this.embedEl.addClass("is-hidden");
   }
+  clearEmbed() {
+    if (this.embedEl) this.embedEl.empty();
+    this.currentMode = null;
+    this.showEmbedContainer(false);
+    this.showContentContainer(true);
+    this.showSearchContainer(false);
+  }
   teardownUI() {
     try {
       if (typeof this.currentCleanup === "function") {
@@ -13751,6 +13757,10 @@ var SidePanel = class extends import_obsidian30.ItemView {
     };
     this.detailsBtn.onclick = async () => {
       try {
+        if (this.currentMode === "details") {
+          this.clearEmbed();
+          return;
+        }
         const media = ctx?.media || ctx?.entry?.media || null;
         if (!media) {
           new import_obsidian30.Notice("No media selected");
@@ -13763,6 +13773,10 @@ var SidePanel = class extends import_obsidian30.ItemView {
     };
     this.editInlineBtn.onclick = async () => {
       try {
+        if (this.currentMode === "edit") {
+          this.clearEmbed();
+          return;
+        }
         let entry = ctx?.entry || null;
         let source = ctx?.entry?._zoroMeta?.source || ctx?.source || this.plugin?.settings?.defaultApiSource || "anilist";
         if (!entry) {
@@ -13824,6 +13838,7 @@ var SidePanel = class extends import_obsidian30.ItemView {
     this.showEmbedContainer(true);
     try {
       await this.plugin.moreDetailsPanel.showPanel(media, entry, null, this.embedEl);
+      this.currentMode = "details";
     } catch (e) {
       console.error("[Zoro][SidePanel] Inline details failed", e);
       new import_obsidian30.Notice("Failed to load details");
@@ -13858,6 +13873,7 @@ var SidePanel = class extends import_obsidian30.ItemView {
         source,
         this.embedEl
       );
+      this.currentMode = "edit";
     } catch (e) {
       console.error("[Zoro][SidePanel] Inline edit failed", e);
       new import_obsidian30.Notice("Failed to open edit form");

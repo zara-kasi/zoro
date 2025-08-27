@@ -1,27 +1,61 @@
-### Export
+# Export
+
+Most services don’t make it easy to export your data:  
+- **MAL** → Has a built-in export (standard format)  
+- **AniList** → No official export (only imports / 3rd-party tools)  
+- **Simkl** → Export locked behind premium  
+
+To fix this, **Zoro adds its own Export feature** for all supported APIs.  
+Find it in **Settings → Data → Export**  
+
+---
+
+## Export Formats
+
+| Type            | Anime & Manga                        | TV & Movies                     |
+|-----------------|---------------------------------------|---------------------------------|
+| **Full Data**   | CSV (complete, no loss)              | CSV (complete, no loss)         |
+| **Standard**    | XML (MAL-compatible, limited fields) | IMDb CSV (importable, some loss) |
+
+> Standard formats are “lighter” — they don’t include every field.  
 
 
-Most services do not provide free or standard export options.  
-- **MAL**: Has a built-in export feature (standard format).  
-- **AniList**: No direct export feature — you would need third-party tools.  
-- **Simkl**: Export is available, but only for premium subscribers.  
+---
 
-To solve this, Zoro provides its own **Export Feature** for all supported APIs.  Go to **Settings → Data → Export**
+## Export Location
 
-**What the Export Feature does**
-- Exports your full data into two formats:  
-  1. **Complete CSV Export** – Contains all your data with no loss of information.  
-  2. **Standard Format Export** – A commonly supported format for migrating to other platforms.  
+All files are saved locally in your vault:  
+```
 
-**Export Formats**
-- **Anime & Manga**:  
-  - CSV (full data, no loss)  
-  - XML (MAL-compatible standard format, may have some limitations)  
-- **TV & Movies**:  
-  - CSV (full data, no loss)  
-  - IMDb-formatted CSV (importable on websites that support IMDb lists, but with some data loss/limitations)  
+Zoro/  
+└── Export/  
+├── Zoro_AniList_Unified.csv  
+├── Zoro_AniList_Anime.xml  
+├── Zoro_MAL_Unified.csv  
+├── Zoro_SIMKL_IMDb.csv  
+└── ...
 
->  Standard formats (like XML or IMDb CSV) may have restrictions and do not include every data field.  For details on these limitations, see the [Export Guide](https://github.com/zara-kasi/zoro/blob/main/Docs%2Fexport-doc.md).
+```
+
+Naming pattern: `Zoro_[Platform]_[Type].extension`
+
+---
+
+## Quick Import Links
+
+- [MAL Import](https://myanimelist.net/import.php)  
+- [AniList Import](https://anilist.co/settings/import)  
+- [IMDb Import](https://www.imdb.com/list/ratings-import)  
+- [Simkl Import](https://simkl.com/apps/import/)  
+
+(Simkl export → use Zoro, imports work fine)
+
+---
+
+## Safety
+
+- All exports are created locally in your Obsidian vault  
+- No data is sent to third-party servers  
 
 
---- 
+---

@@ -44,55 +44,32 @@ class Edit {
   }
 
   createEditModal(entry, onSave, onCancel, source = 'anilist') {
-
-  // Force TMDb movie/TV to use Simkl provider for editing
-  const isTmdb = (entry._zoroMeta?.source || source) === 'tmdb';
-  const mt = (entry._zoroMeta?.mediaType || '').toUpperCase();
-  const actualSource = (isTmdb && (mt === 'MOVIE' || mt === 'MOVIES' || mt === 'TV' || mt === 'SHOW' || mt === 'SHOWS'))
-    ? 'simkl'
-    : (entry._zoroMeta?.source || source);
-  const provider = this.providers[actualSource];
-  
-  const modal = this.renderer.createModalStructure();
-  const { overlay, content, form } = modal;
-  
-  const title = this.renderer.createTitle(entry);
-  const closeBtn = this.renderer.createCloseButton(() => this.support.closeModal(modal.container, onCancel));
-  const favoriteBtn = this.renderer.createFavoriteButton(entry, actualSource, (entry, btn, src) => this.toggleFavorite(entry, btn, src));
-  const formFields = this.renderer.createFormFields(entry, actualSource); // Pass actualSource here
-  const quickButtons = this.renderer.createQuickProgressButtons(entry, formFields.progress.input, formFields.status.input);
-  const actionButtons = this.renderer.createActionButtons(entry, () => this.handleRemove(entry, modal.container, actualSource), this.config, actualSource);
-  
-  this.support.setupModalInteractions(modal, overlay, onCancel);
-  this.support.setupFormSubmission(form, () => this.handleSave(entry, onSave, actionButtons.save, formFields, modal, actualSource));
-  this.support.setupEscapeListener(onCancel, modal, () => {
-    this.handleSave(entry, onSave, actionButtons.save, formFields, modal, actualSource);
-  });
-  
-  this.renderer.assembleModal(content, form, {
-    title,
-    closeBtn,
-    favoriteBtn,
-    formFields,
-    quickButtons,
-    actionButtons
-  });
-  
-  document.body.appendChild(modal.container);
-  
-  if (provider.supportsFeature('favorites')) {
-    this.initializeFavoriteButton(entry, favoriteBtn, actualSource);
-  } else {
-    favoriteBtn.style.display = 'none';
+    // Route to Side Panel inline always
+    try {
+      const media = entry?.media;
+      const mediaType = entry?._zoroMeta?.mediaType || media?.type || media?.format || 'ANIME';
+      const resolvedSource = entry?._zoroMeta?.source || source || 'anilist';
+      this.plugin.connectedNotes.openSidePanelWithContext({ media, entry, source: resolvedSource, mediaType })
+        .then(view => view.showEditForEntry(entry, { source: resolvedSource }));
+    } catch (e) {
+      console.error('[Zoro][Edit] Failed to route to Side Panel for modal call', e);
+    }
+    return null;
   }
-  
-  return modal;
-}
 
   createInlineEdit(entry, onSave, onCancel, source = 'anilist', mountContainer = null) {
-    // Fallback to modal if no mount container provided
+    // Always inline; if no container, route to Side Panel and render there
     if (!mountContainer || !mountContainer.appendChild) {
-      return this.createEditModal(entry, onSave, onCancel, source);
+      try {
+        const media = entry?.media;
+        const mediaType = entry?._zoroMeta?.mediaType || media?.type || media?.format || 'ANIME';
+        const resolvedSource = entry?._zoroMeta?.source || source || 'anilist';
+        this.plugin.connectedNotes.openSidePanelWithContext({ media, entry, source: resolvedSource, mediaType })
+          .then(view => view.showEditForEntry(entry, { source: resolvedSource }));
+        return null;
+      } catch (e) {
+        console.error('[Zoro][Edit] Failed to route to Side Panel for inline edit', e);
+      }
     }
 
     // Force TMDb movie/TV to use Simkl provider for editing (same logic as modal)

@@ -8425,42 +8425,27 @@ var Edit = class {
     };
   }
   createEditModal(entry, onSave, onCancel, source = "anilist") {
-    const isTmdb = (entry._zoroMeta?.source || source) === "tmdb";
-    const mt = (entry._zoroMeta?.mediaType || "").toUpperCase();
-    const actualSource = isTmdb && (mt === "MOVIE" || mt === "MOVIES" || mt === "TV" || mt === "SHOW" || mt === "SHOWS") ? "simkl" : entry._zoroMeta?.source || source;
-    const provider = this.providers[actualSource];
-    const modal = this.renderer.createModalStructure();
-    const { overlay, content, form } = modal;
-    const title = this.renderer.createTitle(entry);
-    const closeBtn = this.renderer.createCloseButton(() => this.support.closeModal(modal.container, onCancel));
-    const favoriteBtn = this.renderer.createFavoriteButton(entry, actualSource, (entry2, btn, src) => this.toggleFavorite(entry2, btn, src));
-    const formFields = this.renderer.createFormFields(entry, actualSource);
-    const quickButtons = this.renderer.createQuickProgressButtons(entry, formFields.progress.input, formFields.status.input);
-    const actionButtons = this.renderer.createActionButtons(entry, () => this.handleRemove(entry, modal.container, actualSource), this.config, actualSource);
-    this.support.setupModalInteractions(modal, overlay, onCancel);
-    this.support.setupFormSubmission(form, () => this.handleSave(entry, onSave, actionButtons.save, formFields, modal, actualSource));
-    this.support.setupEscapeListener(onCancel, modal, () => {
-      this.handleSave(entry, onSave, actionButtons.save, formFields, modal, actualSource);
-    });
-    this.renderer.assembleModal(content, form, {
-      title,
-      closeBtn,
-      favoriteBtn,
-      formFields,
-      quickButtons,
-      actionButtons
-    });
-    document.body.appendChild(modal.container);
-    if (provider.supportsFeature("favorites")) {
-      this.initializeFavoriteButton(entry, favoriteBtn, actualSource);
-    } else {
-      favoriteBtn.style.display = "none";
+    try {
+      const media = entry?.media;
+      const mediaType = entry?._zoroMeta?.mediaType || media?.type || media?.format || "ANIME";
+      const resolvedSource = entry?._zoroMeta?.source || source || "anilist";
+      this.plugin.connectedNotes.openSidePanelWithContext({ media, entry, source: resolvedSource, mediaType }).then((view) => view.showEditForEntry(entry, { source: resolvedSource }));
+    } catch (e) {
+      console.error("[Zoro][Edit] Failed to route to Side Panel for modal call", e);
     }
-    return modal;
+    return null;
   }
   createInlineEdit(entry, onSave, onCancel, source = "anilist", mountContainer = null) {
     if (!mountContainer || !mountContainer.appendChild) {
-      return this.createEditModal(entry, onSave, onCancel, source);
+      try {
+        const media = entry?.media;
+        const mediaType = entry?._zoroMeta?.mediaType || media?.type || media?.format || "ANIME";
+        const resolvedSource = entry?._zoroMeta?.source || source || "anilist";
+        this.plugin.connectedNotes.openSidePanelWithContext({ media, entry, source: resolvedSource, mediaType }).then((view) => view.showEditForEntry(entry, { source: resolvedSource }));
+        return null;
+      } catch (e) {
+        console.error("[Zoro][Edit] Failed to route to Side Panel for inline edit", e);
+      }
     }
     const isTmdb = (entry._zoroMeta?.source || source) === "tmdb";
     const mt = (entry._zoroMeta?.mediaType || "").toUpperCase();
@@ -10107,11 +10092,15 @@ var OpenDetailPanel = class {
       if (closeBtn) closeBtn.onclick = () => this.closePanel();
       mountContainer.appendChild(panel);
     } else {
-      this.renderer.positionPanel(panel, triggerElement);
-      const closeBtn = panel.querySelector(".panel-close-btn");
-      if (closeBtn) closeBtn.onclick = () => this.closePanel();
-      document.body.appendChild(panel);
-      document.addEventListener("click", this.boundOutsideClickHandler);
+      try {
+        const mediaType = entry?._zoroMeta?.mediaType || media?.type || media?.format || "ANIME";
+        const source = entry?._zoroMeta?.source || "anilist";
+        const view = await this.plugin.connectedNotes.openSidePanelWithContext({ media, entry, source, mediaType });
+        await view.showDetailsForMedia(media, entry);
+        return this.currentPanel;
+      } catch (err) {
+        console.error("[Zoro][Details] Failed to open Side Panel for details", err);
+      }
     }
     this.plugin.requestQueue.showGlobalLoader();
     if (this.dataSource.shouldFetchDetailedData(media)) {
@@ -11871,35 +11860,7 @@ var CardRenderer = class {
         const view = await this.plugin.connectedNotes.openSidePanelWithContext({ media, entry: entryToEdit, source: entrySource, mediaType: entryMediaType });
         await view.showEditForEntry(entryToEdit, { source: entrySource });
       } catch (err) {
-        console.error("[Zoro] Failed to open inline edit in Side Panel from card, falling back to modal", err);
-        this.plugin.edit.createEditModal(
-          entryToEdit,
-          async (updates) => {
-            try {
-              const updateId = Number(media.id) || 0;
-              if (entrySource === "simkl" && updateId <= 0) {
-                const retryId = await this.plugin.simklApi.resolveSimklIdByTitle(this.formatter.formatTitle(media), entryMediaType);
-                if (retryId > 0) media.id = retryId;
-              }
-              await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, this.apiHelper.detectMediaType(entry, config, media));
-              const successMessage = isNewEntry ? "\u2705 Added to list!" : "\u2705 Updated!";
-              new import_obsidian25.Notice(successMessage, 3e3);
-              editBtn.textContent = "Edit";
-              editBtn.className = "status-badge status-edit clickable-status";
-              this.parent.refreshActiveViews();
-            } catch (updateError) {
-              console.error("[Zoro] Update failed:", updateError);
-              new import_obsidian25.Notice(`\u274C Update failed: ${updateError.message}`, 5e3);
-            }
-          },
-          () => {
-            editBtn.textContent = "Edit";
-            editBtn.className = "status-badge status-edit clickable-status";
-            editBtn.dataset.loading = "false";
-            editBtn.style.pointerEvents = "auto";
-          },
-          entrySource
-        );
+        console.error("[Zoro] Failed to open inline edit in Side Panel from card", err);
       }
     } catch (error) {
       console.error("[Zoro] User entry check failed:", error);
@@ -11914,27 +11875,8 @@ var CardRenderer = class {
         score: null,
         id: null
       };
-      try {
-        const view = await this.plugin.connectedNotes.openSidePanelWithContext({ media, entry: defaultEntry, source: entrySource, mediaType: entryMediaType });
-        await view.showEditForEntry(defaultEntry, { source: entrySource });
-      } catch (err2) {
-        this.plugin.edit.createEditModal(
-          defaultEntry,
-          async (updates) => {
-            try {
-              await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource);
-              new import_obsidian25.Notice("\u2705 Added to list!", 3e3);
-              this.parent.refreshActiveViews();
-            } catch (updateError) {
-              console.error("[Zoro] Update failed:", updateError);
-              new import_obsidian25.Notice(`\u274C Failed to add: ${updateError.message}`, 5e3);
-            }
-          },
-          () => {
-          },
-          entrySource
-        );
-      }
+      const view = await this.plugin.connectedNotes.openSidePanelWithContext({ media, entry: defaultEntry, source: entrySource, mediaType: entryMediaType });
+      await view.showEditForEntry(defaultEntry, { source: entrySource });
     }
   }
 };
@@ -14679,23 +14621,8 @@ var ZoroPlugin = class extends import_obsidian32.Plugin {
     const mediaType = config.mediaType || entry?._zoroMeta?.mediaType || "ANIME";
     const media = entry?.media;
     (async () => {
-      try {
-        const view = await this.connectedNotes.openSidePanelWithContext({ media, entry, source, mediaType });
-        await view.showEditForEntry(entry, { source });
-      } catch (err) {
-        console.error("[Zoro] Failed to open inline edit in Side Panel, falling back to modal", err);
-        this.edit.createEditModal(
-          entry,
-          async (updates) => {
-            if (source === "mal") await this.malApi.updateMediaListEntry(entry.media.id, updates);
-            else if (source === "simkl") await this.simklApi.updateMediaListEntry(entry.media.id, updates);
-            else await this.api.updateMediaListEntry(entry.media.id, updates);
-          },
-          () => {
-          },
-          source
-        );
-      }
+      const view = await this.connectedNotes.openSidePanelWithContext({ media, entry, source, mediaType });
+      await view.showEditForEntry(entry, { source });
     })();
   }
   injectCSS() {

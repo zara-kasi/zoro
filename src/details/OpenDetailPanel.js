@@ -30,21 +30,23 @@ class OpenDetailPanel {
 		} catch {}
 		const panel = this.renderer.createPanel(media, entry);
 		this.currentPanel = panel;
-		// If a mount container is provided, render inline inside it; otherwise, use overlay
 		if (mountContainer && mountContainer.appendChild) {
-			// Inline mode
 			panel.classList.add('zoro-inline');
 			this.renderer.positionPanel(panel, null);
 			const closeBtn = panel.querySelector('.panel-close-btn');
 			if (closeBtn) closeBtn.onclick = () => this.closePanel();
 			mountContainer.appendChild(panel);
 		} else {
-			// Overlay mode (existing behavior)
-			this.renderer.positionPanel(panel, triggerElement);
-			const closeBtn = panel.querySelector('.panel-close-btn');
-			if (closeBtn) closeBtn.onclick = () => this.closePanel();
-			document.body.appendChild(panel);
-			document.addEventListener('click', this.boundOutsideClickHandler);
+			// Always route to Side Panel inline rendering if no mount container is provided
+			try {
+				const mediaType = (entry?._zoroMeta?.mediaType || media?.type || media?.format || 'ANIME');
+				const source = (entry?._zoroMeta?.source || 'anilist');
+				const view = await this.plugin.connectedNotes.openSidePanelWithContext({ media, entry, source, mediaType });
+				await view.showDetailsForMedia(media, entry);
+				return this.currentPanel;
+			} catch (err) {
+				console.error('[Zoro][Details] Failed to open Side Panel for details', err);
+			}
 		}
 		this.plugin.requestQueue.showGlobalLoader();
 

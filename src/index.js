@@ -274,22 +274,8 @@ class ZoroPlugin extends Plugin {
     const mediaType = config.mediaType || entry?._zoroMeta?.mediaType || 'ANIME';
     const media = entry?.media;
     (async () => {
-      try {
-        const view = await this.connectedNotes.openSidePanelWithContext({ media, entry, source, mediaType });
-        await view.showEditForEntry(entry, { source });
-      } catch (err) {
-        console.error('[Zoro] Failed to open inline edit in Side Panel, falling back to modal', err);
-        this.edit.createEditModal(
-          entry,
-          async updates => {
-            if (source === 'mal') await this.malApi.updateMediaListEntry(entry.media.id, updates);
-            else if (source === 'simkl') await this.simklApi.updateMediaListEntry(entry.media.id, updates);
-            else await this.api.updateMediaListEntry(entry.media.id, updates);
-          },
-          () => {},
-          source
-        );
-      }
+      const view = await this.connectedNotes.openSidePanelWithContext({ media, entry, source, mediaType });
+      await view.showEditForEntry(entry, { source });
     })();
   }
 

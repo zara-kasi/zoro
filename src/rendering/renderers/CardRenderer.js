@@ -533,35 +533,7 @@ class CardRenderer {
         const view = await this.plugin.connectedNotes.openSidePanelWithContext({ media, entry: entryToEdit, source: entrySource, mediaType: entryMediaType });
         await view.showEditForEntry(entryToEdit, { source: entrySource });
       } catch (err) {
-        console.error('[Zoro] Failed to open inline edit in Side Panel from card, falling back to modal', err);
-        this.plugin.edit.createEditModal(
-          entryToEdit,
-          async (updates) => {
-            try {
-              const updateId = Number(media.id) || 0;
-              if (entrySource === 'simkl' && updateId <= 0) {
-                const retryId = await this.plugin.simklApi.resolveSimklIdByTitle(this.formatter.formatTitle(media), entryMediaType);
-                if (retryId > 0) media.id = retryId;
-              }
-              await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, this.apiHelper.detectMediaType(entry, config, media));
-              const successMessage = isNewEntry ? '✅ Added to list!' : '✅ Updated!';
-              new Notice(successMessage, 3000);
-              editBtn.textContent = 'Edit';
-              editBtn.className = 'status-badge status-edit clickable-status';
-              this.parent.refreshActiveViews();
-            } catch (updateError) {
-              console.error('[Zoro] Update failed:', updateError);
-              new Notice(`❌ Update failed: ${updateError.message}`, 5000);
-            }
-          },
-          () => {
-            editBtn.textContent = 'Edit';
-            editBtn.className = 'status-badge status-edit clickable-status';
-            editBtn.dataset.loading = 'false';
-            editBtn.style.pointerEvents = 'auto';
-          },
-          entrySource
-        );
+        console.error('[Zoro] Failed to open inline edit in Side Panel from card', err);
       }
 
     } catch (error) {
@@ -581,26 +553,8 @@ class CardRenderer {
         id: null
       };
 
-      try {
-        const view = await this.plugin.connectedNotes.openSidePanelWithContext({ media, entry: defaultEntry, source: entrySource, mediaType: entryMediaType });
-        await view.showEditForEntry(defaultEntry, { source: entrySource });
-      } catch (err2) {
-        this.plugin.edit.createEditModal(
-          defaultEntry,
-          async (updates) => {
-            try {
-              await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource);
-              new Notice('✅ Added to list!', 3000);
-              this.parent.refreshActiveViews();
-            } catch (updateError) {
-              console.error('[Zoro] Update failed:', updateError);
-              new Notice(`❌ Failed to add: ${updateError.message}`, 5000);
-            }
-          },
-          () => {},
-          entrySource
-        );
-      }
+      const view = await this.plugin.connectedNotes.openSidePanelWithContext({ media, entry: defaultEntry, source: entrySource, mediaType: entryMediaType });
+      await view.showEditForEntry(defaultEntry, { source: entrySource });
     }
   }
 }

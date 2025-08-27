@@ -8,15 +8,15 @@
 > "Zoro — Track anime, manga, movies and TV inside Obsidian"      
       
 ---      
-      
-# Quick Links      
-      
-- [Quick Start](#-quick-start)      
-- [Recommendation](#-recommendation)      
-- [Authentication](#-authentication)      
-- [Feature Overview](#-feature-overview)            
-- [Development](#-development)      
-      
+
+# Quick Links
+
+- [Quick Start](#quick-start)
+- [Recommendation](#recommendation)
+- [Authentication](#authentication)
+- [Feature Overview](#feature-overview)
+- [Development](#development)
+
 ---       
       
 # Quick Start      

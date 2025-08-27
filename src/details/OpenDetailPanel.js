@@ -30,10 +30,9 @@ class OpenDetailPanel {
 		} catch {}
 		// Only create a DOM panel when we actually have a container to mount into.
 		if (mountContainer && mountContainer.appendChild) {
-			const panel = this.renderer.createPanel(media, entry);
+			const panel = this.renderer.createPanel(media, entry, { inline: true });
 			this.currentPanel = panel;
-			panel.classList.add('zoro-inline');
-			this.renderer.positionPanel(panel, null);
+			// inline panel uses its own class, no positioning needed
 			const closeBtn = panel.querySelector('.panel-close-btn');
 			if (closeBtn) closeBtn.onclick = () => this.closePanel();
 			mountContainer.appendChild(panel);

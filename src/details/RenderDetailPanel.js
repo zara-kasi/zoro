@@ -6,11 +6,12 @@ class RenderDetailPanel {
     this.plugin = plugin;
   }
 
-  createPanel(media, entry) {
+  createPanel(media, entry, options = {}) {
+    const inline = options?.inline === true;
     const fragment = document.createDocumentFragment();
     
     const panel = document.createElement('div');
-    panel.className = 'zoro-more-details-panel';
+    panel.className = inline ? 'zoro-details-inline' : 'zoro-more-details-panel';
 
     const content = document.createElement('div');
     content.className = 'panel-content';
@@ -50,11 +51,12 @@ class RenderDetailPanel {
 
     sections.forEach(section => content.appendChild(section));
 
-    const closeBtn = document.createElement('span');
-    closeBtn.className = 'panel-close-btn';
-    closeBtn.style.display = 'none';
-
-    panel.appendChild(closeBtn);
+    if (!inline) {
+      const closeBtn = document.createElement('span');
+      closeBtn.className = 'panel-close-btn';
+      closeBtn.style.display = 'none';
+      panel.appendChild(closeBtn);
+    }
     panel.appendChild(content);
 
     // Add copy functionality styles

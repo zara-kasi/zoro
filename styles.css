@@ -2929,6 +2929,23 @@ body.theme-light .zoro-heart.favorited::before {
   max-height: none;
 }
 
+/* New inline-only details container replacing overlay modal */
+.zoro-details-inline {
+  position: relative;
+  max-width: 100%;
+  width: 100%;
+  max-height: none;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  box-shadow: none;
+  padding: 0;
+}
+.zoro-details-inline .panel-content {
+  max-height: none;
+  overflow: visible;
+}
+
 /* Safety: when rendered inside the side panel, never overlay the toolbar */
 .zoro-side-panel { position: relative; }
 .zoro-side-panel .zoro-more-details-panel,

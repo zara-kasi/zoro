@@ -54,8 +54,7 @@ Naming pattern: `Zoro_[Platform]_[Type].extension`
 
 ## Safety
 
-- All exports are created locally in your Obsidian vault  
-- No data is sent to third-party servers  
+- All exports are created locally in your Obsidian vault
 
 
 ---

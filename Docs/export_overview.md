@@ -26,14 +26,12 @@ Find it in **Settings → Data → Export**
 
 All files are saved locally in your vault:  
 ```
-
-Zoro/  
-└── Export/  
-├── Zoro_AniList_Unified.csv  
-├── Zoro_AniList_Anime.xml  
-├── Zoro_MAL_Unified.csv  
-├── Zoro_SIMKL_IMDb.csv  
-└── ...
+Zoro/
+  └─ Export/
+        ├── Zoro_AniList_Unified.csv
+        ├── Zoro_AniList_Anime.xml
+        ├── Zoro_MAL_Unified.csv
+        └── ... (all export files)
 
 ```
 

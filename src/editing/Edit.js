@@ -129,12 +129,10 @@ class Edit {
     }
 
     if (mountContainer && mountContainer.appendChild) {
-      // Direct mount to provided container
-      console.log('[Zoro][Edit] Mounting directly to provided container');
+      // Direct mount to provided container - this is what we want for the Side Panel
       mountContainer.appendChild(container);
     } else {
-      // Route to Side Panel - but actually mount the form to the sidebar's embed container
-      console.log('[Zoro][Edit] No mount container, routing to Side Panel');
+      // Only route to Side Panel if no mount container is provided
       try {
         const media = entry?.media;
         const mediaType = entry?._zoroMeta?.mediaType || media?.type || media?.format || 'ANIME';
@@ -142,15 +140,11 @@ class Edit {
         
         this.plugin.connectedNotes.openSidePanelWithContext({ media, entry, source: resolvedSource, mediaType })
           .then(view => {
-            // FIXED: Mount the existing form instead of calling showEditForEntry
             if (view.embedEl) {
-              console.log('[Zoro][Edit] Mounting form to Side Panel embed container');
               view.embedEl.appendChild(container);
               view.currentMode = 'edit';
               view.showContentContainer(false);
               view.showEmbedContainer(true);
-            } else {
-              console.error('[Zoro][Edit] No embedEl found in Side Panel view');
             }
           });
       } catch (e) {

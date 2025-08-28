@@ -156,22 +156,28 @@ class RenderEditModal {
     });
   }
 
-  createScoreField(entry) {
-    const config = this.config.fields.score;
-    return this.createFormField({
-      type: 'number',
-      label: `${config.label} (${config.min}–${config.max})`,
-      emoji: config.emoji,
-      id: config.id,
-      value: entry.score,
-      options: {
-        min: config.min,
-        max: config.max,
-        step: config.step,
-        placeholder: `e.g. ${config.max/2 + config.max/5}` 
-      }
-    });
+createScoreField(entry) {
+  const config = this.config.fields.score;
+  
+  // Generate score options from 1 to max (10)
+  const scoreOptions = [
+    { value: '', label: 'Unrated' } // Default/empty option
+  ];
+  
+  // Add score options from 1 to 10 (0 is not a valid score)
+  for (let i = 1; i <= config.max; i += config.step) {
+    scoreOptions.push({ value: i.toString(), label: i.toString() });
   }
+  
+  return this.createFormField({
+    type: 'select',
+    label: `${config.label} (${config.min}–${config.max})`,
+    emoji: config.emoji,
+    id: config.id,
+    value: entry.score !== null && entry.score !== undefined ? entry.score.toString() : '',
+    options: { items: scoreOptions }
+  });
+}
 
   createProgressField(entry) {
     const config = this.config.fields.progress;

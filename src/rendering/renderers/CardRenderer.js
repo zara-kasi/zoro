@@ -56,11 +56,11 @@ class CardRenderer {
     
     // Add heart for favorites
     const heart = document.createElement('span');
-    heart.className = 'zoro-heart';
-    if (!media.isFavourite) heart.style.display = 'none';
-    card.appendChild(heart);
-
-    return card;
+heart.className = 'zoro-heart';
+heart.textContent = '❤️';
+if (!media.isFavourite) heart.style.display = 'none';
+card.appendChild(heart);
+return card;
   }
 
   createCoverContainer(media, entry, isSearch, isCompact, config) {

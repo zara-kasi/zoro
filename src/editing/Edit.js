@@ -19,9 +19,9 @@ class Edit {
         { value: 'REPEATING', label: 'Repeating', emoji: '🔄' }
       ],
       fields: {
-        status: { label: 'Status', emoji: '🧿', id: 'zoro-status' },
-        score: { label: 'Score', emoji: '⭐', id: 'zoro-score', min: 0, max: 10, step: 1 },
-        progress: { label: 'Progress', emoji: '📊', id: 'zoro-progress' }
+        status: { label: 'Status', emoji: '', id: 'zoro-status' },
+        score: { label: 'Score', emoji: '', id: 'zoro-score', min: 1, max: 10, step: 1 },
+        progress: { label: 'Progress', emoji: '', id: 'zoro-progress' }
       },
       buttons: {
         save: { label: 'Save', class: 'zoro-save-btn' },
@@ -66,7 +66,7 @@ class Edit {
       : (entry._zoroMeta?.source || source);
     const provider = this.providers[actualSource];
 
-    // Build inline container structure (no overlay)
+    // Build inline container structure (no overlay) - styling handled by CSS
     const container = document.createElement('div');
     container.className = 'zoro-edit-modal zoro-inline';
     const content = document.createElement('div');

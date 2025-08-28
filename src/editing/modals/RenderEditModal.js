@@ -158,18 +158,25 @@ class RenderEditModal {
 
   createScoreField(entry) {
     const config = this.config.fields.score;
+    
+    // Create score options from 0 to 10, plus null option
+    const scoreOptions = [];
+    
+    // Add null option first
+    scoreOptions.push({ value: '', label: 'No Score' });
+    
+    // Add scores from 0 to 10
+    for (let i = 0; i <= 10; i++) {
+      scoreOptions.push({ value: i.toString(), label: i.toString() });
+    }
+    
     return this.createFormField({
-      type: 'number',
-      label: `${config.label} (${config.min}–${config.max})`,
+      type: 'select',
+      label: config.label,
       emoji: config.emoji,
       id: config.id,
-      value: entry.score,
-      options: {
-        min: config.min,
-        max: config.max,
-        step: config.step,
-        placeholder: `e.g. ${config.max/2 + config.max/5}` 
-      }
+      value: entry.score !== null ? entry.score.toString() : '',
+      options: { items: scoreOptions }
     });
   }
 

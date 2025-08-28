@@ -63,7 +63,7 @@ class SidePanel extends ItemView {
 		});
    
    this.editInlineBtn = this.buttonContainerEl.createEl('button', {
-			text: '️☑️',
+			text: '✏️',
 			cls: 'zoro-panel-btn'
 		});
 		// New inline Details and Edit buttons
@@ -199,12 +199,15 @@ class SidePanel extends ItemView {
 
 		this.editInlineBtn.onclick = async () => {
 			try {
+				console.log('[Zoro][SidePanel] Edit button clicked, current mode:', this.currentMode);
 				if (this.currentMode === 'edit') {
+					console.log('[Zoro][SidePanel] Already in edit mode, clearing embed');
 					this.clearEmbed();
 					return;
 				}
 				let entry = ctx?.entry || null;
 				let source = (ctx?.entry?._zoroMeta?.source || ctx?.source || this.plugin?.settings?.defaultApiSource || 'anilist');
+				console.log('[Zoro][SidePanel] Entry:', entry, 'Source:', source);
 				if (!entry) {
 					const media = ctx?.media || null;
 					if (!media) {
@@ -220,8 +223,10 @@ class SidePanel extends ItemView {
 						id: null,
 						_zoroMeta: { source: source, mediaType: (media.type || media.format || ctx?.mediaType || 'ANIME') }
 					};
+					console.log('[Zoro][SidePanel] Created minimal entry:', entry);
 				}
 
+				console.log('[Zoro][SidePanel] Calling showEditForEntry');
 				await this.showEditForEntry(entry, { source });
 			} catch (e) {
 				console.error('[Zoro][SidePanel] Failed to show edit inline', e);
@@ -276,13 +281,19 @@ class SidePanel extends ItemView {
 	}
 
 	async showEditForEntry(entry, config = {}) {
-		if (!this.embedEl) return;
+		console.log('[Zoro][SidePanel] showEditForEntry called with:', entry, config);
+		if (!this.embedEl) {
+			console.error('[Zoro][SidePanel] No embedEl found');
+			return;
+		}
+		console.log('[Zoro][SidePanel] Clearing embed and showing embed container');
 		this.embedEl.empty();
 		this.showContentContainer(false);
 		this.showEmbedContainer(true);
 		try {
 			const source = config?.source || entry?._zoroMeta?.source || this.plugin?.settings?.defaultApiSource || 'anilist';
-			await this.plugin.edit.createInlineEdit(
+			console.log('[Zoro][SidePanel] Creating inline edit with source:', source);
+			const result = await this.plugin.edit.createInlineEdit(
 				entry,
 				async (updates) => {
 					// Route update to appropriate API
@@ -303,7 +314,9 @@ class SidePanel extends ItemView {
 				source,
 				this.embedEl
 			);
+			console.log('[Zoro][SidePanel] createInlineEdit result:', result);
 			this.currentMode = 'edit';
+			console.log('[Zoro][SidePanel] Edit mode set, current mode:', this.currentMode);
 		} catch (e) {
 			console.error('[Zoro][SidePanel] Inline edit failed', e);
 			new Notice('Failed to open edit form');

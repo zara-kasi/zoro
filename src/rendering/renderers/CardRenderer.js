@@ -57,7 +57,7 @@ class CardRenderer {
     // Add heart for favorites
     const heart = document.createElement('span');
 heart.className = 'zoro-heart';
-heart.textContent = '❤️';
+heart.createEl('span', { text: '❤️' });
 if (!media.isFavourite) heart.style.display = 'none';
 card.appendChild(heart);
 return card;

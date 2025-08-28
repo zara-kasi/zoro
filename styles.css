@@ -8,6 +8,8 @@
   --zoro-grid-gap: 1rem;
   --zoro-grid-gap-mobile: 0.75rem;
   --zoro-grid-margin: 1rem 0;
+  --zoro-grid-min-width: 280px;
+
 
   /* ---- Card Shell ---- */
   --zoro-card-border-radius: 8px;
@@ -15,6 +17,7 @@
   --zoro-card-cover-aspect-ratio: 2 / 3;
   --zoro-card-padding: 0.5rem 0.75rem;
   --zoro-card-gap: 0.3rem;
+  --zoro-card-min-width: 200px;
 
   /* ---- Typography ---- */
   --zoro-title-font-size: 0.9rem;
@@ -79,15 +82,6 @@
   --zoro-auth-btn-font-weight: bold;
 
 
-  /* ---- Modal ---- */
-  --zoro-modal-z-index: 1000;
-  --zoro-modal-overlay-opacity: 0.8;
-  --zoro-modal-content-border-radius: 8px;
-  --zoro-modal-content-padding: 20px;
-  --zoro-modal-content-max-width: 500px;
-  --zoro-modal-content-width: 90%;
-  --zoro-modal-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-
   /* ---- Auth Modal ---- */
   --zoro-auth-modal-padding: 2rem;
   --zoro-auth-modal-max-width: 450px;
@@ -119,6 +113,10 @@
   --zoro-fade-in-duration: 0.3s;
   --zoro-scale-hover: 1.02;
   --zoro-brightness-hover: 1.1;
+  --zoro-transition-fast: 0.15s;
+  --zoro-transition-medium: 0.2s;
+  --zoro-transition-slow: 0.3s;
+
 
   /* ---- Mobile Breakpoints ---- */
   --zoro-mobile-breakpoint: 480px;
@@ -133,11 +131,15 @@
   --zoro-setting-btn-padding: 0.5rem 1rem;
   --zoro-setting-btn-max-width: 200px;
   --zoro-setting-btn-mobile-font-size: 1rem;
+  
+  --zoro-stat-min-width: 160px;
 }
 
-/* ==================================================================
-   ORIGINAL STYLES (unchanged, only using the variables above)
-   ================================================================== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
 
 /* Container */
 .zoro-container {
@@ -210,11 +212,12 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: box-shadow var(--zoro-transition-duration) ease;
+  transition: all var(--zoro-transition-duration) ease;
   margin: 0;
   padding: 0;
   list-style: none;
 }
+
 .zoro-card:hover,
 .zoro-single-card:hover {
   box-shadow: var(--zoro-hover-shadow);
@@ -361,79 +364,57 @@
 .zoro-retry-btn:hover {
   background: var(--interactive-accent-hover);
 }
+
 .zoro-auth-button {
-  background: linear-gradient(45deg, #02A9FF, #3B82F6);
-  color: white;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
   font-weight: var(--zoro-auth-btn-font-weight);
   padding: var(--zoro-auth-btn-padding);
   border-radius: var(--zoro-auth-btn-border-radius);
   border: none;
   cursor: pointer;
 }
+
 .zoro-auth-button:hover {
   background: linear-gradient(45deg, #0284C7, #2563EB);
-}
-
-.zoro-edit-modal {
-  position: fixed;
-  z-index: var(--zoro-modal-z-index, 1000);
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  animation: modalFadeIn 0.15s ease-out;
 }
 
 .zoro-modal-overlay {
   position: absolute;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0);
+  background: transparent;
   cursor: pointer;
 }
 
 .zoro-modal-content {
-  background: #ffffff;
-  border-radius: 12px;
-  padding: 32px;
-  max-width: 420px;
-  width: calc(100vw - 48px);
-  position: relative;
-  box-shadow: 
-    0 24px 48px rgba(0, 0, 0, 0.4),
-    0 8px 16px rgba(0, 0, 0, 0.24);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  transform: scale(1);
-  animation: modalSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  cursor: default;
+  background: transparent;
+  padding: 0;
+  position: fixed;
 }
 
-
 /* Favorite button in top-left corner - rounded and small */
+
 .zoro-fav-btn {
   position: absolute;
   top: 10px;
   left: 10px;
   background: transparent !important;
   border: none;
-  font-size: 20px;
+  font-size: 1.25rem;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--zoro-transition-fast) ease;
   outline: none;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
   opacity: 1;
+  padding: 0;
 }
 
 .zoro-fav-btn:hover {
   transform: scale(1.1);
-  opacity: 1;
-  background: transparent !important;
 }
 
 .zoro-fav-btn:disabled {
@@ -441,53 +422,7 @@
   cursor: not-allowed;
 }
 
-.theme-dark .zoro-modal-close,
-[data-theme="dark"] .zoro-modal-close {
-  color: var(--text-muted, #9ca9af);
-  opacity: 0.6;
-}
 
-.theme-dark .zoro-modal-close:hover,
-[data-theme="dark"] .zoro-modal-close:hover {
-  color: var(--text-normal, #d1d5db);
-  opacity: 1;
-}
-
-/* Dark mode support */
-.theme-dark .zoro-modal-content,
-[data-theme="dark"] .zoro-modal-content {
-  background: var(--background-primary, #1a1a1a);
-  border: 1px solid var(--background-modifier-border, rgba(255, 255, 255, 0.12));
-  box-shadow: 
-    0 24px 48px rgba(0, 0, 0, 0.4),
-    0 8px 16px rgba(0, 0, 0, 0.24);
-}
-
-.theme-dark .zoro-modal-overlay,
-[data-theme="dark"] .zoro-modal-overlay {
-  background: rgba(225, 225, 225, 0.2);
-}
-
-/* Animations */
-@keyframes modalFadeIn {
-  from { 
-    opacity: 0;
-  }
-  to { 
-    opacity: 1;
-  }
-}
-
-@keyframes modalSlideIn {
-  from {
-    opacity: 0;
-    transform: scale(0.95) translateY(-8px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
-}
 
 /* Form structure */
 .zoro-edit-form {
@@ -498,18 +433,13 @@
 
 .zoro-modal-title {
   margin: 0 0 24px 0;
-  font-size: 20px;
+  font-size: 1.25rem;
   font-weight: 600;
-  color: var(--text-normal, #1a1a1a);
   line-height: 1.3;
   letter-spacing: -0.01em;
   text-align: center;
 }
 
-.theme-dark .zoro-modal-title,
-[data-theme="dark"] .zoro-modal-title {
-  color: var(--text-normal, #ffffff);
-}
 
 /* Form fields */
 .zoro-form-group {
@@ -519,48 +449,23 @@
 }
 
 .zoro-form-label {
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 500;
-  color: var(--text-muted, #6b7280);
   margin: 0;
   line-height: 1.4;
 }
 
-.theme-dark .zoro-form-label,
-[data-theme="dark"] .zoro-form-label {
-  color: var(--text-muted, #9ca3af);
-}
 
 .zoro-form-input {
   padding: 12px 16px;
-  border: 1.5px solid var(--background-modifier-border, #e5e7eb);
   border-radius: 8px;
-  background: var(--background-primary, #ffffff);
-  color: var(--text-normal, #1a1a1a);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-family: inherit;
-  transition: all 0.15s ease;
+  transition: all var(--zoro-transition-fast) ease;
   outline: none;
   appearance: none;
 }
 
-.zoro-form-input:focus {
-  border-color: var(--interactive-accent, #3b82f6);
-  box-shadow: 0 0 0 3px var(--interactive-accent-alpha, rgba(59, 130, 246, 0.1));
-}
-
-.theme-dark .zoro-form-input,
-[data-theme="dark"] .zoro-form-input {
-  background: var(--background-primary, #495057);
-  border-color: var(--background-modifier-border, rgba(255, 255, 255, 0.12));
-  color: var(--text-normal, #ffffff);
-}
-
-.theme-dark .zoro-form-input:focus,
-[data-theme="dark"] .zoro-form-input:focus {
-  border-color: var(--interactive-accent, #60a5fa);
-  box-shadow: 0 0 0 3px var(--interactive-accent-alpha, rgba(96, 165, 250, 0.15));
-}
 
 /* Select dropdown styling - removed dropdown arrow */
 .zoro-form-input[type="number"] {
@@ -597,7 +502,7 @@ select.zoro-form-input {
   background: var(--background-secondary, #f9fafb);
   color: var(--text-muted, #6b7280);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all var(--zoro-transition-fast) ease;
   outline: none;
 }
 
@@ -605,7 +510,7 @@ select.zoro-form-input {
   background: var(--background-modifier-hover, #f3f4f6);
   color: var(--text-normal, #1a1a1a);
   border-color: var(--background-modifier-border-hover, #d1d5db);
-  transform: translateY(-1px);
+  
 }
 
 .zoro-quick-btn:active {
@@ -646,23 +551,6 @@ select.zoro-form-input {
   margin-top: 8px;
 }
 
-.zoro-modal-btn {
-  padding: 12px 24px;
-  font-size: 14px;
-  font-weight: 500;
-  font-family: inherit;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 80px;
-  outline: none;
-  white-space: nowrap;
-}
-
 
 .zoro-save-btn {
   background: transparent;
@@ -674,7 +562,6 @@ select.zoro-form-input {
   background: var(--color-green, #16a34a);
   color: var(--text-on-accent, #ffffff);
   border-color: var(--color-green, #16a34a);
-  transform: translateY(-1px);
 }
 
 /* Dark-mode overrides */
@@ -706,7 +593,7 @@ select.zoro-form-input {
   background: var(--color-red, #ef4444);
   color: var(--text-on-accent, #ffffff);
   border-color: var(--color-red, #ef4444);
-  transform: translateY(-1px);
+  
 }
 
 /* Dark mode button styles - removed cancel button */
@@ -724,17 +611,12 @@ select.zoro-form-input {
 }
 
 /* Disabled state */
-.zoro-modal-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none !important;
-  box-shadow: none !important;
-}
-
+.zoro-modal-btn:disabled,
 .zoro-quick-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
   transform: none !important;
+  transition: none;
 }
 
 /* Error state */
@@ -799,17 +681,13 @@ select.zoro-form-input {
 .zoro-modal-btn:focus-visible,
 .zoro-quick-btn:focus-visible,
 .zoro-form-input:focus-visible,
-.zoro-modal-close:focus-visible {
+.zoro-modal-close:focus-visible,
+.zoro-heart:focus-visible,
+.zoro-no-heart:focus-visible {
   outline: 2px solid var(--interactive-accent, #3b82f6);
   outline-offset: 2px;
 }
 
-/* Smooth transitions for theme switching */
-.zoro-edit-modal *,
-.zoro-edit-modal *::before,
-.zoro-edit-modal *::after {
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
-}
 
 /* Auth Modal */
 .zoro-auth-title {
@@ -1012,21 +890,13 @@ select.zoro-form-input {
 }
 
 /* Hover & loading animations */
-.zoro-card {
-  transition: all var(--zoro-transition-duration) ease;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
+
 .zoro-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
   border-color: var(--interactive-accent);
 }
-.zoro-card.loading {
-  opacity: 0.6;
-  pointer-events: none;
-  position: relative;
-  overflow: hidden;
-}
+
 .zoro-card.loading::after {
   content: '';
   position: absolute;
@@ -1052,32 +922,8 @@ select.zoro-form-input {
 }
 
 /* Edit Modal shell (unchanged) */
-.zoro-edit-modal {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-}
-.zoro-modal-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, var(--zoro-modal-overlay-opacity));
-  backdrop-filter: blur(5px);
-}
-.zoro-modal-content {
-  background: rgba(255, 255, 255, var(--zoro-modal-overlay-opacity));
-  color: #222;
-  border-radius: var(--zoro-modal-content-border-radius);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, .25);
-  width: 340px;
-  max-width: var(--zoro-modal-content-width);
-  max-height: 90vh;
-  overflow-y: auto;
-  padding: 24px;
-}
+
+
 .zoro-edit-form {
   display: flex;
   flex-direction: column;
@@ -1097,7 +943,7 @@ select.zoro-form-input {
 .zoro-form-label {
   font-size: 0.875rem;
   font-weight: 500;
-  color: #f1f1f11;
+  color: #f1f1f1;
 }
 .zoro-form-input,
 .zoro-status-select {
@@ -1135,13 +981,24 @@ select.zoro-form-input {
   justify-content: flex-end;
   margin-top: 8px;
 }
+
 .zoro-modal-btn {
-  padding: 8px 14px;
+  padding: 12px 24px;
   font-size: 0.875rem;
-  border: none;
-  border-radius: 4px;
+  font-weight: 500;
+  font-family: inherit;
+  border: 1px solid transparent;
+  border-radius: 8px;
   cursor: pointer;
+  transition: all var(--zoro-transition-fast) ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 80px;
+  outline: none;
+  white-space: nowrap;
 }
+
 .zoro-save-btn {
   background: #0077ff;
   color: #fff;
@@ -1151,21 +1008,8 @@ select.zoro-form-input {
   color: #fff;
 }
 
-}
-.zoro-fav-btn {
-  background: none;
-  border: none;
-  font-size: 1.2rem;
-  padding: 0 6px;
-  cursor: pointer;
-}
-
 /* Dark mode for modal */
 @media (prefers-color-scheme: dark) {
-  .zoro-modal-content {
-  background: rgba(0, 0, 0, var(--zoro-modal-overlay-opacity));
-    color: #e5e5e5;
-  }
   .zoro-form-input,
   .zoro-status-select {
     background: #3a3a3a;
@@ -1177,13 +1021,11 @@ select.zoro-form-input {
     border-color: #555;
     color: #e5e5e5;
   }
-  .zoro-save-btn   { background: #0a84ff; }
+  .zoro-save-btn { background: #0a84ff; }
   .zoro-remove-btn { background: #ff453a; }
 }
 
-}
-
-/ Blur-glass skeleton (frosted, glass-like shimmer) /
+/* Blur-glass skeleton (frosted, glass-like shimmer) */
 .zoro-skeleton,
 .zoro-card.zoro-skeleton {
 background: rgba(var(--mono-rgb-100), .04);
@@ -1206,7 +1048,7 @@ transparent 30%,
 rgba(var(--mono-rgb-100), .05) 50%,
 transparent 70%
 );
-animation: blurShimmer 2s infinite;
+animation: shimmer 1.5s infinite;
 }
 
 / Blurred placeholders inside /
@@ -1227,7 +1069,7 @@ border-radius: inherit;
 .skeleton-avatar { width: 48px; height: 48px; border-radius: 50%; }
 .skeleton-stat-section { height: 120px; }
 
-@keyframes blurShimmer {
+@keyframes shimmer {
 0%   { transform: translateX(-100%); }
 100% { transform: translateX(100%); }
 }
@@ -1301,20 +1143,12 @@ transparent 70%
 }
 
 
-/* 
-The panel will automatically adapt to the user's system theme preference:
-- Dark mode when system is set to dark
-- Light mode when system is set to light
-- No JavaScript or manual toggling required!
-*/
-
-
 /* === Global Loader ===================================================== */
 #zoro-global-loader {
   position: fixed;
   bottom: 10px;
   left: 10px;
-  font-size: 16px;
+  font-size: 1rem;
   z-index: 9999;
   display: none;                     /* hidden by default */
 }
@@ -1355,13 +1189,6 @@ The panel will automatically adapt to the user's system theme preference:
   -webkit-tap-highlight-color: transparent;
   cursor: pointer;
   transition: opacity 0.1s ease;
-  user-select: none;
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-  -webkit-touch-callout: none;
-  -webkit-user-drag: none;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .cover-overlay {
@@ -1431,7 +1258,7 @@ The panel will automatically adapt to the user's system theme preference:
   pointer-events: none;
   user-select: none;
   position: relative;
-  transition: all 0.2s ease;
+  transition: all var(--zoro-transition-medium) ease;
 }
 
 /* Cover Image Skeleton */
@@ -1512,11 +1339,11 @@ The panel will automatically adapt to the user's system theme preference:
 }
 
 /* Search Cards - Simple Variations */
-.zoro-search-skeleton .zoro-cards-grid .zoro-skeleton:nth-child(2) .skeleton-cover {
+.zoro-skeleton:nth-child(2n) .skeleton-cover {
   background: var(--skeleton-mid);
 }
 
-.zoro-search-skeleton .zoro-cards-grid .zoro-skeleton:nth-child(3) .skeleton-cover {
+.zoro-skeleton:nth-child(3n) .skeleton-cover {
   background: var(--skeleton-light);
 }
 
@@ -1803,13 +1630,6 @@ body.theme-dark .zoro-heart.favorited::before {
 
 body.theme-light .zoro-heart.favorited::before {
   background: linear-gradient(135deg, #ff4757 0%, #ff6b82 100%);
-}
-
-/* Identical accessibility improvements for both */
-.zoro-heart:focus,
-.zoro-no-heart:focus {
-  outline: 2px solid var(--heart-color);
-  outline-offset: 2px;
 }
 
 
@@ -2116,7 +1936,7 @@ body.theme-light .zoro-heart.favorited::before {
   color: hsl(var(--accent-h), var(--accent-s), var(--accent-l)) !important;
   border-radius: 4px;
   padding: 6px 12px;
-  transition: all 0.2s ease;
+  transition: all var(--zoro-transition-medium) ease;
 }
 
 .zoro-side-panel .zoro-panel-btn:active {
@@ -2164,7 +1984,7 @@ body.theme-light .zoro-heart.favorited::before {
   border-radius: 6px;
   background-color: var(--background-modifier-border);
   color: var(--text-normal);
-  font-size: 14px;
+  font-size: 0.875rem;
   outline: none;
   margin-bottom: 8px;
 }
@@ -2226,6 +2046,17 @@ body.theme-light .zoro-heart.favorited::before {
   flex-direction: column;
 }
 
+.zoro-panel-blank,
+.zoro-note-empty-message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  font-size: 15px;
+  text-align: center;
+  padding: 1rem 2rem;
+}
+
 /* Empty State */
 .zoro-note-empty-state {
   flex: 1;
@@ -2234,28 +2065,7 @@ body.theme-light .zoro-heart.favorited::before {
   justify-content: center;
 }
 
-.zoro-panel-blank,
-.zoro-note-empty-message {
-  /* Flexbox for perfect centering */
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  
-  /* Take full available space */
-  flex: 1;
-  
-  /* Typography */
-  font-size: 15px;
-  text-align: center; /* Centers text if it wraps to multiple lines */
-  
-  /* Side padding - adjust values as needed */
-  padding-left: 2rem;   /* 32px */
-  padding-right: 2rem;  /* 32px */
-  
-  /* Optional: Top/bottom padding for better vertical spacing */
-  padding-top: 1rem;    /* 16px */
-  padding-bottom: 1rem; /* 16px */
-}
+
 
 /* Notes List */
 .zoro-note-notes-list {
@@ -2327,7 +2137,7 @@ body.theme-light .zoro-heart.favorited::before {
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
-  transition: all 0.1s ease;
+  transition: all var(--zoro-transition-fast) ease;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
@@ -2383,21 +2193,20 @@ body.theme-light .zoro-heart.favorited::before {
 .panel-close-btn {
   position: absolute;
   top: 15px;
-  right: 5px;
-  background: transparent !important;
+  right: 15px;
+  background: transparent;
   border: none;
   border-radius: 50%;
-  width: 0px;
-  height: 0px;
+  width: 30px;
+  height: 30px;
   color: var(--panel-text-primary);
   font-size: 20px;
-  font-weight: normal;
   cursor: pointer;
   z-index: 10;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s ease;
+  transition: all var(--zoro-transition-medium) ease;
 }
 
 .panel-close-btn:hover {
@@ -2451,13 +2260,13 @@ body.theme-light .zoro-heart.favorited::before {
 }
 
 .alt-title {
-  font-size: 16px;
+  font-size: 1rem;
   color: var(--panel-text-secondary);
   margin-bottom: 4px;
 }
 
 .native-title {
-  font-size: 14px;
+  font-size: 0.875rem;
   color: var(--panel-text-tertiary);
 }
 
@@ -2486,7 +2295,7 @@ body.theme-light .zoro-heart.favorited::before {
 
 .season-info {
   color: var(--panel-text-secondary);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 500;
 }
 
@@ -2527,7 +2336,7 @@ body.theme-light .zoro-heart.favorited::before {
 /* Metadata section */
 .metadata-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(var(--zoro-card-min-width), 1fr));
   gap: 12px;
 }
 
@@ -2540,13 +2349,13 @@ body.theme-light .zoro-heart.favorited::before {
 
 .metadata-label {
   color: var(--panel-text-secondary);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 500;
 }
 
 .metadata-value {
   color: var(--panel-text-primary);
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 600;
 }
 
@@ -2560,7 +2369,7 @@ body.theme-light .zoro-heart.favorited::before {
 
 .airing-info {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(var(--zoro-stat-min-width), 1fr));
   gap: 16px;
 }
 
@@ -2583,7 +2392,7 @@ body.theme-light .zoro-heart.favorited::before {
 
 .airing-value {
   color: #22c55e;
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 600;
 }
 
@@ -2595,7 +2404,7 @@ body.theme-light .zoro-heart.favorited::before {
 /* Statistics section */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(var(--zoro-stat-min-width), 1fr));
   gap: 16px;
 }
 
@@ -2604,7 +2413,7 @@ body.theme-light .zoro-heart.favorited::before {
   border-radius: 8px;
   padding: 16px;
   text-align: center;
-  transition: all 0.2s ease;
+  transition: all var(--zoro-transition-medium) ease;
 }
 
 .stat-item:hover {
@@ -2625,7 +2434,7 @@ body.theme-light .zoro-heart.favorited::before {
 .stat-value {
   display: block;
   color: var(--panel-text-primary);
-  font-size: 20px;
+  font-size: 1.25rem;
   font-weight: 700;
 }
 
@@ -2649,9 +2458,19 @@ body.theme-light .zoro-heart.favorited::before {
   color: #22c55e;
 }
 
+.zoro-loading,
+.zoro-card.zoro-loading,
+.loading {
+  opacity: 0.6;
+  pointer-events: none;
+  position: relative;
+  overflow: hidden;
+}
+
+.zoro-loading .stat-value,
 .loading .stat-value {
-  color: var(--panel-loading-text);
-  font-size: 14px;
+  color: var(--panel-loading-text, var(--text-muted));
+  font-size: 0.875rem;
   font-weight: 500;
 }
 
@@ -2669,12 +2488,12 @@ body.theme-light .zoro-heart.favorited::before {
   border-radius: 16px;
   font-size: 12px;
   font-weight: 500;
-  transition: all 0.2s ease;
+  transition: all var(--zoro-transition-medium) ease;
 }
 
 .genre-tag:hover {
   background: var(--panel-genre-hover);
-  transform: translateY(-1px);
+  
 }
 
 /* External links section */
@@ -2689,9 +2508,9 @@ body.theme-light .zoro-heart.favorited::before {
   border: none;
   border-radius: 8px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 600;
-  transition: all 0.2s ease;
+  transition: all var(--zoro-transition-medium) ease;
   text-decoration: none;
   display: inline-flex;
   align-items: center;
@@ -2700,7 +2519,8 @@ body.theme-light .zoro-heart.favorited::before {
   overflow: hidden;
 }
 
-.external-link-btn::before {
+.external-link-btn::before,
+.zoro-custom-external-btn::before {
   content: '';
   position: absolute;
   top: 0;
@@ -2711,7 +2531,8 @@ body.theme-light .zoro-heart.favorited::before {
   transition: left 0.5s ease;
 }
 
-.external-link-btn:hover::before {
+.external-link-btn:hover::before,
+.zoro-custom-external-btn:hover::before {
   left: 100%;
 }
 
@@ -2767,9 +2588,9 @@ body.theme-light .zoro-heart.favorited::before {
   border: none;
   border-radius: 8px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 600;
-  transition: all 0.2s ease;
+  transition: all var(--zoro-transition-medium) ease;
   text-decoration: none;
   display: inline-flex;
   align-items: center;
@@ -2778,20 +2599,6 @@ body.theme-light .zoro-heart.favorited::before {
   overflow: hidden;
 }
 
-.zoro-custom-external-btn::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-  transition: left 0.5s ease;
-}
-
-.zoro-custom-external-btn:hover::before {
-  left: 100%;
-}
 
 .zoro-custom-external-btn:hover {
   background: linear-gradient(135deg, var(--interactive-accent-hover), var(--interactive-accent));
@@ -2824,14 +2631,14 @@ body.theme-light .zoro-heart.favorited::before {
   width: 0px;
   height: 0px;
   color: var(--panel-text-primary);
-  font-size: 20px;
+  font-size: 1.25rem;
   font-weight: normal;
   cursor: pointer;
   z-index: 10;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s ease;
+  transition: all var(--zoro-transition-medium) ease;
 
 }
 
@@ -2844,7 +2651,7 @@ body.theme-light .zoro-heart.favorited::before {
 .synopsis-content {
   color: var(--panel-text-secondary);
   line-height: 1.6;
-  font-size: 14px;
+  font-size: 0.875rem;
 }
 
 .synopsis-placeholder {
@@ -2857,7 +2664,7 @@ body.theme-light .zoro-heart.favorited::before {
   border: none;
   color: #3b82f6;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 0.875rem;
   font-weight: 500;
   margin-top: 12px;
   padding: 4px 0;
@@ -2885,11 +2692,11 @@ body.theme-light .zoro-heart.favorited::before {
   }
   
   .main-title {
-    font-size: 20px;
+    font-size: 1.25rem;
   }
   
   .stats-grid {
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(var(--zoro-stat-min-width), 1fr));
     gap: 12px;
   }
   
@@ -2898,7 +2705,7 @@ body.theme-light .zoro-heart.favorited::before {
   }
   
   .stat-value {
-    font-size: 16px;
+    font-size: 1rem;
   }
   
   .external-links-container {
@@ -2987,4 +2794,47 @@ body.theme-light .zoro-heart.favorited::before {
   .synopsis-section.zoro-copy-container .synopsis-content {
     padding-right: 32px;
   }
+}
+
+/* Edit Feature on side panel */
+.zoro-edit-modal.zoro-inline {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: calc(100vh - 200px);
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  flex-grow: 1;
+}
+
+.zoro-edit-modal.zoro-inline .zoro-modal-content {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+}
+
+.zoro-edit-modal.zoro-inline .zoro-edit-form {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  margin: 0 auto;
+}
+
+  .zoro-edit-modal.zoro-inline .zoro-edit-form {
+    padding: 0 10px; 
+  }
+  
+  /*Hover Effect*/
+  .zoro-save-btn:hover:not(:disabled),
+.zoro-remove-btn:hover,
+.genre-tag:hover,
+.zoro-quick-btn:hover {
+  transform: translateY(-1px);
 }

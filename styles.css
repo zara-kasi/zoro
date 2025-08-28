@@ -387,103 +387,6 @@
   cursor: pointer;
 }
 
-.zoro-modal-content {
-  background: transparent;
-  padding: 0;
-  position: fixed;
-}
-
-/* Favorite button in top-left corner - rounded and small */
-
-.zoro-fav-btn {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  background: transparent !important;
-  border: none;
-  font-size: 1.25rem;
-  cursor: pointer;
-  transition: all var(--zoro-transition-fast) ease;
-  outline: none;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 1;
-  padding: 0;
-}
-
-.zoro-fav-btn:hover {
-  transform: scale(1.1);
-}
-
-.zoro-fav-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-
-
-/* Form structure */
-.zoro-edit-form {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-.zoro-modal-title {
-  margin: 0 0 24px 0;
-  font-size: 1.25rem;
-  font-weight: 600;
-  line-height: 1.3;
-  letter-spacing: -0.01em;
-  text-align: center;
-}
-
-
-/* Form fields */
-.zoro-form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.zoro-form-label {
-  font-size: 0.875rem;
-  font-weight: 500;
-  margin: 0;
-  line-height: 1.4;
-}
-
-
-.zoro-form-input {
-  padding: 12px 16px;
-  border-radius: 8px;
-  font-size: 0.875rem;
-  font-family: inherit;
-  transition: all var(--zoro-transition-fast) ease;
-  outline: none;
-  appearance: none;
-}
-
-
-/* Select dropdown styling - removed dropdown arrow */
-.zoro-form-input[type="number"] {
-  -moz-appearance: textfield;
-}
-
-.zoro-form-input[type="number"]::-webkit-outer-spin-button,
-.zoro-form-input[type="number"]::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
-select.zoro-form-input {
-  cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-}
 
 /* Quick progress buttons */
 .zoro-quick-progress-buttons {
@@ -646,36 +549,7 @@ select.zoro-form-input {
   border-color: var(--color-red-alpha, rgba(248, 113, 113, 0.3));
 }
 
-/* Mobile responsive */
-@media (max-width: 480px) {
-  .zoro-modal-content {
-    margin: 16px;
-    padding: 24px;
-    max-width: none;
-    width: calc(100vw - 32px);
-    border-radius: 16px;
-  }
-  
-  .zoro-modal-buttons {
-    flex-direction: row;
-    gap: 8px;
-    justify-content: center;
-  }
-  
-  .zoro-modal-btn {
-    flex: 1;
-    justify-content: center;
-  }
-  
-  .zoro-quick-progress-buttons {
-    justify-content: space-between;
-  }
-  
-  .zoro-quick-btn {
-    flex: 1;
-    justify-content: center;
-  }
-}
+
 
 /* Focus ring for accessibility */
 .zoro-modal-btn:focus-visible,
@@ -924,22 +798,6 @@ select.zoro-form-input {
 /* Edit Modal shell (unchanged) */
 
 
-.zoro-edit-form {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.zoro-modal-title {
-  margin: 0 0 12px;
-  font-size: 1.25rem;
-  font-weight: 600;
-  text-align: center;
-}
-.zoro-form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
 .zoro-form-label {
   font-size: 0.875rem;
   font-weight: 500;
@@ -1439,7 +1297,6 @@ transparent 70%
 }
 
 
-/* Synchronized heart icons for Obsidian plugin */
 .zoro-container .zoro-card[data-media-id] {
   position: relative;   /* anchor for both hearts */
 }
@@ -1447,16 +1304,9 @@ transparent 70%
 /* Base styles for both heart icons */
 .zoro-heart,
 .zoro-no-heart {
-  --heart-size: 24px;
-  --heart-glow: 0 0 12px rgba(255, 107, 107, 0.4), 0 0 24px rgba(255, 107, 107, 0.2);
-  --heart-shadow: 0 0 4px rgba(0, 0, 0, 0.25), 0 0 8px rgba(0, 0, 0, 0.15);
-  --adaptive-bg: rgba(0, 0, 0, 0.42);
-  --adaptive-border: rgba(0, 0, 0, 0.15);
-  --backdrop-blur: 4px;
-  
   position: absolute;
-  top: 10px;
-  left: 10px;
+  top: 5px;
+  left: 5px;
   width: var(--heart-size);
   height: var(--heart-size);
   cursor: pointer;
@@ -1467,7 +1317,6 @@ transparent 70%
   background: transparent;
   border: none;
   padding: 0;
-  
   transform-origin: center;
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
@@ -1481,10 +1330,8 @@ transparent 70%
   width: var(--heart-size);
   height: var(--heart-size);
   transform: translate(-50%, -50%);
-  background: linear-gradient(135deg, var(--heart-color) 0%, color-mix(in srgb, var(--heart-color) 85%, #fff) 100%);
   
-  /* Perfect heart shape - properly sized for container */
-  clip-path: path('M10,18 L8.5,16.82 C4.9,13.68 2.5,11.43 2.5,8.75 C2.5,6.42 4.42,4.5 6.75,4.5 C7.93,4.5 9.06,5.09 9.75,6 C10.44,5.09 11.57,4.5 12.75,4.5 C15.08,4.5 17,6.42 17,8.75 C17,11.43 14.6,13.68 11,16.82 L10,18 Z');
+
   
   /* Make the heart bigger - no scaling down */
   transform: translate(-50%, -50%) scale(1);
@@ -1494,63 +1341,6 @@ transparent 70%
   border-radius: 2px;
 }
 
-/* RED HEART ICON - Favorite state */
-.zoro-heart {
-  --heart-color: #ff6b6b;
-  --heart-glow: 0 0 12px rgba(255, 107, 107, 0.4), 0 0 24px rgba(255, 107, 107, 0.2);
-}
-
-/* WHITE HEART ICON - Not favorite state */
-.zoro-no-heart {
-  --heart-color: #ffffff;
-  --heart-glow: 0 0 12px rgba(245, 245, 245, 0.9), 0 0 24px rgba(245, 245, 245, 0.2);
-}
-
-/* Adaptive contrast classes - for both icons */
-.zoro-heart.light-bg,
-.zoro-no-heart.light-bg {
-  --heart-shadow: 0 0 6px rgba(0, 0, 0, 0.4), 0 0 12px rgba(0, 0, 0, 0.2);
-}
-
-.zoro-heart.light-bg {
-  --heart-color: #ff4757;
-  --heart-glow: 0 0 8px rgba(255, 71, 87, 0.6), 0 0 16px rgba(255, 71, 87, 0.3);
-}
-
-.zoro-no-heart.light-bg {
-  --heart-color: #e8e8e8;
-  --heart-glow: 0 0 8px rgba(232, 232, 232, 0.6), 0 0 16px rgba(232, 232, 232, 0.3);
-}
-
-.zoro-heart.dark-bg,
-.zoro-no-heart.dark-bg {
-  --heart-shadow: 0 0 6px rgba(255, 255, 255, 0.2), 0 0 12px rgba(255, 255, 255, 0.1);
-}
-
-.zoro-heart.dark-bg {
-  --heart-color: #ff9aa2;
-  --heart-glow: 0 0 8px rgba(255, 154, 162, 0.6), 0 0 16px rgba(255, 154, 162, 0.3);
-}
-
-.zoro-no-heart.dark-bg {
-  --heart-color: #ffffff;
-  --heart-glow: 0 0 8px rgba(248, 248, 248, 0.6), 0 0 16px rgba(248, 248, 248, 0.3);
-}
-
-.zoro-heart.medium-bg,
-.zoro-no-heart.medium-bg {
-  --heart-shadow: 0 0 8px rgba(0, 0, 0, 0.5), 0 0 16px rgba(255, 255, 255, 0.1);
-}
-
-.zoro-heart.medium-bg {
-  --heart-color: #ff6b6b;
-  --heart-glow: 0 0 10px rgba(255, 107, 107, 0.7), 0 0 20px rgba(255, 107, 107, 0.4);
-}
-
-.zoro-no-heart.medium-bg {
-  --heart-color: #ffffff;
-  --heart-glow: 0 0 10px rgba(240, 240, 240, 0.7), 0 0 20px rgba(240, 240, 240, 0.4);
-}
 
 .zoro-heart:hover,
 .zoro-no-heart:hover {
@@ -1558,36 +1348,11 @@ transparent 70%
   filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.3));
 }
 
-.zoro-heart:hover::before {
-  box-shadow: 
-    var(--heart-glow),
-    0 0 16px rgba(255, 107, 107, 0.6),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3);
-}
-
-.zoro-no-heart:hover::before {
-  box-shadow: 
-    var(--heart-glow),
-    0 0 16px rgba(245, 245, 245, 0.6),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3);
-}
-
 /* Identical active/pressed state for both */
 .zoro-heart:active,
 .zoro-no-heart:active {
   transform: scale(1.05);
   transition-duration: 0.1s;
-}
-
-/* Identical favorited state animation for both */
-.zoro-heart.favorited::before {
-  background: linear-gradient(135deg, #ff4757 0%, #ff6b82 100%);
-  animation: heartBeat 0.6s ease-in-out;
-}
-
-.zoro-no-heart.favorited::before {
-  background: linear-gradient(135deg, #e8e8e8 0%, #f5f5f5 100%);
-  animation: heartBeat 0.6s ease-in-out;
 }
 
 /* Identical heart beat animation for both */
@@ -1599,38 +1364,6 @@ transparent 70%
   100% { transform: translate(-50%, -50%) scale(1); }
 }
 
-/* Theme variations - identical structure for both */
-body.theme-dark .zoro-heart:not(.light-bg):not(.dark-bg):not(.medium-bg) {
-  --heart-color: #ff9aa2;
-  --heart-glow: 0 0 12px rgba(255, 154, 162, 0.4), 0 0 24px rgba(255, 154, 162, 0.2);
-  --heart-shadow: 0 0 4px rgba(0, 0, 0, 0.3), 0 0 8px rgba(0, 0, 0, 0.15);
-}
-
-body.theme-dark .zoro-no-heart:not(.light-bg):not(.dark-bg):not(.medium-bg) {
-  --heart-color: #f0f0f0;
-  --heart-glow: 0 0 12px rgba(240, 240, 240, 0.4), 0 0 24px rgba(240, 240, 240, 0.2);
-  --heart-shadow: 0 0 4px rgba(0, 0, 0, 0.3), 0 0 8px rgba(0, 0, 0, 0.15);
-}
-
-body.theme-light .zoro-heart:not(.light-bg):not(.dark-bg):not(.medium-bg) {
-  --heart-color: #ff4757;
-  --heart-glow: 0 0 12px rgba(255, 71, 87, 0.4), 0 0 24px rgba(255, 71, 87, 0.2);
-  --heart-shadow: 0 0 4px rgba(0, 0, 0, 0.2), 0 0 8px rgba(0, 0, 0, 0.1);
-}
-
-body.theme-light .zoro-no-heart:not(.light-bg):not(.dark-bg):not(.medium-bg) {
-  --heart-color: #000000;
-  --heart-glow: 0 0 12px rgba(229, 229, 229, 0.4), 0 0 24px rgba(229, 229, 229, 0.2);
-  --heart-shadow: 0 0 4px rgba(0, 0, 0, 0.2), 0 0 8px rgba(0, 0, 0, 0.1);
-}
-
-body.theme-dark .zoro-heart.favorited::before {
-  background: linear-gradient(135deg, #ff9aa2 0%, #ffb3ba 100%);
-}
-
-body.theme-light .zoro-heart.favorited::before {
-  background: linear-gradient(135deg, #ff4757 0%, #ff6b82 100%);
-}
 
 
 /* Stats Container & Variables */
@@ -2837,4 +2570,146 @@ body.theme-light .zoro-heart.favorited::before {
 .genre-tag:hover,
 .zoro-quick-btn:hover {
   transform: translateY(-1px);
+}
+
+@media (max-width: 480px) {
+  .zoro-modal-content {
+    margin: 16px;
+    padding: 24px;
+    max-width: none;
+    width: calc(100vw - 32px);
+    border-radius: 16px;
+  }
+  
+  .zoro-modal-buttons {
+    flex-direction: row;
+    gap: 8px;
+    justify-content: center;
+  }
+  
+  .zoro-modal-btn {
+    flex: 1;
+    justify-content: center;
+  }
+  
+  .zoro-quick-progress-buttons {
+    justify-content: space-between;
+  }
+  
+  .zoro-quick-btn {
+    flex: 1;
+    justify-content: center;
+  }
+}
+
+.zoro-modal-content {
+  background: transparent;
+  padding: 0;
+  position: fixed;
+}
+
+.zoro-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.zoro-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.zoro-modal-title {
+  margin: 0 0 24px 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  text-align: center;
+}
+
+.zoro-modal-title {
+  margin: 0 0 12px;
+  font-size: 1.25rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+/* Form fields */
+.zoro-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.zoro-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.zoro-form-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin: 0;
+  line-height: 1.4;
+}
+
+
+.zoro-form-input {
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-family: inherit;
+  transition: all var(--zoro-transition-fast) ease;
+  outline: none;
+  appearance: none;
+}
+
+/* Select dropdown styling - removed dropdown arrow */
+.zoro-form-input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+.zoro-form-input[type="number"]::-webkit-outer-spin-button,
+.zoro-form-input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+select.zoro-form-input {
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+
+/* Favorite button in top-left corner - rounded and small */
+
+.zoro-fav-btn {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  background: transparent !important;
+  border: none;
+  font-size: 1.25rem;
+  cursor: pointer;
+  transition: all var(--zoro-transition-fast) ease;
+  outline: none;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  padding: 0;
+}
+
+.zoro-fav-btn:hover {
+  transform: scale(1.1);
+}
+
+.zoro-fav-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }

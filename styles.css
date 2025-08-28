@@ -2149,6 +2149,42 @@ body.theme-light .zoro-heart.favorited::before {
   z-index: auto !important;
 }
 
+/* Additional overrides for glass.css modal content */
+.zoro-edit-modal.zoro-inline .zoro-modal-content {
+  position: static !important;
+  background: none !important;
+  box-shadow: none !important;
+  border: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  max-width: none !important;
+  width: auto !important;
+  border-radius: 0 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Ensure form elements are visible */
+.zoro-edit-modal.zoro-inline .zoro-edit-form {
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+.zoro-edit-modal.zoro-inline .zoro-form-group {
+  margin-bottom: 12px !important;
+}
+
+.zoro-edit-modal.zoro-inline .zoro-form-input,
+.zoro-edit-modal.zoro-inline .zoro-status-select {
+  background: var(--background-secondary) !important;
+  border: 1px solid var(--background-modifier-border) !important;
+  color: var(--text-normal) !important;
+  padding: 8px 12px !important;
+  border-radius: 6px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
 
 
 

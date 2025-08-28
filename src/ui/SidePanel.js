@@ -276,12 +276,14 @@ class SidePanel extends ItemView {
 	}
 
 	async showEditForEntry(entry, config = {}) {
+		console.log('[Zoro][SidePanel] showEditForEntry called, embedEl:', this.embedEl);
 		if (!this.embedEl) return;
 		this.embedEl.empty();
 		this.showContentContainer(false);
 		this.showEmbedContainer(true);
 		try {
 			const source = config?.source || entry?._zoroMeta?.source || this.plugin?.settings?.defaultApiSource || 'anilist';
+			console.log('[Zoro][SidePanel] Calling createInlineEdit with embedEl:', this.embedEl);
 			await this.plugin.edit.createInlineEdit(
 				entry,
 				async (updates) => {
@@ -303,6 +305,7 @@ class SidePanel extends ItemView {
 				source,
 				this.embedEl
 			);
+			console.log('[Zoro][SidePanel] createInlineEdit completed, current mode set to edit');
 			this.currentMode = 'edit';
 		} catch (e) {
 			console.error('[Zoro][SidePanel] Inline edit failed', e);

@@ -130,9 +130,12 @@ class Edit {
 
     if (mountContainer && mountContainer.appendChild) {
       // Direct mount to provided container - this is what we want for the Side Panel
+      console.log('[Zoro][Edit] Mounting form to provided container:', mountContainer);
       mountContainer.appendChild(container);
+      console.log('[Zoro][Edit] Form mounted, container children:', mountContainer.children.length);
     } else {
       // Only route to Side Panel if no mount container is provided
+      console.log('[Zoro][Edit] No mount container provided, routing to Side Panel');
       try {
         const media = entry?.media;
         const mediaType = entry?._zoroMeta?.mediaType || media?.type || media?.format || 'ANIME';

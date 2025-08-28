@@ -32,23 +32,28 @@ class RenderEditModal {
   }
 
   createFavoriteButton(entry, source, onToggle) {
-    const favBtn = document.createElement('button');
-    favBtn.className = this.config.buttons.favorite.class;
-    favBtn.type = 'button';
-    favBtn.title = 'Toggle Favorite';
-    
-    if (source === 'mal') {
-      favBtn.style.display = 'none';
-      return favBtn;
-    }
-    
-    favBtn.className = entry.media.isFavourite ? 
-      'zoro-fav-btn zoro-heart' : 
-      'zoro-fav-btn zoro-no-heart';
-    
-    favBtn.onclick = () => onToggle(entry, favBtn, source);
+  const favBtn = document.createElement('button');
+  favBtn.className = this.config.buttons.favorite.class;
+  favBtn.type = 'button';
+  favBtn.title = 'Toggle Favorite';
+  
+  if (source === 'mal') {
+    favBtn.style.display = 'none';
     return favBtn;
   }
+  
+  // Use emoji hearts instead of CSS classes
+  if (entry.media.isFavourite) {
+    favBtn.className = 'zoro-fav-btn zoro-heart';
+    favBtn.createEl('span', { text: '❤️' });
+  } else {
+    favBtn.className = 'zoro-fav-btn zoro-no-heart';
+    favBtn.createEl('span', { text: '🤍' });
+  }
+  
+  favBtn.onclick = () => onToggle(entry, favBtn, source);
+  return favBtn;
+}
   
   createFormFields(entry, source = 'anilist') {
     const statusField = this.createStatusField(entry, source);

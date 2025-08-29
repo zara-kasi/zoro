@@ -281,29 +281,70 @@ return card;
     return title;
   }
   
-  createMediaDetails(media, entry, config, isSearch) {
-    const details = document.createElement('div');
-    details.className = 'media-details';
-
-    // Format badge removed from here - now on cover image
-
-    // Status badge or edit button
-    if (!isSearch && entry && entry.status) {
-      const statusBadge = this.createStatusBadge(entry, config);
-      details.appendChild(statusBadge);
+createCreateNoteButton(media, entry, config) {
+  const createBtn = document.createElement('span');
+  createBtn.className = 'zoro-note-obsidian';
+  createBtn.createEl('span', { text: '📝' });
+  createBtn.title = 'Create connected note';
+  
+  createBtn.onclick = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    try {
+      // Extract source and media type using existing logic
+      const source = this.apiHelper.detectSource(entry, config);
+      const mediaType = this.apiHelper.detectMediaType(entry, config, media);
+      
+      // Extract search IDs using the same logic as ConnectedNotes
+      const searchIds = this.plugin.connectedNotes.extractSearchIds(media, entry, source);
+      
+      // Store current media context for note creation
+      this.plugin.connectedNotes.currentMedia = media;
+      this.plugin.connectedNotes.currentEntry = entry;
+      this.plugin.connectedNotes.currentSource = source;
+      this.plugin.connectedNotes.currentMediaType = mediaType;
+      this.plugin.connectedNotes.currentUrls = this.plugin.connectedNotes.buildCurrentUrls(media, mediaType, source);
+      
+      // Create the connected note
+      await this.plugin.connectedNotes.createNewConnectedNote(searchIds, mediaType);
+      
+      new Notice('Created connected note');
+      
+    } catch (error) {
+      console.error('[Zoro] Create note button error:', error);
+      new Notice('Failed to create connected note');
     }
+  };
+  
+  return createBtn;
+}
 
-    // CONNECTED NOTES BUTTON - hide for trending movies/TV
-    const mt = String(config?.mediaType || '').toUpperCase();
-    const isMovieOrTv = mt === 'MOVIE' || mt === 'MOVIES' || mt === 'TV' || mt === 'SHOW' || mt === 'SHOWS';
-    const isTrending = String(config?.type || '').toLowerCase() === 'trending';
-    if (!(isTrending && isMovieOrTv)) {
-      const connectedNotesBtn = this.plugin.connectedNotes.createConnectedNotesButton(media, entry, config);
-      details.appendChild(connectedNotesBtn);
-    }
 
-    return details;
+createMediaDetails(media, entry, config, isSearch) {
+  const details = document.createElement('div');
+  details.className = 'media-details';
+
+  // Status badge or edit button
+  // if (!isSearch && entry && entry.status) {
+    // const statusBadge = this.createStatusBadge(entry, config);
+    // details.appendChild(statusBadge);
+    // }
+    const createNoteBtn = this.createCreateNoteButton(media, entry, config);
+    details.appendChild(createNoteBtn);
+
+  // CONNECTED NOTES BUTTON - hide for trending movies/TV
+  const mt = String(config?.mediaType || '').toUpperCase();
+  const isMovieOrTv = mt === 'MOVIE' || mt === 'MOVIES' || mt === 'TV' || mt === 'SHOW' || mt === 'SHOWS';
+  const isTrending = String(config?.type || '').toLowerCase() === 'trending';
+  if (!(isTrending && isMovieOrTv)) {
+    const connectedNotesBtn = this.plugin.connectedNotes.createConnectedNotesButton(media, entry, config);
+    details.appendChild(connectedNotesBtn);
+    
   }
+
+  return details;
+}
   
   createStatusBadge(entry, config) {
     const statusBadge = document.createElement('span');

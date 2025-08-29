@@ -177,6 +177,190 @@ malAuthSetting.addButton(btn => {
       this.plugin.settings.insertCodeBlockOnNote = value;
       await this.plugin.saveSettings();
     }));
+    
+    // Paste these blocks into your settings tab display() method.
+
+// Title
+new Setting(Note)
+  .setName('Title')
+  .setDesc('Frontmatter property for title')
+  .addText(text => text
+    .setPlaceholder('title')
+    .setValue(this.plugin.settings?.customPropertyNames?.title ?? '')
+    .onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.title = (typeof value === 'string' ? value.trim() : '');
+      await this.plugin.saveSettings();
+    }));
+
+// Aliases
+new Setting(Note)
+  .setName('Aliases')
+  .setDesc('Frontmatter property for aliases')
+  .addText(text => text
+    .setPlaceholder('aliases')
+    .setValue(this.plugin.settings?.customPropertyNames?.aliases ?? '')
+    .onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.aliases = (typeof value === 'string' ? value.trim() : '');
+      await this.plugin.saveSettings();
+    }));
+
+// Format
+new Setting(Note)
+  .setName('Format')
+  .setDesc('Frontmatter property for format')
+  .addText(text => text
+    .setPlaceholder('format')
+    .setValue(this.plugin.settings?.customPropertyNames?.format ?? '')
+    .onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.format = (typeof value === 'string' ? value.trim() : '');
+      await this.plugin.saveSettings();
+    }));
+
+// Status
+new Setting(Note)
+  .setName('Status')
+  .setDesc('Frontmatter property for status')
+  .addText(text => text
+    .setPlaceholder('status')
+    .setValue(this.plugin.settings?.customPropertyNames?.status ?? '')
+    .onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.status = (typeof value === 'string' ? value.trim() : '');
+      await this.plugin.saveSettings();
+    }));
+
+// Rating
+new Setting(Note)
+  .setName('Rating')
+  .setDesc('Frontmatter property for rating')
+  .addText(text => text
+    .setPlaceholder('rating')
+    .setValue(this.plugin.settings?.customPropertyNames?.rating ?? '')
+    .onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.rating = (typeof value === 'string' ? value.trim() : '');
+      await this.plugin.saveSettings();
+    }));
+
+// Favorite
+new Setting(Note)
+  .setName('Favorite')
+  .setDesc('Frontmatter property for favorite')
+  .addText(text => text
+    .setPlaceholder('favorite')
+    .setValue(this.plugin.settings?.customPropertyNames?.favorite ?? '')
+    .onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.favorite = (typeof value === 'string' ? value.trim() : '');
+      await this.plugin.saveSettings();
+    }));
+
+// Total episodes
+new Setting(Note)
+  .setName('Total episodes')
+  .setDesc('Frontmatter property for total_episodes')
+  .addText(text => text
+    .setPlaceholder('total_episodes')
+    .setValue(this.plugin.settings?.customPropertyNames?.total_episodes ?? '')
+    .onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.total_episodes = (typeof value === 'string' ? value.trim() : '');
+      await this.plugin.saveSettings();
+    }));
+
+// Total chapters
+new Setting(Note)
+  .setName('Total chapters')
+  .setDesc('Frontmatter property for total_chapters')
+  .addText(text => text
+    .setPlaceholder('total_chapters')
+    .setValue(this.plugin.settings?.customPropertyNames?.total_chapters ?? '')
+    .onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.total_chapters = (typeof value === 'string' ? value.trim() : '');
+      await this.plugin.saveSettings();
+    }));
+
+// Episodes watched
+new Setting(Note)
+  .setName('Episodes watched')
+  .setDesc('Frontmatter property for episodes_watched')
+  .addText(text => text
+    .setPlaceholder('episodes_watched')
+    .setValue(this.plugin.settings?.customPropertyNames?.episodes_watched ?? '')
+    .onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.episodes_watched = (typeof value === 'string' ? value.trim() : '');
+      await this.plugin.saveSettings();
+    }));
+
+// Chapters read
+new Setting(Note)
+  .setName('Chapters read')
+  .setDesc('Frontmatter property for chapters_read')
+  .addText(text => text
+    .setPlaceholder('chapters_read')
+    .setValue(this.plugin.settings?.customPropertyNames?.chapters_read ?? '')
+    .onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.chapters_read = (typeof value === 'string' ? value.trim() : '');
+      await this.plugin.saveSettings();
+    }));
+
+// Volumes read
+new Setting(Note)
+  .setName('Volumes read')
+  .setDesc('Frontmatter property for volumes_read')
+  .addText(text => text
+    .setPlaceholder('volumes_read')
+    .setValue(this.plugin.settings?.customPropertyNames?.volumes_read ?? '')
+    .onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.volumes_read = (typeof value === 'string' ? value.trim() : '');
+      await this.plugin.saveSettings();
+    }));
+
+// Cover
+new Setting(Note)
+  .setName('Cover')
+  .setDesc('Frontmatter property for cover')
+  .addText(text => text
+    .setPlaceholder('cover')
+    .setValue(this.plugin.settings?.customPropertyNames?.cover ?? '')
+    .onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.cover = (typeof value === 'string' ? value.trim() : '');
+      await this.plugin.saveSettings();
+    }));
+
+// Genres
+new Setting(Note)
+  .setName('Genres')
+  .setDesc('Frontmatter property for genres')
+  .addText(text => text
+    .setPlaceholder('genres')
+    .setValue(this.plugin.settings?.customPropertyNames?.genres ?? '')
+    .onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.genres = (typeof value === 'string' ? value.trim() : '');
+      await this.plugin.saveSettings();
+    }));
         
 
     new Setting(Display)

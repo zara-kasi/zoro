@@ -330,14 +330,17 @@ createMediaDetails(media, entry, config, isSearch) {
     // const statusBadge = this.createStatusBadge(entry, config);
     // details.appendChild(statusBadge);
     // }
-    const createNoteBtn = this.createCreateNoteButton(media, entry, config);
-    details.appendChild(createNoteBtn);
+    
 
   // CONNECTED NOTES BUTTON - hide for trending movies/TV
   const mt = String(config?.mediaType || '').toUpperCase();
   const isMovieOrTv = mt === 'MOVIE' || mt === 'MOVIES' || mt === 'TV' || mt === 'SHOW' || mt === 'SHOWS';
   const isTrending = String(config?.type || '').toLowerCase() === 'trending';
   if (!(isTrending && isMovieOrTv)) {
+    
+    const createNoteBtn = this.createCreateNoteButton(media, entry, config);
+    details.appendChild(createNoteBtn);
+    
     const connectedNotesBtn = this.plugin.connectedNotes.createConnectedNotesButton(media, entry, config);
     details.appendChild(connectedNotesBtn);
     

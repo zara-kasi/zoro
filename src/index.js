@@ -165,51 +165,84 @@ class ZoroPlugin extends Plugin {
 	}
 
 	validateSettings(settings) {
-		return {
-			defaultApiSource: ['anilist', 'mal', 'simkl'].includes(settings?.defaultApiSource) ? settings.defaultApiSource : 'anilist',
-			defaultApiUserOverride: typeof settings?.defaultApiUserOverride === 'boolean' ? settings.defaultApiUserOverride : false,
-			defaultUsername: typeof settings?.defaultUsername === 'string' ? settings.defaultUsername : '',
-			defaultLayout: ['card', 'table'].includes(settings?.defaultLayout) ? settings.defaultLayout : 'card',
-			notePath: typeof settings?.notePath === 'string' ? settings.notePath : 'Zoro/Note',
-			insertCodeBlockOnNote: typeof settings?.insertCodeBlockOnNote === 'boolean' ? settings.insertCodeBlockOnNote : true,
-			showCoverImages: typeof settings?.showCoverImages === 'boolean' ? settings.showCoverImages : true,
-			showRatings: typeof settings?.showRatings === 'boolean' ? settings.showRatings : true,
-			showProgress: typeof settings?.showProgress === 'boolean' ? settings.showProgress : true,
-			showGenres: typeof settings?.showGenres === 'boolean' ? settings.showGenres : false,
-			showLoadingIcon: typeof settings?.showLoadingIcon === 'boolean' ? settings.showLoadingIcon : true,
-			gridColumns: this.migrateGridColumnsSetting(settings?.gridColumns),
-			theme: typeof settings?.theme === 'string' ? settings.theme : '',
-			hideUrlsInTitles: typeof settings?.hideUrlsInTitles === 'boolean' ? settings.hideUrlsInTitles : true,
-			forceScoreFormat: typeof settings?.forceScoreFormat === 'boolean' ? settings.forceScoreFormat : true,
-			showAvatar: typeof settings?.showAvatar === 'boolean' ? settings.showAvatar : true,
-			showFavorites: typeof settings?.showFavorites === 'boolean' ? settings.showFavorites : true,
-			showBreakdowns: typeof settings?.showBreakdowns === 'boolean' ? settings.showBreakdowns : true,
-			showTimeStats: typeof settings?.showTimeStats === 'boolean' ? settings.showTimeStats : true,
-			statsLayout: ['enhanced', 'compact', 'minimal'].includes(settings?.statsLayout) ? settings.statsLayout : 'enhanced',
-			statsTheme: ['auto', 'light', 'dark'].includes(settings?.statsTheme) ? settings.statsTheme : 'auto',
-			clientId: typeof settings?.clientId === 'string' ? settings.clientId : '',
-			clientSecret: typeof settings?.clientSecret === 'string' ? settings.clientSecret : '',
-			redirectUri: typeof settings?.redirectUri === 'string' ? settings.redirectUri : 'https://anilist.co/api/v2/oauth/pin',
-			accessToken: typeof settings?.accessToken === 'string' ? settings.accessToken : '',
-			malClientId: typeof settings?.malClientId === 'string' ? settings.malClientId : '',
-			malClientSecret: typeof settings?.malClientSecret === 'string' ? settings.malClientSecret : '',
-			malAccessToken: typeof settings?.malAccessToken === 'string' ? settings.malAccessToken : '',
-			malRefreshToken: typeof settings?.malRefreshToken === 'string' ? settings.malRefreshToken : '',
-			malTokenExpiry: settings?.malTokenExpiry === null || typeof settings?.malTokenExpiry === 'number' ? settings.malTokenExpiry : null,
-			malUserInfo: settings?.malUserInfo === null || typeof settings?.malUserInfo === 'object' ? settings.malUserInfo : null,
-			simklClientId: typeof settings?.simklClientId === 'string' ? settings.simklClientId : '',
-			simklClientSecret: typeof settings?.simklClientSecret === 'string' ? settings.simklClientSecret : '',
-			simklAccessToken: typeof settings?.simklAccessToken === 'string' ? settings.simklAccessToken : '',
-			simklUserInfo: typeof settings?.simklUserInfo === 'object' || settings?.simklUserInfo === null ? settings.simklUserInfo : null,
-			autoFormatSearchUrls: typeof settings?.autoFormatSearchUrls === 'boolean' ? settings.autoFormatSearchUrls : true,
-			customSearchUrls: {
-				ANIME: Array.isArray(settings?.customSearchUrls?.ANIME) ? settings.customSearchUrls.ANIME.filter(url => typeof url === 'string' && url.trim() !== '') : [],
-				MANGA: Array.isArray(settings?.customSearchUrls?.MANGA) ? settings.customSearchUrls.MANGA.filter(url => typeof url === 'string' && url.trim() !== '') : [],
-				MOVIE_TV: Array.isArray(settings?.customSearchUrls?.MOVIE_TV) ? settings.customSearchUrls.MOVIE_TV.filter(url => typeof url === 'string' && url.trim() !== '') : []
-			},
-			tmdbApiKey: typeof settings?.tmdbApiKey === 'string' ? settings.tmdbApiKey : ''
-		};
-	}
+  const s = settings || {};
+  const def = DEFAULT_SETTINGS;
+
+  const isString = v => typeof v === 'string';
+  const isBool = v => typeof v === 'boolean';
+  const isNumber = v => typeof v === 'number' && !Number.isNaN(v);
+  const isObject = v => v && typeof v === 'object' && !Array.isArray(v);
+  const validateArrayStrings = arr => Array.isArray(arr) ? arr.filter(u => typeof u === 'string' && u.trim() !== '') : [];
+
+  // Validate customPropertyNames per-key, falling back to defaults
+  const validatedCustomPropertyNames = {};
+  const defaultPropNames = def.customPropertyNames || {};
+  for (const key of Object.keys(defaultPropNames)) {
+    const val = s?.customPropertyNames?.[key];
+    validatedCustomPropertyNames[key] = isString(val) && val.trim() !== '' ? val.trim() : defaultPropNames[key];
+  }
+
+  return {
+    // basic / identity
+    defaultApiSource: ['anilist', 'mal', 'simkl'].includes(s?.defaultApiSource) ? s.defaultApiSource : def.defaultApiSource,
+    defaultApiUserOverride: isBool(s?.defaultApiUserOverride) ? s.defaultApiUserOverride : def.defaultApiUserOverride,
+    defaultUsername: isString(s?.defaultUsername) ? s.defaultUsername : def.defaultUsername,
+    defaultLayout: ['card', 'table'].includes(s?.defaultLayout) ? s.defaultLayout : def.defaultLayout,
+
+    // note / UI
+    notePath: isString(s?.notePath) ? s.notePath : def.notePath,
+    insertCodeBlockOnNote: isBool(s?.insertCodeBlockOnNote) ? s.insertCodeBlockOnNote : def.insertCodeBlockOnNote,
+    showCoverImages: isBool(s?.showCoverImages) ? s.showCoverImages : def.showCoverImages,
+    showRatings: isBool(s?.showRatings) ? s.showRatings : def.showRatings,
+    showProgress: isBool(s?.showProgress) ? s.showProgress : def.showProgress,
+    showGenres: isBool(s?.showGenres) ? s.showGenres : def.showGenres,
+    showLoadingIcon: isBool(s?.showLoadingIcon) ? s.showLoadingIcon : def.showLoadingIcon,
+    gridColumns: this.migrateGridColumnsSetting(s?.gridColumns),
+    theme: isString(s?.theme) ? s.theme : def.theme,
+    hideUrlsInTitles: isBool(s?.hideUrlsInTitles) ? s.hideUrlsInTitles : def.hideUrlsInTitles,
+    forceScoreFormat: isBool(s?.forceScoreFormat) ? s.forceScoreFormat : def.forceScoreFormat,
+    showAvatar: isBool(s?.showAvatar) ? s.showAvatar : def.showAvatar,
+    showFavorites: isBool(s?.showFavorites) ? s.showFavorites : def.showFavorites,
+    showBreakdowns: isBool(s?.showBreakdowns) ? s.showBreakdowns : def.showBreakdowns,
+    showTimeStats: isBool(s?.showTimeStats) ? s.showTimeStats : def.showTimeStats,
+
+    // stats
+    statsLayout: ['enhanced', 'compact', 'minimal'].includes(s?.statsLayout) ? s.statsLayout : def.statsLayout,
+    statsTheme: ['auto', 'light', 'dark'].includes(s?.statsTheme) ? s.statsTheme : def.statsTheme,
+
+    // AniList / auth
+    clientId: isString(s?.clientId) ? s.clientId : def.clientId,
+    clientSecret: isString(s?.clientSecret) ? s.clientSecret : def.clientSecret,
+    redirectUri: isString(s?.redirectUri) ? s.redirectUri : def.redirectUri,
+    accessToken: isString(s?.accessToken) ? s.accessToken : def.accessToken,
+
+    // MAL
+    malClientId: isString(s?.malClientId) ? s.malClientId : def.malClientId,
+    malClientSecret: isString(s?.malClientSecret) ? s.malClientSecret : def.malClientSecret,
+    malAccessToken: isString(s?.malAccessToken) ? s.malAccessToken : def.malAccessToken,
+    malRefreshToken: isString(s?.malRefreshToken) ? s.malRefreshToken : def.malRefreshToken,
+    malTokenExpiry: (s?.malTokenExpiry === null || isNumber(s?.malTokenExpiry)) ? s.malTokenExpiry : def.malTokenExpiry,
+    malUserInfo: (s?.malUserInfo === null || isObject(s?.malUserInfo)) ? s.malUserInfo : def.malUserInfo,
+
+    // Simkl
+    simklClientId: isString(s?.simklClientId) ? s.simklClientId : def.simklClientId,
+    simklClientSecret: isString(s?.simklClientSecret) ? s.simklClientSecret : def.simklClientSecret,
+    simklAccessToken: isString(s?.simklAccessToken) ? s.simklAccessToken : def.simklAccessToken,
+    simklUserInfo: (s?.simklUserInfo === null || isObject(s?.simklUserInfo)) ? s.simklUserInfo : def.simklUserInfo,
+
+    // search / TMDB
+    autoFormatSearchUrls: isBool(s?.autoFormatSearchUrls) ? s.autoFormatSearchUrls : def.autoFormatSearchUrls,
+    customSearchUrls: {
+      ANIME: validateArrayStrings(s?.customSearchUrls?.ANIME),
+      MANGA: validateArrayStrings(s?.customSearchUrls?.MANGA),
+      MOVIE_TV: validateArrayStrings(s?.customSearchUrls?.MOVIE_TV)
+    },
+    tmdbApiKey: isString(s?.tmdbApiKey) ? s.tmdbApiKey : def.tmdbApiKey,
+
+    // custom property names (per-key validation)
+    customPropertyNames: validatedCustomPropertyNames
+  };
+}
 
 	migrateGridColumnsSetting(value) {
 		// Handle migration from old numeric system to new string system

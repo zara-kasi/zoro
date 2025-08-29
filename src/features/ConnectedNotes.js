@@ -359,78 +359,66 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
    * Search vault for existing notes to connect (excludes already connected ones)
    */
   async findNotesToConnect(searchQuery, searchIds, mediaType) {
-    const allFiles = this.app.vault.getMarkdownFiles();
-    const searchResults = [];
-    
-    if (!searchQuery || searchQuery.trim().length < 2) {
-      return searchResults;
+  const searchResults = [];
+  if (!searchQuery || searchQuery.trim().length < 2) return searchResults;
+  const query = searchQuery.toLowerCase().trim();
+
+  const files = this.app.vault.getMarkdownFiles() || [];
+
+  const needRebuild =
+    !Array.isArray(this._filenameIndexList) ||
+    this._filenameIndexSnapshotCount !== files.length ||
+    (this._filenameIndexSnapshotSample || '') !== files.slice(0, 20).map(f => f?.basename || '').join('|');
+
+  if (needRebuild) {
+    const list = [];
+    for (const f of files) {
+      if (!f || !f.basename) continue;
+      list.push({ nameLower: f.basename.toLowerCase(), file: f });
     }
-    
-    const query = searchQuery.toLowerCase().trim();
-    
-    for (const file of allFiles) {
-      // Skip files that already have matching IDs or URLs
-      const metadata = this.app.metadataCache.getFileCache(file);
-      const frontmatter = metadata?.frontmatter;
-      
-      if (frontmatter) {
-        let alreadyConnected = false;
-        
-        // Check ID matching
-        for (const [idType, idValue] of Object.entries(searchIds)) {
-          if (frontmatter[idType] == idValue && frontmatter.media_type === mediaType) {
-            alreadyConnected = true;
-            break;
-          }
-        }
-        
-        // Check URL array matching if not already connected
-        if (!alreadyConnected && this.currentUrls) {
-          if (this.hasMatchingUrl(frontmatter.urls, this.currentUrls)) {
-            alreadyConnected = true;
-          }
-        }
-        
-        if (alreadyConnected) continue;
-      }
-      
-      // Search in filename
-      if (file.basename.toLowerCase().includes(query)) {
-        searchResults.push({
-          file: file,
-          title: file.basename,
-          path: file.path,
-          matchType: 'title'
-        });
-        continue;
-      }
-      
-      // Search in content (first 500 chars for performance)
-      try {
-        const content = await this.app.vault.cachedRead(file);
-        const contentPreview = content.slice(0, 500).toLowerCase();
-        if (contentPreview.includes(query)) {
-          searchResults.push({
-            file: file,
-            title: file.basename,
-            path: file.path,
-            matchType: 'content'
-          });
-        }
-      } catch (error) {
-        // Skip files that can't be read
-        continue;
-      }
-    }
-    
-    // Sort by relevance (title matches first, then alphabetically)
-    return searchResults.sort((a, b) => {
-      if (a.matchType !== b.matchType) {
-        return a.matchType === 'title' ? -1 : 1;
-      }
-      return a.title.localeCompare(b.title);
-    }).slice(0, 20); // Limit to 20 results for performance
+    this._filenameIndexList = list;
+    this._filenameIndexSnapshotCount = files.length;
+    this._filenameIndexSnapshotSample = files.slice(0, 20).map(f => f?.basename || '').join('|');
   }
+
+  const list = this._filenameIndexList || [];
+
+  for (const e of list) {
+    if (!e || !e.nameLower) continue;
+    if (!e.nameLower.includes(query)) continue;
+
+    const metadata = this.app.metadataCache.getFileCache(e.file) || {};
+    const frontmatter = metadata.frontmatter || {};
+
+    let alreadyConnected = false;
+    for (const [idType, idValue] of Object.entries(searchIds || {})) {
+      if (frontmatter[idType] == idValue && frontmatter.media_type === mediaType) {
+        alreadyConnected = true;
+        break;
+      }
+    }
+
+    if (!alreadyConnected && this.currentUrls) {
+      if (this.hasMatchingUrl(frontmatter.urls, this.currentUrls)) {
+        alreadyConnected = true;
+      }
+    }
+
+    if (alreadyConnected) continue;
+
+    searchResults.push({
+      file: e.file,
+      title: e.file.basename,
+      path: e.file.path,
+      matchType: 'title'
+    });
+
+    if (searchResults.length >= 20) break;
+  }
+
+  searchResults.sort((a, b) => a.title.localeCompare(b.title));
+  return searchResults;
+}
 
   /**
    * Merge URL arrays, avoiding duplicates

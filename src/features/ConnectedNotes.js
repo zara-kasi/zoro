@@ -14,7 +14,15 @@ class ConnectedNotes {
   }
 
   /**
-   * Generate enhanced frontmatter properties
+   * Get the custom property name from settings or return default
+   */
+  getPropertyName(defaultName) {
+    const customNames = this.plugin.settings?.customPropertyNames || {};
+    return customNames[defaultName] || defaultName;
+  }
+
+  /**
+   * Generate enhanced frontmatter properties with custom names
    */
   generateEnhancedFrontmatter(media, entry, mediaType) {
     const enhanced = {};
@@ -22,13 +30,13 @@ class ConnectedNotes {
     if (!media) return enhanced;
     
     if (media.title) {
-      enhanced.title = media.title.english || media.title.romaji || media.title.native;
+      enhanced[this.getPropertyName('title')] = media.title.english || media.title.romaji || media.title.native;
     }
     
     // Aliases (alternative titles excluding main title)
     const aliases = [];
     if (media.title) {
-      const mainTitle = enhanced.title;
+      const mainTitle = enhanced[this.getPropertyName('title')];
       if (media.title.romaji && media.title.romaji !== mainTitle) {
         aliases.push(media.title.romaji);
       }
@@ -40,61 +48,59 @@ class ConnectedNotes {
       }
     }
     if (aliases.length > 0) {
-      enhanced.aliases = aliases;
+      enhanced[this.getPropertyName('aliases')] = aliases;
     }
     
     // Format
     if (media.format) {
-      enhanced.format = media.format;
+      enhanced[this.getPropertyName('format')] = media.format;
     }
     
     // Status (from entry)
     if (entry && entry.status) {
-      enhanced.status = entry.status;
+      enhanced[this.getPropertyName('status')] = entry.status;
     }
     
     // Rating (from entry score)
     if (entry && entry.score !== null && entry.score !== undefined) {
-      enhanced.rating = entry.score;
+      enhanced[this.getPropertyName('rating')] = entry.score;
     }
     
     // Favorite status
-    enhanced.favorite = media.isFavourite || false;
+    enhanced[this.getPropertyName('favorite')] = media.isFavourite || false;
     
     // Total episodes
     if (media.episodes) {
-      enhanced.total_episodes = media.episodes;
+      enhanced[this.getPropertyName('total_episodes')] = media.episodes;
     }
     
     // Total chapters
     if (media.chapters) {
-      enhanced.total_chapters = media.chapters;
+      enhanced[this.getPropertyName('total_chapters')] = media.chapters;
     }
     
     if (entry && entry.progress !== null && entry.progress !== undefined) {
       const typeUpper = (mediaType || '').toString().toUpperCase();
       if (typeUpper === 'ANIME' || typeUpper === 'TV') {
-        enhanced.episodes_watched = entry.progress;
+        enhanced[this.getPropertyName('episodes_watched')] = entry.progress;
       } else if (typeUpper === 'MANGA') {
-        enhanced.chapters_read = entry.progress;
+        enhanced[this.getPropertyName('chapters_read')] = entry.progress;
         if (entry.progressVolumes !== null && entry.progressVolumes !== undefined) {
-          enhanced.volumes_read = entry.progressVolumes;
+          enhanced[this.getPropertyName('volumes_read')] = entry.progressVolumes;
         }
       }
       // Skip progress for MOVIE type
     }
     
-    
     // Cover image
     if (media.coverImage) {
-      enhanced.cover = media.coverImage.large || media.coverImage.medium;
+      enhanced[this.getPropertyName('cover')] = media.coverImage.large || media.coverImage.medium;
     }
     
     // Genres
     if (media.genres && Array.isArray(media.genres) && media.genres.length > 0) {
-      enhanced.genres = media.genres;
+      enhanced[this.getPropertyName('genres')] = media.genres;
     }
-    
     
     return enhanced;
   }
@@ -105,47 +111,74 @@ class ConnectedNotes {
     // ===========================================
     // CONTENT PROPERTIES
     // ===========================================
-    if (enhancedProps.title !== undefined) orderedFrontmatter.title = enhancedProps.title;
-    if (enhancedProps.aliases !== undefined) orderedFrontmatter.aliases = enhancedProps.aliases;
-    if (enhancedProps.format !== undefined) orderedFrontmatter.format = enhancedProps.format;
-    if (enhancedProps.status !== undefined) orderedFrontmatter.status = enhancedProps.status;
-    if (enhancedProps.rating !== undefined) orderedFrontmatter.rating = enhancedProps.rating;
-    if (enhancedProps.favorite !== undefined) orderedFrontmatter.favorite = enhancedProps.favorite;
+    const titleProp = this.getPropertyName('title');
+    const aliasesProp = this.getPropertyName('aliases');
+    const formatProp = this.getPropertyName('format');
+    const statusProp = this.getPropertyName('status');
+    const ratingProp = this.getPropertyName('rating');
+    const favoriteProp = this.getPropertyName('favorite');
+    
+    if (enhancedProps[titleProp] !== undefined) orderedFrontmatter[titleProp] = enhancedProps[titleProp];
+    if (enhancedProps[aliasesProp] !== undefined) orderedFrontmatter[aliasesProp] = enhancedProps[aliasesProp];
+    if (enhancedProps[formatProp] !== undefined) orderedFrontmatter[formatProp] = enhancedProps[formatProp];
+    if (enhancedProps[statusProp] !== undefined) orderedFrontmatter[statusProp] = enhancedProps[statusProp];
+    if (enhancedProps[ratingProp] !== undefined) orderedFrontmatter[ratingProp] = enhancedProps[ratingProp];
+    if (enhancedProps[favoriteProp] !== undefined) orderedFrontmatter[favoriteProp] = enhancedProps[favoriteProp];
     
     // ===========================================
     // MEDIA METRICS
     // ===========================================
-    if (enhancedProps.total_episodes !== undefined) orderedFrontmatter.total_episodes = enhancedProps.total_episodes;
-    if (enhancedProps.total_chapters !== undefined) orderedFrontmatter.total_chapters = enhancedProps.total_chapters;
+    const totalEpisodesProp = this.getPropertyName('total_episodes');
+    const totalChaptersProp = this.getPropertyName('total_chapters');
+    
+    if (enhancedProps[totalEpisodesProp] !== undefined) orderedFrontmatter[totalEpisodesProp] = enhancedProps[totalEpisodesProp];
+    if (enhancedProps[totalChaptersProp] !== undefined) orderedFrontmatter[totalChaptersProp] = enhancedProps[totalChaptersProp];
     
     // ===========================================
     // PROGRESS PROPERTIES
     // ===========================================
-    if (enhancedProps.episodes_watched !== undefined) orderedFrontmatter.episodes_watched = enhancedProps.episodes_watched;
-    if (enhancedProps.chapters_read !== undefined) orderedFrontmatter.chapters_read = enhancedProps.chapters_read;
-    if (enhancedProps.volumes_read !== undefined) orderedFrontmatter.volumes_read = enhancedProps.volumes_read;
+    const episodesWatchedProp = this.getPropertyName('episodes_watched');
+    const chaptersReadProp = this.getPropertyName('chapters_read');
+    const volumesReadProp = this.getPropertyName('volumes_read');
+    
+    if (enhancedProps[episodesWatchedProp] !== undefined) orderedFrontmatter[episodesWatchedProp] = enhancedProps[episodesWatchedProp];
+    if (enhancedProps[chaptersReadProp] !== undefined) orderedFrontmatter[chaptersReadProp] = enhancedProps[chaptersReadProp];
+    if (enhancedProps[volumesReadProp] !== undefined) orderedFrontmatter[volumesReadProp] = enhancedProps[volumesReadProp];
     
     // ===========================================
     // TECHNICAL METADATA
     // ===========================================
-    if (baseProps.mal_id !== undefined) orderedFrontmatter.mal_id = baseProps.mal_id;
-    if (baseProps.anilist_id !== undefined) orderedFrontmatter.anilist_id = baseProps.anilist_id;
-    if (baseProps.simkl_id !== undefined) orderedFrontmatter.simkl_id = baseProps.simkl_id;
-    if (baseProps.imdb_id !== undefined) orderedFrontmatter.imdb_id = baseProps.imdb_id;
-    if (baseProps.tmdb_id !== undefined) orderedFrontmatter.tmdb_id = baseProps.tmdb_id;
-    if (baseProps.media_type !== undefined) orderedFrontmatter.media_type = baseProps.media_type;
+    const malIdProp = this.getPropertyName('mal_id');
+    const anilistIdProp = this.getPropertyName('anilist_id');
+    const simklIdProp = this.getPropertyName('simkl_id');
+    const imdbIdProp = this.getPropertyName('imdb_id');
+    const tmdbIdProp = this.getPropertyName('tmdb_id');
+    const mediaTypeProp = this.getPropertyName('media_type');
+    
+    if (baseProps[malIdProp] !== undefined) orderedFrontmatter[malIdProp] = baseProps[malIdProp];
+    if (baseProps[anilistIdProp] !== undefined) orderedFrontmatter[anilistIdProp] = baseProps[anilistIdProp];
+    if (baseProps[simklIdProp] !== undefined) orderedFrontmatter[simklIdProp] = baseProps[simklIdProp];
+    if (baseProps[imdbIdProp] !== undefined) orderedFrontmatter[imdbIdProp] = baseProps[imdbIdProp];
+    if (baseProps[tmdbIdProp] !== undefined) orderedFrontmatter[tmdbIdProp] = baseProps[tmdbIdProp];
+    if (baseProps[mediaTypeProp] !== undefined) orderedFrontmatter[mediaTypeProp] = baseProps[mediaTypeProp];
     
     // ===========================================
     // MEDIA ASSETS
     // ===========================================
-    if (enhancedProps.cover !== undefined) orderedFrontmatter.cover = enhancedProps.cover;
-    if (enhancedProps.genres !== undefined) orderedFrontmatter.genres = enhancedProps.genres;
+    const coverProp = this.getPropertyName('cover');
+    const genresProp = this.getPropertyName('genres');
+    
+    if (enhancedProps[coverProp] !== undefined) orderedFrontmatter[coverProp] = enhancedProps[coverProp];
+    if (enhancedProps[genresProp] !== undefined) orderedFrontmatter[genresProp] = enhancedProps[genresProp];
     
     // ===========================================
     // SYSTEM PROPERTIES
     // ===========================================
-    if (urls !== undefined) orderedFrontmatter.urls = urls;
-    if (tags !== undefined) orderedFrontmatter.tags = tags;
+    const urlsProp = this.getPropertyName('urls');
+    const tagsProp = this.getPropertyName('tags');
+    
+    if (urls !== undefined) orderedFrontmatter[urlsProp] = urls;
+    if (tags !== undefined) orderedFrontmatter[tagsProp] = tags;
     
     // Add any remaining properties from baseProps that weren't handled above
     Object.entries(baseProps).forEach(([key, value]) => {
@@ -157,47 +190,50 @@ class ConnectedNotes {
     return orderedFrontmatter;
   }
 
-   /**
- * Extract search IDs from media entry based on API source
- */
-extractSearchIds(media, entry, source) {
-  const ids = {};
-  
-  // mal_id is STANDARD for all anime/manga regardless of source
-  if (source === 'mal') {
-    ids.mal_id = media.id;
-  } else if (source === 'anilist') {
-    // Primary: use idMal if available, Fallback: use anilist id
-    if (media.idMal) {
-      ids.mal_id = media.idMal;
-    }
-    // Always add anilist_id as backup
-    ids.anilist_id = media.id;
-  } else if (source === 'simkl') {
-    ids.simkl_id = media.id;
+  /**
+   * Extract search IDs from media entry based on API source
+   */
+  extractSearchIds(media, entry, source) {
+    const ids = {};
     
-    const mediaType = this.plugin.apiHelper ? 
-      this.plugin.apiHelper.detectMediaType(entry, {}, media) : 
-      (entry?._zoroMeta?.mediaType || 'ANIME');
+    // Use custom property names for IDs
+    const malIdProp = this.getPropertyName('mal_id');
+    const anilistIdProp = this.getPropertyName('anilist_id');
+    const simklIdProp = this.getPropertyName('simkl_id');
+    const imdbIdProp = this.getPropertyName('imdb_id');
+    const tmdbIdProp = this.getPropertyName('tmdb_id');
     
-    if (mediaType === 'ANIME' && media.idMal) {
-      ids.mal_id = media.idMal;
+    if (source === 'mal') {
+      ids[malIdProp] = media.id;
+    } else if (source === 'anilist') {
+      if (media.idMal) {
+        ids[malIdProp] = media.idMal;
+      }
+      ids[anilistIdProp] = media.id;
+    } else if (source === 'simkl') {
+      ids[simklIdProp] = media.id;
+      
+      const mediaType = this.plugin.apiHelper ? 
+        this.plugin.apiHelper.detectMediaType(entry, {}, media) : 
+        (entry?._zoroMeta?.mediaType || 'ANIME');
+      
+      if (mediaType === 'ANIME' && media.idMal) {
+        ids[malIdProp] = media.idMal;
+      }
+      
+      if (mediaType !== 'ANIME' && media.idImdb) {
+        ids[imdbIdProp] = media.idImdb;
+      }
+      if (mediaType !== 'ANIME' && media.idTmdb) {
+        ids[tmdbIdProp] = media.idTmdb;
+      }
+    } else if (source === 'tmdb') {
+      if (media.idTmdb || media.id) ids[tmdbIdProp] = media.idTmdb || media.id;
+      if (media.idImdb) ids[imdbIdProp] = media.idImdb;
     }
     
-    if (mediaType !== 'ANIME' && media.idImdb) {
-      ids.imdb_id = media.idImdb;
-    }
-    if (mediaType !== 'ANIME' && media.idTmdb) {
-      ids.tmdb_id = media.idTmdb;
-    }
-  } else if (source === 'tmdb') {
-    if (media.idTmdb || media.id) ids.tmdb_id = media.idTmdb || media.id;
-    if (media.idImdb) ids.imdb_id = media.idImdb;
+    return ids;
   }
-  
-  return ids;
-}
-
 /**
  * Build URLs array for current media to match against
  */

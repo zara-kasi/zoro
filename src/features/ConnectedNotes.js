@@ -10,6 +10,151 @@ class ConnectedNotes {
     this.currentUrls = null; // Store current URLs as array for matching
     this.currentSource = null; // Store current source for code block generation
     this.currentMediaType = null; // Store current media type for code block generation
+    this.currentEntry = null; // Store current entry for enhanced frontmatter
+  }
+
+  /**
+   * Generate enhanced frontmatter properties
+   */
+  generateEnhancedFrontmatter(media, entry, mediaType) {
+    const enhanced = {};
+    
+    if (!media) return enhanced;
+    
+    if (media.title) {
+      enhanced.title = media.title.english || media.title.romaji || media.title.native;
+    }
+    
+    // Aliases (alternative titles excluding main title)
+    const aliases = [];
+    if (media.title) {
+      const mainTitle = enhanced.title;
+      if (media.title.romaji && media.title.romaji !== mainTitle) {
+        aliases.push(media.title.romaji);
+      }
+      if (media.title.native && media.title.native !== mainTitle) {
+        aliases.push(media.title.native);
+      }
+      if (media.title.english && media.title.english !== mainTitle) {
+        aliases.push(media.title.english);
+      }
+    }
+    if (aliases.length > 0) {
+      enhanced.aliases = aliases;
+    }
+    
+    // Format
+    if (media.format) {
+      enhanced.format = media.format;
+    }
+    
+    // Status (from entry)
+    if (entry && entry.status) {
+      enhanced.status = entry.status;
+    }
+    
+    // Rating (from entry score)
+    if (entry && entry.score !== null && entry.score !== undefined) {
+      enhanced.rating = entry.score;
+    }
+    
+    // Favorite status
+    enhanced.favorite = media.isFavourite || false;
+    
+    // Total episodes
+    if (media.episodes) {
+      enhanced.total_episodes = media.episodes;
+    }
+    
+    // Total chapters
+    if (media.chapters) {
+      enhanced.total_chapters = media.chapters;
+    }
+    
+    if (entry && entry.progress !== null && entry.progress !== undefined) {
+      const typeUpper = (mediaType || '').toString().toUpperCase();
+      if (typeUpper === 'ANIME' || typeUpper === 'TV') {
+        enhanced.episodes_watched = entry.progress;
+      } else if (typeUpper === 'MANGA') {
+        enhanced.chapters_read = entry.progress;
+        if (entry.progressVolumes !== null && entry.progressVolumes !== undefined) {
+          enhanced.volumes_read = entry.progressVolumes;
+        }
+      }
+      // Skip progress for MOVIE type
+    }
+    
+    
+    // Cover image
+    if (media.coverImage) {
+      enhanced.cover = media.coverImage.large || media.coverImage.medium;
+    }
+    
+    // Genres
+    if (media.genres && Array.isArray(media.genres) && media.genres.length > 0) {
+      enhanced.genres = media.genres;
+    }
+    
+    
+    return enhanced;
+  }
+
+  buildOrderedFrontmatter(baseProps, enhancedProps, urls, tags) {
+    const orderedFrontmatter = {};
+    
+    // ===========================================
+    // CONTENT PROPERTIES
+    // ===========================================
+    if (enhancedProps.title !== undefined) orderedFrontmatter.title = enhancedProps.title;
+    if (enhancedProps.aliases !== undefined) orderedFrontmatter.aliases = enhancedProps.aliases;
+    if (enhancedProps.format !== undefined) orderedFrontmatter.format = enhancedProps.format;
+    if (enhancedProps.status !== undefined) orderedFrontmatter.status = enhancedProps.status;
+    if (enhancedProps.rating !== undefined) orderedFrontmatter.rating = enhancedProps.rating;
+    if (enhancedProps.favorite !== undefined) orderedFrontmatter.favorite = enhancedProps.favorite;
+    
+    // ===========================================
+    // MEDIA METRICS
+    // ===========================================
+    if (enhancedProps.total_episodes !== undefined) orderedFrontmatter.total_episodes = enhancedProps.total_episodes;
+    if (enhancedProps.total_chapters !== undefined) orderedFrontmatter.total_chapters = enhancedProps.total_chapters;
+    
+    // ===========================================
+    // PROGRESS PROPERTIES
+    // ===========================================
+    if (enhancedProps.episodes_watched !== undefined) orderedFrontmatter.episodes_watched = enhancedProps.episodes_watched;
+    if (enhancedProps.chapters_read !== undefined) orderedFrontmatter.chapters_read = enhancedProps.chapters_read;
+    if (enhancedProps.volumes_read !== undefined) orderedFrontmatter.volumes_read = enhancedProps.volumes_read;
+    
+    // ===========================================
+    // TECHNICAL METADATA
+    // ===========================================
+    if (baseProps.mal_id !== undefined) orderedFrontmatter.mal_id = baseProps.mal_id;
+    if (baseProps.anilist_id !== undefined) orderedFrontmatter.anilist_id = baseProps.anilist_id;
+    if (baseProps.simkl_id !== undefined) orderedFrontmatter.simkl_id = baseProps.simkl_id;
+    if (baseProps.imdb_id !== undefined) orderedFrontmatter.imdb_id = baseProps.imdb_id;
+    if (baseProps.tmdb_id !== undefined) orderedFrontmatter.tmdb_id = baseProps.tmdb_id;
+    if (baseProps.media_type !== undefined) orderedFrontmatter.media_type = baseProps.media_type;
+    
+    // ===========================================
+    // MEDIA ASSETS
+    // ===========================================
+    if (enhancedProps.cover !== undefined) orderedFrontmatter.cover = enhancedProps.cover;
+    if (enhancedProps.genres !== undefined) orderedFrontmatter.genres = enhancedProps.genres;
+    
+    // ===========================================
+    // SYSTEM PROPERTIES
+    // ===========================================
+    if (urls !== undefined) orderedFrontmatter.urls = urls;
+    if (tags !== undefined) orderedFrontmatter.tags = tags;
+    
+    // Add any remaining properties from baseProps that weren't handled above
+    Object.entries(baseProps).forEach(([key, value]) => {
+      if (orderedFrontmatter[key] === undefined) {
+        orderedFrontmatter[key] = value;
+      }
+    });
+    
+    return orderedFrontmatter;
   }
 
    /**
@@ -310,139 +455,155 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
    * Add metadata to existing note
    */
    async connectExistingNote(file, searchIds, mediaType) {
-  try {
-    const content = await this.app.vault.read(file);
-    const metadata = this.app.metadataCache.getFileCache(file);
-    const existingFrontmatter = metadata?.frontmatter || {};
-    
-    // Parse existing frontmatter
-    let frontmatterEnd = 0;
-    let bodyContent = content;
-    
-    if (content.startsWith('---\n')) {
-      const secondDelimiter = content.indexOf('\n---\n', 4);
-      if (secondDelimiter !== -1) {
-        frontmatterEnd = secondDelimiter + 5;
-        bodyContent = content.slice(frontmatterEnd);
-      }
-    }
-    
-    // Check if note is already connected to Zoro (has Zoro tag and some metadata)
-    const hasZoroTag = metadata?.tags?.some(tag => tag.tag === '#Zoro') || 
-                      (Array.isArray(existingFrontmatter.tags) && existingFrontmatter.tags.includes('Zoro'));
-    
-    const hasExistingIds = existingFrontmatter.mal_id || 
-                          existingFrontmatter.anilist_id || 
-                          existingFrontmatter.simkl_id ||
-                          existingFrontmatter.imdb_id ||
-                          existingFrontmatter.tmdb_id ||
-                          existingFrontmatter.media_type ||
-                          existingFrontmatter.urls;
-    
-    const isAlreadyConnected = hasZoroTag && hasExistingIds;
-    
-    // Start with existing frontmatter
-    const updatedFrontmatter = { ...existingFrontmatter };
-    
-    if (isAlreadyConnected) {
-      // Note is already connected - only merge URLs, don't overwrite other metadata
-      console.log(`[ConnectedNotes] Note "${file.basename}" is already connected, only adding URLs`);
+    try {
+      const content = await this.app.vault.read(file);
+      const metadata = this.app.metadataCache.getFileCache(file);
+      const existingFrontmatter = metadata?.frontmatter || {};
       
-      // Only merge URL arrays
-      if (this.currentUrls && this.currentUrls.length > 0) {
-        updatedFrontmatter.urls = this.mergeUrlArrays(existingFrontmatter.urls, this.currentUrls);
-      }
+      // Parse existing frontmatter
+      let frontmatterEnd = 0;
+      let bodyContent = content;
       
-      // Ensure Zoro tag is present (in case it was removed)
-      if (!updatedFrontmatter.tags) {
-        updatedFrontmatter.tags = ['Zoro'];
-      } else if (Array.isArray(updatedFrontmatter.tags)) {
-        if (!updatedFrontmatter.tags.includes('Zoro')) {
-          updatedFrontmatter.tags.push('Zoro');
+      if (content.startsWith('---\n')) {
+        const secondDelimiter = content.indexOf('\n---\n', 4);
+        if (secondDelimiter !== -1) {
+          frontmatterEnd = secondDelimiter + 5;
+          bodyContent = content.slice(frontmatterEnd);
         }
       }
       
-    } else {
-      // Note is not connected yet - add full metadata
-      console.log(`[ConnectedNotes] Note "${file.basename}" is not connected, adding full metadata`);
+      // Check if note is already connected to Zoro (has Zoro tag and some metadata)
+      const hasZoroTag = metadata?.tags?.some(tag => tag.tag === '#Zoro') || 
+                        (Array.isArray(existingFrontmatter.tags) && existingFrontmatter.tags.includes('Zoro'));
       
-      // Add new search IDs
-      Object.entries(searchIds).forEach(([key, value]) => {
-        updatedFrontmatter[key] = value;
-      });
+      const hasExistingIds = existingFrontmatter.mal_id || 
+                            existingFrontmatter.anilist_id || 
+                            existingFrontmatter.simkl_id ||
+                            existingFrontmatter.imdb_id ||
+                            existingFrontmatter.tmdb_id ||
+                            existingFrontmatter.media_type ||
+                            existingFrontmatter.urls;
       
-      // Merge URL arrays
-      if (this.currentUrls && this.currentUrls.length > 0) {
-        updatedFrontmatter.urls = this.mergeUrlArrays(existingFrontmatter.urls, this.currentUrls);
-      }
+      const isAlreadyConnected = hasZoroTag && hasExistingIds;
       
-      // Add media type
-      updatedFrontmatter.media_type = mediaType;
+      // Prepare base properties (existing + new technical metadata)
+      const baseProps = { ...existingFrontmatter };
       
-      // Add Zoro tag if not present
-      if (!updatedFrontmatter.tags) {
-        updatedFrontmatter.tags = ['Zoro'];
-      } else if (Array.isArray(updatedFrontmatter.tags)) {
-        if (!updatedFrontmatter.tags.includes('Zoro')) {
-          updatedFrontmatter.tags.push('Zoro');
+      if (isAlreadyConnected) {
+        // Note is already connected - only merge URLs, don't overwrite other metadata
+        console.log(`[ConnectedNotes] Note "${file.basename}" is already connected, only adding URLs`);
+        
+        // Only merge URL arrays
+        if (this.currentUrls && this.currentUrls.length > 0) {
+          baseProps.urls = this.mergeUrlArrays(existingFrontmatter.urls, this.currentUrls);
         }
-      }
-    }
-    
-    // Build new frontmatter
-    const frontmatterLines = ['---'];
-    Object.entries(updatedFrontmatter).forEach(([key, value]) => {
-      if (key === 'tags' && Array.isArray(value)) {
-        frontmatterLines.push('tags:');
-        value.forEach(tag => {
-          frontmatterLines.push(`  - ${tag}`);
-        });
-      } else if (key === 'urls' && Array.isArray(value)) {
-        frontmatterLines.push('urls:');
-        value.forEach(url => {
-          frontmatterLines.push(`  - "${url}"`);
-        });
+        
+        // Ensure Zoro tag is present (in case it was removed)
+        if (!baseProps.tags) {
+          baseProps.tags = ['Zoro'];
+        } else if (Array.isArray(baseProps.tags)) {
+          if (!baseProps.tags.includes('Zoro')) {
+            baseProps.tags.push('Zoro');
+          }
+        }
+        
       } else {
-        frontmatterLines.push(`${key}: "${value}"`);
+        // Note is not connected yet - add full metadata
+        console.log(`[ConnectedNotes] Note "${file.basename}" is not connected, adding full metadata`);
+        
+        // Add new search IDs
+        Object.entries(searchIds).forEach(([key, value]) => {
+          baseProps[key] = value;
+        });
+        
+        // Add media type
+        baseProps.media_type = mediaType;
+        
+        // Generate enhanced properties but don't merge yet - we'll order them
+        const enhancedProps = this.generateEnhancedFrontmatter(this.currentMedia, this.currentEntry, mediaType);
+        
+        // Only add enhanced properties if not already present (preserve existing values)
+        Object.entries(enhancedProps).forEach(([key, value]) => {
+          if (baseProps[key] === undefined) {
+            baseProps[key] = value;
+          }
+        });
+        
+        // Merge URL arrays
+        if (this.currentUrls && this.currentUrls.length > 0) {
+          baseProps.urls = this.mergeUrlArrays(existingFrontmatter.urls, this.currentUrls);
+        }
+        
+        // Add Zoro tag if not present
+        if (!baseProps.tags) {
+          baseProps.tags = ['Zoro'];
+        } else if (Array.isArray(baseProps.tags)) {
+          if (!baseProps.tags.includes('Zoro')) {
+            baseProps.tags.push('Zoro');
+          }
+        }
       }
-    });
-    frontmatterLines.push('---', '');
-    
-    // Handle code block generation
-    let finalBodyContent = bodyContent;
-    
-    if (!isAlreadyConnected) {
-      // Only add code block for new connections (not for URL-only updates)
-      const codeBlockContent = this.generateCodeBlockContent();
       
-      // Check if a zoro code block already exists in the body
-      const zoroCodeBlockRegex = /```zoro[\s\S]*?```/;
-      if (codeBlockContent && !zoroCodeBlockRegex.test(bodyContent)) {
-        // Add code block after frontmatter with proper spacing
-        finalBodyContent = codeBlockContent + '\n\n' + bodyContent;
+      // Build new frontmatter using proper ordering
+      const enhancedProps = this.generateEnhancedFrontmatter(this.currentMedia, this.currentEntry, mediaType);
+      const orderedFrontmatter = this.buildOrderedFrontmatter(baseProps, enhancedProps, baseProps.urls, baseProps.tags);
+      
+      // Build frontmatter lines
+      const frontmatterLines = ['---'];
+      Object.entries(orderedFrontmatter).forEach(([key, value]) => {
+        if ((key === 'tags' || key === 'aliases' || key === 'genres') && Array.isArray(value)) {
+          frontmatterLines.push(`${key}:`);
+          value.forEach(item => {
+            frontmatterLines.push(`  - ${item}`);
+          });
+        } else if (key === 'urls' && Array.isArray(value)) {
+          frontmatterLines.push('urls:');
+          value.forEach(url => {
+            frontmatterLines.push(`  - "${url}"`);
+          });
+        } else if (typeof value === 'boolean') {
+          frontmatterLines.push(`${key}: ${value}`);
+        } else {
+          frontmatterLines.push(`${key}: "${value}"`);
+        }
+      });
+      frontmatterLines.push('---', '');
+      
+      // Handle code block generation
+      let finalBodyContent = bodyContent;
+      
+      if (!isAlreadyConnected) {
+        // Only add code block for new connections (not for URL-only updates)
+        const codeBlockContent = this.generateCodeBlockContent();
+        
+        // Check if a zoro code block already exists in the body
+        const zoroCodeBlockRegex = /```zoro[\s\S]*?```/;
+        if (codeBlockContent && !zoroCodeBlockRegex.test(bodyContent)) {
+          // Add code block after frontmatter with proper spacing
+          finalBodyContent = codeBlockContent + '\n\n' + bodyContent;
+        }
       }
+      
+      const newContent = frontmatterLines.join('\n') + finalBodyContent;
+      
+      // Write updated content
+      await this.app.vault.modify(file, newContent);
+      
+      // Show appropriate success message
+      if (isAlreadyConnected) {
+        new Notice(`Updated URLs for: ${file.basename}`);
+      } else {
+        new Notice(`Connected note: ${file.basename}`);
+      }
+      
+      return true;
+      
+    } catch (error) {
+      console.error('[ConnectedNotes] Error connecting existing note:', error);
+      new Notice(`Failed to connect note: ${file.basename}`);
+      return false;
     }
-    
-    const newContent = frontmatterLines.join('\n') + finalBodyContent;
-    
-    // Write updated content
-    await this.app.vault.modify(file, newContent);
-    
-    // Show appropriate success message
-    if (isAlreadyConnected) {
-      new Notice(`Updated URLs for: ${file.basename}`);
-    } else {
-      new Notice(`Connected note: ${file.basename}`);
-    }
-    
-    return true;
-    
-  } catch (error) {
-    console.error('[ConnectedNotes] Error connecting existing note:', error);
-    new Notice(`Failed to connect note: ${file.basename}`);
-    return false;
   }
-}
 
 
   /**
@@ -450,6 +611,9 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
    */
   async showConnectedNotes(searchIds, mediaType, media = null, entry = null, source = null) {
     try {
+      // Store current entry for enhanced frontmatter generation
+      this.currentEntry = entry;
+      
       const context = { searchIds, mediaType, media, entry, source };
       await this.openSidePanelWithContext(context);
     } catch (error) {
@@ -717,11 +881,11 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
       
       if (!connectInterface.classList.contains('zoro-note-hidden')) {
         // Focus on search input when opened
-        const searchInput = connectInterface.querySelector('.zoro-note-search-input');
+        const searchInput = connectInterface.querySelector('.zoro-search-input');
         setTimeout(() => searchInput.focus(), 100);
       } else {
         // Clear search when closed
-        const searchInput = connectInterface.querySelector('.zoro-note-search-input');
+        const searchInput = connectInterface.querySelector('.zoro-search-input');
         const resultsContainer = connectInterface.querySelector('.zoro-note-search-results');
         searchInput.value = '';
         resultsContainer.empty();
@@ -825,22 +989,51 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
       // Ensure the directory path exists
       await this.ensurePathExists(uniqueFileName);
       
-      // Create frontmatter content
-      const frontmatterLines = [
-        '---',
-        ...Object.entries(searchIds).map(([key, value]) => `${key}: "${value}"`),
-        `media_type: "${mediaType}"`,
-      ];
+      // Prepare base properties (technical metadata)
+      const baseProps = {
+        ...searchIds,
+        media_type: mediaType
+      };
       
-      // Add URL array to frontmatter
+      // Add URL array to base props
       if (this.currentUrls && this.currentUrls.length > 0) {
-        frontmatterLines.push('urls:');
-        this.currentUrls.forEach(url => {
-          frontmatterLines.push(`  - "${url}"`);
-        });
+        baseProps.urls = [...this.currentUrls];
       }
       
-      frontmatterLines.push('tags:', '  - Zoro', '---', '');
+      // Add Zoro tag
+      baseProps.tags = ['Zoro'];
+      
+      // Generate enhanced properties
+      const enhancedProps = this.generateEnhancedFrontmatter(this.currentMedia, this.currentEntry, mediaType);
+      
+      // Build ordered frontmatter
+      const orderedFrontmatter = this.buildOrderedFrontmatter(baseProps, enhancedProps, baseProps.urls, baseProps.tags);
+      
+      // Build frontmatter lines
+      const frontmatterLines = ['---'];
+      Object.entries(orderedFrontmatter).forEach(([key, value]) => {
+        if ((key === 'aliases' || key === 'genres') && Array.isArray(value)) {
+          frontmatterLines.push(`${key}:`);
+          value.forEach(item => {
+            frontmatterLines.push(`  - ${item}`);
+          });
+        } else if (key === 'urls' && Array.isArray(value)) {
+          frontmatterLines.push('urls:');
+          value.forEach(url => {
+            frontmatterLines.push(`  - "${url}"`);
+          });
+        } else if (key === 'tags' && Array.isArray(value)) {
+          frontmatterLines.push('tags:');
+          value.forEach(tag => {
+            frontmatterLines.push(`  - ${tag}`);
+          });
+        } else if (typeof value === 'boolean') {
+          frontmatterLines.push(`${key}: ${value}`);
+        } else {
+          frontmatterLines.push(`${key}: "${value}"`);
+        }
+      });
+      frontmatterLines.push('---', '');
       
       const frontmatter = frontmatterLines.join('\n');
 
@@ -901,6 +1094,9 @@ async handleConnectedNotesClick(e, media, entry, config) {
     
     // Store current media for filename generation (PREFER ENGLISH TITLE)
     this.currentMedia = media;
+    
+    // Store current entry for enhanced frontmatter generation
+    this.currentEntry = entry;
     
     // Store current source and media type for code block generation
     this.currentSource = source;

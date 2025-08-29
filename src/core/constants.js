@@ -90,6 +90,5 @@ const DEFAULT_SETTINGS = {
     tags: 'tags'
   }
 };
-};
 
 export { DEFAULT_SETTINGS, getDefaultGridColumns, GRID_COLUMN_OPTIONS, GRID_COLUMN_LABELS };

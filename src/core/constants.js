@@ -66,6 +66,30 @@ const DEFAULT_SETTINGS = {
     MOVIE_TV: []
   },
   tmdbApiKey: '',
+  customPropertyNames: {
+    title: 'title',
+    aliases: 'aliases', 
+    format: 'format',
+    status: 'status',
+    rating: 'rating',
+    favorite: 'favorite',
+    total_episodes: 'total_episodes',
+    total_chapters: 'total_chapters',
+    episodes_watched: 'episodes_watched',
+    chapters_read: 'chapters_read',
+    volumes_read: 'volumes_read',
+    mal_id: 'mal_id',
+    anilist_id: 'anilist_id', 
+    simkl_id: 'simkl_id',
+    imdb_id: 'imdb_id',
+    tmdb_id: 'tmdb_id',
+    media_type: 'media_type',
+    cover: 'cover',
+    genres: 'genres',
+    urls: 'urls',
+    tags: 'tags'
+  }
+};
 };
 
 export { DEFAULT_SETTINGS, getDefaultGridColumns, GRID_COLUMN_OPTIONS, GRID_COLUMN_LABELS };

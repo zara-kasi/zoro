@@ -168,11 +168,41 @@ class ZoroPlugin extends Plugin {
   const s = settings || {};
   const def = DEFAULT_SETTINGS;
 
+  // Helper functions for type checking
   const isString = v => typeof v === 'string';
   const isBool = v => typeof v === 'boolean';
   const isNumber = v => typeof v === 'number' && !Number.isNaN(v);
   const isObject = v => v && typeof v === 'object' && !Array.isArray(v);
   const validateArrayStrings = arr => Array.isArray(arr) ? arr.filter(u => typeof u === 'string' && u.trim() !== '') : [];
+
+  // Validate grid columns setting with migration support
+  const validateGridColumns = (value) => {
+    // If it's already a valid string option, use it
+    if (Object.values(GRID_COLUMN_OPTIONS).includes(value)) {
+      return value;
+    }
+    
+    // Legacy migration: convert old numeric values to new string format
+    if (typeof value === 'number') {
+      switch (value) {
+        case 1: return GRID_COLUMN_OPTIONS.ONE;
+        case 2: return GRID_COLUMN_OPTIONS.TWO;
+        case 3: return GRID_COLUMN_OPTIONS.THREE;
+        case 4: return GRID_COLUMN_OPTIONS.FOUR;
+        case 5: return GRID_COLUMN_OPTIONS.FIVE;
+        case 6: return GRID_COLUMN_OPTIONS.SIX;
+        default: return GRID_COLUMN_OPTIONS.DEFAULT; // fallback for invalid numbers
+      }
+    }
+    
+    // String numbers (legacy support)
+    if (typeof value === 'string' && ['1', '2', '3', '4', '5', '6'].includes(value)) {
+      return value; // these are already valid in our system
+    }
+    
+    // Default fallback
+    return def.gridColumns;
+  };
 
   // Validate customPropertyNames per-key, falling back to defaults
   const validatedCustomPropertyNames = {};
@@ -183,13 +213,13 @@ class ZoroPlugin extends Plugin {
   }
 
   return {
-    // basic / identity
+    // Basic API and identity settings
     defaultApiSource: ['anilist', 'mal', 'simkl'].includes(s?.defaultApiSource) ? s.defaultApiSource : def.defaultApiSource,
     defaultApiUserOverride: isBool(s?.defaultApiUserOverride) ? s.defaultApiUserOverride : def.defaultApiUserOverride,
     defaultUsername: isString(s?.defaultUsername) ? s.defaultUsername : def.defaultUsername,
     defaultLayout: ['card', 'table'].includes(s?.defaultLayout) ? s.defaultLayout : def.defaultLayout,
 
-    // note / UI
+    // Note and UI settings
     notePath: isString(s?.notePath) ? s.notePath : def.notePath,
     insertCodeBlockOnNote: isBool(s?.insertCodeBlockOnNote) ? s.insertCodeBlockOnNote : def.insertCodeBlockOnNote,
     showCoverImages: isBool(s?.showCoverImages) ? s.showCoverImages : def.showCoverImages,
@@ -197,7 +227,7 @@ class ZoroPlugin extends Plugin {
     showProgress: isBool(s?.showProgress) ? s.showProgress : def.showProgress,
     showGenres: isBool(s?.showGenres) ? s.showGenres : def.showGenres,
     showLoadingIcon: isBool(s?.showLoadingIcon) ? s.showLoadingIcon : def.showLoadingIcon,
-    gridColumns: this.migrateGridColumnsSetting(s?.gridColumns),
+    gridColumns: validateGridColumns(s?.gridColumns), // updated to use new validation
     theme: isString(s?.theme) ? s.theme : def.theme,
     hideUrlsInTitles: isBool(s?.hideUrlsInTitles) ? s.hideUrlsInTitles : def.hideUrlsInTitles,
     forceScoreFormat: isBool(s?.forceScoreFormat) ? s.forceScoreFormat : def.forceScoreFormat,
@@ -206,17 +236,17 @@ class ZoroPlugin extends Plugin {
     showBreakdowns: isBool(s?.showBreakdowns) ? s.showBreakdowns : def.showBreakdowns,
     showTimeStats: isBool(s?.showTimeStats) ? s.showTimeStats : def.showTimeStats,
 
-    // stats
+    // Statistics settings
     statsLayout: ['enhanced', 'compact', 'minimal'].includes(s?.statsLayout) ? s.statsLayout : def.statsLayout,
     statsTheme: ['auto', 'light', 'dark'].includes(s?.statsTheme) ? s.statsTheme : def.statsTheme,
 
-    // AniList / auth
+    // AniList authentication
     clientId: isString(s?.clientId) ? s.clientId : def.clientId,
     clientSecret: isString(s?.clientSecret) ? s.clientSecret : def.clientSecret,
     redirectUri: isString(s?.redirectUri) ? s.redirectUri : def.redirectUri,
     accessToken: isString(s?.accessToken) ? s.accessToken : def.accessToken,
 
-    // MAL
+    // MyAnimeList authentication
     malClientId: isString(s?.malClientId) ? s.malClientId : def.malClientId,
     malClientSecret: isString(s?.malClientSecret) ? s.malClientSecret : def.malClientSecret,
     malAccessToken: isString(s?.malAccessToken) ? s.malAccessToken : def.malAccessToken,
@@ -224,13 +254,13 @@ class ZoroPlugin extends Plugin {
     malTokenExpiry: (s?.malTokenExpiry === null || isNumber(s?.malTokenExpiry)) ? s.malTokenExpiry : def.malTokenExpiry,
     malUserInfo: (s?.malUserInfo === null || isObject(s?.malUserInfo)) ? s.malUserInfo : def.malUserInfo,
 
-    // Simkl
+    // Simkl authentication
     simklClientId: isString(s?.simklClientId) ? s.simklClientId : def.simklClientId,
     simklClientSecret: isString(s?.simklClientSecret) ? s.simklClientSecret : def.simklClientSecret,
     simklAccessToken: isString(s?.simklAccessToken) ? s.simklAccessToken : def.simklAccessToken,
     simklUserInfo: (s?.simklUserInfo === null || isObject(s?.simklUserInfo)) ? s.simklUserInfo : def.simklUserInfo,
 
-    // search / TMDB
+    // Search and TMDB settings
     autoFormatSearchUrls: isBool(s?.autoFormatSearchUrls) ? s.autoFormatSearchUrls : def.autoFormatSearchUrls,
     customSearchUrls: {
       ANIME: validateArrayStrings(s?.customSearchUrls?.ANIME),
@@ -239,7 +269,7 @@ class ZoroPlugin extends Plugin {
     },
     tmdbApiKey: isString(s?.tmdbApiKey) ? s.tmdbApiKey : def.tmdbApiKey,
 
-    // custom property names (per-key validation)
+    // Custom property names (validated per-key)
     customPropertyNames: validatedCustomPropertyNames
   };
 }

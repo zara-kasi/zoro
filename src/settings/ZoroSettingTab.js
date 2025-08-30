@@ -619,7 +619,8 @@ new Setting(Data)
       
         
          
-    new Setting(Exp)
+    /**
+    *new Setting(Exp)
     .setName('TMDb API Key')
     .setDesc(
       createFragment((frag) => {
@@ -639,7 +640,7 @@ new Setting(Data)
         this.plugin.settings.tmdbApiKey = value.trim();
         await this.plugin.saveSettings();
       })
-    );
+    );*/
    
    /**
     * new Setting(Theme)

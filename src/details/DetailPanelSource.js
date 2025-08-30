@@ -311,26 +311,25 @@ class DetailPanelSource {
   }
 
 
-
-
-
   async fetchIMDBData(imdbId, mediaType, simklData = null) {
     if (!imdbId) return null;
     
     // First, check if Simkl already provides IMDB rating data
-    if (simklData && simklData._rawData) {
-      const rawData = simklData._rawData;
-      // Check if Simkl provides IMDB rating data directly
-      if (rawData.imdb_rating || rawData.imdb_score || rawData.imdb_votes) {
-        const imdbData = {
-          score: rawData.imdb_rating || rawData.imdb_score || null,
-          scored_by: rawData.imdb_votes || null,
-          rank: null,
-          imdbID: imdbId
-        };
-        return imdbData;
-      }
-    }
+
+if (simklData) {
+  const ratings = simklData.ratings || simklData._rawData?.ratings;
+  const imdbRating = ratings?.imdb;
+  
+  if (imdbRating && (imdbRating.rating || imdbRating.votes)) {
+    const imdbData = {
+      score: imdbRating.rating || null,
+      scored_by: imdbRating.votes || null,
+      rank: null,
+      imdbID: imdbId
+    };
+    return imdbData;
+  }
+}
     
     // Fallback to OMDB API if Simkl doesn't provide IMDB rating data
     const stableCacheKey = this.plugin.cache.structuredKey('imdb', 'stable', `${imdbId}_${mediaType}`);

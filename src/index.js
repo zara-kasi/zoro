@@ -85,9 +85,7 @@ class ZoroPlugin extends Plugin {
 		const type = String(mediaType || '').toUpperCase();
 		const numericId = Number(mediaId) || 0;
 
-		if ((type === 'MOVIE' || type === 'TV') && numericId > 0) {
-			return `https://www.themoviedb.org/${type === 'MOVIE' ? 'movie' : 'tv'}/${numericId}`;
-		}
+		
 
 		switch ((source || '').toLowerCase()) {
 			case 'mal':

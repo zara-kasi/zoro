@@ -494,14 +494,6 @@ class RenderDetailPanel {
         }
       }
 
-      // TMDb stats alongside IMDb when present
-      if (tmdbVoteAverage != null) {
-        console.log('[Details][Stats] TMDb score', tmdbVoteAverage, 'votes', tmdbVoteCount);
-        this.addStatItem(statsGrid, 'TMDb Score', `${tmdbVoteAverage.toFixed(1)}`, 'score-stat tmdb-stat');
-        if (tmdbVoteCount != null) {
-          this.addStatItem(statsGrid, 'TMDb Ratings', Number(tmdbVoteCount).toLocaleString(), 'count-stat');
-        }
-      }
     }
 
     section.appendChild(statsGrid);

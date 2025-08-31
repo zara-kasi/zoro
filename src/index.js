@@ -23,7 +23,7 @@ import { EmojiIconMapper } from './rendering/helpers/EmojiIconMapper.js';
 import { ConnectedNotes } from './features/ConnectedNotes.js';
 import { SidePanel, ZORO_VIEW_TYPE } from './ui/SidePanel.js';
 
-import { DEFAULT_SETTINGS, getDefaultGridColumns, GRID_COLUMN_OPTIONS } from './core/constants.js';
+import { DEFAULT_SETTINGS, GRID_COLUMN_OPTIONS,  GRID_COLUMN_LABELS, } from './core/constants.js';
 import { ZoroSettingTab } from './settings/ZoroSettingTab.js';
 
 class ZoroPlugin extends Plugin {

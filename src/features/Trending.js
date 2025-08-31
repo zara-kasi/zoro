@@ -293,11 +293,10 @@ class Trending {
   }
 }
 
-async fetchSimklTrending(mediaType = 'MOVIE', limit = 40) {
+ async fetchSimklTrending(mediaType = 'MOVIE', limit = 40) {
   const simklClientId = this.plugin.settings.simklClientId;
   
   if (!simklClientId) {
-    console.error('[Trending] Simkl Client ID not configured');
     throw new Error('Simkl Client ID is required. Please add it in settings.');
   }
 
@@ -319,15 +318,11 @@ async fetchSimklTrending(mediaType = 'MOVIE', limit = 40) {
   } else if (typeUpper === 'TV' || typeUpper === 'SHOW' || typeUpper === 'SHOWS') {
     endpoint = 'tv/trending';
   } else {
-    console.log('[Trending] Simkl skipping anime request - should use AniList or MAL');
     return [];
   }
 
   try {
-    // Use basic trending endpoint without extended parameters
     const url = `https://api.simkl.com/${endpoint}?limit=${limit}`;
-    
-    console.log('[Trending] Simkl request URL:', url);
     
     const requestFn = () => fetch(url, {
       headers: {
@@ -344,50 +339,30 @@ async fetchSimklTrending(mediaType = 'MOVIE', limit = 40) {
 
     if (!response || !response.ok) {
       const errorText = response ? await response.text() : 'No response';
-      console.error('[Trending] Simkl error response:', errorText);
       throw new Error(`Simkl API error: ${response ? response.status : 'NO-RESP'} - ${errorText}`);
     }
 
     const data = await response.json();
     
-    console.log('[Trending] Raw Simkl response:', JSON.stringify(data, null, 2));
-    console.log('[Trending] Response type:', typeof data, 'Is array:', Array.isArray(data));
-    console.log('[Trending] Response keys:', Object.keys(data || {}));
-    
-    if (Array.isArray(data)) {
-      console.log('[Trending] First item structure:', JSON.stringify(data[0], null, 2));
-    }
-    
     if (!Array.isArray(data)) {
-      console.error('[Trending] Invalid Simkl response format:', data);
       throw new Error('Invalid response format from Simkl - expected array');
     }
 
     const mediaList = data
       .slice(0, limit)
-      .map((item, index) => {
-        console.log(`[Trending] Transforming item ${index}:`, JSON.stringify(item, null, 2));
-        const transformed = this.transformSimklTrendingMedia(item, mediaType);
-        console.log(`[Trending] Transformed item ${index}:`, JSON.stringify(transformed, null, 2));
-        return transformed;
-      })
+      .map((item) => this.transformSimklTrendingMedia(item, mediaType))
       .filter(Boolean);
 
-    // Cache the results
     this.plugin.cache.set(cacheKey, mediaList, {
       scope: 'mediaData',
       source: 'simkl',
-      ttl: 24 * 60 * 60 * 1000, // 24 hours
+      ttl: 24 * 60 * 60 * 1000,
       tags: ['trending', mediaType.toLowerCase(), 'simkl']
     });
 
-    console.log(`[Trending] Simkl ${mediaType} trending: ${mediaList.length} items fetched`);
     return mediaList;
 
   } catch (error) {
-    console.error('[Trending] Simkl fetch failed:', error);
-    
-    // Try to return stale data if available
     const staleData = this.plugin.cache.get(cacheKey, {
       scope: 'mediaData',
       source: 'simkl',
@@ -395,7 +370,6 @@ async fetchSimklTrending(mediaType = 'MOVIE', limit = 40) {
     });
     
     if (staleData) {
-      console.log('[Trending] Returning stale Simkl cache data');
       return staleData;
     }
     
@@ -407,26 +381,22 @@ transformSimklTrendingMedia(item, mediaType) {
   try {
     const isMovie = mediaType.toUpperCase() === 'MOVIE' || mediaType.toUpperCase() === 'MOVIES';
     
-    // Extract title - the basic response doesn't include title, we'll need to handle this
-    const title = item.title || item.name || `Untitled (ID: ${item.ids?.simkl_id})`;
+    // Use rank as the title since actual titles aren't available
+    const title = item.rank ? `Rank: ${item.rank}` : `Rank Unknown`;
     
-    // Handle IDs - simkl_id is available, but no tmdb/imdb without extended
     const simklId = item.ids?.simkl_id || item.ids?.simkl || item.id || null;
     const tmdbId = item.ids?.tmdb || null;
     const imdbId = item.ids?.imdb || null;
     
-    // Build poster URL - Simkl provides just the path
     const posterUrl = item.poster ? `https://simkl.in/posters/${item.poster}_m.jpg` : null;
     const fanartUrl = item.fanart ? `https://simkl.in/fanart/${item.fanart}_m.jpg` : null;
     
-    // Parse release date
     let year = null;
     if (item.release_date) {
       const dateMatch = item.release_date.match(/(\d{4})/);
       year = dateMatch ? parseInt(dateMatch[1]) : null;
     }
     
-    // Get rating from simkl ratings
     const simklRating = item.ratings?.simkl?.rating || null;
     const averageScore = simklRating ? Math.round(simklRating * 10) : null;
     
@@ -476,10 +446,10 @@ transformSimklTrendingMedia(item, mediaType) {
       }
     };
   } catch (error) {
-    console.error('[Trending] Failed to transform Simkl trending item:', item, error);
     return null;
   }
 }
+
 
 async fetchTrending(source, mediaType, limit = 40) {
   const typeUpper = String(mediaType || '').toUpperCase();
@@ -498,7 +468,6 @@ async fetchTrending(source, mediaType, limit = 40) {
       return await this.fetchAniListTrending(mediaType, limit);
   }
 }
-
 
   async renderTrendingBlock(el, config) {
     el.empty();

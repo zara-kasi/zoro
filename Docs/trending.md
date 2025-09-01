@@ -17,13 +17,13 @@ source: anilist
 **Trending Data Sources:**
 - **AniList**: Popular anime and manga
 - **MyAnimeList**: Trending content from MAL
-- **TMDb**: Movie and TV show trends
+- **Simkl**: Movie and TV show trends
 
 | Media Type  | Sources Available | API Used                   | Requirements               |
 | ----------- | ----------------- | -------------------------- | -------------------------- |
 | Anime/Manga | AniList, MAL      | AniList GraphQL, Jikan API | No authentication required |
-| TV/Movies   | Simkl             | TMDB API                   | TMDB API key required      |
+| TV/Movies   | Simkl             | Simkl API                   | Authentication required      |
 
 > -  The Jikan API limits trending results to 25 items.
-> -  Simkl doesn’t provide a trending endpoint, TMDB is used for TV shows and movies. If you prefer not to get a TMDB API key, you can simply skip the TV/Movie trending feature.
+> -  Simkl doesn’t provide titles for trending items, so the rank will be shown in place of the title.
 

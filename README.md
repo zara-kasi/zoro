@@ -26,7 +26,7 @@
 
 ## Quick Setup      
 
-- **Zoro** →Settings →  **Setup → Sample Folder** → **Create** 
+- **Zoro** → Settings →  **Setup → Sample Folder** → **Create** 
 
 ![create sample note](Assets/sample_folder.png)      
 

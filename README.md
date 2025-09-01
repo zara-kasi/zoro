@@ -36,7 +36,7 @@
 
 - Open the **Trending** note inside `Zoro/Anime/` or `Zoro/Manga/` 
       
-![Trending anime](Assets/trending_anime.png)  
+![Trending anime](Assets/trending_anime_sample.png)  
 
 >*Instant preview of media cards — no authentication needed.*
 

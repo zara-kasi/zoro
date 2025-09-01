@@ -92,7 +92,7 @@ These guides provide step-by-step instructions with video for setting up secure 
       
 ## Acknowledgements      
       
-[Obsidian](https://obsidian.md/), [Obsidian Raindrop Plugin](https://github.com/mtopping/obsidian-raindrop), [AniList](https://anilist.co/), [MyAnimeList](https://myanimelist.net/) and [Simkl](https://simkl.com/) 
+[Obsidian](https://obsidian.md/), [Obsidian Raindrop Plugin](https://github.com/mtopping/obsidian-raindrop), [AniList](https://anilist.co/), [MyAnimeList](https://myanimelist.net/), [Jikan API](https://github.com/jikan-me) & [Simkl](https://simkl.com/) 
 
 Each of these projects has, in its own way, shaped how this plugin came together. I’ve learned from them, borrowed ideas, and relied on what they make available. For that, I’m genuinely thankful.
       

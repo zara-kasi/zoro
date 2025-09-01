@@ -108,9 +108,5 @@ This feature allows you to paste any search URL, and Zoro will automatically det
 
 #### **Beta Section**
 
-**TMDb API Key**
-- **What it does**: Your The Movie Database API key for enhanced movie & TV features
-- **When to use**: If you want additional movie/TV metadata and trending data
-- **Get one**: Free at [TMDb](https://www.themoviedb.org/settings/api)
 
 ---

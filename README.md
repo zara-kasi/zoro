@@ -92,12 +92,9 @@ These guides provide step-by-step instructions with video for setting up secure 
       
 ## Acknowledgements      
       
-- **[Obsidian](https://obsidian.md/)** — *The amazing note-taking app that makes this possible.* 
-- **[Obsidian Raindrop Plugin](https://github.com/mtopping/obsidian-raindrop)** — *Inspiration for plugin architecture.*      
-- **[AniList](https://anilist.co/)** — *Comprehensive anime and manga database with excellent API.*      
-- **[MyAnimeList](https://myanimelist.net/)** — *Long-standing and widely regarded platform for cataloging, rating, and discovering anime and manga.*      
-- **[Simkl](https://simkl.com/)** — *Modern tracking platform for all media types.*      
-- **[TMDb](https://www.themoviedb.org/)** — *Movie and TV database for enhanced metadata.*     
+[Obsidian](https://obsidian.md/), [Obsidian Raindrop Plugin](https://github.com/mtopping/obsidian-raindrop), [AniList](https://anilist.co/), [MyAnimeList](https://myanimelist.net/) and [Simkl](https://simkl.com/) 
+
+Each of these projects has, in its own way, shaped how this plugin came together. I’ve learned from them, borrowed ideas, and relied on what they make available. For that, I’m genuinely thankful.
       
 ## License      
       

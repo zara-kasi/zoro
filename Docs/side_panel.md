@@ -6,6 +6,8 @@ The panel offers four actions: **Create Note**, **Connect Note**, **Edit**, and 
 ---
 
 ## 1. Create Note
+*Use this when you want to make a brand-new note for a media item.*  
+
 - Creates a new note in your configured folder (`Settings → Zoro → Note path`).  
 - Adds extended frontmatter with:
   - `title` and alternate titles
@@ -20,13 +22,16 @@ The panel offers four actions: **Create Note**, **Connect Note**, **Edit**, and 
 ---
 
 ## 2. Connect Note
-- Use when you already have a note for the media.  
+*Use this when you already have a note for the media and want to link it with Zoro.*  
+
 - Opens a search bar to select a note from your vault.  
 - On connect, Zoro updates the note with the same extended frontmatter as **Create Note** (title, IDs, cover, rating, etc.).  
 
 ---
 
 ## 3. Edit
+*Use this when you want to update your list entry without leaving Obsidian.*  
+
 - Opens an edit menu for the selected media.  
 - You can change and sync values directly with your connected API (AniList, MAL, Simkl):
   - **Status** (CURRENT, COMPLETED, PAUSED, DROPPED, PLANNING)
@@ -38,6 +43,8 @@ The panel offers four actions: **Create Note**, **Connect Note**, **Edit**, and 
 ---
 
 ## 4. Details
+*Use this when you want to view the full information about a media item.*  
+
 - Opens a full detail view for the media, including:
   - **Synopsis** and description
   - **Format** (TV, Movie, Manga, etc.)

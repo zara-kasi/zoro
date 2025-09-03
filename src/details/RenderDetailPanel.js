@@ -542,9 +542,6 @@ class RenderDetailPanel {
       formatInfo.className = 'format-info';
       
       let html = '';
-      if (media.format) {
-        html += `<span class="format-badge-large">${this.formatDisplayName(media.format)}</span>`;
-      }
       if (media.season && media.seasonYear) {
         html += `<span class="season-info">${this.capitalize(media.season)} ${media.seasonYear}</span>`;
       }

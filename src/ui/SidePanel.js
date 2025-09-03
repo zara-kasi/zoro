@@ -11,6 +11,8 @@ class SidePanel extends ItemView {
 		this.embedEl = null;
 		this.detailsBtn = null;
 		this.editInlineBtn = null;
+		this.createBtn = null;
+		this.connectBtn = null;
 		this.currentMode = null; // 'details' | 'edit' | null
 	}
 
@@ -37,10 +39,60 @@ class SidePanel extends ItemView {
 
 	setContext(context) {
 		this.context = context || null;
+		
+		// Update button states based on new context
+		this.updateButtonStates();
+		
 		if (this.context && this.context.mediaType && this.context.searchIds) {
 			this.renderContextualUI(this.context);
 		} else {
 			this.resetToBlank();
+		}
+	}
+
+	/**
+	 * Update button states based on current context
+	 */
+	updateButtonStates() {
+		if (!this.context) {
+			// No context - all buttons should be disabled
+			this.setButtonState(this.createBtn, false);
+			this.setButtonState(this.connectBtn, false);
+			this.setButtonState(this.detailsBtn, false);
+			this.setButtonState(this.editInlineBtn, false);
+			return;
+		}
+
+		// Create button - always active when there's context
+		this.setButtonState(this.createBtn, true);
+		
+		// Connect button - always active when there's context
+		this.setButtonState(this.connectBtn, true);
+		
+		// Details button - active only if media is available
+		const hasMedia = !!(this.context.media || this.context.entry?.media);
+		this.setButtonState(this.detailsBtn, hasMedia);
+		
+		// Edit button - active only if media is available (entry can be created)
+		this.setButtonState(this.editInlineBtn, hasMedia);
+	}
+
+	/**
+	 * Set button active/inactive state
+	 * @param {HTMLElement} button - The button element
+	 * @param {boolean} isActive - Whether the button should be active
+	 */
+	setButtonState(button, isActive) {
+		if (!button) return;
+		
+		if (isActive) {
+			button.classList.remove('disabled', 'inactive');
+			button.removeAttribute('disabled');
+			button.style.pointerEvents = '';
+		} else {
+			button.classList.add('inactive');
+			button.setAttribute('disabled', 'true');
+			button.style.pointerEvents = 'none';
 		}
 	}
 
@@ -61,17 +113,17 @@ class SidePanel extends ItemView {
 			text: '⛓️', 
 			cls: 'zoro-panel-btn' 
 		});
-   
-   this.editInlineBtn = this.buttonContainerEl.createEl('button', {
+		
+		this.editInlineBtn = this.buttonContainerEl.createEl('button', {
 			text: '️☑️',
 			cls: 'zoro-panel-btn'
 		});
+		
 		// New inline Details and Edit buttons
 		this.detailsBtn = this.buttonContainerEl.createEl('button', {
 			text: '🫔',
 			cls: 'zoro-panel-btn'
 		});
-		
 
 		// Search interface container (fixed position below toolbar)
 		this.searchContainerEl = root.createDiv({ cls: 'zoro-panel-search-container' });
@@ -139,6 +191,10 @@ class SidePanel extends ItemView {
 		this.showSearchContainer(false);
 		this.showEmbedContainer(false);
 		this.showContentContainer(true);
+		
+		// Update button states for blank state
+		this.updateButtonStates();
+		
 		const c = this.contentEl.createDiv({ cls: 'zoro-panel-blank' });
 		c.createEl('div', { text: 'Open this panel from a media card to use actions.' });
 	}
@@ -150,8 +206,11 @@ class SidePanel extends ItemView {
 		this.showEmbedContainer(false);
 		this.showContentContainer(true);
 
-		// Hook up actions
+		// Hook up actions with state checks
 		this.createBtn.onclick = async () => {
+			if (this.createBtn.classList.contains('inactive') || this.createBtn.classList.contains('disabled')) {
+				return; // Prevent action if disabled
+			}
 			await this.plugin.connectedNotes.createNewConnectedNote(ctx.searchIds, ctx.mediaType);
 			new Notice('Created connected note');
 			await this.reloadNotesList(ctx);
@@ -167,6 +226,10 @@ class SidePanel extends ItemView {
 		connectInterface.classList.add('zoro-note-hidden');
 
 		this.connectBtn.onclick = () => {
+			if (this.connectBtn.classList.contains('inactive') || this.connectBtn.classList.contains('disabled')) {
+				return; // Prevent action if disabled
+			}
+			
 			const isCurrentlyHidden = connectInterface.classList.contains('zoro-note-hidden');
 			connectInterface.classList.toggle('zoro-note-hidden');
 			
@@ -181,6 +244,10 @@ class SidePanel extends ItemView {
 
 		// Wire inline Details and Edit buttons if media/entry context is available
 		this.detailsBtn.onclick = async () => {
+			if (this.detailsBtn.classList.contains('inactive') || this.detailsBtn.classList.contains('disabled')) {
+				return; // Prevent action if disabled
+			}
+			
 			try {
 				if (this.currentMode === 'details') {
 					this.clearEmbed();
@@ -198,6 +265,10 @@ class SidePanel extends ItemView {
 		};
 
 		this.editInlineBtn.onclick = async () => {
+			if (this.editInlineBtn.classList.contains('inactive') || this.editInlineBtn.classList.contains('disabled')) {
+				return; // Prevent action if disabled
+			}
+			
 			try {
 				if (this.currentMode === 'edit') {
 					this.clearEmbed();
@@ -227,6 +298,9 @@ class SidePanel extends ItemView {
 				console.error('[Zoro][SidePanel] Failed to show edit inline', e);
 			}
 		};
+
+		// Update button states after setting up event handlers
+		this.updateButtonStates();
 
 		let disposed = false;
 		const load = async () => {

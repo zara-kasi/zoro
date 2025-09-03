@@ -1,5 +1,3 @@
-# AniList API Setup Guide for Zoro Plugin
-
 To log in, you'll need to create your own **Client ID** and **Client Secret** from AniList. Follow these steps—it’s quick and easy.
 
 ---

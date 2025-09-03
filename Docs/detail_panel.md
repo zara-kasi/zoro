@@ -1,17 +1,18 @@
-### Details Panel
+*Use this when you want to see complete information about a media item.*  
 
-**Press and hold the cover image to open a details panel.**  
+You can open it in two ways:  
+- **Press and hold** the cover image on a media card.  
+- Or open it through the **Side Panel → Details** option.  
 
-**This panel provides**:  
-- Multiple titles  
+**The Details Panel shows**:  
+- **Titles** (multiple variations)  
   - English title  
   - Original title  
   - Romaji title  
-  - And more  
-- Format information  
-- Release status (e.g., Releasing, Completed, etc.)  
-- Synopsis  
-- Statistics  
-- Ratings from multiple sources  
-- External links (to different sites and sources)
-
+  - Other available titles  
+- **Format** (TV, Movie, Manga, etc.)  
+- **Release status** (e.g., Releasing, Completed, Upcoming)  
+- **Synopsis** and description  
+- **Statistics** (episodes, chapters, duration, etc.)  
+- **Ratings** from external sources (IMDb, etc.)  
+- **External links** (AniList, MAL, Simkl, TMDb, etc.)

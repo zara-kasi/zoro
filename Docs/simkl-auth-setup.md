@@ -1,72 +1,36 @@
-# 🔐 Simkl API Setup Guide for Zoro Plugin
-
-To login, you'll need to create your own **Client ID** and **Client Secret** from Simkl. It only takes a minute—just follow these steps.
+To log in, you'll need to create your own **Client ID** and **Client Secret** from Simkl. Follow these steps—it’s quick and easy.
 
 ---
 
-## 🎥 Watch the Video Guide
+Watch a short tutorial here:  
 [![Watch the YouTube Short](https://img.youtube.com/vi/GiAPkSijeo8/0.jpg)](https://m.youtube.com/shorts/GiAPkSijeo8)
 
 ---
 
-## 📌 Step-by-Step Instructions
+## Step 1: Create a Simkl App
 
-1. **Go to the Simkl Developer Page**  
-   👉 [https://simkl.com/settings/developer/new/](https://simkl.com/settings/developer/new/)
+1. Go to the Simkl Developer Page: [https://simkl.com/settings/developer/new/](https://simkl.com/settings/developer/new/)  
+2. Fill in these fields:  
+   - **App Name**: `Zoro`  
+   - **Description**: `Obsidian plugin for managing anime and manga lists`  
+   - **Redirect URI**: `urn:ietf:wg:oauth:2.0:oob`  
+3. Click **Save**.  
+4. Copy your **Client ID** and **Client Secret**.  
 
-2. **Fill in the fields as follows:**
-
-   - **App Name**:  
-     ```
-      Zoro
-     ```
-
-   - **Description**:  
-     ```
-     Obsidian plugin for managing anime and manga lists
-     ```
-
-   - **Redirect URI**:  
-     ```
-     urn:ietf:wg:oauth:2.0:oob
-     ```
-
-   > ⚠️ **Important**: Make sure the Redirect URI is exactly `urn:ietf:wg:oauth:2.0:oob` or authentication will fail.
-
-3. Click **Save**.
-
-4. After saving, you will see your **Client ID**, **Client Secret**, and **Redirect URI**.  
-   → Copy down the **Client ID** and **Client Secret**.
+> Make sure the Redirect URI is exactly `urn:ietf:wg:oauth:2.0:oob`; authentication will fail otherwise.
 
 ---
 
-# 🔐 How to Authenticate with Simkl
+## Step 2: Authenticate Zoro with Simkl
 
-Follow these steps to link your Simkl account with Zoro:
-
-1. **Create an app on Simkl** and copy your:
-   - **Client ID**
-   - **Client Secret**
-
-2. **Open the Zoro plugin settings** in Obsidian.
-
-3. Click the **"Enter Client ID"** button.  
-   → Paste your **Client ID** and confirm.
-
-4. The button will now change to **"Enter Client Secret"**.  
-   → Paste your **Client Secret** and confirm.
-
-5. The button will now say **"Authenticate"**.  
-   → Click it.
-
-6. You will be redirected to Simkl’s website.  
-   → Log in (if needed) and **authorize** the app.
-
-7. After about **3 seconds**, you will be redirected back to **simkl.com**.
-
-8. Return to the Zoro plugin settings in Obsidian.  
-   → You’ll now see a ✅ **"Authenticated"** message confirming the connection.
+1. Open **Zoro plugin settings** in Obsidian.  
+2. Click **Enter Client ID**, paste your **Client ID**, and confirm.  
+3. Click **Enter Client Secret**, paste your **Client Secret**, and confirm.  
+4. Click **Authenticate**.  
+5. You’ll be redirected to Simkl—log in (if needed) and **authorize** the app.  
+6. After a few seconds, you’ll return to Simkl’s site.  
+7. Go back to Obsidian—you’ll see an **Authenticated** notification when successful.  
 
 ---
 
-✅ That’s it! Your Simkl account is now securely connected to **Zoro**.
+That’s it! Your Simkl account is now securely connected to **Zoro**.

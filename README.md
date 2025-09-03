@@ -68,7 +68,7 @@ These guides provide step-by-step instructions with video for setting up secure 
 
 # Feature Overview      
 
-![Features screenshot](Assets/features.png)
+![Features screenshot](Assets/features_screenshot.png)
 
 >*All your media features — lists, stats, search, editing, and more — inside Obsidian.*
 

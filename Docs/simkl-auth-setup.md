@@ -12,7 +12,7 @@ Watch a short tutorial here:
 1. Go to the Simkl Developer Page: [https://simkl.com/settings/developer/new/](https://simkl.com/settings/developer/new/)  
 2. Fill in these fields:  
    - **App Name**: `Zoro`  
-   - **Description**: `Obsidian plugin for managing anime, manga, tv shows and movie lists`  
+   - **Description**: `Obsidian plugin for managing anime, manga, tv show and movie lists`  
    - **Redirect URI**: `urn:ietf:wg:oauth:2.0:oob`  
 3. Click **Save**.  
 4. Copy your **Client ID** and **Client Secret**.  

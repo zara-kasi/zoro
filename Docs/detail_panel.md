@@ -1,4 +1,4 @@
-*Use this when you want to see complete information about a media item.*  
+>*Use this when you want to see complete information about a media item.*  
 
 You can open it in two ways:  
 - **Press and hold** the cover image on a media card.  

@@ -1,6 +1,6 @@
 ### Code Block
 
-You can use a special code block named `zoro` to customize and display media content directly in your notes.  
+You can use a code block named `zoro` to customize and display media content directly in your notes.  
 #### How to use it  
 ```zoro
 # Your parameters go here

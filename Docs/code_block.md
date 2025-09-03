@@ -43,7 +43,7 @@ typo: anime
 | **MANGA**                   | ✅         | ✅           | ❌        |
 | **MOVIES**                  | ❌         | ❌           | ✅        |
 | **TV SHOWS**                | ❌         | ❌           | ✅        |
-| **Trending**                | ✅         | ✅           | ❌        |
+| **Trending**                | ✅         | ✅           | ✅        |
 | **REPEATING** status        | ✅         | ❌           | ❌        |
 | **Favourite**               | ✅         | ❌           | ❌        |
 | **Remove** item from list   | ✅         | ❌           | ✅        |

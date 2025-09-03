@@ -72,19 +72,19 @@ These guides provide step-by-step instructions with video for setting up secure 
 
 >*All your media features — lists, stats, search, editing, and more — inside Obsidian.*
 
-- [Connected Notes](https://github.com/zara-kasi/zoro/blob/release-v1.1.0/Docs%2Fconnected_note.md) — *Create note or link notes for media.*      
-- [Search](https://github.com/zara-kasi/zoro/blob/release-v1.1.0/Docs%2Fsearch.md) — *Find anime, manga, movies, or TV.*     
-- [Media Lists](https://github.com/zara-kasi/zoro/blob/release-v1.1.0/Docs%2Fmedia_list.md) — *Track current, completed, planned, on-hold, dropped, rewatching, or all media in one place.*      
-- [Statistics](https://github.com/zara-kasi/zoro/blob/release-v1.1.0/Docs%2Fstatistics.md) — *View detailed analytics of your media.*      
-- [Trending](https://github.com/zara-kasi/zoro/blob/release-v1.1.0/Docs%2Ftrending.md) — *Discover popular anime, manga, movies, and TV.*      
-- [Editing](https://github.com/zara-kasi/zoro/blob/release-v1.1.0/Docs%2Fedit_panel.md) — *Update progress, status, ratings, and notes directly inside Obsidian.*      
-- [Details Panel](https://github.com/zara-kasi/zoro/blob/release-v1.1.0/Docs%2Fdetail_panel.md) — *Long-press cover image for quick access to more details about the item.*  
-- [Side Panel](https://github.com/zara-kasi/zoro/blob/release-v1.1.0/Docs%2Fside_panel.md)  — *This side panel helps you turn any media item into a first-class note in your vault and keep it linked.*
-- [Single Media](https://github.com/zara-kasi/zoro/blob/release-v1.1.0/Docs%2Fsingle_media.md) — *View details, ratings, and metadata for individual titles.*  
-- [Code Block](https://github.com/zara-kasi/zoro/blob/release-v1.1.0/Docs%2Fcode_block.md) — *Embed and preview media info with simple code blocks.* 
-- [Shortcuts](https://github.com/zara-kasi/zoro/blob/release-v1.1.0/Docs%2Fshortcuts.md) — *Add custom external link to reviews, streaming services, social media, or news sites.*        
-- [Export](https://github.com/zara-kasi/zoro/blob/release-v1.1.0/Docs%2Fexport_overview.md) — *Easily export your data from AniList, MyAnimeList, or Simkl with one click into proper formats (CSV and MAL-compatible XML for anime and manga).*      
-- [Settings](https://github.com/zara-kasi/zoro/blob/release-v1.1.0/Docs%2Fsettings.md) — *Configure API, login, and display options.*
+- [Connected Notes](https://github.com/zara-kasi/zoro/blob/main/Docs%2Fconnected_note.md) — *Create note or link notes for media.*      
+- [Search](https://github.com/zara-kasi/zoro/blob/main/Docs%2Fsearch.md) — *Find anime, manga, movies, or TV.*     
+- [Media Lists](https://github.com/zara-kasi/zoro/blob/main/Docs%2Fmedia_list.md) — *Track current, completed, planned, on-hold, dropped, rewatching, or all media in one place.*      
+- [Statistics](https://github.com/zara-kasi/zoro/blob/main/Docs%2Fstatistics.md) — *View detailed analytics of your media.*      
+- [Trending](https://github.com/zara-kasi/zoro/blob/main/Docs%2Ftrending.md) — *Discover popular anime, manga, movies, and TV.*      
+- [Editing](https://github.com/zara-kasi/zoro/blob/main/Docs%2Fedit_panel.md) — *Update progress, status, ratings, and notes directly inside Obsidian.*      
+- [Details Panel](https://github.com/zara-kasi/zoro/blob/main/Docs%2Fdetail_panel.md) — *Long-press cover image for quick access to more details about the item.*  
+- [Side Panel](https://github.com/zara-kasi/zoro/blob/main/Docs%2Fside_panel.md)  — *This side panel helps you turn any media item into a first-class note in your vault and keep it linked.*
+- [Single Media](https://github.com/zara-kasi/zoro/blob/main/Docs%2Fsingle_media.md) — *View details, ratings, and metadata for individual titles.*  
+- [Code Block](https://github.com/zara-kasi/zoro/blob/main/Docs%2Fcode_block.md) — *Embed and preview media info with simple code blocks.* 
+- [Shortcuts](https://github.com/zara-kasi/zoro/blob/main/Docs%2Fshortcuts.md) — *Add custom external link to reviews, streaming services, social media, or news sites.*        
+- [Export](https://github.com/zara-kasi/zoro/blob/main/Docs%2Fexport_overview.md) — *Easily export your data from AniList, MyAnimeList, or Simkl with one click into proper formats (CSV and MAL-compatible XML for anime and manga).*      
+- [Settings](https://github.com/zara-kasi/zoro/blob/main/Docs%2Fsettings.md) — *Configure API, login, and display options.*
 
 ---
 

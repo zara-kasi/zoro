@@ -1422,6 +1422,32 @@ transparent 70%
   transform: translateY(1px);
 }
 
+/* Disabled state for inactive buttons */
+.zoro-side-panel .zoro-panel-btn.disabled,
+.zoro-side-panel .zoro-panel-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Alternative approach using brightness filter */
+.zoro-side-panel .zoro-panel-btn.inactive {
+  filter: brightness(0.5) saturate(0.7);
+  cursor: not-allowed;
+  pointer-events: none;
+  transition: all var(--zoro-transition-medium) ease;
+}
+
+/* Hover state should not apply when disabled/inactive */
+.zoro-side-panel .zoro-panel-btn.disabled:hover,
+.zoro-side-panel .zoro-panel-btn:disabled:hover,
+.zoro-side-panel .zoro-panel-btn.inactive:hover {
+  background-color: transparent !important;
+  color: hsl(var(--accent-h), var(--accent-s), var(--accent-l)) !important;
+  transform: none;
+  box-shadow: none;
+}
+
 .zoro-panel-toolbar::after {
   content: '';
   display: block;
@@ -1431,8 +1457,6 @@ transparent 70%
   margin-top: var(--size-2-1);
   margin-bottom: var(--size-4-2);
 }
-
-
 
 /* Main Container */
 .zoro-note-container {

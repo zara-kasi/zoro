@@ -14,7 +14,7 @@ The panel offers four actions: **Create Note**, **Connect Note**, **Edit**, and 
   - `progress`, `rating`, `favorite`
   - `cover` (image link)
   - `url` (canonical links to the media)  
-- File is named with a clean title (with disambiguator if needed).
+- File is named with a clean title.
 - Can also auto-insert a **media block** if enabled.
 
 ---

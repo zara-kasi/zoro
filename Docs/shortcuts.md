@@ -1,21 +1,24 @@
-### Shortcuts
+Add custom website searches to the **Details Panel → External Links**.  
+This lets you search an item’s title on any site with one click.  
 
+---
 
-This feature lets you add your own website URLs to the **More Details Panel → External Links** section.  
-It’s useful for quickly searching an item’s title (e.g., English title) on any website you prefer.  
+## Setup  
+1. Search for anything on your chosen site (review, wiki, streaming, etc.).  
+2. Copy the **search URL** from your browser.  
+3. Paste it into the **Shortcuts** section in settings (per media type).  
+4. The link will now appear in the **External Links** section of the Details Panel.  
 
-**How it works** 
-- The plugin uses the website’s search URL and automatically inserts the item’s title into it.  
-- When clicked, the link redirects you to that website’s search results for the selected item.  
+---
 
-**How to use it**
-1. Go to the website where you want to search (e.g., a review site, wiki, or streaming service).  
-2. Perform a search manually for anything.  
-3. Copy the **search URL** from your browser’s address bar.  
-4. Paste that URL into the **shortcut section** for the correct media type (Anime, Manga, TV, or Movie).  
-5. Once saved, the plugin will generate a working link in the **External Links** section of the details panel.  
+## If the URL doesn’t work  
+Some sites use a search format the plugin can’t auto-detect. In that case:  
 
-This way, you can instantly search any item on your favorite websites with one click.
+1. **Turn off “Auto-format URL”** in settings.  
+2. On the target site, search exactly for: **zoro zoro**
+3. Copy the resulting search URL.  
+4. Paste it into the plugin’s **Shortcuts** settings.  
 
-> If the search URL you added **doesn’t work**, it means that website’s search format isn’t directly compatible with the plugin. In that case, you can still make it work by following the [guide](https://github.com/zara-kasi/zoro/blob/main/Docs%2Fcustom-external-search-urls.md).
-
+The plugin uses this special search to learn the site’s URL structure:  
+- Everything before `zoro zoro` is treated as the search template.  
+- The character or symbol used between the two words (e.g., `+`, `%20`, `-`) is saved as the space replacement.  

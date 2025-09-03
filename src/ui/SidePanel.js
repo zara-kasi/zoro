@@ -14,6 +14,7 @@ class SidePanel extends ItemView {
 		this.createBtn = null;
 		this.connectBtn = null;
 		this.currentMode = null; // 'details' | 'edit' | null
+		this.eventHandlersAttached = false;
 	}
 
 	getViewType() {
@@ -133,6 +134,136 @@ class SidePanel extends ItemView {
 
 		// Content (center - for notes list)
 		this.contentEl = root.createDiv({ cls: 'zoro-panel-content' });
+
+		// Attach event handlers immediately after creating buttons
+		this.attachEventHandlers();
+	}
+
+	/**
+	 * Attach event handlers to buttons
+	 * This is separated from renderContextualUI to ensure handlers are always attached
+	 */
+	attachEventHandlers() {
+		if (this.eventHandlersAttached) return;
+
+		// Use event delegation with proper context checks
+		this.createBtn.addEventListener('click', async (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			
+			if (this.createBtn.classList.contains('inactive') || this.createBtn.classList.contains('disabled')) {
+				return;
+			}
+			
+			if (!this.context?.searchIds || !this.context?.mediaType) {
+				return;
+			}
+
+			try {
+				await this.plugin.connectedNotes.createNewConnectedNote(this.context.searchIds, this.context.mediaType);
+				new Notice('Created connected note');
+				await this.reloadNotesList(this.context);
+			} catch (error) {
+				console.error('[Zoro][SidePanel] Create note failed', error);
+				new Notice('Failed to create note');
+			}
+		});
+
+		this.connectBtn.addEventListener('click', (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			
+			if (this.connectBtn.classList.contains('inactive') || this.connectBtn.classList.contains('disabled')) {
+				return;
+			}
+
+			if (!this.context) return;
+
+			const connectInterface = this.searchContainerEl.querySelector('.zoro-connect-interface');
+			if (!connectInterface) return;
+
+			const isCurrentlyHidden = connectInterface.classList.contains('zoro-note-hidden');
+			connectInterface.classList.toggle('zoro-note-hidden');
+			
+			// Show/hide the search container based on interface visibility
+			this.showSearchContainer(!isCurrentlyHidden);
+			
+			if (!connectInterface.classList.contains('zoro-note-hidden')) {
+				setTimeout(() => {
+					const inp = connectInterface.querySelector('.zoro-note-search-input');
+					inp?.focus();
+				}, 100);
+			}
+		});
+
+		this.detailsBtn.addEventListener('click', async (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			
+			if (this.detailsBtn.classList.contains('inactive') || this.detailsBtn.classList.contains('disabled')) {
+				return;
+			}
+			
+			try {
+				if (this.currentMode === 'details') {
+					this.clearEmbed();
+					return;
+				}
+				
+				const media = this.context?.media || this.context?.entry?.media || null;
+				if (!media) {
+					new Notice('No media selected');
+					return;
+				}
+				await this.showDetailsForMedia(media, this.context?.entry || null);
+			} catch (e) {
+				console.error('[Zoro][SidePanel] Failed to show details inline', e);
+				new Notice('Failed to show details');
+			}
+		});
+
+		this.editInlineBtn.addEventListener('click', async (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			
+			if (this.editInlineBtn.classList.contains('inactive') || this.editInlineBtn.classList.contains('disabled')) {
+				return;
+			}
+			
+			try {
+				if (this.currentMode === 'edit') {
+					this.clearEmbed();
+					return;
+				}
+				
+				let entry = this.context?.entry || null;
+				let source = (this.context?.entry?._zoroMeta?.source || this.context?.source || this.plugin?.settings?.defaultApiSource || 'anilist');
+				
+				if (!entry) {
+					const media = this.context?.media || null;
+					if (!media) {
+						new Notice('No entry to edit');
+						return;
+					}
+					// Create a minimal entry object compatible with edit form
+					entry = {
+						media,
+						status: 'PLANNING',
+						progress: 0,
+						score: null,
+						id: null,
+						_zoroMeta: { source: source, mediaType: (media.type || media.format || this.context?.mediaType || 'ANIME') }
+					};
+				}
+
+				await this.showEditForEntry(entry, { source });
+			} catch (e) {
+				console.error('[Zoro][SidePanel] Failed to show edit inline', e);
+				new Notice('Failed to open edit form');
+			}
+		});
+
+		this.eventHandlersAttached = true;
 	}
 
 	showToolbar(show) {
@@ -206,16 +337,6 @@ class SidePanel extends ItemView {
 		this.showEmbedContainer(false);
 		this.showContentContainer(true);
 
-		// Hook up actions with state checks
-		this.createBtn.onclick = async () => {
-			if (this.createBtn.classList.contains('inactive') || this.createBtn.classList.contains('disabled')) {
-				return; // Prevent action if disabled
-			}
-			await this.plugin.connectedNotes.createNewConnectedNote(ctx.searchIds, ctx.mediaType);
-			new Notice('Created connected note');
-			await this.reloadNotesList(ctx);
-		};
-		
 		// Build list area in content
 		const listWrap = this.contentEl.createDiv({ cls: 'zoro-note-panel-content' });
 		const emptyState = listWrap.createDiv({ cls: 'zoro-note-empty-state' });
@@ -223,83 +344,9 @@ class SidePanel extends ItemView {
 		
 		// Build connect interface in the fixed search container
 		const connectInterface = this.plugin.connectedNotes.renderConnectExistingInterface(this.searchContainerEl, ctx.searchIds, ctx.mediaType);
-		connectInterface.classList.add('zoro-note-hidden');
+		connectInterface.classList.add('zoro-note-hidden', 'zoro-connect-interface');
 
-		this.connectBtn.onclick = () => {
-			if (this.connectBtn.classList.contains('inactive') || this.connectBtn.classList.contains('disabled')) {
-				return; // Prevent action if disabled
-			}
-			
-			const isCurrentlyHidden = connectInterface.classList.contains('zoro-note-hidden');
-			connectInterface.classList.toggle('zoro-note-hidden');
-			
-			// Show/hide the search container based on interface visibility
-			this.showSearchContainer(!isCurrentlyHidden);
-			
-			if (!connectInterface.classList.contains('zoro-note-hidden')) {
-				const inp = connectInterface.querySelector('.zoro-note-search-input');
-				setTimeout(() => inp?.focus(), 100);
-			}
-		};
-
-		// Wire inline Details and Edit buttons if media/entry context is available
-		this.detailsBtn.onclick = async () => {
-			if (this.detailsBtn.classList.contains('inactive') || this.detailsBtn.classList.contains('disabled')) {
-				return; // Prevent action if disabled
-			}
-			
-			try {
-				if (this.currentMode === 'details') {
-					this.clearEmbed();
-					return;
-				}
-				const media = ctx?.media || ctx?.entry?.media || null;
-				if (!media) {
-					new Notice('No media selected');
-					return;
-				}
-				await this.showDetailsForMedia(media, ctx?.entry || null);
-			} catch (e) {
-				console.error('[Zoro][SidePanel] Failed to show details inline', e);
-			}
-		};
-
-		this.editInlineBtn.onclick = async () => {
-			if (this.editInlineBtn.classList.contains('inactive') || this.editInlineBtn.classList.contains('disabled')) {
-				return; // Prevent action if disabled
-			}
-			
-			try {
-				if (this.currentMode === 'edit') {
-					this.clearEmbed();
-					return;
-				}
-				let entry = ctx?.entry || null;
-				let source = (ctx?.entry?._zoroMeta?.source || ctx?.source || this.plugin?.settings?.defaultApiSource || 'anilist');
-				if (!entry) {
-					const media = ctx?.media || null;
-					if (!media) {
-						new Notice('No entry to edit');
-						return;
-					}
-					// Create a minimal entry object compatible with edit form
-					entry = {
-						media,
-						status: 'PLANNING',
-						progress: 0,
-						score: null,
-						id: null,
-						_zoroMeta: { source: source, mediaType: (media.type || media.format || ctx?.mediaType || 'ANIME') }
-					};
-				}
-
-				await this.showEditForEntry(entry, { source });
-			} catch (e) {
-				console.error('[Zoro][SidePanel] Failed to show edit inline', e);
-			}
-		};
-
-		// Update button states after setting up event handlers
+		// Update button states after setting up UI
 		this.updateButtonStates();
 
 		let disposed = false;

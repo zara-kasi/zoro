@@ -17,11 +17,11 @@ var __copyProps = (to, from, except, desc) => {
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // src/index.js
-var src_exports = {};
-__export(src_exports, {
-  default: () => src_default
+var index_exports = {};
+__export(index_exports, {
+  default: () => index_default
 });
-module.exports = __toCommonJS(src_exports);
+module.exports = __toCommonJS(index_exports);
 var import_obsidian32 = require("obsidian");
 
 // src/cache/Cache.js
@@ -30,33 +30,76 @@ var Cache = class {
   constructor(config = {}) {
     const {
       ttlMap = {},
+      // Custom TTL overrides (usually empty on first run)
       obsidianPlugin = null,
+      // Reference to the main Obsidian plugin instance
       maxSize = 1e4,
+      // Max items before we start evicting old stuff
       compressionThreshold = 1024,
+      // Compress data bigger than 1KB (saves memory)
       batchSize = 100
+      // How many items to process at once (prevents UI freezing)
     } = config;
     this.ttlMap = {
       userData: 30 * 60 * 1e3,
-      // 30 minutes for ALL APIs
+      // 30 minutes - user profiles change occasionally
       mediaData: 10 * 60 * 1e3,
-      // 10 minutes for ALL APIs  
+      // 10 minutes - show info is mostly static
       searchResults: 2 * 60 * 1e3,
-      // 2 minutes for ALL APIs
+      // 2 minutes - search results get stale fast
       mediaDetails: 60 * 60 * 1e3
-      // 1 hour for ALL APIs
+      // 1 hour - detailed info rarely changes
     };
     this.stores = {};
-    this.indexes = { byUser: /* @__PURE__ */ new Map(), byMedia: /* @__PURE__ */ new Map(), byTag: /* @__PURE__ */ new Map() };
+    this.indexes = {
+      byUser: /* @__PURE__ */ new Map(),
+      byMedia: /* @__PURE__ */ new Map(),
+      byTag: /* @__PURE__ */ new Map()
+    };
     this.apiSources = ["anilist", "mal", "simkl"];
     this.version = "3.2.0";
     this.maxSize = maxSize;
     this.compressionThreshold = compressionThreshold;
     this.batchSize = batchSize;
     this.obsidianPlugin = obsidianPlugin;
-    this.intervals = { prune: null, refresh: null, save: null };
-    this.flags = { autoPrune: false, backgroundRefresh: false };
-    this.stats = { hits: 0, misses: 0, sets: 0, deletes: 0, evictions: 0, compressions: 0 };
-    this.state = { loading: false, saving: false, lastSaved: null, lastLoaded: null };
+    this.intervals = {
+      prune: null,
+      // Removes expired entries
+      refresh: null,
+      // Updates stale data proactively 
+      save: null
+      // Persists cache to disk periodically
+    };
+    this.flags = {
+      autoPrune: false,
+      // Automatically clean up expired entries
+      backgroundRefresh: false
+      // Refresh stale data in the background
+    };
+    this.stats = {
+      hits: 0,
+      // Cache hits (good!)
+      misses: 0,
+      // Cache misses (means we had to fetch from API)
+      sets: 0,
+      // How many times we stored something
+      deletes: 0,
+      // Manual deletions
+      evictions: 0,
+      // Forced deletions due to size limits
+      compressions: 0
+      // How often we compressed large data
+    };
+    this.state = {
+      loading: false,
+      // Are we currently loading from disk?
+      saving: false,
+      // Are we currently saving to disk?
+      lastSaved: null,
+      // When did we last successfully save?
+      lastLoaded: null
+      // When did we last load from disk?
+    };
     this.accessLog = /* @__PURE__ */ new Map();
     this.refreshCallbacks = /* @__PURE__ */ new Map();
     this.loadQueue = /* @__PURE__ */ new Set();
@@ -100,7 +143,16 @@ var Cache = class {
     return JSON.stringify(normalized);
   }
   structuredKey(scope, type, id, meta = {}) {
-    return this.key({ __scope: scope, __type: type, __id: String(id), ...meta });
+    return this.key({
+      __scope: scope,
+      // Which API or data source (anilist, mal, simkl)
+      __type: type,
+      // What kind of data (user, anime, search, etc.)
+      __id: String(id),
+      // The specific identifier (always stringify for consistency)
+      ...meta
+      // Any additional parameters that affect the data
+    });
   }
   compositeScope(scope, source) {
     if (!source) return scope;
@@ -109,9 +161,18 @@ var Cache = class {
   parseCompositeScope(compositeScope) {
     const parts = compositeScope.split(":");
     if (parts.length >= 2 && this.apiSources.includes(parts[0])) {
-      return { source: parts[0], scope: parts.slice(1).join(":") };
+      return {
+        source: parts[0],
+        // Extract the API source (anilist, mal, simkl)
+        scope: parts.slice(1).join(":")
+        // Rejoin the rest as the actual scope
+      };
     }
-    return { source: null, scope: compositeScope };
+    return {
+      source: null,
+      scope: compositeScope
+      // Return the original string unchanged
+    };
   }
   getStore(scope, source = null) {
     const compositeScope = this.compositeScope(scope, source);
@@ -128,11 +189,17 @@ var Cache = class {
   }
   compress(data) {
     const str = JSON.stringify(data);
-    if (str.length < this.compressionThreshold) return { data, compressed: false };
+    if (str.length < this.compressionThreshold) {
+      return { data, compressed: false };
+    }
     try {
       const compressed = this.simpleCompress(str);
       this.stats.compressions++;
-      return { data: compressed, compressed: true, originalSize: str.length };
+      return {
+        data: compressed,
+        compressed: true,
+        originalSize: str.length
+      };
     } catch {
       return { data, compressed: false };
     }
@@ -255,11 +322,17 @@ var Cache = class {
     const compressed = this.compress(value);
     const entry = {
       ...compressed,
+      // The actual compressed data
       timestamp: Date.now(),
+      // When this was stored (for TTL calculations)
       customTtl: ttl,
+      // Custom expiry override if provided
       tags,
+      // Tags for categorization and bulk operations
       accessCount: 1,
+      // Start at 1 since we're "accessing" it by setting it
       source
+      // Track where this came from for debugging
     };
     store.set(cacheKey, entry);
     this.updateIndexes(cacheKey, entry);
@@ -1821,6 +1894,7 @@ var import_obsidian3 = require("obsidian");
 // src/core/ZoroError.js
 var import_obsidian2 = require("obsidian");
 var ZoroError = class _ZoroError {
+  // Singleton pattern - only one error handler instance per plugin
   static instance(plugin) {
     if (!_ZoroError._singleton) _ZoroError._singleton = new _ZoroError(plugin);
     return _ZoroError._singleton;
@@ -1831,7 +1905,7 @@ var ZoroError = class _ZoroError {
     this.recoveryStrategies = /* @__PURE__ */ new Map();
     this.initRecoveryStrategies();
   }
-  // Main entry point for creating errors with user notifications
+  // Main way to show error messages to users - keeps them friendly and not spammy
   static notify(message, severity = "error", duration = null) {
     const instance = _ZoroError.instance();
     if (!instance.isRateLimited(message)) {
@@ -1844,7 +1918,7 @@ var ZoroError = class _ZoroError {
     }
     return new Error(message);
   }
-  // Guard function with automatic recovery
+  // Wraps risky functions and tries to recover automatically before bothering the user
   static async guard(fn, recoveryStrategy = null) {
     const instance = _ZoroError.instance();
     try {
@@ -1864,7 +1938,7 @@ var ZoroError = class _ZoroError {
       throw error;
     }
   }
-  // Retry mechanism for network/temporary failures
+  // Keep trying something a few times before giving up - useful for network stuff
   static async withRetry(fn, maxRetries = 2) {
     const instance = _ZoroError.instance();
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -1880,7 +1954,7 @@ var ZoroError = class _ZoroError {
       }
     }
   }
-  // Initialize simple recovery strategies
+  // Set up different ways to handle common problems
   initRecoveryStrategies() {
     this.recoveryStrategies.set("cache", async (error, originalFn) => {
       if (this.isNetworkError(error)) {
@@ -1903,7 +1977,7 @@ var ZoroError = class _ZoroError {
       return { error: true, message: "Limited functionality available" };
     });
   }
-  // Convert technical errors to user-friendly messages
+  // Turn scary technical error messages into friendly user messages
   getUserMessage(message, severity) {
     const lowerMessage = message.toLowerCase();
     if (lowerMessage.includes("network") || lowerMessage.includes("fetch") || lowerMessage.includes("connection") || lowerMessage.includes("timeout")) {
@@ -1923,13 +1997,17 @@ var ZoroError = class _ZoroError {
     }
     const prefixes = {
       fatal: "\u{1F9E8} Critical error occurred",
+      // really bad
       error: "\u274C Something went wrong",
+      // bad but not end of world
       warn: "\u26A0\uFE0F Minor issue detected",
+      // heads up
       info: "\u2139\uFE0F Information"
+      // just FYI
     };
     return `${prefixes[severity] || prefixes.error}. Please try again.`;
   }
-  // Prevent notification spam
+  // Don't spam users with the same error message over and over
   isRateLimited(message) {
     const now = Date.now();
     const key = this.getMessageKey(message);
@@ -1943,28 +2021,36 @@ var ZoroError = class _ZoroError {
     }
     return false;
   }
-  // Get notice duration based on severity
+  // How long to show different types of notifications
   getNoticeDuration(severity) {
     const durations = {
       fatal: 1e4,
+      // critical stuff stays longer
       error: 6e3,
+      // regular errors
       warn: 4e3,
+      // warnings are shorter
       info: 3e3
+      // info disappears quickly
     };
     return durations[severity] || 5e3;
   }
-  // Helper methods
+  // Check if this looks like a network problem
   isNetworkError(error) {
     const message = error.message?.toLowerCase() || "";
     return message.includes("network") || message.includes("fetch") || message.includes("timeout") || message.includes("connection");
   }
+  // Check if this is probably temporary and worth retrying
   isTemporaryError(error) {
     const message = error.message?.toLowerCase() || "";
     return message.includes("temporary") || message.includes("retry") || message.includes("503") || message.includes("502");
   }
+  // Create a simplified version of error messages for rate limiting
+  // This way "Error 404 on page 1" and "Error 404 on page 2" are treated as the same
   getMessageKey(message) {
     return message.replace(/\d+/g, "").replace(/[^\w\s]/g, "").trim().toLowerCase();
   }
+  // Clean up old rate limit entries so we don't leak memory
   cleanupRateLimit() {
     const now = Date.now();
     const cutoff = now - 6e4;
@@ -1974,10 +2060,11 @@ var ZoroError = class _ZoroError {
       }
     }
   }
+  // Simple promise-based sleep function
   sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
-  // Cleanup when plugin unloads
+  // Clean up when the plugin gets disabled
   destroy() {
     this.noticeRateLimit.clear();
     this.recoveryStrategies.clear();
@@ -6733,141 +6820,6 @@ var Trending = class {
       throw error;
     }
   }
-  async fetchTMDbTrending(mediaType = "MOVIE", limit = 40) {
-    const tmdbApiKey = this.plugin.settings.tmdbApiKey;
-    if (!tmdbApiKey) {
-      console.error("[Trending] TMDb API key not configured");
-      throw new Error("TMDb API key is required. Please add it in settings.");
-    }
-    const typeUpper = (mediaType || "MOVIE").toUpperCase();
-    const cacheKey = this.getTrendingCacheKey("tmdb", mediaType, limit);
-    const cached = this.plugin.cache.get(cacheKey, {
-      scope: "mediaData"
-    });
-    if (cached) {
-      return cached;
-    }
-    let endpoint;
-    if (typeUpper === "MOVIE" || typeUpper === "MOVIES") {
-      endpoint = "trending/movie/day";
-    } else if (typeUpper === "TV" || typeUpper === "SHOW" || typeUpper === "SHOWS") {
-      endpoint = "trending/tv/day";
-    } else {
-      console.log("[Trending] TMDb skipping anime request - should use AniList");
-      return [];
-    }
-    const pages = Math.ceil(limit / 20);
-    const allResults = [];
-    try {
-      for (let page = 1; page <= pages; page++) {
-        const url = `https://api.themoviedb.org/3/${endpoint}?api_key=${tmdbApiKey}&page=${page}`;
-        const requestFn = () => fetch(url, { headers: { "Accept": "application/json", "Content-Type": "application/json" } });
-        const response = await this.plugin.requestQueue.add(requestFn, { priority: "normal", service: "tmdb", metadata: { type: "trending" } });
-        if (!response || !response.ok) {
-          const errorText = response ? await response.text() : "No response";
-          console.error("[Trending] TMDb error response:", errorText);
-          throw new Error(`TMDb API error: ${response ? response.status : "NO-RESP"} - ${errorText}`);
-        }
-        const data = await response.json();
-        if (!data.results || !Array.isArray(data.results)) {
-          console.error("[Trending] Invalid TMDb response format:", data);
-          throw new Error("Invalid response format from TMDb");
-        }
-        allResults.push(...data.results);
-        if (allResults.length >= limit) break;
-      }
-      const mediaList = allResults.slice(0, limit).map((item) => this.transformTMDbMedia(item, mediaType)).filter(Boolean);
-      try {
-        const idsToFetch = mediaList.map((m) => m.idTmdb).filter(Boolean).slice(0, 20);
-        const fetches = idsToFetch.map((id) => {
-          const url = `https://api.themoviedb.org/3/${typeUpper.includes("MOVIE") ? "movie" : "tv"}/${id}/external_ids?api_key=${tmdbApiKey}`;
-          const requestFn = () => fetch(url);
-          return this.plugin.requestQueue.add(requestFn, { priority: "low", service: "tmdb", metadata: { type: "external_ids" } }).then((r) => r && r.ok ? r.json() : null).catch(() => null);
-        });
-        const results = await Promise.all(fetches);
-        const tmdbToImdb = /* @__PURE__ */ new Map();
-        results.forEach((ext, idx) => {
-          if (ext && (ext.imdb_id || ext.imdb)) {
-            tmdbToImdb.set(idsToFetch[idx], ext.imdb_id || ext.imdb);
-          }
-        });
-        mediaList.forEach((m) => {
-          const imdb = tmdbToImdb.get(m.idTmdb);
-          if (imdb) {
-            m.idImdb = imdb;
-            if (!m.ids) m.ids = {};
-            m.ids.imdb = imdb;
-          }
-        });
-      } catch {
-      }
-      this.plugin.cache.set(cacheKey, mediaList, {
-        scope: "mediaData",
-        ttl: 24 * 60 * 60 * 1e3,
-        tags: ["trending", mediaType.toLowerCase()]
-      });
-      return mediaList;
-    } catch (error) {
-      console.error("[Trending] TMDb fetch failed:", error);
-      const staleData = this.plugin.cache.get(cacheKey, {
-        scope: "mediaData",
-        ttl: Infinity
-      });
-      if (staleData) {
-        return staleData;
-      }
-      throw error;
-    }
-  }
-  transformTMDbMedia(item, mediaType) {
-    try {
-      const isMovie = mediaType.toUpperCase() === "MOVIE" || mediaType.toUpperCase() === "MOVIES";
-      return {
-        id: item.id,
-        idTmdb: item.id,
-        idImdb: null,
-        ids: {
-          tmdb: item.id,
-          imdb: null
-        },
-        title: {
-          english: isMovie ? item.title : item.name,
-          romaji: null,
-          native: null
-        },
-        coverImage: {
-          large: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : null,
-          medium: item.poster_path ? `https://image.tmdb.org/t/p/w342${item.poster_path}` : null
-        },
-        bannerImage: item.backdrop_path ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}` : null,
-        format: isMovie ? "MOVIE" : "TV",
-        averageScore: item.vote_average ? Math.round(item.vote_average * 10) : null,
-        popularity: item.popularity,
-        genres: item.genre_ids || [],
-        episodes: null,
-        status: null,
-        description: item.overview || null,
-        startDate: {
-          year: null,
-          month: null,
-          day: null
-        },
-        releaseDate: isMovie ? item.release_date : item.first_air_date,
-        _zoroMeta: {
-          mediaType: mediaType.toUpperCase(),
-          fetchedAt: Date.now(),
-          trending: {
-            popularity: item.popularity,
-            voteAverage: item.vote_average,
-            voteCount: item.vote_count
-          }
-        }
-      };
-    } catch (error) {
-      console.error("[Trending] Failed to transform TMDb item:", item, error);
-      return null;
-    }
-  }
   async fetchJikanTrending(mediaType = "anime", limit = 40) {
     const type = mediaType.toLowerCase();
     const cacheKey = this.getTrendingCacheKey("mal", mediaType, limit);
@@ -7010,16 +6962,142 @@ var Trending = class {
       throw error;
     }
   }
+  async fetchSimklTrending(mediaType = "MOVIE", limit = 40) {
+    const simklClientId = this.plugin.settings.simklClientId;
+    if (!simklClientId) {
+      throw new Error("Simkl Client ID is required. Please add it in settings.");
+    }
+    const typeUpper = (mediaType || "MOVIE").toUpperCase();
+    const cacheKey = this.getTrendingCacheKey("simkl", mediaType, limit);
+    const cached = this.plugin.cache.get(cacheKey, {
+      scope: "mediaData",
+      source: "simkl"
+    });
+    if (cached) {
+      return cached;
+    }
+    let endpoint;
+    if (typeUpper === "MOVIE" || typeUpper === "MOVIES") {
+      endpoint = "movies/trending";
+    } else if (typeUpper === "TV" || typeUpper === "SHOW" || typeUpper === "SHOWS") {
+      endpoint = "tv/trending";
+    } else {
+      return [];
+    }
+    try {
+      const url = `https://api.simkl.com/${endpoint}?limit=${limit}`;
+      const requestFn = () => fetch(url, {
+        headers: {
+          "Accept": "application/json",
+          "simkl-api-key": simklClientId
+        }
+      });
+      const response = await this.plugin.requestQueue.add(requestFn, {
+        priority: "normal",
+        service: "simkl",
+        metadata: { type: "trending" }
+      });
+      if (!response || !response.ok) {
+        const errorText = response ? await response.text() : "No response";
+        throw new Error(`Simkl API error: ${response ? response.status : "NO-RESP"} - ${errorText}`);
+      }
+      const data = await response.json();
+      if (!Array.isArray(data)) {
+        throw new Error("Invalid response format from Simkl - expected array");
+      }
+      const mediaList = data.slice(0, limit).map((item) => this.transformSimklTrendingMedia(item, mediaType)).filter(Boolean);
+      this.plugin.cache.set(cacheKey, mediaList, {
+        scope: "mediaData",
+        source: "simkl",
+        ttl: 24 * 60 * 60 * 1e3,
+        tags: ["trending", mediaType.toLowerCase(), "simkl"]
+      });
+      return mediaList;
+    } catch (error) {
+      const staleData = this.plugin.cache.get(cacheKey, {
+        scope: "mediaData",
+        source: "simkl",
+        ttl: Infinity
+      });
+      if (staleData) {
+        return staleData;
+      }
+      throw error;
+    }
+  }
+  transformSimklTrendingMedia(item, mediaType) {
+    try {
+      const isMovie = mediaType.toUpperCase() === "MOVIE" || mediaType.toUpperCase() === "MOVIES";
+      const title = item.rank ? `Rank: ${item.rank}` : `Rank Unknown`;
+      const simklId = item.ids?.simkl_id || item.ids?.simkl || item.id || null;
+      const tmdbId = item.ids?.tmdb || null;
+      const imdbId = item.ids?.imdb || null;
+      const posterUrl = item.poster ? `https://simkl.in/posters/${item.poster}_m.jpg` : null;
+      const fanartUrl = item.fanart ? `https://simkl.in/fanart/${item.fanart}_m.jpg` : null;
+      let year = null;
+      if (item.release_date) {
+        const dateMatch = item.release_date.match(/(\d{4})/);
+        year = dateMatch ? parseInt(dateMatch[1]) : null;
+      }
+      const simklRating = item.ratings?.simkl?.rating || null;
+      const averageScore = simklRating ? Math.round(simklRating * 10) : null;
+      return {
+        id: simklId,
+        idTmdb: tmdbId,
+        idImdb: imdbId,
+        idSimkl: simklId,
+        ids: {
+          simkl: simklId,
+          tmdb: tmdbId,
+          imdb: imdbId
+        },
+        title: {
+          english: title,
+          romaji: null,
+          native: null
+        },
+        coverImage: {
+          large: posterUrl,
+          medium: posterUrl
+        },
+        bannerImage: fanartUrl,
+        format: isMovie ? "MOVIE" : "TV",
+        averageScore,
+        popularity: item.watched || null,
+        genres: item.genres || [],
+        episodes: isMovie ? 1 : item.total_episodes || null,
+        status: item.status ? item.status.toUpperCase() : null,
+        description: item.overview || null,
+        startDate: {
+          year,
+          month: null,
+          day: null
+        },
+        releaseDate: item.release_date || null,
+        _zoroMeta: {
+          source: "simkl",
+          mediaType: mediaType.toUpperCase(),
+          fetchedAt: Date.now(),
+          trending: {
+            watched: item.watched,
+            planToWatch: item.plan_to_watch,
+            rating: simklRating,
+            rank: item.rank
+          }
+        }
+      };
+    } catch (error) {
+      return null;
+    }
+  }
   async fetchTrending(source, mediaType, limit = 40) {
     const typeUpper = String(mediaType || "").toUpperCase();
     if (typeUpper === "MOVIE" || typeUpper === "MOVIES" || typeUpper === "TV" || typeUpper === "SHOW" || typeUpper === "SHOWS") {
-      return await this.fetchTMDbTrending(typeUpper.includes("MOVIE") ? "MOVIE" : "TV", limit);
+      return await this.fetchSimklTrending(typeUpper.includes("MOVIE") ? "MOVIE" : "TV", limit);
     }
     switch ((source || "").toLowerCase()) {
       case "mal":
         return await this.fetchJikanTrending(mediaType, limit);
-      case "simkl":
-        return await this.fetchSimklTrending(mediaType, limit);
       case "anilist":
       default:
         return await this.fetchAniListTrending(mediaType, limit);
@@ -7040,15 +7118,16 @@ var Trending = class {
         () => this.fetchTrending(source, normalizedType, limit)
       );
       items.forEach((item) => {
-        const isTmdb = ["MOVIE", "MOVIES", "TV", "SHOW", "SHOWS"].includes((config.mediaType || "").toUpperCase());
+        const isSimkl = ["MOVIE", "MOVIES", "TV", "SHOW", "SHOWS"].includes((config.mediaType || "").toUpperCase());
         if (!item._zoroMeta) {
           item._zoroMeta = {
-            source: isTmdb ? "tmdb" : source,
+            source: isSimkl ? "simkl" : source,
+            // Changed from 'tmdb' to 'simkl'
             mediaType: config.mediaType || "ANIME",
             fetchedAt: Date.now()
           };
         } else {
-          item._zoroMeta.source = isTmdb ? "tmdb" : source;
+          item._zoroMeta.source = isSimkl ? "simkl" : source;
           item._zoroMeta.mediaType = config.mediaType || "ANIME";
           item._zoroMeta.fetchedAt = Date.now();
         }
@@ -7538,7 +7617,13 @@ var RenderEditModal = class {
       favBtn.style.display = "none";
       return favBtn;
     }
-    favBtn.className = entry.media.isFavourite ? "zoro-fav-btn zoro-heart" : "zoro-fav-btn zoro-no-heart";
+    if (entry.media.isFavourite) {
+      favBtn.className = "zoro-fav-btn zoro-heart";
+      favBtn.createEl("span", { text: "\u2764\uFE0F" });
+    } else {
+      favBtn.className = "zoro-fav-btn zoro-no-heart";
+      favBtn.createEl("span", { text: "\u{1F90D}" });
+    }
     favBtn.onclick = () => onToggle(entry, favBtn, source);
     return favBtn;
   }
@@ -7631,18 +7716,20 @@ var RenderEditModal = class {
   }
   createScoreField(entry) {
     const config = this.config.fields.score;
+    const scoreOptions = [
+      { value: "", label: "Unrated" }
+      // Default/empty option
+    ];
+    for (let i = 1; i <= config.max; i += config.step) {
+      scoreOptions.push({ value: i.toString(), label: i.toString() });
+    }
     return this.createFormField({
-      type: "number",
+      type: "select",
       label: `${config.label} (${config.min}\u2013${config.max})`,
       emoji: config.emoji,
       id: config.id,
-      value: entry.score,
-      options: {
-        min: config.min,
-        max: config.max,
-        step: config.step,
-        placeholder: `e.g. ${config.max / 2 + config.max / 5}`
-      }
+      value: entry.score !== null && entry.score !== void 0 ? entry.score.toString() : "",
+      options: { items: scoreOptions }
     });
   }
   createProgressField(entry) {
@@ -8002,6 +8089,7 @@ var import_obsidian18 = require("obsidian");
 // src/core/constants.js
 var GRID_COLUMN_OPTIONS = {
   DEFAULT: "default",
+  // responsive - adapts to screen size automatically
   ONE: "1",
   TWO: "2",
   THREE: "3",
@@ -8011,6 +8099,7 @@ var GRID_COLUMN_OPTIONS = {
 };
 var GRID_COLUMN_LABELS = {
   [GRID_COLUMN_OPTIONS.DEFAULT]: "Default (Responsive)",
+  // using bracket notation to reference the constant
   [GRID_COLUMN_OPTIONS.ONE]: "1 Column",
   [GRID_COLUMN_OPTIONS.TWO]: "2 Columns",
   [GRID_COLUMN_OPTIONS.THREE]: "3 Columns",
@@ -8019,49 +8108,114 @@ var GRID_COLUMN_LABELS = {
   [GRID_COLUMN_OPTIONS.SIX]: "6 Columns"
 };
 var DEFAULT_SETTINGS = {
+  // Basic API settings
   defaultApiSource: "anilist",
+  // which API to use by default
   defaultApiUserOverride: false,
+  // let users pick different APIs per search
   defaultUsername: "",
+  // leave empty to use logged-in user
+  // How things look and behave
   defaultLayout: "card",
+  // card view looks nicer than list
   notePath: "Zoro/Note",
+  // where to save notes
   insertCodeBlockOnNote: true,
+  // makes the notes look better in markdown
   showCoverImages: true,
   showRatings: true,
   showProgress: true,
+  // show how much you've watched/read
   showGenres: false,
+  // can get cluttered, so off by default
   showLoadingIcon: true,
   gridColumns: GRID_COLUMN_OPTIONS.DEFAULT,
-  // Changed from numeric to string option
+  // use responsive grid
+  // Theme stuff
   theme: "",
+  // empty means use default theme
   hideUrlsInTitles: true,
+  // URLs in titles look ugly
   forceScoreFormat: true,
+  // makes scores consistent across different sites
   showAvatar: true,
   showFavorites: true,
   showBreakdowns: true,
+  // detailed stats are cool
   showTimeStats: true,
+  // show time spent watching/reading
   statsLayout: "enhanced",
+  // enhanced looks better than basic
   statsTheme: "auto",
+  // auto-detect light/dark mode
+  // AniList API stuff - need to register app to get these
   clientId: "",
   clientSecret: "",
   redirectUri: "https://anilist.co/api/v2/oauth/pin",
+  // standard AniList OAuth URL
   accessToken: "",
+  // gets filled in after user logs in
+  // MyAnimeList API - more complex auth system
   malClientId: "",
   malClientSecret: "",
   malAccessToken: "",
   malRefreshToken: "",
+  // MAL tokens expire, so need refresh token
   malTokenExpiry: null,
+  // timestamp when token expires
   malUserInfo: null,
+  // cache user info so we don't have to fetch it every time
+  // Simkl API - simpler than MAL
   simklClientId: "",
   simklClientSecret: "",
   simklAccessToken: "",
   simklUserInfo: null,
+  // Search configuration
   autoFormatSearchUrls: true,
+  // clean up messy URLs automatically
   customSearchUrls: {
+    // let users add their own search sites
     ANIME: [],
     MANGA: [],
     MOVIE_TV: []
   },
-  tmdbApiKey: ""
+  // TMDB for movies and TV shows
+  tmdbApiKey: "",
+  // free API key from themoviedb.org
+  // Let users customize what the properties are called in their notes
+  // This is useful if you want "rating" to be called "score" or whatever
+  customPropertyNames: {
+    title: "title",
+    aliases: "aliases",
+    // alternate names
+    format: "format",
+    // TV, Movie, OVA, etc.
+    status: "status",
+    // watching, completed, etc.
+    rating: "rating",
+    favorite: "favorite",
+    total_episodes: "total_episodes",
+    total_chapters: "total_chapters",
+    episodes_watched: "episodes_watched",
+    chapters_read: "chapters_read",
+    volumes_read: "volumes_read",
+    // for manga
+    mal_id: "mal_id",
+    // MyAnimeList database ID
+    anilist_id: "anilist_id",
+    // AniList database ID  
+    simkl_id: "simkl_id",
+    imdb_id: "imdb_id",
+    tmdb_id: "tmdb_id",
+    media_type: "media_type",
+    cover: "cover",
+    // cover image URL
+    genres: "genres",
+    urls: "urls",
+    // related links
+    tags: "tags"
+    // user tags
+  }
 };
 
 // src/rendering/helpers/DOMHelper.js
@@ -8372,9 +8526,9 @@ var Edit = class {
         { value: "REPEATING", label: "Repeating", emoji: "\u{1F504}" }
       ],
       fields: {
-        status: { label: "Status", emoji: "\u{1F9FF}", id: "zoro-status" },
-        score: { label: "Score", emoji: "\u2B50", id: "zoro-score", min: 0, max: 10, step: 1 },
-        progress: { label: "Progress", emoji: "\u{1F4CA}", id: "zoro-progress" }
+        status: { label: "Status", emoji: "", id: "zoro-status" },
+        score: { label: "Score", emoji: "", id: "zoro-score", min: 1, max: 10, step: 1 },
+        progress: { label: "Progress", emoji: "", id: "zoro-progress" }
       },
       buttons: {
         save: { label: "Save", class: "zoro-save-btn" },
@@ -8406,17 +8560,6 @@ var Edit = class {
     return null;
   }
   createInlineEdit(entry, onSave, onCancel, source = "anilist", mountContainer = null) {
-    if (!mountContainer || !mountContainer.appendChild) {
-      try {
-        const media = entry?.media;
-        const mediaType = entry?._zoroMeta?.mediaType || media?.type || media?.format || "ANIME";
-        const resolvedSource = entry?._zoroMeta?.source || source || "anilist";
-        this.plugin.connectedNotes.openSidePanelWithContext({ media, entry, source: resolvedSource, mediaType }).then((view) => view.showEditForEntry(entry, { source: resolvedSource }));
-        return null;
-      } catch (e) {
-        console.error("[Zoro][Edit] Failed to route to Side Panel for inline edit", e);
-      }
-    }
     const isTmdb = (entry._zoroMeta?.source || source) === "tmdb";
     const mt = (entry._zoroMeta?.mediaType || "").toUpperCase();
     const actualSource = isTmdb && (mt === "MOVIE" || mt === "MOVIES" || mt === "TV" || mt === "SHOW" || mt === "SHOWS") ? "simkl" : entry._zoroMeta?.source || source;
@@ -8474,7 +8617,25 @@ var Edit = class {
     } else {
       favoriteBtn.style.display = "none";
     }
-    mountContainer.appendChild(container);
+    if (mountContainer && mountContainer.appendChild) {
+      mountContainer.appendChild(container);
+    } else {
+      try {
+        const media = entry?.media;
+        const mediaType = entry?._zoroMeta?.mediaType || media?.type || media?.format || "ANIME";
+        const resolvedSource = entry?._zoroMeta?.source || source || "anilist";
+        this.plugin.connectedNotes.openSidePanelWithContext({ media, entry, source: resolvedSource, mediaType }).then((view) => {
+          if (view.embedEl) {
+            view.embedEl.appendChild(container);
+            view.currentMode = "edit";
+            view.showContentContainer(false);
+            view.showEmbedContainer(true);
+          }
+        });
+      } catch (e) {
+        console.error("[Zoro][Edit] Failed to route to Side Panel for inline edit", e);
+      }
+    }
     return { container, content, form };
   }
   async handleRemoveInline(entry, container, source) {
@@ -9244,13 +9405,6 @@ var RenderDetailPanel = class {
           this.addStatItem(statsGrid, "IMDB Ratings", imdbData.scored_by.toLocaleString(), "count-stat");
         }
       }
-      if (tmdbVoteAverage != null) {
-        console.log("[Details][Stats] TMDb score", tmdbVoteAverage, "votes", tmdbVoteCount);
-        this.addStatItem(statsGrid, "TMDb Score", `${tmdbVoteAverage.toFixed(1)}`, "score-stat tmdb-stat");
-        if (tmdbVoteCount != null) {
-          this.addStatItem(statsGrid, "TMDb Ratings", Number(tmdbVoteCount).toLocaleString(), "count-stat");
-        }
-      }
     }
     section.appendChild(statsGrid);
     return section;
@@ -9488,9 +9642,32 @@ var RenderDetailPanel = class {
     if (!str) return "";
     return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
   }
+  // Add this method to your RenderDetailPanel class or update the existing one
   positionPanel(panel, triggerElement) {
     if (!panel.classList.contains("zoro-more-details-panel")) {
       panel.classList.add("zoro-more-details-panel");
+    }
+    if (panel.classList.contains("zoro-inline")) {
+      panel.style.position = "static";
+      panel.style.top = "auto";
+      panel.style.left = "auto";
+      panel.style.right = "auto";
+      panel.style.bottom = "auto";
+      panel.style.transform = "none";
+      panel.style.zIndex = "auto";
+      panel.style.width = "100%";
+      panel.style.height = "auto";
+      panel.style.maxHeight = "none";
+      panel.style.margin = "0";
+      panel.style.padding = "4px";
+      panel.style.border = "none";
+      panel.style.borderRadius = "0";
+      panel.style.boxShadow = "none";
+      panel.style.background = "transparent";
+      const closeBtn = panel.querySelector(".panel-close-btn");
+      if (closeBtn) {
+        closeBtn.style.display = "none";
+      }
     }
   }
   cleanupCountdowns(panel) {
@@ -9776,12 +9953,13 @@ var DetailPanelSource = class {
   }
   async fetchIMDBData(imdbId, mediaType, simklData = null) {
     if (!imdbId) return null;
-    if (simklData && simklData._rawData) {
-      const rawData = simklData._rawData;
-      if (rawData.imdb_rating || rawData.imdb_score || rawData.imdb_votes) {
+    if (simklData) {
+      const ratings = simklData.ratings || simklData._rawData?.ratings;
+      const imdbRating = ratings?.imdb;
+      if (imdbRating && (imdbRating.rating || imdbRating.votes)) {
         const imdbData = {
-          score: rawData.imdb_rating || rawData.imdb_score || null,
-          scored_by: rawData.imdb_votes || null,
+          score: imdbRating.rating || null,
+          scored_by: imdbRating.votes || null,
           rank: null,
           imdbID: imdbId
         };
@@ -10066,8 +10244,16 @@ var OpenDetailPanel = class {
         const mediaType = entry?._zoroMeta?.mediaType || media?.type || media?.format || "ANIME";
         const source = entry?._zoroMeta?.source || "anilist";
         const view = await this.plugin.connectedNotes.openSidePanelWithContext({ media, entry, source, mediaType });
-        await view.showDetailsForMedia(media, entry);
-        return this.currentPanel;
+        panel.classList.add("zoro-inline");
+        this.renderer.positionPanel(panel, null);
+        const closeBtn = panel.querySelector(".panel-close-btn");
+        if (closeBtn) closeBtn.onclick = () => this.closePanel();
+        if (view.embedEl) {
+          view.embedEl.appendChild(panel);
+          view.currentMode = "details";
+          view.showContentContainer(false);
+          view.showEmbedContainer(true);
+        }
       } catch (err) {
         console.error("[Zoro][Details] Failed to open Side Panel for details", err);
       }
@@ -11461,6 +11647,7 @@ var CardRenderer = class {
     card.appendChild(info);
     const heart = document.createElement("span");
     heart.className = "zoro-heart";
+    heart.createEl("span", { text: "\u2764\uFE0F" });
     if (!media.isFavourite) heart.style.display = "none";
     card.appendChild(heart);
     return card;
@@ -11634,20 +11821,39 @@ var CardRenderer = class {
     }
     return title;
   }
+  createCreateNoteButton(media, entry, config) {
+    const createBtn = document.createElement("span");
+    createBtn.className = "zoro-note-obsidian";
+    createBtn.createEl("span", { text: "\u{1F4DD}" });
+    createBtn.title = "Create connected note";
+    createBtn.onclick = async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      try {
+        const source = this.apiHelper.detectSource(entry, config);
+        const mediaType = this.apiHelper.detectMediaType(entry, config, media);
+        const searchIds = this.plugin.connectedNotes.extractSearchIds(media, entry, source);
+        this.plugin.connectedNotes.currentMedia = media;
+        this.plugin.connectedNotes.currentEntry = entry;
+        this.plugin.connectedNotes.currentSource = source;
+        this.plugin.connectedNotes.currentMediaType = mediaType;
+        this.plugin.connectedNotes.currentUrls = this.plugin.connectedNotes.buildCurrentUrls(media, mediaType, source);
+        await this.plugin.connectedNotes.createNewConnectedNote(searchIds, mediaType);
+        new import_obsidian25.Notice("Created connected note");
+      } catch (error) {
+        console.error("[Zoro] Create note button error:", error);
+        new import_obsidian25.Notice("Failed to create connected note");
+      }
+    };
+    return createBtn;
+  }
   createMediaDetails(media, entry, config, isSearch) {
     const details = document.createElement("div");
     details.className = "media-details";
-    if (!isSearch && entry && entry.status) {
-      const statusBadge = this.createStatusBadge(entry, config);
-      details.appendChild(statusBadge);
-    }
-    const mt = String(config?.mediaType || "").toUpperCase();
-    const isMovieOrTv = mt === "MOVIE" || mt === "MOVIES" || mt === "TV" || mt === "SHOW" || mt === "SHOWS";
-    const isTrending = String(config?.type || "").toLowerCase() === "trending";
-    if (!(isTrending && isMovieOrTv)) {
-      const connectedNotesBtn = this.plugin.connectedNotes.createConnectedNotesButton(media, entry, config);
-      details.appendChild(connectedNotesBtn);
-    }
+    const createNoteBtn = this.createCreateNoteButton(media, entry, config);
+    details.appendChild(createNoteBtn);
+    const connectedNotesBtn = this.plugin.connectedNotes.createConnectedNotesButton(media, entry, config);
+    details.appendChild(connectedNotesBtn);
     return details;
   }
   createStatusBadge(entry, config) {
@@ -12749,6 +12955,9 @@ var EmojiIconMapper = class {
       "\u26A0\uFE0F": "triangle-alert",
       "\u{1F579}\uFE0F": "settings-2",
       "\u2611\uFE0F": "list-checks",
+      "\u{1FAD4}": "wrap-text",
+      "\u2764\uFE0F": "heart",
+      "\u{1F90D}": "heart-crack",
       ...Object.fromEntries(opts.map || [])
     }));
     this._sortedKeys = [...this.map.keys()].sort((a, b) => b.length - a.length);
@@ -12960,34 +13169,158 @@ var ConnectedNotes = class {
     this.currentUrls = null;
     this.currentSource = null;
     this.currentMediaType = null;
+    this.currentEntry = null;
   }
   /**
-  * Extract search IDs from media entry based on API source
-  */
+   * Get the custom property name from settings or return default
+   */
+  getPropertyName(defaultName) {
+    const customNames = this.plugin.settings?.customPropertyNames || {};
+    return customNames[defaultName] || defaultName;
+  }
+  /**
+   * Generate enhanced frontmatter properties with custom names
+   */
+  generateEnhancedFrontmatter(media, entry, mediaType) {
+    const enhanced = {};
+    if (!media) return enhanced;
+    if (media.title) {
+      enhanced[this.getPropertyName("title")] = media.title.english || media.title.romaji || media.title.native;
+    }
+    const aliases = [];
+    if (media.title) {
+      const mainTitle = enhanced[this.getPropertyName("title")];
+      if (media.title.romaji && media.title.romaji !== mainTitle) {
+        aliases.push(media.title.romaji);
+      }
+      if (media.title.native && media.title.native !== mainTitle) {
+        aliases.push(media.title.native);
+      }
+      if (media.title.english && media.title.english !== mainTitle) {
+        aliases.push(media.title.english);
+      }
+    }
+    if (aliases.length > 0) {
+      enhanced[this.getPropertyName("aliases")] = aliases;
+    }
+    if (media.format) {
+      enhanced[this.getPropertyName("format")] = media.format;
+    }
+    if (entry && entry.status) {
+      enhanced[this.getPropertyName("status")] = entry.status;
+    }
+    if (entry && entry.score !== null && entry.score !== void 0) {
+      enhanced[this.getPropertyName("rating")] = entry.score;
+    }
+    enhanced[this.getPropertyName("favorite")] = media.isFavourite || false;
+    if (media.episodes) {
+      enhanced[this.getPropertyName("total_episodes")] = media.episodes;
+    }
+    if (media.chapters) {
+      enhanced[this.getPropertyName("total_chapters")] = media.chapters;
+    }
+    if (entry && entry.progress !== null && entry.progress !== void 0) {
+      const typeUpper = (mediaType || "").toString().toUpperCase();
+      if (typeUpper === "ANIME" || typeUpper === "TV") {
+        enhanced[this.getPropertyName("episodes_watched")] = entry.progress;
+      } else if (typeUpper === "MANGA") {
+        enhanced[this.getPropertyName("chapters_read")] = entry.progress;
+        if (entry.progressVolumes !== null && entry.progressVolumes !== void 0) {
+          enhanced[this.getPropertyName("volumes_read")] = entry.progressVolumes;
+        }
+      }
+    }
+    if (media.coverImage) {
+      enhanced[this.getPropertyName("cover")] = media.coverImage.large || media.coverImage.medium;
+    }
+    if (media.genres && Array.isArray(media.genres) && media.genres.length > 0) {
+      enhanced[this.getPropertyName("genres")] = media.genres;
+    }
+    return enhanced;
+  }
+  buildOrderedFrontmatter(baseProps, enhancedProps, urls, tags) {
+    const orderedFrontmatter = {};
+    const titleProp = this.getPropertyName("title");
+    const aliasesProp = this.getPropertyName("aliases");
+    const formatProp = this.getPropertyName("format");
+    const statusProp = this.getPropertyName("status");
+    const ratingProp = this.getPropertyName("rating");
+    const favoriteProp = this.getPropertyName("favorite");
+    if (enhancedProps[titleProp] !== void 0) orderedFrontmatter[titleProp] = enhancedProps[titleProp];
+    if (enhancedProps[aliasesProp] !== void 0) orderedFrontmatter[aliasesProp] = enhancedProps[aliasesProp];
+    if (enhancedProps[formatProp] !== void 0) orderedFrontmatter[formatProp] = enhancedProps[formatProp];
+    if (enhancedProps[statusProp] !== void 0) orderedFrontmatter[statusProp] = enhancedProps[statusProp];
+    if (enhancedProps[ratingProp] !== void 0) orderedFrontmatter[ratingProp] = enhancedProps[ratingProp];
+    if (enhancedProps[favoriteProp] !== void 0) orderedFrontmatter[favoriteProp] = enhancedProps[favoriteProp];
+    const totalEpisodesProp = this.getPropertyName("total_episodes");
+    const totalChaptersProp = this.getPropertyName("total_chapters");
+    if (enhancedProps[totalEpisodesProp] !== void 0) orderedFrontmatter[totalEpisodesProp] = enhancedProps[totalEpisodesProp];
+    if (enhancedProps[totalChaptersProp] !== void 0) orderedFrontmatter[totalChaptersProp] = enhancedProps[totalChaptersProp];
+    const episodesWatchedProp = this.getPropertyName("episodes_watched");
+    const chaptersReadProp = this.getPropertyName("chapters_read");
+    const volumesReadProp = this.getPropertyName("volumes_read");
+    if (enhancedProps[episodesWatchedProp] !== void 0) orderedFrontmatter[episodesWatchedProp] = enhancedProps[episodesWatchedProp];
+    if (enhancedProps[chaptersReadProp] !== void 0) orderedFrontmatter[chaptersReadProp] = enhancedProps[chaptersReadProp];
+    if (enhancedProps[volumesReadProp] !== void 0) orderedFrontmatter[volumesReadProp] = enhancedProps[volumesReadProp];
+    const malIdProp = this.getPropertyName("mal_id");
+    const anilistIdProp = this.getPropertyName("anilist_id");
+    const simklIdProp = this.getPropertyName("simkl_id");
+    const imdbIdProp = this.getPropertyName("imdb_id");
+    const tmdbIdProp = this.getPropertyName("tmdb_id");
+    const mediaTypeProp = this.getPropertyName("media_type");
+    if (baseProps[malIdProp] !== void 0) orderedFrontmatter[malIdProp] = baseProps[malIdProp];
+    if (baseProps[anilistIdProp] !== void 0) orderedFrontmatter[anilistIdProp] = baseProps[anilistIdProp];
+    if (baseProps[simklIdProp] !== void 0) orderedFrontmatter[simklIdProp] = baseProps[simklIdProp];
+    if (baseProps[imdbIdProp] !== void 0) orderedFrontmatter[imdbIdProp] = baseProps[imdbIdProp];
+    if (baseProps[tmdbIdProp] !== void 0) orderedFrontmatter[tmdbIdProp] = baseProps[tmdbIdProp];
+    if (baseProps[mediaTypeProp] !== void 0) orderedFrontmatter[mediaTypeProp] = baseProps[mediaTypeProp];
+    const coverProp = this.getPropertyName("cover");
+    const genresProp = this.getPropertyName("genres");
+    if (enhancedProps[coverProp] !== void 0) orderedFrontmatter[coverProp] = enhancedProps[coverProp];
+    if (enhancedProps[genresProp] !== void 0) orderedFrontmatter[genresProp] = enhancedProps[genresProp];
+    const urlsProp = this.getPropertyName("urls");
+    const tagsProp = this.getPropertyName("tags");
+    if (urls !== void 0) orderedFrontmatter[urlsProp] = urls;
+    if (tags !== void 0) orderedFrontmatter[tagsProp] = tags;
+    Object.entries(baseProps).forEach(([key, value]) => {
+      if (orderedFrontmatter[key] === void 0) {
+        orderedFrontmatter[key] = value;
+      }
+    });
+    return orderedFrontmatter;
+  }
+  /**
+   * Extract search IDs from media entry based on API source
+   */
   extractSearchIds(media, entry, source) {
     const ids = {};
+    const malIdProp = this.getPropertyName("mal_id");
+    const anilistIdProp = this.getPropertyName("anilist_id");
+    const simklIdProp = this.getPropertyName("simkl_id");
+    const imdbIdProp = this.getPropertyName("imdb_id");
+    const tmdbIdProp = this.getPropertyName("tmdb_id");
     if (source === "mal") {
-      ids.mal_id = media.id;
+      ids[malIdProp] = media.id;
     } else if (source === "anilist") {
       if (media.idMal) {
-        ids.mal_id = media.idMal;
+        ids[malIdProp] = media.idMal;
       }
-      ids.anilist_id = media.id;
+      ids[anilistIdProp] = media.id;
     } else if (source === "simkl") {
-      ids.simkl_id = media.id;
+      ids[simklIdProp] = media.id;
       const mediaType = this.plugin.apiHelper ? this.plugin.apiHelper.detectMediaType(entry, {}, media) : entry?._zoroMeta?.mediaType || "ANIME";
       if (mediaType === "ANIME" && media.idMal) {
-        ids.mal_id = media.idMal;
+        ids[malIdProp] = media.idMal;
       }
       if (mediaType !== "ANIME" && media.idImdb) {
-        ids.imdb_id = media.idImdb;
+        ids[imdbIdProp] = media.idImdb;
       }
       if (mediaType !== "ANIME" && media.idTmdb) {
-        ids.tmdb_id = media.idTmdb;
+        ids[tmdbIdProp] = media.idTmdb;
       }
     } else if (source === "tmdb") {
-      if (media.idTmdb || media.id) ids.tmdb_id = media.idTmdb || media.id;
-      if (media.idImdb) ids.imdb_id = media.idImdb;
+      if (media.idTmdb || media.id) ids[tmdbIdProp] = media.idTmdb || media.id;
+      if (media.idImdb) ids[imdbIdProp] = media.idImdb;
     }
     return ids;
   }
@@ -13084,60 +13417,50 @@ var ConnectedNotes = class {
    * Search vault for existing notes to connect (excludes already connected ones)
    */
   async findNotesToConnect(searchQuery, searchIds, mediaType) {
-    const allFiles = this.app.vault.getMarkdownFiles();
     const searchResults = [];
-    if (!searchQuery || searchQuery.trim().length < 2) {
-      return searchResults;
-    }
+    if (!searchQuery || searchQuery.trim().length < 2) return searchResults;
     const query = searchQuery.toLowerCase().trim();
-    for (const file of allFiles) {
-      const metadata = this.app.metadataCache.getFileCache(file);
-      const frontmatter = metadata?.frontmatter;
-      if (frontmatter) {
-        let alreadyConnected = false;
-        for (const [idType, idValue] of Object.entries(searchIds)) {
-          if (frontmatter[idType] == idValue && frontmatter.media_type === mediaType) {
-            alreadyConnected = true;
-            break;
-          }
-        }
-        if (!alreadyConnected && this.currentUrls) {
-          if (this.hasMatchingUrl(frontmatter.urls, this.currentUrls)) {
-            alreadyConnected = true;
-          }
-        }
-        if (alreadyConnected) continue;
+    const files = this.app.vault.getMarkdownFiles() || [];
+    const needRebuild = !Array.isArray(this._filenameIndexList) || this._filenameIndexSnapshotCount !== files.length || (this._filenameIndexSnapshotSample || "") !== files.slice(0, 20).map((f) => f?.basename || "").join("|");
+    if (needRebuild) {
+      const list2 = [];
+      for (const f of files) {
+        if (!f || !f.basename) continue;
+        list2.push({ nameLower: f.basename.toLowerCase(), file: f });
       }
-      if (file.basename.toLowerCase().includes(query)) {
-        searchResults.push({
-          file,
-          title: file.basename,
-          path: file.path,
-          matchType: "title"
-        });
-        continue;
-      }
-      try {
-        const content = await this.app.vault.cachedRead(file);
-        const contentPreview = content.slice(0, 500).toLowerCase();
-        if (contentPreview.includes(query)) {
-          searchResults.push({
-            file,
-            title: file.basename,
-            path: file.path,
-            matchType: "content"
-          });
-        }
-      } catch (error) {
-        continue;
-      }
+      this._filenameIndexList = list2;
+      this._filenameIndexSnapshotCount = files.length;
+      this._filenameIndexSnapshotSample = files.slice(0, 20).map((f) => f?.basename || "").join("|");
     }
-    return searchResults.sort((a, b) => {
-      if (a.matchType !== b.matchType) {
-        return a.matchType === "title" ? -1 : 1;
+    const list = this._filenameIndexList || [];
+    for (const e of list) {
+      if (!e || !e.nameLower) continue;
+      if (!e.nameLower.includes(query)) continue;
+      const metadata = this.app.metadataCache.getFileCache(e.file) || {};
+      const frontmatter = metadata.frontmatter || {};
+      let alreadyConnected = false;
+      for (const [idType, idValue] of Object.entries(searchIds || {})) {
+        if (frontmatter[idType] == idValue && frontmatter.media_type === mediaType) {
+          alreadyConnected = true;
+          break;
+        }
       }
-      return a.title.localeCompare(b.title);
-    }).slice(0, 20);
+      if (!alreadyConnected && this.currentUrls) {
+        if (this.hasMatchingUrl(frontmatter.urls, this.currentUrls)) {
+          alreadyConnected = true;
+        }
+      }
+      if (alreadyConnected) continue;
+      searchResults.push({
+        file: e.file,
+        title: e.file.basename,
+        path: e.file.path,
+        matchType: "title"
+      });
+      if (searchResults.length >= 20) break;
+    }
+    searchResults.sort((a, b) => a.title.localeCompare(b.title));
+    return searchResults;
   }
   /**
    * Merge URL arrays, avoiding duplicates
@@ -13200,48 +13523,58 @@ var ConnectedNotes = class {
       const hasZoroTag = metadata?.tags?.some((tag) => tag.tag === "#Zoro") || Array.isArray(existingFrontmatter.tags) && existingFrontmatter.tags.includes("Zoro");
       const hasExistingIds = existingFrontmatter.mal_id || existingFrontmatter.anilist_id || existingFrontmatter.simkl_id || existingFrontmatter.imdb_id || existingFrontmatter.tmdb_id || existingFrontmatter.media_type || existingFrontmatter.urls;
       const isAlreadyConnected = hasZoroTag && hasExistingIds;
-      const updatedFrontmatter = { ...existingFrontmatter };
+      const baseProps = { ...existingFrontmatter };
       if (isAlreadyConnected) {
         console.log(`[ConnectedNotes] Note "${file.basename}" is already connected, only adding URLs`);
         if (this.currentUrls && this.currentUrls.length > 0) {
-          updatedFrontmatter.urls = this.mergeUrlArrays(existingFrontmatter.urls, this.currentUrls);
+          baseProps.urls = this.mergeUrlArrays(existingFrontmatter.urls, this.currentUrls);
         }
-        if (!updatedFrontmatter.tags) {
-          updatedFrontmatter.tags = ["Zoro"];
-        } else if (Array.isArray(updatedFrontmatter.tags)) {
-          if (!updatedFrontmatter.tags.includes("Zoro")) {
-            updatedFrontmatter.tags.push("Zoro");
+        if (!baseProps.tags) {
+          baseProps.tags = ["Zoro"];
+        } else if (Array.isArray(baseProps.tags)) {
+          if (!baseProps.tags.includes("Zoro")) {
+            baseProps.tags.push("Zoro");
           }
         }
       } else {
         console.log(`[ConnectedNotes] Note "${file.basename}" is not connected, adding full metadata`);
         Object.entries(searchIds).forEach(([key, value]) => {
-          updatedFrontmatter[key] = value;
+          baseProps[key] = value;
+        });
+        baseProps.media_type = mediaType;
+        const enhancedProps2 = this.generateEnhancedFrontmatter(this.currentMedia, this.currentEntry, mediaType);
+        Object.entries(enhancedProps2).forEach(([key, value]) => {
+          if (baseProps[key] === void 0) {
+            baseProps[key] = value;
+          }
         });
         if (this.currentUrls && this.currentUrls.length > 0) {
-          updatedFrontmatter.urls = this.mergeUrlArrays(existingFrontmatter.urls, this.currentUrls);
+          baseProps.urls = this.mergeUrlArrays(existingFrontmatter.urls, this.currentUrls);
         }
-        updatedFrontmatter.media_type = mediaType;
-        if (!updatedFrontmatter.tags) {
-          updatedFrontmatter.tags = ["Zoro"];
-        } else if (Array.isArray(updatedFrontmatter.tags)) {
-          if (!updatedFrontmatter.tags.includes("Zoro")) {
-            updatedFrontmatter.tags.push("Zoro");
+        if (!baseProps.tags) {
+          baseProps.tags = ["Zoro"];
+        } else if (Array.isArray(baseProps.tags)) {
+          if (!baseProps.tags.includes("Zoro")) {
+            baseProps.tags.push("Zoro");
           }
         }
       }
+      const enhancedProps = this.generateEnhancedFrontmatter(this.currentMedia, this.currentEntry, mediaType);
+      const orderedFrontmatter = this.buildOrderedFrontmatter(baseProps, enhancedProps, baseProps.urls, baseProps.tags);
       const frontmatterLines = ["---"];
-      Object.entries(updatedFrontmatter).forEach(([key, value]) => {
-        if (key === "tags" && Array.isArray(value)) {
-          frontmatterLines.push("tags:");
-          value.forEach((tag) => {
-            frontmatterLines.push(`  - ${tag}`);
+      Object.entries(orderedFrontmatter).forEach(([key, value]) => {
+        if ((key === "tags" || key === "aliases" || key === "genres") && Array.isArray(value)) {
+          frontmatterLines.push(`${key}:`);
+          value.forEach((item) => {
+            frontmatterLines.push(`  - ${item}`);
           });
         } else if (key === "urls" && Array.isArray(value)) {
           frontmatterLines.push("urls:");
           value.forEach((url) => {
             frontmatterLines.push(`  - "${url}"`);
           });
+        } else if (typeof value === "boolean") {
+          frontmatterLines.push(`${key}: ${value}`);
         } else {
           frontmatterLines.push(`${key}: "${value}"`);
         }
@@ -13274,6 +13607,7 @@ var ConnectedNotes = class {
    */
   async showConnectedNotes(searchIds, mediaType, media = null, entry = null, source = null) {
     try {
+      this.currentEntry = entry;
       const context = { searchIds, mediaType, media, entry, source };
       await this.openSidePanelWithContext(context);
     } catch (error) {
@@ -13466,10 +13800,10 @@ var ConnectedNotes = class {
     connectButton.onclick = () => {
       connectInterface.classList.toggle("zoro-note-hidden");
       if (!connectInterface.classList.contains("zoro-note-hidden")) {
-        const searchInput = connectInterface.querySelector(".zoro-note-search-input");
+        const searchInput = connectInterface.querySelector(".zoro-search-input");
         setTimeout(() => searchInput.focus(), 100);
       } else {
-        const searchInput = connectInterface.querySelector(".zoro-note-search-input");
+        const searchInput = connectInterface.querySelector(".zoro-search-input");
         const resultsContainer = connectInterface.querySelector(".zoro-note-search-results");
         searchInput.value = "";
         resultsContainer.empty();
@@ -13538,18 +13872,40 @@ var ConnectedNotes = class {
     try {
       const uniqueFileName = this.generateUniqueFilename();
       await this.ensurePathExists(uniqueFileName);
-      const frontmatterLines = [
-        "---",
-        ...Object.entries(searchIds).map(([key, value]) => `${key}: "${value}"`),
-        `media_type: "${mediaType}"`
-      ];
+      const baseProps = {
+        ...searchIds,
+        media_type: mediaType
+      };
       if (this.currentUrls && this.currentUrls.length > 0) {
-        frontmatterLines.push("urls:");
-        this.currentUrls.forEach((url) => {
-          frontmatterLines.push(`  - "${url}"`);
-        });
+        baseProps.urls = [...this.currentUrls];
       }
-      frontmatterLines.push("tags:", "  - Zoro", "---", "");
+      baseProps.tags = ["Zoro"];
+      const enhancedProps = this.generateEnhancedFrontmatter(this.currentMedia, this.currentEntry, mediaType);
+      const orderedFrontmatter = this.buildOrderedFrontmatter(baseProps, enhancedProps, baseProps.urls, baseProps.tags);
+      const frontmatterLines = ["---"];
+      Object.entries(orderedFrontmatter).forEach(([key, value]) => {
+        if ((key === "aliases" || key === "genres") && Array.isArray(value)) {
+          frontmatterLines.push(`${key}:`);
+          value.forEach((item) => {
+            frontmatterLines.push(`  - ${item}`);
+          });
+        } else if (key === "urls" && Array.isArray(value)) {
+          frontmatterLines.push("urls:");
+          value.forEach((url) => {
+            frontmatterLines.push(`  - "${url}"`);
+          });
+        } else if (key === "tags" && Array.isArray(value)) {
+          frontmatterLines.push("tags:");
+          value.forEach((tag) => {
+            frontmatterLines.push(`  - ${tag}`);
+          });
+        } else if (typeof value === "boolean") {
+          frontmatterLines.push(`${key}: ${value}`);
+        } else {
+          frontmatterLines.push(`${key}: "${value}"`);
+        }
+      });
+      frontmatterLines.push("---", "");
       const frontmatter = frontmatterLines.join("\n");
       const codeBlockContent = this.generateCodeBlockContent();
       let noteContent = frontmatter;
@@ -13587,6 +13943,7 @@ var ConnectedNotes = class {
       const source = this.plugin.apiHelper ? this.plugin.apiHelper.detectSource(entry, config) : entry?._zoroMeta?.source || config?.source || "anilist";
       const mediaType = this.plugin.apiHelper ? this.plugin.apiHelper.detectMediaType(entry, config, media) : entry?._zoroMeta?.mediaType || config?.mediaType || "ANIME";
       this.currentMedia = media;
+      this.currentEntry = entry;
       this.currentSource = source;
       this.currentMediaType = mediaType;
       this.currentUrls = this.buildCurrentUrls(media, mediaType, source);
@@ -13670,12 +14027,12 @@ var SidePanel = class extends import_obsidian30.ItemView {
       text: "\u26D3\uFE0F",
       cls: "zoro-panel-btn"
     });
-    this.detailsBtn = this.buttonContainerEl.createEl("button", {
-      text: "\u2139\uFE0F",
+    this.editInlineBtn = this.buttonContainerEl.createEl("button", {
+      text: "\uFE0F\u2611\uFE0F",
       cls: "zoro-panel-btn"
     });
-    this.editInlineBtn = this.buttonContainerEl.createEl("button", {
-      text: "\u270F\uFE0F",
+    this.detailsBtn = this.buttonContainerEl.createEl("button", {
+      text: "\u{1FAD4}",
       cls: "zoro-panel-btn"
     });
     this.searchContainerEl = root.createDiv({ cls: "zoro-panel-search-container" });
@@ -14001,6 +14358,84 @@ var ZoroSettingTab = class extends import_obsidian31.PluginSettingTab {
       this.plugin.settings.insertCodeBlockOnNote = value;
       await this.plugin.saveSettings();
     }));
+    new import_obsidian31.Setting(Note).setName("Title").setDesc("Frontmatter property for title").addText((text) => text.setPlaceholder("title").setValue(this.plugin.settings?.customPropertyNames?.title ?? "").onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.title = typeof value === "string" ? value.trim() : "";
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian31.Setting(Note).setName("Aliases").setDesc("Frontmatter property for aliases").addText((text) => text.setPlaceholder("aliases").setValue(this.plugin.settings?.customPropertyNames?.aliases ?? "").onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.aliases = typeof value === "string" ? value.trim() : "";
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian31.Setting(Note).setName("Format").setDesc("Frontmatter property for format").addText((text) => text.setPlaceholder("format").setValue(this.plugin.settings?.customPropertyNames?.format ?? "").onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.format = typeof value === "string" ? value.trim() : "";
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian31.Setting(Note).setName("Status").setDesc("Frontmatter property for status").addText((text) => text.setPlaceholder("status").setValue(this.plugin.settings?.customPropertyNames?.status ?? "").onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.status = typeof value === "string" ? value.trim() : "";
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian31.Setting(Note).setName("Rating").setDesc("Frontmatter property for rating").addText((text) => text.setPlaceholder("rating").setValue(this.plugin.settings?.customPropertyNames?.rating ?? "").onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.rating = typeof value === "string" ? value.trim() : "";
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian31.Setting(Note).setName("Favorite").setDesc("Frontmatter property for favorite").addText((text) => text.setPlaceholder("favorite").setValue(this.plugin.settings?.customPropertyNames?.favorite ?? "").onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.favorite = typeof value === "string" ? value.trim() : "";
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian31.Setting(Note).setName("Total episodes").setDesc("Frontmatter property for total_episodes").addText((text) => text.setPlaceholder("total_episodes").setValue(this.plugin.settings?.customPropertyNames?.total_episodes ?? "").onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.total_episodes = typeof value === "string" ? value.trim() : "";
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian31.Setting(Note).setName("Total chapters").setDesc("Frontmatter property for total_chapters").addText((text) => text.setPlaceholder("total_chapters").setValue(this.plugin.settings?.customPropertyNames?.total_chapters ?? "").onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.total_chapters = typeof value === "string" ? value.trim() : "";
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian31.Setting(Note).setName("Episodes watched").setDesc("Frontmatter property for episodes_watched").addText((text) => text.setPlaceholder("episodes_watched").setValue(this.plugin.settings?.customPropertyNames?.episodes_watched ?? "").onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.episodes_watched = typeof value === "string" ? value.trim() : "";
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian31.Setting(Note).setName("Chapters read").setDesc("Frontmatter property for chapters_read").addText((text) => text.setPlaceholder("chapters_read").setValue(this.plugin.settings?.customPropertyNames?.chapters_read ?? "").onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.chapters_read = typeof value === "string" ? value.trim() : "";
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian31.Setting(Note).setName("Volumes read").setDesc("Frontmatter property for volumes_read").addText((text) => text.setPlaceholder("volumes_read").setValue(this.plugin.settings?.customPropertyNames?.volumes_read ?? "").onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.volumes_read = typeof value === "string" ? value.trim() : "";
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian31.Setting(Note).setName("Cover").setDesc("Frontmatter property for cover").addText((text) => text.setPlaceholder("cover").setValue(this.plugin.settings?.customPropertyNames?.cover ?? "").onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.cover = typeof value === "string" ? value.trim() : "";
+      await this.plugin.saveSettings();
+    }));
+    new import_obsidian31.Setting(Note).setName("Genres").setDesc("Frontmatter property for genres").addText((text) => text.setPlaceholder("genres").setValue(this.plugin.settings?.customPropertyNames?.genres ?? "").onChange(async (value) => {
+      this.plugin.settings = this.plugin.settings || {};
+      this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+      this.plugin.settings.customPropertyNames.genres = typeof value === "string" ? value.trim() : "";
+      await this.plugin.saveSettings();
+    }));
     new import_obsidian31.Setting(Display).setName("\u{1F9CA} Layout").setDesc("Choose the default layout for media lists").addDropdown((dropdown) => dropdown.addOption("card", "Card Layout").addOption("table", "Table Layout").setValue(this.plugin.settings.defaultLayout).onChange(async (value) => {
       this.plugin.settings.defaultLayout = value;
       await this.plugin.saveSettings();
@@ -14136,22 +14571,6 @@ var ZoroSettingTab = class extends import_obsidian31.PluginSettingTab {
       (btn) => btn.setButtonText("Clear All Cache").setWarning().onClick(async () => {
         const cleared = await this.plugin.cache.clearAll();
         new import_obsidian31.Notice(`\u2705 Cache cleared (${cleared} entries)`, 3e3);
-      })
-    );
-    new import_obsidian31.Setting(Exp).setName("TMDb API Key").setDesc(
-      createFragment((frag) => {
-        frag.appendText("Your The Movie Database (TMDb) API key for trending movies & TV shows. ");
-        const link = frag.createEl("a", {
-          text: "Get one free at TMDb",
-          href: "https://www.themoviedb.org/settings/api"
-        });
-        link.setAttr("target", "_blank");
-        frag.appendText(".");
-      })
-    ).addText(
-      (text) => text.setPlaceholder("Enter your TMDb API key...").setValue(this.plugin.settings.tmdbApiKey).onChange(async (value) => {
-        this.plugin.settings.tmdbApiKey = value.trim();
-        await this.plugin.saveSettings();
       })
     );
     new import_obsidian31.Setting(About).setName("Author").setDesc(this.plugin.manifest.author);
@@ -14441,9 +14860,6 @@ var ZoroPlugin = class extends import_obsidian32.Plugin {
   getSourceSpecificUrl(mediaId, mediaType, source) {
     const type = String(mediaType || "").toUpperCase();
     const numericId = Number(mediaId) || 0;
-    if ((type === "MOVIE" || type === "TV") && numericId > 0) {
-      return `https://www.themoviedb.org/${type === "MOVIE" ? "movie" : "tv"}/${numericId}`;
-    }
     switch ((source || "").toLowerCase()) {
       case "mal":
         return this.getMALUrl(mediaId, mediaType);
@@ -14509,49 +14925,99 @@ var ZoroPlugin = class extends import_obsidian32.Plugin {
     });
   }
   validateSettings(settings) {
+    const s = settings || {};
+    const def = DEFAULT_SETTINGS;
+    const isString = (v) => typeof v === "string";
+    const isBool = (v) => typeof v === "boolean";
+    const isNumber = (v) => typeof v === "number" && !Number.isNaN(v);
+    const isObject = (v) => v && typeof v === "object" && !Array.isArray(v);
+    const validateArrayStrings = (arr) => Array.isArray(arr) ? arr.filter((u) => typeof u === "string" && u.trim() !== "") : [];
+    const validateGridColumns = (value) => {
+      if (Object.values(GRID_COLUMN_OPTIONS).includes(value)) {
+        return value;
+      }
+      if (typeof value === "number") {
+        switch (value) {
+          case 1:
+            return GRID_COLUMN_OPTIONS.ONE;
+          case 2:
+            return GRID_COLUMN_OPTIONS.TWO;
+          case 3:
+            return GRID_COLUMN_OPTIONS.THREE;
+          case 4:
+            return GRID_COLUMN_OPTIONS.FOUR;
+          case 5:
+            return GRID_COLUMN_OPTIONS.FIVE;
+          case 6:
+            return GRID_COLUMN_OPTIONS.SIX;
+          default:
+            return GRID_COLUMN_OPTIONS.DEFAULT;
+        }
+      }
+      if (typeof value === "string" && ["1", "2", "3", "4", "5", "6"].includes(value)) {
+        return value;
+      }
+      return def.gridColumns;
+    };
+    const validatedCustomPropertyNames = {};
+    const defaultPropNames = def.customPropertyNames || {};
+    for (const key of Object.keys(defaultPropNames)) {
+      const val = s?.customPropertyNames?.[key];
+      validatedCustomPropertyNames[key] = isString(val) && val.trim() !== "" ? val.trim() : defaultPropNames[key];
+    }
     return {
-      defaultApiSource: ["anilist", "mal", "simkl"].includes(settings?.defaultApiSource) ? settings.defaultApiSource : "anilist",
-      defaultApiUserOverride: typeof settings?.defaultApiUserOverride === "boolean" ? settings.defaultApiUserOverride : false,
-      defaultUsername: typeof settings?.defaultUsername === "string" ? settings.defaultUsername : "",
-      defaultLayout: ["card", "table"].includes(settings?.defaultLayout) ? settings.defaultLayout : "card",
-      notePath: typeof settings?.notePath === "string" ? settings.notePath : "Zoro/Note",
-      insertCodeBlockOnNote: typeof settings?.insertCodeBlockOnNote === "boolean" ? settings.insertCodeBlockOnNote : true,
-      showCoverImages: typeof settings?.showCoverImages === "boolean" ? settings.showCoverImages : true,
-      showRatings: typeof settings?.showRatings === "boolean" ? settings.showRatings : true,
-      showProgress: typeof settings?.showProgress === "boolean" ? settings.showProgress : true,
-      showGenres: typeof settings?.showGenres === "boolean" ? settings.showGenres : false,
-      showLoadingIcon: typeof settings?.showLoadingIcon === "boolean" ? settings.showLoadingIcon : true,
-      gridColumns: this.migrateGridColumnsSetting(settings?.gridColumns),
-      theme: typeof settings?.theme === "string" ? settings.theme : "",
-      hideUrlsInTitles: typeof settings?.hideUrlsInTitles === "boolean" ? settings.hideUrlsInTitles : true,
-      forceScoreFormat: typeof settings?.forceScoreFormat === "boolean" ? settings.forceScoreFormat : true,
-      showAvatar: typeof settings?.showAvatar === "boolean" ? settings.showAvatar : true,
-      showFavorites: typeof settings?.showFavorites === "boolean" ? settings.showFavorites : true,
-      showBreakdowns: typeof settings?.showBreakdowns === "boolean" ? settings.showBreakdowns : true,
-      showTimeStats: typeof settings?.showTimeStats === "boolean" ? settings.showTimeStats : true,
-      statsLayout: ["enhanced", "compact", "minimal"].includes(settings?.statsLayout) ? settings.statsLayout : "enhanced",
-      statsTheme: ["auto", "light", "dark"].includes(settings?.statsTheme) ? settings.statsTheme : "auto",
-      clientId: typeof settings?.clientId === "string" ? settings.clientId : "",
-      clientSecret: typeof settings?.clientSecret === "string" ? settings.clientSecret : "",
-      redirectUri: typeof settings?.redirectUri === "string" ? settings.redirectUri : "https://anilist.co/api/v2/oauth/pin",
-      accessToken: typeof settings?.accessToken === "string" ? settings.accessToken : "",
-      malClientId: typeof settings?.malClientId === "string" ? settings.malClientId : "",
-      malClientSecret: typeof settings?.malClientSecret === "string" ? settings.malClientSecret : "",
-      malAccessToken: typeof settings?.malAccessToken === "string" ? settings.malAccessToken : "",
-      malRefreshToken: typeof settings?.malRefreshToken === "string" ? settings.malRefreshToken : "",
-      malTokenExpiry: settings?.malTokenExpiry === null || typeof settings?.malTokenExpiry === "number" ? settings.malTokenExpiry : null,
-      malUserInfo: settings?.malUserInfo === null || typeof settings?.malUserInfo === "object" ? settings.malUserInfo : null,
-      simklClientId: typeof settings?.simklClientId === "string" ? settings.simklClientId : "",
-      simklClientSecret: typeof settings?.simklClientSecret === "string" ? settings.simklClientSecret : "",
-      simklAccessToken: typeof settings?.simklAccessToken === "string" ? settings.simklAccessToken : "",
-      simklUserInfo: typeof settings?.simklUserInfo === "object" || settings?.simklUserInfo === null ? settings.simklUserInfo : null,
-      autoFormatSearchUrls: typeof settings?.autoFormatSearchUrls === "boolean" ? settings.autoFormatSearchUrls : true,
+      // Basic API and identity settings
+      defaultApiSource: ["anilist", "mal", "simkl"].includes(s?.defaultApiSource) ? s.defaultApiSource : def.defaultApiSource,
+      defaultApiUserOverride: isBool(s?.defaultApiUserOverride) ? s.defaultApiUserOverride : def.defaultApiUserOverride,
+      defaultUsername: isString(s?.defaultUsername) ? s.defaultUsername : def.defaultUsername,
+      defaultLayout: ["card", "table"].includes(s?.defaultLayout) ? s.defaultLayout : def.defaultLayout,
+      // Note and UI settings
+      notePath: isString(s?.notePath) ? s.notePath : def.notePath,
+      insertCodeBlockOnNote: isBool(s?.insertCodeBlockOnNote) ? s.insertCodeBlockOnNote : def.insertCodeBlockOnNote,
+      showCoverImages: isBool(s?.showCoverImages) ? s.showCoverImages : def.showCoverImages,
+      showRatings: isBool(s?.showRatings) ? s.showRatings : def.showRatings,
+      showProgress: isBool(s?.showProgress) ? s.showProgress : def.showProgress,
+      showGenres: isBool(s?.showGenres) ? s.showGenres : def.showGenres,
+      showLoadingIcon: isBool(s?.showLoadingIcon) ? s.showLoadingIcon : def.showLoadingIcon,
+      gridColumns: validateGridColumns(s?.gridColumns),
+      // updated to use new validation
+      theme: isString(s?.theme) ? s.theme : def.theme,
+      hideUrlsInTitles: isBool(s?.hideUrlsInTitles) ? s.hideUrlsInTitles : def.hideUrlsInTitles,
+      forceScoreFormat: isBool(s?.forceScoreFormat) ? s.forceScoreFormat : def.forceScoreFormat,
+      showAvatar: isBool(s?.showAvatar) ? s.showAvatar : def.showAvatar,
+      showFavorites: isBool(s?.showFavorites) ? s.showFavorites : def.showFavorites,
+      showBreakdowns: isBool(s?.showBreakdowns) ? s.showBreakdowns : def.showBreakdowns,
+      showTimeStats: isBool(s?.showTimeStats) ? s.showTimeStats : def.showTimeStats,
+      // Statistics settings
+      statsLayout: ["enhanced", "compact", "minimal"].includes(s?.statsLayout) ? s.statsLayout : def.statsLayout,
+      statsTheme: ["auto", "light", "dark"].includes(s?.statsTheme) ? s.statsTheme : def.statsTheme,
+      // AniList authentication
+      clientId: isString(s?.clientId) ? s.clientId : def.clientId,
+      clientSecret: isString(s?.clientSecret) ? s.clientSecret : def.clientSecret,
+      redirectUri: isString(s?.redirectUri) ? s.redirectUri : def.redirectUri,
+      accessToken: isString(s?.accessToken) ? s.accessToken : def.accessToken,
+      // MyAnimeList authentication
+      malClientId: isString(s?.malClientId) ? s.malClientId : def.malClientId,
+      malClientSecret: isString(s?.malClientSecret) ? s.malClientSecret : def.malClientSecret,
+      malAccessToken: isString(s?.malAccessToken) ? s.malAccessToken : def.malAccessToken,
+      malRefreshToken: isString(s?.malRefreshToken) ? s.malRefreshToken : def.malRefreshToken,
+      malTokenExpiry: s?.malTokenExpiry === null || isNumber(s?.malTokenExpiry) ? s.malTokenExpiry : def.malTokenExpiry,
+      malUserInfo: s?.malUserInfo === null || isObject(s?.malUserInfo) ? s.malUserInfo : def.malUserInfo,
+      // Simkl authentication
+      simklClientId: isString(s?.simklClientId) ? s.simklClientId : def.simklClientId,
+      simklClientSecret: isString(s?.simklClientSecret) ? s.simklClientSecret : def.simklClientSecret,
+      simklAccessToken: isString(s?.simklAccessToken) ? s.simklAccessToken : def.simklAccessToken,
+      simklUserInfo: s?.simklUserInfo === null || isObject(s?.simklUserInfo) ? s.simklUserInfo : def.simklUserInfo,
+      // Search and TMDB settings
+      autoFormatSearchUrls: isBool(s?.autoFormatSearchUrls) ? s.autoFormatSearchUrls : def.autoFormatSearchUrls,
       customSearchUrls: {
-        ANIME: Array.isArray(settings?.customSearchUrls?.ANIME) ? settings.customSearchUrls.ANIME.filter((url) => typeof url === "string" && url.trim() !== "") : [],
-        MANGA: Array.isArray(settings?.customSearchUrls?.MANGA) ? settings.customSearchUrls.MANGA.filter((url) => typeof url === "string" && url.trim() !== "") : [],
-        MOVIE_TV: Array.isArray(settings?.customSearchUrls?.MOVIE_TV) ? settings.customSearchUrls.MOVIE_TV.filter((url) => typeof url === "string" && url.trim() !== "") : []
+        ANIME: validateArrayStrings(s?.customSearchUrls?.ANIME),
+        MANGA: validateArrayStrings(s?.customSearchUrls?.MANGA),
+        MOVIE_TV: validateArrayStrings(s?.customSearchUrls?.MOVIE_TV)
       },
-      tmdbApiKey: typeof settings?.tmdbApiKey === "string" ? settings.tmdbApiKey : ""
+      tmdbApiKey: isString(s?.tmdbApiKey) ? s.tmdbApiKey : def.tmdbApiKey,
+      // Custom property names (validated per-key)
+      customPropertyNames: validatedCustomPropertyNames
     };
   }
   migrateGridColumnsSetting(value) {
@@ -14651,5 +15117,5 @@ var ZoroPlugin = class extends import_obsidian32.Plugin {
     if (loader) loader.remove();
   }
 };
-var src_default = ZoroPlugin;
+var index_default = ZoroPlugin;
 //# sourceMappingURL=main.js.map

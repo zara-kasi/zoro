@@ -2,19 +2,24 @@
 
 class FormatterHelper {
   formatScore(score, scoreFormat = 'POINT_10') {
-    switch (scoreFormat) {
-      case 'POINT_100':
-        return `${Math.round(score * 10)}/100`;
-      case 'POINT_10':
-        return `${(score / 10).toFixed(1)}/10`;
-      case 'POINT_5':
-        return `${Math.round(score / 20)}/5`;
-      case 'POINT_3':
-        return score >= 70 ? '😊' : score >= 40 ? '😐' : '😞';
-      default:
-        return `${Math.round(score / 10)}/10`;
-    }
+  switch (scoreFormat) {
+    case 'POINT_100':
+      return `${Math.round(score * 10)}/100`;
+    case 'POINT_10':
+      // If score is already out of 10 (like TMDb), don't divide
+      if (score <= 10) {
+        return `${Math.round(score)}/10`;  // Changed from .toFixed(1) to Math.round()
+      }
+      // If score is out of 100 (like AniList), divide by 10
+      return `${Math.round(score / 10)}/10`;  // Changed from .toFixed(1) to Math.round()
+    case 'POINT_5':
+      return `${Math.round(score / 20)}/5`;
+    case 'POINT_3':
+      return score >= 70 ? '😊' : score >= 40 ? '😐' : '😞';
+    default:
+      return `${Math.round(score / 10)}/10`;  // Changed from .toFixed(1) to Math.round()
   }
+}
 
   formatWatchTime(minutes) {
     const hours = Math.floor(minutes / 60);

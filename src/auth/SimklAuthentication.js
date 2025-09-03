@@ -71,13 +71,14 @@ class SimklAuthentication {
         window.open(pinPageUrl, '_blank');
       }
 
-      // Step 3: Show PIN in modal and start polling
+      /** Step 3: Show PIN in modal and start polling
       const modal = new SimklPinModal(this.plugin.app, deviceData, async () => {
         // User clicked cancel
         this.stopPolling();
       });
       modal.open();
-
+     */
+     
       // Start polling for authentication
       this.startPolling(deviceData);
 

@@ -8,6 +8,8 @@
   --zoro-grid-gap: 1rem;
   --zoro-grid-gap-mobile: 0.75rem;
   --zoro-grid-margin: 1rem 0;
+  --zoro-grid-min-width: 280px;
+
 
   /* ---- Card Shell ---- */
   --zoro-card-border-radius: 8px;
@@ -15,6 +17,7 @@
   --zoro-card-cover-aspect-ratio: 2 / 3;
   --zoro-card-padding: 0.5rem 0.75rem;
   --zoro-card-gap: 0.3rem;
+  --zoro-card-min-width: 200px;
 
   /* ---- Typography ---- */
   --zoro-title-font-size: 0.9rem;
@@ -79,15 +82,6 @@
   --zoro-auth-btn-font-weight: bold;
 
 
-  /* ---- Modal ---- */
-  --zoro-modal-z-index: 1000;
-  --zoro-modal-overlay-opacity: 0.8;
-  --zoro-modal-content-border-radius: 8px;
-  --zoro-modal-content-padding: 20px;
-  --zoro-modal-content-max-width: 500px;
-  --zoro-modal-content-width: 90%;
-  --zoro-modal-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-
   /* ---- Auth Modal ---- */
   --zoro-auth-modal-padding: 2rem;
   --zoro-auth-modal-max-width: 450px;
@@ -119,6 +113,10 @@
   --zoro-fade-in-duration: 0.3s;
   --zoro-scale-hover: 1.02;
   --zoro-brightness-hover: 1.1;
+  --zoro-transition-fast: 0.15s;
+  --zoro-transition-medium: 0.2s;
+  --zoro-transition-slow: 0.3s;
+
 
   /* ---- Mobile Breakpoints ---- */
   --zoro-mobile-breakpoint: 480px;
@@ -133,11 +131,15 @@
   --zoro-setting-btn-padding: 0.5rem 1rem;
   --zoro-setting-btn-max-width: 200px;
   --zoro-setting-btn-mobile-font-size: 1rem;
+  
+  --zoro-stat-min-width: 160px;
 }
 
-/* ==================================================================
-   ORIGINAL STYLES (unchanged, only using the variables above)
-   ================================================================== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
 
 /* Container */
 .zoro-container {
@@ -176,22 +178,29 @@
   padding: 0;
   list-style: none;
 }
-@media (max-width: 480px) {
+
+/* Responsive grid behavior for "Default" setting */
+@media (min-width: 800px) { 
+  .zoro-cards-grid { 
+    --zoro-grid-columns: 4; 
+  } 
+}
+@media (min-width: 1000px) { 
+  .zoro-cards-grid { 
+    --zoro-grid-columns: 5; 
+  } 
+}
+@media (min-width: 1200px) { 
+  .zoro-cards-grid { 
+    --zoro-grid-columns: 6; 
+  } 
+}
+@media (max-width: 300px) {
   .zoro-cards-grid {
     gap: var(--zoro-grid-gap-mobile);
   }
 }
 
-/* === Grid Column Count via CSS Variable (no inline JS) ========== */
-.zoro-cards-grid {
-  --zoro-grid-columns: 2;      /* default value */
-}
-
-@media (min-width: 768px) {
-  .zoro-cards-grid {
-    --zoro-grid-columns: 5;    /* desktop value */
-  }
-}
 
 
 /* Cards */
@@ -203,11 +212,12 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: box-shadow var(--zoro-transition-duration) ease;
+  transition: all var(--zoro-transition-duration) ease;
   margin: 0;
   padding: 0;
   list-style: none;
 }
+
 .zoro-card:hover,
 .zoro-single-card:hover {
   box-shadow: var(--zoro-hover-shadow);
@@ -354,454 +364,19 @@
 .zoro-retry-btn:hover {
   background: var(--interactive-accent-hover);
 }
+
 .zoro-auth-button {
-  background: linear-gradient(45deg, #02A9FF, #3B82F6);
-  color: white;
+  background: var(--interactive-accent);
+  color: var(--text-on-accent);
   font-weight: var(--zoro-auth-btn-font-weight);
   padding: var(--zoro-auth-btn-padding);
   border-radius: var(--zoro-auth-btn-border-radius);
   border: none;
   cursor: pointer;
 }
+
 .zoro-auth-button:hover {
   background: linear-gradient(45deg, #0284C7, #2563EB);
-}
-
-.zoro-edit-modal {
-  position: fixed;
-  z-index: var(--zoro-modal-z-index, 1000);
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  animation: modalFadeIn 0.15s ease-out;
-}
-
-.zoro-modal-overlay {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0);
-  cursor: pointer;
-}
-
-.zoro-modal-content {
-  background: #ffffff;
-  border-radius: 12px;
-  padding: 32px;
-  max-width: 420px;
-  width: calc(100vw - 48px);
-  position: relative;
-  box-shadow: 
-    0 24px 48px rgba(0, 0, 0, 0.4),
-    0 8px 16px rgba(0, 0, 0, 0.24);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  transform: scale(1);
-  animation: modalSlideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  cursor: default;
-}
-
-
-/* Favorite button in top-left corner - rounded and small */
-.zoro-fav-btn {
-  position: absolute;
-  top: 10px;
-  left: 10px;
-  background: transparent !important;
-  border: none;
-  font-size: 20px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  outline: none;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 1;
-}
-
-.zoro-fav-btn:hover {
-  transform: scale(1.1);
-  opacity: 1;
-  background: transparent !important;
-}
-
-.zoro-fav-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.theme-dark .zoro-modal-close,
-[data-theme="dark"] .zoro-modal-close {
-  color: var(--text-muted, #9ca9af);
-  opacity: 0.6;
-}
-
-.theme-dark .zoro-modal-close:hover,
-[data-theme="dark"] .zoro-modal-close:hover {
-  color: var(--text-normal, #d1d5db);
-  opacity: 1;
-}
-
-/* Dark mode support */
-.theme-dark .zoro-modal-content,
-[data-theme="dark"] .zoro-modal-content {
-  background: var(--background-primary, #1a1a1a);
-  border: 1px solid var(--background-modifier-border, rgba(255, 255, 255, 0.12));
-  box-shadow: 
-    0 24px 48px rgba(0, 0, 0, 0.4),
-    0 8px 16px rgba(0, 0, 0, 0.24);
-}
-
-.theme-dark .zoro-modal-overlay,
-[data-theme="dark"] .zoro-modal-overlay {
-  background: rgba(225, 225, 225, 0.2);
-}
-
-/* Animations */
-@keyframes modalFadeIn {
-  from { 
-    opacity: 0;
-  }
-  to { 
-    opacity: 1;
-  }
-}
-
-@keyframes modalSlideIn {
-  from {
-    opacity: 0;
-    transform: scale(0.95) translateY(-8px);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1) translateY(0);
-  }
-}
-
-/* Form structure */
-.zoro-edit-form {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-.zoro-modal-title {
-  margin: 0 0 24px 0;
-  font-size: 20px;
-  font-weight: 600;
-  color: var(--text-normal, #1a1a1a);
-  line-height: 1.3;
-  letter-spacing: -0.01em;
-  text-align: center;
-}
-
-.theme-dark .zoro-modal-title,
-[data-theme="dark"] .zoro-modal-title {
-  color: var(--text-normal, #ffffff);
-}
-
-/* Form fields */
-.zoro-form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.zoro-form-label {
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--text-muted, #6b7280);
-  margin: 0;
-  line-height: 1.4;
-}
-
-.theme-dark .zoro-form-label,
-[data-theme="dark"] .zoro-form-label {
-  color: var(--text-muted, #9ca3af);
-}
-
-.zoro-form-input {
-  padding: 12px 16px;
-  border: 1.5px solid var(--background-modifier-border, #e5e7eb);
-  border-radius: 8px;
-  background: var(--background-primary, #ffffff);
-  color: var(--text-normal, #1a1a1a);
-  font-size: 14px;
-  font-family: inherit;
-  transition: all 0.15s ease;
-  outline: none;
-  appearance: none;
-}
-
-.zoro-form-input:focus {
-  border-color: var(--interactive-accent, #3b82f6);
-  box-shadow: 0 0 0 3px var(--interactive-accent-alpha, rgba(59, 130, 246, 0.1));
-}
-
-.theme-dark .zoro-form-input,
-[data-theme="dark"] .zoro-form-input {
-  background: var(--background-primary, #495057);
-  border-color: var(--background-modifier-border, rgba(255, 255, 255, 0.12));
-  color: var(--text-normal, #ffffff);
-}
-
-.theme-dark .zoro-form-input:focus,
-[data-theme="dark"] .zoro-form-input:focus {
-  border-color: var(--interactive-accent, #60a5fa);
-  box-shadow: 0 0 0 3px var(--interactive-accent-alpha, rgba(96, 165, 250, 0.15));
-}
-
-/* Select dropdown styling - removed dropdown arrow */
-.zoro-form-input[type="number"] {
-  -moz-appearance: textfield;
-}
-
-.zoro-form-input[type="number"]::-webkit-outer-spin-button,
-.zoro-form-input[type="number"]::-webkit-inner-spin-button {
-  -webkit-appearance: none;
-  margin: 0;
-}
-
-select.zoro-form-input {
-  cursor: pointer;
-  appearance: none;
-  -webkit-appearance: none;
-  -moz-appearance: none;
-}
-
-/* Quick progress buttons */
-.zoro-quick-progress-buttons {
-  display: flex;
-  gap: 8px;
-  margin-top: -8px;
-}
-
-.zoro-quick-btn {
-  padding: 8px 16px;
-  font-size: 13px;
-  font-weight: 500;
-  font-family: inherit;
-  border: 1px solid var(--background-modifier-border, #e5e7eb);
-  border-radius: 6px;
-  background: var(--background-secondary, #f9fafb);
-  color: var(--text-muted, #6b7280);
-  cursor: pointer;
-  transition: all 0.15s ease;
-  outline: none;
-}
-
-.zoro-quick-btn:hover {
-  background: var(--background-modifier-hover, #f3f4f6);
-  color: var(--text-normal, #1a1a1a);
-  border-color: var(--background-modifier-border-hover, #d1d5db);
-  transform: translateY(-1px);
-}
-
-.zoro-quick-btn:active {
-  transform: translateY(0);
-}
-
-.zoro-complete-btn {
-  background: var(--interactive-accent, #3b82f6);
-  color: var(--text-on-accent, #ffffff);
-  border-color: var(--interactive-accent, #3b82f6);
-}
-
-.zoro-complete-btn:hover {
-  background: var(--interactive-accent-hover, #2563eb);
-  border-color: var(--interactive-accent-hover, #2563eb);
-  color: var(--text-on-accent, #ffffff);
-}
-
-.theme-dark .zoro-quick-btn,
-[data-theme="dark"] .zoro-quick-btn {
-  background: var(--background-secondary, #262626);
-  border-color: var(--background-modifier-border, rgba(255, 255, 255, 0.12));
-  color: var(--text-muted, #9ca3af);
-}
-
-.theme-dark .zoro-quick-btn:hover,
-[data-theme="dark"] .zoro-quick-btn:hover {
-  background: var(--background-modifier-hover, #374151);
-  color: var(--text-normal, #ffffff);
-  border-color: var(--background-modifier-border-hover, rgba(255, 255, 255, 0.2));
-}
-
-/* Modal buttons - only three buttons horizontally aligned */
-.zoro-modal-buttons {
-  display: flex;
-  gap: 12px;
-  justify-content: center;
-  margin-top: 8px;
-}
-
-.zoro-modal-btn {
-  padding: 12px 24px;
-  font-size: 14px;
-  font-weight: 500;
-  font-family: inherit;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 80px;
-  outline: none;
-  white-space: nowrap;
-}
-
-
-.zoro-save-btn {
-  background: transparent;
-  color: var(--text-muted, #6b7280);
-  border: 1px solid var(--background-modifier-border, #e5e7eb);
-}
-
-.zoro-save-btn:hover:not(:disabled) {
-  background: var(--color-green, #16a34a);
-  color: var(--text-on-accent, #ffffff);
-  border-color: var(--color-green, #16a34a);
-  transform: translateY(-1px);
-}
-
-/* Dark-mode overrides */
-.theme-dark .zoro-save-btn,
-[data-theme="dark"] .zoro-save-btn {
-  color: var(--text-muted, #9ca3af);
-  border-color: var(--background-modifier-border, rgba(255, 255, 255, 0.12));
-}
-
-.theme-dark .zoro-save-btn:hover:not(:disabled),
-[data-theme="dark"] .zoro-save-btn:hover:not(:disabled) {
-  background: var(--color-green, #16a34a);
-  color: var(--text-on-accent, #ffffff);
-  border-color: var(--color-green, #16a34a);
-}
-
-
-
-
-
-
-.zoro-remove-btn {
-  background: transparent;
-  color: var(--text-muted, #6b7280);
-  border-color: var(--background-modifier-border, #e5e7eb);
-}
-
-.zoro-remove-btn:hover {
-  background: var(--color-red, #ef4444);
-  color: var(--text-on-accent, #ffffff);
-  border-color: var(--color-red, #ef4444);
-  transform: translateY(-1px);
-}
-
-/* Dark mode button styles - removed cancel button */
-.theme-dark .zoro-remove-btn,
-[data-theme="dark"] .zoro-remove-btn {
-  color: var(--text-muted, #9ca3af);
-  border-color: var(--background-modifier-border, rgba(255, 255, 255, 0.12));
-}
-
-.theme-dark .zoro-remove-btn:hover,
-[data-theme="dark"] .zoro-remove-btn:hover {
-  background: var(--color-red, #dc2626);
-  color: var(--text-on-accent, #ffffff);
-  border-color: var(--color-red, #dc2626);
-}
-
-/* Disabled state */
-.zoro-modal-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none !important;
-  box-shadow: none !important;
-}
-
-.zoro-quick-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none !important;
-}
-
-/* Error state */
-.zoro-modal-error {
-  background: var(--background-modifier-error, #fef2f2);
-  color: var(--color-red, #dc2626);
-  padding: 12px 16px;
-  border-radius: 8px;
-  margin: 8px 0;
-  font-size: 13px;
-  font-weight: 500;
-  border: 1px solid var(--color-red-alpha, rgba(220, 38, 38, 0.2));
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.zoro-modal-error::before {
-  content: "⚠️";
-  flex-shrink: 0;
-}
-
-.theme-dark .zoro-modal-error,
-[data-theme="dark"] .zoro-modal-error {
-  background: var(--background-modifier-error, rgba(220, 38, 38, 0.1));
-  color: var(--color-red, #f87171);
-  border-color: var(--color-red-alpha, rgba(248, 113, 113, 0.3));
-}
-
-/* Mobile responsive */
-@media (max-width: 480px) {
-  .zoro-modal-content {
-    margin: 16px;
-    padding: 24px;
-    max-width: none;
-    width: calc(100vw - 32px);
-    border-radius: 16px;
-  }
-  
-  .zoro-modal-buttons {
-    flex-direction: row;
-    gap: 8px;
-    justify-content: center;
-  }
-  
-  .zoro-modal-btn {
-    flex: 1;
-    justify-content: center;
-  }
-  
-  .zoro-quick-progress-buttons {
-    justify-content: space-between;
-  }
-  
-  .zoro-quick-btn {
-    flex: 1;
-    justify-content: center;
-  }
-}
-
-/* Focus ring for accessibility */
-.zoro-modal-btn:focus-visible,
-.zoro-quick-btn:focus-visible,
-.zoro-form-input:focus-visible,
-.zoro-modal-close:focus-visible {
-  outline: 2px solid var(--interactive-accent, #3b82f6);
-  outline-offset: 2px;
-}
-
-/* Smooth transitions for theme switching */
-.zoro-edit-modal *,
-.zoro-edit-modal *::before,
-.zoro-edit-modal *::after {
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
 /* Auth Modal */
@@ -1005,21 +580,13 @@ select.zoro-form-input {
 }
 
 /* Hover & loading animations */
-.zoro-card {
-  transition: all var(--zoro-transition-duration) ease;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
+
 .zoro-card:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
   border-color: var(--interactive-accent);
 }
-.zoro-card.loading {
-  opacity: 0.6;
-  pointer-events: none;
-  position: relative;
-  overflow: hidden;
-}
+
 .zoro-card.loading::after {
   content: '';
   position: absolute;
@@ -1044,139 +611,9 @@ select.zoro-form-input {
   text-align: right;
 }
 
-/* Edit Modal shell (unchanged) */
-.zoro-edit-modal {
-  position: fixed;
-  inset: 0;
-  z-index: 9999;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-}
-.zoro-modal-overlay {
-  position: absolute;
-  inset: 0;
-  background: rgba(0, 0, 0, var(--zoro-modal-overlay-opacity));
-  backdrop-filter: blur(5px);
-}
-.zoro-modal-content {
-  background: rgba(255, 255, 255, var(--zoro-modal-overlay-opacity));
-  color: #222;
-  border-radius: var(--zoro-modal-content-border-radius);
-  box-shadow: 0 12px 40px rgba(0, 0, 0, .25);
-  width: 340px;
-  max-width: var(--zoro-modal-content-width);
-  max-height: 90vh;
-  overflow-y: auto;
-  padding: 24px;
-}
-.zoro-edit-form {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-.zoro-modal-title {
-  margin: 0 0 12px;
-  font-size: 1.25rem;
-  font-weight: 600;
-  text-align: center;
-}
-.zoro-form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.zoro-form-label {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: #f1f1f11;
-}
-.zoro-form-input,
-.zoro-status-select {
-  padding: 8px 10px;
-  border: 1px solid #bbb;
-  border-radius: 4px;
-  font-size: 1rem;
-  transition: border-color 0.2s;
-  text-align: left;
-}
-.zoro-form-input:focus,
-.zoro-status-select:focus {
-  border-color: #0077ff;
-  outline: none;
-}
-.zoro-quick-progress-buttons {
-  display: flex;
-  gap: 6px;
-  justify-content: flex-end;
-}
-.zoro-quick-btn {
-  background: #f1f1f1;
-  border: 1px solid #d0d0d0;
-  border-radius: 4px;
-  padding: 6px 10px;
-  font-size: 0.875rem;
-  cursor: pointer;
-}
-.zoro-quick-btn:hover {
-  background: #e5e5e5;
-}
-.zoro-modal-buttons {
-  display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-  margin-top: 8px;
-}
-.zoro-modal-btn {
-  padding: 8px 14px;
-  font-size: 0.875rem;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-.zoro-save-btn {
-  background: #0077ff;
-  color: #fff;
-}
-.zoro-remove-btn {
-  background: #ff3b30;
-  color: #fff;
-}
 
-}
-.zoro-fav-btn {
-  background: none;
-  border: none;
-  font-size: 1.2rem;
-  padding: 0 6px;
-  cursor: pointer;
-}
 
-/* Dark mode for modal */
-@media (prefers-color-scheme: dark) {
-  .zoro-modal-content {
-  background: rgba(0, 0, 0, var(--zoro-modal-overlay-opacity));
-    color: #e5e5e5;
-  }
-  .zoro-form-input,
-  .zoro-status-select {
-    background: #3a3a3a;
-    border-color: #555;
-    color: #e5e5e5;
-  }
-  .zoro-quick-btn {
-    background: #3a3a3a;
-    border-color: #555;
-    color: #e5e5e5;
-  }
-  .zoro-save-btn   { background: #0a84ff; }
-  .zoro-remove-btn { background: #ff453a; }
-}
-
-}
-
-/ Blur-glass skeleton (frosted, glass-like shimmer) /
+/* Blur-glass skeleton (frosted, glass-like shimmer) */
 .zoro-skeleton,
 .zoro-card.zoro-skeleton {
 background: rgba(var(--mono-rgb-100), .04);
@@ -1199,7 +636,7 @@ transparent 30%,
 rgba(var(--mono-rgb-100), .05) 50%,
 transparent 70%
 );
-animation: blurShimmer 2s infinite;
+animation: shimmer 1.5s infinite;
 }
 
 / Blurred placeholders inside /
@@ -1220,7 +657,7 @@ border-radius: inherit;
 .skeleton-avatar { width: 48px; height: 48px; border-radius: 50%; }
 .skeleton-stat-section { height: 120px; }
 
-@keyframes blurShimmer {
+@keyframes shimmer {
 0%   { transform: translateX(-100%); }
 100% { transform: translateX(100%); }
 }
@@ -1293,681 +730,13 @@ transparent 70%
   }
 }
 
-/* Background blur overlay */
-.zoro-more-details-panel::before {
-  content: '';
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: var(--panel-overlay);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  z-index: -1;
-}
-
-/* Main panel container */
-.zoro-more-details-panel {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 1000;
-  max-height: 80vh;
-  max-width: 90vw;
-  width: 600px;
-  background: var(--panel-bg);
-  border-radius: 12px;
-  box-shadow: var(--panel-shadow);
-  color: var(--panel-text-primary);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  overflow: hidden;
-  animation: panelSlideIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-}
-
-@keyframes panelSlideIn {
-  from {
-    opacity: 0;
-    transform: translate(-50%, -50%) scale(0.9);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, -50%) scale(1);
-  }
-}
-
-/* Close button */
-.panel-close-btn {
-  position: absolute;
-  top: 15px;
-  right: 5px;
-  background: transparent !important;
-  border: none;
-  border-radius: 50%;
-  width: 0px;
-  height: 0px;
-  color: var(--panel-text-primary);
-  font-size: 20px;
-  font-weight: normal;
-  cursor: pointer;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-}
-
-.panel-close-btn:hover {
-  background: var(--panel-button-hover);
-  transform: scale(1.1);
-}
-
-/* Panel content container */
-.panel-content {
-  max-height: 80vh;
-  overflow-y: auto;
-  padding: 0;
-}
-
-/* Custom scrollbar */
-.panel-content::-webkit-scrollbar {
-  width: 8px;
-}
-
-.panel-content::-webkit-scrollbar-track {
-  background: var(--panel-scrollbar-track);
-}
-
-.panel-content::-webkit-scrollbar-thumb {
-  background: var(--panel-scrollbar-thumb);
-  border-radius: 4px;
-}
-
-.panel-content::-webkit-scrollbar-thumb:hover {
-  background: var(--panel-scrollbar-thumb-hover);
-}
-
-/* Header section */
-.panel-header {
-  background: var(--panel-header-bg);
-  padding: 24px 24px 20px;
-  border-bottom: 1px solid var(--panel-border);
-}
-
-.title-section {
-  margin-bottom: 12px;
-}
-
-.main-title {
-  font-size: 24px;
-  font-weight: 700;
-  margin: 0 0 8px 0;
-  line-height: 1.2;
-  color: var(--panel-text-primary);
-}
-
-.alt-title {
-  font-size: 16px;
-  color: var(--panel-text-secondary);
-  margin-bottom: 4px;
-}
-
-.native-title {
-  font-size: 14px;
-  color: var(--panel-text-tertiary);
-}
-
-.format-info {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.format-badge-large {
-  background: linear-gradient(
-    135deg,
-    hsl(var(--accent-h), var(--accent-s), var(--accent-l)),
-    hsl(var(--accent-h), var(--accent-s), calc(var(--accent-l) - 15%))
-  );
-  color: white;
-  padding: 6px 12px;
-  border-radius: 16px;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-
-.season-info {
-  color: var(--panel-text-secondary);
-  font-size: 14px;
-  font-weight: 500;
-}
-
-/* Panel sections */
-.panel-section {
-  padding: 20px 24px;
-  border-bottom: 1px solid var(--panel-border-light);
-}
-
-.panel-section:last-child {
-  border-bottom: none;
-  padding-bottom: 24px;
-}
-
-.section-title {
-  font-size: 18px;
-  font-weight: 600;
-  margin: 0 0 16px 0;
-  color: var(--panel-text-primary);
-  display: flex;
-  align-items: center;
-}
-
-.section-title::before {
-  content: '';
-  width: 4px;
-  height: 18px;
-  background: linear-gradient(
-    135deg,
-    hsl(var(--accent-h), var(--accent-s), var(--accent-l)),
-    hsl(var(--accent-h), var(--accent-s), calc(var(--accent-l) - 15%))
-  );
-  border-radius: 2px;
-  margin-right: 12px;
-}
-
-
-/* Metadata section */
-.metadata-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
-}
-
-.metadata-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 0;
-}
-
-.metadata-label {
-  color: var(--panel-text-secondary);
-  font-size: 14px;
-  font-weight: 500;
-}
-
-.metadata-value {
-  color: var(--panel-text-primary);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-/* Airing section */
-.airing-section {
-  background: var(--panel-airing-bg);
-  border-left: 4px solid #22c55e;
-  margin: 0 10px;
-  padding: 20px 24px;
-}
-
-.airing-info {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 16px;
-}
-
-.airing-episode,
-.airing-date,
-.airing-time,
-.airing-countdown {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.airing-label {
-  color: var(--panel-text-secondary);
-  font-size: 12px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.airing-value {
-  color: #22c55e;
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.countdown-value {
-  color: #fbbf24;
-  font-weight: 700;
-}
-
-/* Statistics section */
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 16px;
-}
-
-.stat-item {
-  background: var(--panel-section-bg);
-  border-radius: 8px;
-  padding: 16px;
-  text-align: center;
-  transition: all 0.2s ease;
-}
-
-.stat-item:hover {
-  background: var(--panel-section-hover);
-  transform: translateY(-2px);
-}
-
-.stat-label {
-  display: block;
-  color: var(--panel-text-secondary);
-  font-size: 12px;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-bottom: 8px;
-}
-
-.stat-value {
-  display: block;
-  color: var(--panel-text-primary);
-  font-size: 20px;
-  font-weight: 700;
-}
-
-.score-stat.anilist-stat .stat-value {
-  color: #3b82f6;
-}
-
-.score-stat.mal-stat .stat-value {
-  color: #2e51a2;
-}
-
-.score-stat.imdb-stat .stat-value {
-  color: #f5c518;
-}
-
-.rank-stat .stat-value {
-  color: #fbbf24;
-}
-
-.count-stat .stat-value {
-  color: #22c55e;
-}
-
-.loading .stat-value {
-  color: var(--panel-loading-text);
-  font-size: 14px;
-  font-weight: 500;
-}
-
-/* Genres section */
-.genres-container {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.genre-tag {
-  background: var(--panel-genre-bg);
-  color: var(--panel-text-primary);
-  padding: 6px 12px;
-  border-radius: 16px;
-  font-size: 12px;
-  font-weight: 500;
-  transition: all 0.2s ease;
-}
-
-.genre-tag:hover {
-  background: var(--panel-genre-hover);
-  transform: translateY(-1px);
-}
-
-/* External links section */
-.external-links-container {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.external-link-btn {
-  padding: 12px 20px;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 600;
-  transition: all 0.2s ease;
-  text-decoration: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  position: relative;
-  overflow: hidden;
-}
-
-.external-link-btn::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-  transition: left 0.5s ease;
-}
-
-.external-link-btn:hover::before {
-  left: 100%;
-}
-
-.anilist-btn {
-  background: linear-gradient(135deg, #02a9ff, #0284c7);
-  color: white;
-}
-
-.anilist-btn:hover {
-  background: linear-gradient(135deg, #0284c7, #0369a1);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(2, 169, 255, 0.3);
-}
-
-.mal-btn {
-  background: linear-gradient(135deg, #2e51a2, #1e3a72);
-  color: white;
-}
-
-.mal-btn:hover {
-  background: linear-gradient(135deg, #1e3a72, #1e40af);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(46, 81, 162, 0.3);
-}
-/* SIMKL Button - Based on SIMKL's black and white/grayscale brand colors */
-.simkl-btn {
-  background: linear-gradient(135deg, #2c2c2c, #1a1a1a);
-  color: white;
-}
-
-.simkl-btn:hover {
-  background: linear-gradient(135deg, #1a1a1a, #000000);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(44, 44, 44, 0.4);
-}
-
-/* IMDb Button - Based on IMDb's golden yellow brand color */
-.imdb-btn {
-  background: linear-gradient(135deg, #f5c518, #f9a825);
-  color: #000000;
-}
-
-.imdb-btn:hover {
-  background: linear-gradient(135deg, #f9a825, #ff8f00);
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(245, 197, 24, 0.3);
-}
-
-.zoro-custom-external-btn {
-  background: linear-gradient(135deg, var(--interactive-accent), var(--interactive-accent-hover));
-  color: var(--text-on-accent);
-  padding: 12px 20px;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 600;
-  transition: all 0.2s ease;
-  text-decoration: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  position: relative;
-  overflow: hidden;
-}
-
-.zoro-custom-external-btn::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: -100%;
-  width: 100%;
-  height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
-  transition: left 0.5s ease;
-}
-
-.zoro-custom-external-btn:hover::before {
-  left: 100%;
-}
-
-.zoro-custom-external-btn:hover {
-  background: linear-gradient(135deg, var(--interactive-accent-hover), var(--interactive-accent));
-  transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(var(--interactive-accent-rgb), 0.3);
-}
-
-.zoro-custom-external-btn:active {
-  transform: translateY(0);
-}
-
-.url-input-container {
-  display: flex;
-  position: relative;
-  align-items: center;
-}
-
-.custom-url-input {
-  flex: 1;
-  padding-right: 35px; /* Space for the remove button */
-}
-
-.url-remove-button-inside {
-  position: absolute;
-  right: 8px;
-  top: 50%;
-  transform: translateY(-60%);
-  background: transparent !important;
-  border: none;
-  width: 0px;
-  height: 0px;
-  color: var(--panel-text-primary);
-  font-size: 20px;
-  font-weight: normal;
-  cursor: pointer;
-  z-index: 10;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-
-}
-
-.url-remove-button-inside:hover {
-  background: var(--panel-button-hover);
-  transform: scale(1.1);
-}
-
-/* Synopsis section */
-.synopsis-content {
-  color: var(--panel-text-secondary);
-  line-height: 1.6;
-  font-size: 14px;
-}
-
-.synopsis-placeholder {
-  color: var(--panel-text-tertiary);
-  font-style: italic;
-}
-
-.expand-synopsis-btn {
-  background: none;
-  border: none;
-  color: #3b82f6;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 500;
-  margin-top: 12px;
-  padding: 4px 0;
-  transition: color 0.2s ease;
-}
-
-.expand-synopsis-btn:hover {
-  color: #60a5fa;
-  text-decoration: underline;
-}
-
-/* Responsive design */
-@media (max-width: 768px) {
-  .zoro-more-details-panel {
-    width: 95vw;
-    max-height: 90vh;
-  }
-  
-  .panel-header {
-    padding: 20px 16px 16px;
-  }
-  
-  .panel-section {
-    padding: 16px;
-  }
-  
-  .main-title {
-    font-size: 20px;
-  }
-  
-  .stats-grid {
-    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    gap: 12px;
-  }
-  
-  .stat-item {
-    padding: 12px;
-  }
-  
-  .stat-value {
-    font-size: 16px;
-  }
-  
-  .external-links-container {
-    flex-direction: column;
-  }
-  
-  .external-link-btn {
-    justify-content: center;
-  }
-}
-
-@media (max-width: 480px) {
-  .zoro-more-details-panel {
-    width: 100vw;
-    max-height: 100vh;
-    border-radius: 0;
-  }
-  
-  .metadata-grid {
-    grid-template-columns: 1fr;
-  }
-  
-  .airing-info {
-    grid-template-columns: repeat(2, 1fr);
-  }
-  
-  .stats-grid {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-/* Copy Functionality Styles for Detail Panel */
-.zoro-copy-container {
-  position: relative;
-}
-
-.zoro-copy-btn {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  background: transparent !important;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  padding: 4px 8px;
-  font-size: 12px;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-  z-index: 1000;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.zoro-copy-btn:hover {
-  background: transparent !important;
-}
-
-.zoro-copy-container:hover .zoro-copy-btn {
-  opacity: 1;
-}
-
-.zoro-copy-btn.zoro-copied {
-  background: rgba(34, 197, 94, 0.8);
-  opacity: 1;
-}
-
-.zoro-copy-btn.zoro-copied:hover {
-  background: rgba(34, 197, 94, 0.9);
-}
-
-.title-section.zoro-copy-container {
-  padding-right: 40px;
-}
-
-.synopsis-section.zoro-copy-container .synopsis-content {
-  padding-right: 40px;
-}
-
-/* Mobile responsive adjustments */
-@media (max-width: 768px) {
-  .zoro-copy-btn {
-    top: 4px;
-    right: 4px;
-    padding: 3px 6px;
-    font-size: 11px;
-  }
-  
-  .title-section.zoro-copy-container {
-    padding-right: 32px;
-  }
-  
-  .synopsis-section.zoro-copy-container .synopsis-content {
-    padding-right: 32px;
-  }
-}
-
-/* 
-The panel will automatically adapt to the user's system theme preference:
-- Dark mode when system is set to dark
-- Light mode when system is set to light
-- No JavaScript or manual toggling required!
-*/
-
 
 /* === Global Loader ===================================================== */
 #zoro-global-loader {
   position: fixed;
   bottom: 10px;
   left: 10px;
-  font-size: 16px;
+  font-size: 1rem;
   z-index: 9999;
   display: none;                     /* hidden by default */
 }
@@ -2008,13 +777,6 @@ The panel will automatically adapt to the user's system theme preference:
   -webkit-tap-highlight-color: transparent;
   cursor: pointer;
   transition: opacity 0.1s ease;
-  user-select: none;
-  -webkit-user-select: none;
-  -moz-user-select: none;
-  -ms-user-select: none;
-  -webkit-touch-callout: none;
-  -webkit-user-drag: none;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .cover-overlay {
@@ -2041,19 +803,6 @@ The panel will automatically adapt to the user's system theme preference:
   opacity: 0.7;
 }
 
-
-
-/* === More-Details Modal ============================================ */
-.zoro-more-details-panel {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  z-index: 1000;
-  max-height: 80vh;
-  max-width: 90vw;
-  width: 600px;
-}
 
 
 .zoro-modal-error {
@@ -2097,7 +846,7 @@ The panel will automatically adapt to the user's system theme preference:
   pointer-events: none;
   user-select: none;
   position: relative;
-  transition: all 0.2s ease;
+  transition: all var(--zoro-transition-medium) ease;
 }
 
 /* Cover Image Skeleton */
@@ -2178,11 +927,11 @@ The panel will automatically adapt to the user's system theme preference:
 }
 
 /* Search Cards - Simple Variations */
-.zoro-search-skeleton .zoro-cards-grid .zoro-skeleton:nth-child(2) .skeleton-cover {
+.zoro-skeleton:nth-child(2n) .skeleton-cover {
   background: var(--skeleton-mid);
 }
 
-.zoro-search-skeleton .zoro-cards-grid .zoro-skeleton:nth-child(3) .skeleton-cover {
+.zoro-skeleton:nth-child(3n) .skeleton-cover {
   background: var(--skeleton-light);
 }
 
@@ -2278,7 +1027,6 @@ The panel will automatically adapt to the user's system theme preference:
 }
 
 
-/* Synchronized heart icons for Obsidian plugin */
 .zoro-container .zoro-card[data-media-id] {
   position: relative;   /* anchor for both hearts */
 }
@@ -2286,16 +1034,9 @@ The panel will automatically adapt to the user's system theme preference:
 /* Base styles for both heart icons */
 .zoro-heart,
 .zoro-no-heart {
-  --heart-size: 24px;
-  --heart-glow: 0 0 12px rgba(255, 107, 107, 0.4), 0 0 24px rgba(255, 107, 107, 0.2);
-  --heart-shadow: 0 0 4px rgba(0, 0, 0, 0.25), 0 0 8px rgba(0, 0, 0, 0.15);
-  --adaptive-bg: rgba(0, 0, 0, 0.42);
-  --adaptive-border: rgba(0, 0, 0, 0.15);
-  --backdrop-blur: 4px;
-  
   position: absolute;
-  top: 10px;
-  left: 10px;
+  top: 5px;
+  left: 5px;
   width: var(--heart-size);
   height: var(--heart-size);
   cursor: pointer;
@@ -2306,7 +1047,6 @@ The panel will automatically adapt to the user's system theme preference:
   background: transparent;
   border: none;
   padding: 0;
-  
   transform-origin: center;
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
@@ -2320,10 +1060,8 @@ The panel will automatically adapt to the user's system theme preference:
   width: var(--heart-size);
   height: var(--heart-size);
   transform: translate(-50%, -50%);
-  background: linear-gradient(135deg, var(--heart-color) 0%, color-mix(in srgb, var(--heart-color) 85%, #fff) 100%);
   
-  /* Perfect heart shape - properly sized for container */
-  clip-path: path('M10,18 L8.5,16.82 C4.9,13.68 2.5,11.43 2.5,8.75 C2.5,6.42 4.42,4.5 6.75,4.5 C7.93,4.5 9.06,5.09 9.75,6 C10.44,5.09 11.57,4.5 12.75,4.5 C15.08,4.5 17,6.42 17,8.75 C17,11.43 14.6,13.68 11,16.82 L10,18 Z');
+
   
   /* Make the heart bigger - no scaling down */
   transform: translate(-50%, -50%) scale(1);
@@ -2333,63 +1071,6 @@ The panel will automatically adapt to the user's system theme preference:
   border-radius: 2px;
 }
 
-/* RED HEART ICON - Favorite state */
-.zoro-heart {
-  --heart-color: #ff6b6b;
-  --heart-glow: 0 0 12px rgba(255, 107, 107, 0.4), 0 0 24px rgba(255, 107, 107, 0.2);
-}
-
-/* WHITE HEART ICON - Not favorite state */
-.zoro-no-heart {
-  --heart-color: #ffffff;
-  --heart-glow: 0 0 12px rgba(245, 245, 245, 0.9), 0 0 24px rgba(245, 245, 245, 0.2);
-}
-
-/* Adaptive contrast classes - for both icons */
-.zoro-heart.light-bg,
-.zoro-no-heart.light-bg {
-  --heart-shadow: 0 0 6px rgba(0, 0, 0, 0.4), 0 0 12px rgba(0, 0, 0, 0.2);
-}
-
-.zoro-heart.light-bg {
-  --heart-color: #ff4757;
-  --heart-glow: 0 0 8px rgba(255, 71, 87, 0.6), 0 0 16px rgba(255, 71, 87, 0.3);
-}
-
-.zoro-no-heart.light-bg {
-  --heart-color: #e8e8e8;
-  --heart-glow: 0 0 8px rgba(232, 232, 232, 0.6), 0 0 16px rgba(232, 232, 232, 0.3);
-}
-
-.zoro-heart.dark-bg,
-.zoro-no-heart.dark-bg {
-  --heart-shadow: 0 0 6px rgba(255, 255, 255, 0.2), 0 0 12px rgba(255, 255, 255, 0.1);
-}
-
-.zoro-heart.dark-bg {
-  --heart-color: #ff9aa2;
-  --heart-glow: 0 0 8px rgba(255, 154, 162, 0.6), 0 0 16px rgba(255, 154, 162, 0.3);
-}
-
-.zoro-no-heart.dark-bg {
-  --heart-color: #ffffff;
-  --heart-glow: 0 0 8px rgba(248, 248, 248, 0.6), 0 0 16px rgba(248, 248, 248, 0.3);
-}
-
-.zoro-heart.medium-bg,
-.zoro-no-heart.medium-bg {
-  --heart-shadow: 0 0 8px rgba(0, 0, 0, 0.5), 0 0 16px rgba(255, 255, 255, 0.1);
-}
-
-.zoro-heart.medium-bg {
-  --heart-color: #ff6b6b;
-  --heart-glow: 0 0 10px rgba(255, 107, 107, 0.7), 0 0 20px rgba(255, 107, 107, 0.4);
-}
-
-.zoro-no-heart.medium-bg {
-  --heart-color: #ffffff;
-  --heart-glow: 0 0 10px rgba(240, 240, 240, 0.7), 0 0 20px rgba(240, 240, 240, 0.4);
-}
 
 .zoro-heart:hover,
 .zoro-no-heart:hover {
@@ -2397,36 +1078,11 @@ The panel will automatically adapt to the user's system theme preference:
   filter: drop-shadow(0 0 6px rgba(0, 0, 0, 0.3));
 }
 
-.zoro-heart:hover::before {
-  box-shadow: 
-    var(--heart-glow),
-    0 0 16px rgba(255, 107, 107, 0.6),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3);
-}
-
-.zoro-no-heart:hover::before {
-  box-shadow: 
-    var(--heart-glow),
-    0 0 16px rgba(245, 245, 245, 0.6),
-    inset 0 1px 0 rgba(255, 255, 255, 0.3);
-}
-
 /* Identical active/pressed state for both */
 .zoro-heart:active,
 .zoro-no-heart:active {
   transform: scale(1.05);
   transition-duration: 0.1s;
-}
-
-/* Identical favorited state animation for both */
-.zoro-heart.favorited::before {
-  background: linear-gradient(135deg, #ff4757 0%, #ff6b82 100%);
-  animation: heartBeat 0.6s ease-in-out;
-}
-
-.zoro-no-heart.favorited::before {
-  background: linear-gradient(135deg, #e8e8e8 0%, #f5f5f5 100%);
-  animation: heartBeat 0.6s ease-in-out;
 }
 
 /* Identical heart beat animation for both */
@@ -2438,45 +1094,6 @@ The panel will automatically adapt to the user's system theme preference:
   100% { transform: translate(-50%, -50%) scale(1); }
 }
 
-/* Theme variations - identical structure for both */
-body.theme-dark .zoro-heart:not(.light-bg):not(.dark-bg):not(.medium-bg) {
-  --heart-color: #ff9aa2;
-  --heart-glow: 0 0 12px rgba(255, 154, 162, 0.4), 0 0 24px rgba(255, 154, 162, 0.2);
-  --heart-shadow: 0 0 4px rgba(0, 0, 0, 0.3), 0 0 8px rgba(0, 0, 0, 0.15);
-}
-
-body.theme-dark .zoro-no-heart:not(.light-bg):not(.dark-bg):not(.medium-bg) {
-  --heart-color: #f0f0f0;
-  --heart-glow: 0 0 12px rgba(240, 240, 240, 0.4), 0 0 24px rgba(240, 240, 240, 0.2);
-  --heart-shadow: 0 0 4px rgba(0, 0, 0, 0.3), 0 0 8px rgba(0, 0, 0, 0.15);
-}
-
-body.theme-light .zoro-heart:not(.light-bg):not(.dark-bg):not(.medium-bg) {
-  --heart-color: #ff4757;
-  --heart-glow: 0 0 12px rgba(255, 71, 87, 0.4), 0 0 24px rgba(255, 71, 87, 0.2);
-  --heart-shadow: 0 0 4px rgba(0, 0, 0, 0.2), 0 0 8px rgba(0, 0, 0, 0.1);
-}
-
-body.theme-light .zoro-no-heart:not(.light-bg):not(.dark-bg):not(.medium-bg) {
-  --heart-color: #000000;
-  --heart-glow: 0 0 12px rgba(229, 229, 229, 0.4), 0 0 24px rgba(229, 229, 229, 0.2);
-  --heart-shadow: 0 0 4px rgba(0, 0, 0, 0.2), 0 0 8px rgba(0, 0, 0, 0.1);
-}
-
-body.theme-dark .zoro-heart.favorited::before {
-  background: linear-gradient(135deg, #ff9aa2 0%, #ffb3ba 100%);
-}
-
-body.theme-light .zoro-heart.favorited::before {
-  background: linear-gradient(135deg, #ff4757 0%, #ff6b82 100%);
-}
-
-/* Identical accessibility improvements for both */
-.zoro-heart:focus,
-.zoro-no-heart:focus {
-  outline: 2px solid var(--heart-color);
-  outline-offset: 2px;
-}
 
 
 /* Stats Container & Variables */
@@ -2782,7 +1399,7 @@ body.theme-light .zoro-heart.favorited::before {
   color: hsl(var(--accent-h), var(--accent-s), var(--accent-l)) !important;
   border-radius: 4px;
   padding: 6px 12px;
-  transition: all 0.2s ease;
+  transition: all var(--zoro-transition-medium) ease;
 }
 
 .zoro-side-panel .zoro-panel-btn:active {
@@ -2830,7 +1447,7 @@ body.theme-light .zoro-heart.favorited::before {
   border-radius: 6px;
   background-color: var(--background-modifier-border);
   color: var(--text-normal);
-  font-size: 14px;
+  font-size: 0.875rem;
   outline: none;
   margin-bottom: 8px;
 }
@@ -2892,6 +1509,17 @@ body.theme-light .zoro-heart.favorited::before {
   flex-direction: column;
 }
 
+.zoro-panel-blank,
+.zoro-note-empty-message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  font-size: 15px;
+  text-align: center;
+  padding: 1rem 2rem;
+}
+
 /* Empty State */
 .zoro-note-empty-state {
   flex: 1;
@@ -2900,9 +1528,7 @@ body.theme-light .zoro-heart.favorited::before {
   justify-content: center;
 }
 
-.zoro-note-empty-message {
-  /* No additional styles needed */
-}
+
 
 /* Notes List */
 .zoro-note-notes-list {
@@ -2974,7 +1600,7 @@ body.theme-light .zoro-heart.favorited::before {
   cursor: pointer;
   font-size: 13px;
   font-weight: 500;
-  transition: all 0.1s ease;
+  transition: all var(--zoro-transition-fast) ease;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
@@ -2992,3 +1618,947 @@ body.theme-light .zoro-heart.favorited::before {
   color: hsl(var(--accent-h), var(--accent-s), var(--accent-l));
 }
 
+/* === More-Details Modal ============================================ */
+
+
+/* Background blur overlay */
+.zoro-more-details-panel::before {
+  content: '';
+  position: fixed;
+  top: 0px;
+  left: 0px;
+  right: 0px;
+  bottom: 0px;
+  background: transparent !important;
+  z-index: -1;
+}
+
+/* Main panel container */
+.zoro-more-details-panel {
+  position: fixed;
+  color: var(--panel-text-primary);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  overflow: hidden;
+}
+
+@keyframes panelSlideIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+/* Close button */
+.panel-close-btn {
+  position: absolute;
+  top: 15px;
+  right: 15px;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  color: var(--panel-text-primary);
+  font-size: 20px;
+  cursor: pointer;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--zoro-transition-medium) ease;
+}
+
+.panel-close-btn:hover {
+  background: var(--panel-button-hover);
+  transform: scale(1.1);
+}
+
+/* Panel content container */
+.panel-content {
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: 0 0 50px 0; 
+}
+
+
+
+/* Custom scrollbar */
+.panel-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.panel-content::-webkit-scrollbar-track {
+  background: var(--panel-scrollbar-track);
+}
+
+.panel-content::-webkit-scrollbar-thumb {
+  background: var(--panel-scrollbar-thumb);
+  border-radius: 4px;
+}
+
+.panel-content::-webkit-scrollbar-thumb:hover {
+  background: var(--panel-scrollbar-thumb-hover);
+}
+
+/* Header section */
+.panel-header {
+  padding: 24px 24px 20px;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.title-section {
+  margin-bottom: 12px;
+}
+
+.main-title {
+  font-size: 24px;
+  font-weight: 700;
+  margin: 0 0 8px 0;
+  line-height: 1.2;
+  color: var(--panel-text-primary);
+}
+
+.alt-title {
+  font-size: 1rem;
+  color: var(--panel-text-secondary);
+  margin-bottom: 4px;
+}
+
+.native-title {
+  font-size: 0.875rem;
+  color: var(--panel-text-tertiary);
+}
+
+.format-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.format-badge-large {
+  background: linear-gradient(
+    135deg,
+    hsl(var(--accent-h), var(--accent-s), var(--accent-l)),
+    hsl(var(--accent-h), var(--accent-s), calc(var(--accent-l) - 15%))
+  );
+  color: white;
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+
+.season-info {
+  color: var(--panel-text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+/* Panel sections */
+.panel-section {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--panel-border-light);
+}
+
+.panel-section:last-child {
+  border-bottom: none;
+  padding-bottom: 24px;
+}
+
+.section-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin: 0 0 16px 0;
+  color: var(--panel-text-primary);
+  display: flex;
+  align-items: center;
+}
+
+.section-title::before {
+  content: '';
+  width: 4px;
+  height: 18px;
+  background: linear-gradient(
+    135deg,
+    hsl(var(--accent-h), var(--accent-s), var(--accent-l)),
+    hsl(var(--accent-h), var(--accent-s), calc(var(--accent-l) - 15%))
+  );
+  border-radius: 2px;
+  margin-right: 12px;
+}
+
+
+/* Metadata section */
+.metadata-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(var(--zoro-card-min-width), 1fr));
+  gap: 12px;
+}
+
+.metadata-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+}
+
+.metadata-label {
+  color: var(--panel-text-secondary);
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.metadata-value {
+  color: var(--panel-text-primary);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+
+/* Airing section */
+.airing-section {
+  background: var(--panel-airing-bg);
+  border-left: 4px solid #22c55e;
+  margin: 0 10px;
+  padding: 20px 24px;
+}
+
+.airing-info {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--zoro-stat-min-width), 1fr));
+  gap: 16px;
+}
+
+.airing-episode,
+.airing-date,
+.airing-time,
+.airing-countdown {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.airing-label {
+  color: var(--panel-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.airing-value {
+  color: #22c55e;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.countdown-value {
+  color: #fbbf24;
+  font-weight: 700;
+}
+
+/* Statistics section */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(var(--zoro-stat-min-width), 1fr));
+  gap: 16px;
+}
+
+.stat-item {
+  background: var(--panel-section-bg);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+  transition: all var(--zoro-transition-medium) ease;
+}
+
+.stat-item:hover {
+  background: var(--panel-section-hover);
+  transform: translateY(-2px);
+}
+
+.stat-label {
+  display: block;
+  color: var(--panel-text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+.stat-value {
+  display: block;
+  color: var(--panel-text-primary);
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.score-stat.anilist-stat .stat-value {
+  color: #3b82f6;
+}
+
+.score-stat.mal-stat .stat-value {
+  color: #2e51a2;
+}
+
+.score-stat.imdb-stat .stat-value {
+  color: #f5c518;
+}
+
+.rank-stat .stat-value {
+  color: #fbbf24;
+}
+
+.count-stat .stat-value {
+  color: #22c55e;
+}
+
+.zoro-loading,
+.zoro-card.zoro-loading,
+.loading {
+  opacity: 0.6;
+  pointer-events: none;
+  position: relative;
+  overflow: hidden;
+}
+
+.zoro-loading .stat-value,
+.loading .stat-value {
+  color: var(--panel-loading-text, var(--text-muted));
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+/* Genres section */
+.genres-container {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.genre-tag {
+  background: var(--panel-genre-bg);
+  color: var(--panel-text-primary);
+  padding: 6px 12px;
+  border-radius: 16px;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all var(--zoro-transition-medium) ease;
+}
+
+.genre-tag:hover {
+  background: var(--panel-genre-hover);
+  
+}
+
+/* External links section */
+.external-links-container {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.external-link-btn {
+  padding: 12px 20px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: all var(--zoro-transition-medium) ease;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  overflow: hidden;
+}
+
+.external-link-btn::before,
+.zoro-custom-external-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s ease;
+}
+
+.external-link-btn:hover::before,
+.zoro-custom-external-btn:hover::before {
+  left: 100%;
+}
+
+.anilist-btn {
+  background: linear-gradient(135deg, #02a9ff, #0284c7);
+  color: white;
+}
+
+.anilist-btn:hover {
+  background: linear-gradient(135deg, #0284c7, #0369a1);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(2, 169, 255, 0.3);
+}
+
+.mal-btn {
+  background: linear-gradient(135deg, #2e51a2, #1e3a72);
+  color: white;
+}
+
+.mal-btn:hover {
+  background: linear-gradient(135deg, #1e3a72, #1e40af);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(46, 81, 162, 0.3);
+}
+/* SIMKL Button - Based on SIMKL's black and white/grayscale brand colors */
+.simkl-btn {
+  background: linear-gradient(135deg, #2c2c2c, #1a1a1a);
+  color: white;
+}
+
+.simkl-btn:hover {
+  background: linear-gradient(135deg, #1a1a1a, #000000);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(44, 44, 44, 0.4);
+}
+
+/* IMDb Button - Based on IMDb's golden yellow brand color */
+.imdb-btn {
+  background: linear-gradient(135deg, #f5c518, #f9a825);
+  color: #000000;
+}
+
+.imdb-btn:hover {
+  background: linear-gradient(135deg, #f9a825, #ff8f00);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(245, 197, 24, 0.3);
+}
+
+.zoro-custom-external-btn {
+  background: linear-gradient(135deg, var(--interactive-accent), var(--interactive-accent-hover));
+  color: var(--text-on-accent);
+  padding: 12px 20px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition: all var(--zoro-transition-medium) ease;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  overflow: hidden;
+}
+
+
+.zoro-custom-external-btn:hover {
+  background: linear-gradient(135deg, var(--interactive-accent-hover), var(--interactive-accent));
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(var(--interactive-accent-rgb), 0.3);
+}
+
+.zoro-custom-external-btn:active {
+  transform: translateY(0);
+}
+
+.url-input-container {
+  display: flex;
+  position: relative;
+  align-items: center;
+}
+
+.custom-url-input {
+  flex: 1;
+  padding-right: 35px; /* Space for the remove button */
+}
+
+.url-remove-button-inside {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-60%);
+  background: transparent !important;
+  border: none;
+  width: 0px;
+  height: 0px;
+  color: var(--panel-text-primary);
+  font-size: 1.25rem;
+  font-weight: normal;
+  cursor: pointer;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--zoro-transition-medium) ease;
+
+}
+
+.url-remove-button-inside:hover {
+  background: var(--panel-button-hover);
+  transform: scale(1.1);
+}
+
+/* Synopsis section */
+.synopsis-content {
+  color: var(--panel-text-secondary);
+  line-height: 1.6;
+  font-size: 0.875rem;
+}
+
+.synopsis-placeholder {
+  color: var(--panel-text-tertiary);
+  font-style: italic;
+}
+
+.expand-synopsis-btn {
+  background: none;
+  border: none;
+  color: #3b82f6;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin-top: 12px;
+  padding: 4px 0;
+  transition: color 0.2s ease;
+}
+
+.expand-synopsis-btn:hover {
+  color: #60a5fa;
+  text-decoration: underline;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .zoro-more-details-panel {
+    width: 95vw;
+    max-height: 90vh;
+  }
+  
+  .panel-header {
+    padding: 20px 16px 16px;
+  }
+  
+  .panel-section {
+    padding: 16px;
+  }
+  
+  .main-title {
+    font-size: 1.25rem;
+  }
+  
+  .stats-grid {
+      grid-template-columns: repeat(auto-fit, minmax(var(--zoro-stat-min-width), 1fr));
+    gap: 12px;
+  }
+  
+  .stat-item {
+    padding: 12px;
+  }
+  
+  .stat-value {
+    font-size: 1rem;
+  }
+  
+  .external-links-container {
+    flex-direction: column;
+  }
+  
+  .external-link-btn {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .zoro-more-details-panel {
+    width: 100vw;
+    max-height: 100vh;
+    border-radius: 0;
+  }
+  
+  .metadata-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .airing-info {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* Copy Functionality Styles for Detail Panel */
+.zoro-copy-container {
+  position: relative;
+}
+
+.zoro-copy-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  background: transparent !important;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.zoro-copy-btn:hover {
+  background: transparent !important;
+}
+
+.zoro-copy-container:hover .zoro-copy-btn {
+  opacity: 1;
+}
+
+
+.title-section.zoro-copy-container {
+  padding-right: 40px;
+}
+
+.synopsis-section.zoro-copy-container .synopsis-content {
+  padding-right: 40px;
+}
+
+/* Mobile responsive adjustments */
+@media (max-width: 768px) {
+  .zoro-copy-btn {
+    top: 4px;
+    right: 4px;
+    padding: 3px 6px;
+    font-size: 11px;
+  }
+  
+  .title-section.zoro-copy-container {
+    padding-right: 32px;
+  }
+  
+  .synopsis-section.zoro-copy-container .synopsis-content {
+    padding-right: 32px;
+  }
+}
+
+
+/* Edit Panel - Full Coverage (except toolbar) */
+.zoro-edit-modal.zoro-inline {
+  position: relative;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  border: none;
+  overflow: hidden;
+  /* Prevent content bleeding through without background color */
+  z-index: 10;
+}
+
+.zoro-edit-modal.zoro-inline .zoro-modal-content {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  margin: 0;
+  /* Create a stacking context to isolate content */
+  position: relative;
+  z-index: 1;
+}
+
+.zoro-edit-modal.zoro-inline .zoro-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 20px;
+  box-sizing: border-box;
+  flex: 1;
+  /* Prevent content from shifting due to absolute positioning */
+  position: relative;
+  /* Clip any content that might overflow */
+  overflow: hidden;
+  /* Ensure form content stays above any background content */
+  z-index: 2;
+}
+
+/* Modal Title */
+.zoro-modal-title {
+  margin: 0 0 20px 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: var(--text-normal, #1a1a1a);
+  /* Remove excessive padding - favorite button is positioned absolutely */
+  padding-right: 0;
+  position: relative;
+}
+
+/* Form fields */
+.zoro-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* Ensure consistent alignment */
+  width: 100%;
+}
+
+.zoro-form-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  margin: 0;
+  line-height: 1.4;
+  color: var(--text-normal, #1a1a1a);
+}
+
+.zoro-form-input {
+  padding: 5px;
+  border: 1px solid var(--background-modifier-border, #e5e7eb);
+  border-radius: 8px;
+  font-size: 0.875rem;
+  font-family: inherit;
+  background: var(--background-secondary, #ffffff);
+  transition: all 0.2s ease;
+  outline: none;
+  appearance: none;
+  /* Ensure full width and prevent shifting */
+  width: 100%;
+  box-sizing: border-box;
+  /* Fix alignment - force text to align left */
+  text-align: left;
+  direction: ltr;
+}
+
+.zoro-form-input:focus {
+  border-color: var(--interactive-accent, #3b82f6);
+  box-shadow: 0 0 0 2px var(--interactive-accent-alpha, rgba(59, 130, 246, 0.1));
+}
+
+/* Number input styling */
+.zoro-form-input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+.zoro-form-input[type="number"]::-webkit-outer-spin-button,
+.zoro-form-input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Favorite button - Fixed positioning */
+.zoro-fav-container {
+  position: relative;
+}
+
+.zoro-fav-btn {
+  position: absolute;
+  top: -25px;
+  right: 0;
+  background: transparent !important;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  outline: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 1;
+  padding: 4px;
+  z-index: 10;
+  border-radius: 50%;
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  /* Prevent the button from affecting layout flow */
+  pointer-events: auto;
+}
+
+.zoro-fav-btn:hover {
+  transform: scale(1.1);
+  background: var(--background-modifier-hover, #f3f4f6) !important;
+}
+
+.zoro-fav-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Quick progress buttons */
+.zoro-quick-progress-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  margin-top: 8px;
+  /* Ensure buttons don't shift */
+  width: 100%;
+}
+
+.zoro-quick-btn {
+  padding: 8px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  border: 1px solid var(--background-modifier-border, #e5e7eb);
+  border-radius: 6px;
+  background: var(--background-secondary, #f9fafb);
+  color: var(--text-muted, #6b7280);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  outline: none;
+  flex: 1;
+  /* Prevent button content from shifting */
+  box-sizing: border-box;
+}
+
+.zoro-quick-btn:hover {
+  background: var(--background-modifier-hover, #f3f4f6);
+  color: var(--text-normal, #1a1a1a);
+  border-color: var(--background-modifier-border-hover, #d1d5db);
+  transform: translateY(-1px);
+}
+
+.zoro-complete-btn {
+  background: var(--interactive-accent, #3b82f6) !important;
+  color: var(--text-on-accent, #ffffff) !important;
+  border-color: var(--interactive-accent, #3b82f6) !important;
+}
+
+.zoro-complete-btn:hover {
+  background: var(--interactive-accent-hover, #2563eb) !important;
+  border-color: var(--interactive-accent-hover, #2563eb) !important;
+  color: var(--text-on-accent, #ffffff) !important;
+}
+
+/* Modal buttons */
+.zoro-modal-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 24px;
+  /* Ensure button container doesn't shift */
+  width: 100%;
+}
+
+.zoro-modal-btn {
+  padding: 12px 24px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  font-family: inherit;
+  border: 1px solid var(--background-modifier-border, #e5e7eb);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 100px;
+  outline: none;
+  white-space: nowrap;
+  background: var(--background-secondary, #f9fafb);
+  color: var(--text-muted, #6b7280);
+  /* Ensure consistent sizing */
+  box-sizing: border-box;
+}
+
+.zoro-save-btn:hover:not(:disabled) {
+  background: var(--color-green, #16a34a) !important;
+  color: var(--text-on-accent, #ffffff) !important;
+  border-color: var(--color-green, #16a34a) !important;
+  transform: translateY(-1px);
+}
+
+.zoro-remove-btn:hover {
+  background: var(--color-red, #ef4444) !important;
+  color: var(--text-on-accent, #ffffff) !important;
+  border-color: var(--color-red, #ef4444) !important;
+  transform: translateY(-1px);
+}
+
+/* Disabled state */
+.zoro-modal-btn:disabled,
+.zoro-quick-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none !important;
+}
+
+/* Error state */
+.zoro-modal-error {
+  background: var(--background-modifier-error, #fef2f2);
+  color: var(--color-red, #dc2626);
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin: 16px 0;
+  font-size: 13px;
+  font-weight: 500;
+  border: 1px solid var(--color-red-alpha, rgba(220, 38, 38, 0.2));
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* Prevent error message from shifting layout */
+  box-sizing: border-box;
+}
+
+.zoro-modal-error::before {
+  content: "⚠️";
+  flex-shrink: 0;
+}
+
+/* Focus accessibility */
+.zoro-modal-btn:focus-visible,
+.zoro-quick-btn:focus-visible,
+.zoro-form-input:focus-visible,
+.zoro-fav-btn:focus-visible {
+  outline: 2px solid var(--interactive-accent, #3b82f6);
+  outline-offset: 2px;
+}
+
+/* Content isolation - prevents bleeding without background color */
+.zoro-edit-modal.zoro-inline::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  backdrop-filter: blur(0px);
+  -webkit-backdrop-filter: blur(0px);
+  z-index: -1;
+}
+
+/* Alternative: Use clip-path to contain content */
+.zoro-edit-modal.zoro-inline {
+  clip-path: inset(0);
+}
+
+/* Alternative: Force a new stacking context */
+.zoro-edit-modal.zoro-inline .zoro-edit-form > * {
+  position: relative;
+  z-index: 1;
+}

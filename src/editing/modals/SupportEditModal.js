@@ -27,11 +27,7 @@ class SupportEditModal {
       progress: parseInt(formFields.progress.input.value) || 0
     };
   }
-
-  setupModalInteractions(modal, overlay, onCancel) {
-    overlay.onclick = () => this.closeModal(modal.container, onCancel);
-  }
-
+  
   setupFormSubmission(form, handleSaveFunction) {
     form.onsubmit = async (e) => {
       e.preventDefault();
@@ -39,30 +35,6 @@ class SupportEditModal {
     };
   }
 
-  setupEscapeListener(onCancel, modal, saveFunction) {
-    const escListener = (e) => {
-      if (e.key === 'Escape') {
-        this.closeModal(modal.container, onCancel);
-      }
-      if (e.key === 'Enter' && e.ctrlKey) {
-        saveFunction();
-      }
-    };
-    
-    this.plugin.addGlobalListener(document, 'keydown', escListener);
-    modal._escListener = escListener;
-  }
-
-  closeModal(modalElement, onCancel) {
-    if (modalElement && modalElement.parentNode) {
-      modalElement.parentNode.removeChild(modalElement);
-    }
-    if (modalElement._escListener) {
-      document.removeEventListener('keydown', modalElement._escListener);
-    }
-    this.plugin.removeAllGlobalListeners();
-    onCancel();
-  }
 
   showModalError(form, msg) {
     form.querySelector('.zoro-modal-error')?.remove();

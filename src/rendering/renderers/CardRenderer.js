@@ -56,11 +56,11 @@ class CardRenderer {
     
     // Add heart for favorites
     const heart = document.createElement('span');
-    heart.className = 'zoro-heart';
-    if (!media.isFavourite) heart.style.display = 'none';
-    card.appendChild(heart);
-
-    return card;
+heart.className = 'zoro-heart';
+heart.createEl('span', { text: '❤️' });
+if (!media.isFavourite) heart.style.display = 'none';
+card.appendChild(heart);
+return card;
   }
 
   createCoverContainer(media, entry, isSearch, isCompact, config) {
@@ -86,7 +86,16 @@ class CardRenderer {
       
       pressTimer = setTimeout(() => {
         if (isPressed) {
-          this.plugin.moreDetailsPanel.showPanel(media, entry, img);
+          (async () => {
+            try {
+              const source = this.apiHelper.detectSource(entry, config);
+              const mediaType = this.apiHelper.detectMediaType(entry, config, media);
+              const view = await this.plugin.connectedNotes.openSidePanelWithContext({ media, entry, source, mediaType });
+              await view.showDetailsForMedia(media, entry);
+            } catch (err) {
+              console.error('[Zoro] Failed to open inline details', err);
+            }
+          })();
           img.classList.remove('pressed');
           isPressed = false;
         }
@@ -125,7 +134,16 @@ class CardRenderer {
       pressTimer = setTimeout(() => {
         if (isPressed) {
           e.preventDefault();
-          this.plugin.moreDetailsPanel.showPanel(media, entry, img);
+          (async () => {
+            try {
+              const source = this.apiHelper.detectSource(entry, config);
+              const mediaType = this.apiHelper.detectMediaType(entry, config, media);
+              const view = await this.plugin.connectedNotes.openSidePanelWithContext({ media, entry, source, mediaType });
+              await view.showDetailsForMedia(media, entry);
+            } catch (err) {
+              console.error('[Zoro] Failed to open inline details (touch)', err);
+            }
+          })();
           img.classList.remove('pressed');
           isPressed = false;
         }
@@ -263,29 +281,66 @@ class CardRenderer {
     return title;
   }
   
-  createMediaDetails(media, entry, config, isSearch) {
-    const details = document.createElement('div');
-    details.className = 'media-details';
-
-    // Format badge removed from here - now on cover image
-
-    // Status badge or edit button
-    if (!isSearch && entry && entry.status) {
-      const statusBadge = this.createStatusBadge(entry, config);
-      details.appendChild(statusBadge);
+createCreateNoteButton(media, entry, config) {
+  const createBtn = document.createElement('span');
+  createBtn.className = 'zoro-note-obsidian';
+  createBtn.createEl('span', { text: '📝' });
+  createBtn.title = 'Create connected note';
+  
+  createBtn.onclick = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    try {
+      // Extract source and media type using existing logic
+      const source = this.apiHelper.detectSource(entry, config);
+      const mediaType = this.apiHelper.detectMediaType(entry, config, media);
+      
+      // Extract search IDs using the same logic as ConnectedNotes
+      const searchIds = this.plugin.connectedNotes.extractSearchIds(media, entry, source);
+      
+      // Store current media context for note creation
+      this.plugin.connectedNotes.currentMedia = media;
+      this.plugin.connectedNotes.currentEntry = entry;
+      this.plugin.connectedNotes.currentSource = source;
+      this.plugin.connectedNotes.currentMediaType = mediaType;
+      this.plugin.connectedNotes.currentUrls = this.plugin.connectedNotes.buildCurrentUrls(media, mediaType, source);
+      
+      // Create the connected note
+      await this.plugin.connectedNotes.createNewConnectedNote(searchIds, mediaType);
+      
+      new Notice('Created connected note');
+      
+    } catch (error) {
+      console.error('[Zoro] Create note button error:', error);
+      new Notice('Failed to create connected note');
     }
+  };
+  
+  return createBtn;
+}
 
-    // CONNECTED NOTES BUTTON - hide for trending movies/TV
-    const mt = String(config?.mediaType || '').toUpperCase();
-    const isMovieOrTv = mt === 'MOVIE' || mt === 'MOVIES' || mt === 'TV' || mt === 'SHOW' || mt === 'SHOWS';
-    const isTrending = String(config?.type || '').toLowerCase() === 'trending';
-    if (!(isTrending && isMovieOrTv)) {
-      const connectedNotesBtn = this.plugin.connectedNotes.createConnectedNotesButton(media, entry, config);
-      details.appendChild(connectedNotesBtn);
-    }
 
-    return details;
-  }
+createMediaDetails(media, entry, config, isSearch) {
+  const details = document.createElement('div');
+  details.className = 'media-details';
+
+  // Status badge or edit button
+  // if (!isSearch && entry && entry.status) {
+    // const statusBadge = this.createStatusBadge(entry, config);
+    // details.appendChild(statusBadge);
+    // }
+    
+    
+    const createNoteBtn = this.createCreateNoteButton(media, entry, config);
+    details.appendChild(createNoteBtn);
+    
+    const connectedNotesBtn = this.plugin.connectedNotes.createConnectedNotesButton(media, entry, config);
+    details.appendChild(connectedNotesBtn);
+    
+
+  return details;
+}
   
   createStatusBadge(entry, config) {
     const statusBadge = document.createElement('span');
@@ -293,7 +348,7 @@ class CardRenderer {
     const statusText = this.formatter.getStatusText(entry.status);
     
     statusBadge.className = `status-badge status-${statusClass} clickable-status`;
-    statusBadge.createEl('span', { text: '📝' });
+    statusBadge.createEl('span', { text: '☑️' });
     statusBadge.onclick = (e) => this.handleStatusClick(e, entry, statusBadge, config);
     
     return statusBadge;
@@ -348,6 +403,7 @@ class CardRenderer {
       return;
     }
     
+    // Prefer Side Panel inline edit; fallback is handled inside handleEditClick
     this.plugin.handleEditClick(e, entry, badge, { source, mediaType });
   }
 
@@ -509,44 +565,13 @@ class CardRenderer {
       editBtn.dataset.loading = 'false';
       editBtn.style.pointerEvents = 'auto';
 
-      console.log(`[Zoro] Opening edit modal for ${isNewEntry ? 'new' : 'existing'} entry`);
-
-      this.plugin.edit.createEditModal(
-        entryToEdit,
-        async (updates) => {
-          try {
-            // Ensure we have a numeric id before attempting update
-            const updateId = Number(media.id) || 0;
-            if (entrySource === 'simkl' && updateId <= 0) {
-              const retryId = await this.plugin.simklApi.resolveSimklIdByTitle(this.formatter.formatTitle(media), entryMediaType);
-              if (retryId > 0) media.id = retryId;
-            }
-            console.log(`[Zoro] Updating media ${media.id} with:`, updates);
-            await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource, this.apiHelper.detectMediaType(entry, config, media));
-            
-            const successMessage = isNewEntry ? '✅ Added to list!' : '✅ Updated!';
-            new Notice(successMessage, 3000);
-            console.log(`[Zoro] ${successMessage}`);
-            
-            editBtn.textContent = 'Edit';
-            editBtn.className = 'status-badge status-edit clickable-status';
-            
-            this.parent.refreshActiveViews();
-            
-          } catch (updateError) {
-            console.error('[Zoro] Update failed:', updateError);
-            new Notice(`❌ Update failed: ${updateError.message}`, 5000);
-          }
-        },
-        () => {
-          console.log('[Zoro] Edit modal cancelled');
-          editBtn.textContent = 'Edit';
-          editBtn.className = 'status-badge status-edit clickable-status';
-          editBtn.dataset.loading = 'false';
-          editBtn.style.pointerEvents = 'auto';
-        },
-        entrySource
-      );
+      console.log(`[Zoro] Opening edit in Side Panel for ${isNewEntry ? 'new' : 'existing'} entry`);
+      try {
+        const view = await this.plugin.connectedNotes.openSidePanelWithContext({ media, entry: entryToEdit, source: entrySource, mediaType: entryMediaType });
+        await view.showEditForEntry(entryToEdit, { source: entrySource });
+      } catch (err) {
+        console.error('[Zoro] Failed to open inline edit in Side Panel from card', err);
+      }
 
     } catch (error) {
       console.error('[Zoro] User entry check failed:', error);
@@ -565,23 +590,8 @@ class CardRenderer {
         id: null
       };
 
-      this.plugin.edit.createEditModal(
-        defaultEntry,
-        async (updates) => {
-          try {
-            await this.apiHelper.updateMediaListEntry(media.id, updates, entrySource);
-            new Notice('✅ Added to list!', 3000);
-            this.parent.refreshActiveViews();
-          } catch (updateError) {
-            console.error('[Zoro] Update failed:', updateError);
-            new Notice(`❌ Failed to add: ${updateError.message}`, 5000);
-          }
-        },
-        () => {
-          console.log('[Zoro] Fallback edit modal cancelled');
-        },
-        entrySource
-      );
+      const view = await this.plugin.connectedNotes.openSidePanelWithContext({ media, entry: defaultEntry, source: entrySource, mediaType: entryMediaType });
+      await view.showEditForEntry(defaultEntry, { source: entrySource });
     }
   }
 }

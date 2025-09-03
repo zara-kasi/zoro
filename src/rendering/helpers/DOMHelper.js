@@ -1,5 +1,5 @@
 import { setIcon } from 'obsidian';
-
+import { GRID_COLUMN_OPTIONS } from '../../core/constants.js';
 class DOMHelper {
   static createLoadingSpinner() {
     return `
@@ -30,24 +30,63 @@ class DOMHelper {
   }
 
   static createListSkeleton(count = 6) {
-    const fragment = document.createDocumentFragment();
-    for (let i = 0; i < count; i++) {
-      const skeleton = document.createElement('div');
-      skeleton.className = 'zoro-card zoro-skeleton';
-      skeleton.innerHTML = `
-        <div class="skeleton-cover"></div>
-        <div class="media-info">
-          <div class="skeleton-title"></div>
-          <div class="skeleton-details">
-            <span class="skeleton-badge"></span>
-            <span class="skeleton-badge"></span>
-          </div>
-        </div>
-      `;
-      fragment.appendChild(skeleton);
+  const fragment = document.createDocumentFragment();
+  const grid = document.createElement('div');
+  grid.className = 'zoro-cards-grid';
+  
+ // Get grid columns from settings (fallback to default)
+  let gridSetting = GRID_COLUMN_OPTIONS.DEFAULT;
+  let gridColumns = 2; // Default fallback for skeleton
+  try {
+    if (window.zoroPlugin?.settings?.gridColumns) {
+      gridSetting = window.zoroPlugin.settings.gridColumns;
+      if (gridSetting === GRID_COLUMN_OPTIONS.DEFAULT) {
+        // For "Default", use responsive behavior - create 2 rows of 3 columns for skeleton
+        gridColumns = 3;
+      } else {
+        // For fixed column values, use the specified number
+        gridColumns = Number(gridSetting) || 2;
+      }
     }
-    return fragment;
+  } catch (e) {
+    // Fallback to default
   }
+  
+  // Set grid styles based on the setting
+  if (gridSetting === GRID_COLUMN_OPTIONS.DEFAULT) {
+    // For "Default", let CSS handle responsive behavior
+    grid.style.setProperty('--zoro-grid-gap', 'var(--size-4-4)', 'important');
+  } else {
+    // For fixed column values, set the CSS variables
+    grid.style.setProperty('--zoro-grid-columns', String(gridSetting), 'important');
+    grid.style.setProperty('--grid-cols', String(gridSetting), 'important');
+    grid.style.setProperty('--zoro-grid-gap', 'var(--size-4-4)', 'important');
+    // Also set grid-template-columns directly to ensure it takes precedence
+    grid.style.setProperty('grid-template-columns', `repeat(${gridSetting}, minmax(0, 1fr))`, 'important');
+  }
+  
+  // Create exactly 2 rows of skeleton cards
+  const totalCards = gridColumns * 2;
+  
+  for (let i = 0; i < totalCards; i++) {
+    const skeleton = document.createElement('div');
+    skeleton.className = 'zoro-card zoro-skeleton';
+    skeleton.innerHTML = `
+      <div class="skeleton-cover"></div>
+      <div class="media-info">
+        <div class="skeleton-title"></div>
+        <div class="skeleton-details">
+          <span class="skeleton-badge"></span>
+          <span class="skeleton-badge"></span>
+        </div>
+      </div>
+    `;
+    grid.appendChild(skeleton);
+  }
+  
+  fragment.appendChild(grid);
+  return fragment;
+}
 
   static createStatsSkeleton() {
     const container = document.createElement('div');

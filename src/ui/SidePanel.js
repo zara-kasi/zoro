@@ -8,6 +8,10 @@ class SidePanel extends ItemView {
 		this.plugin = plugin;
 		this.currentCleanup = null;
 		this.context = null; // { media, entry, source, mediaType, searchIds }
+		this.embedEl = null;
+		this.detailsBtn = null;
+		this.editInlineBtn = null;
+		this.currentMode = null; // 'details' | 'edit' | null
 	}
 
 	getViewType() {
@@ -57,9 +61,23 @@ class SidePanel extends ItemView {
 			text: '⛓️', 
 			cls: 'zoro-panel-btn' 
 		});
+   
+   this.editInlineBtn = this.buttonContainerEl.createEl('button', {
+			text: '️☑️',
+			cls: 'zoro-panel-btn'
+		});
+		// New inline Details and Edit buttons
+		this.detailsBtn = this.buttonContainerEl.createEl('button', {
+			text: '🫔',
+			cls: 'zoro-panel-btn'
+		});
+		
 
 		// Search interface container (fixed position below toolbar)
 		this.searchContainerEl = root.createDiv({ cls: 'zoro-panel-search-container' });
+
+		// Inline embed container for details/edit UIs (rendered BELOW the buttons, inside the search container area)
+		this.embedEl = this.searchContainerEl.createDiv({ cls: 'zoro-panel-embed is-hidden' });
 
 		// Content (center - for notes list)
 		this.contentEl = root.createDiv({ cls: 'zoro-panel-content' });
@@ -77,6 +95,31 @@ class SidePanel extends ItemView {
 		else this.searchContainerEl.addClass('is-hidden');
 	}
 
+	showContentContainer(show) {
+		if (!this.contentEl) return;
+		if (show) this.contentEl.removeClass('is-hidden');
+		else this.contentEl.addClass('is-hidden');
+	}
+
+	showEmbedContainer(show) {
+		if (!this.embedEl) return;
+		if (show) {
+			this.embedEl.removeClass('is-hidden');
+			// Ensure search container is visible when showing embeds (to render directly below toolbar)
+			this.showSearchContainer(true);
+		} else {
+			this.embedEl.addClass('is-hidden');
+		}
+	}
+
+	clearEmbed() {
+		if (this.embedEl) this.embedEl.empty();
+		this.currentMode = null;
+		this.showEmbedContainer(false);
+		this.showContentContainer(true);
+		this.showSearchContainer(false);
+	}
+
 	teardownUI() {
 		try {
 			if (typeof this.currentCleanup === 'function') {
@@ -85,7 +128,8 @@ class SidePanel extends ItemView {
 		} finally {
 			this.currentCleanup = null;
 			if (this.contentEl) this.contentEl.empty();
-			if (this.searchContainerEl) this.searchContainerEl.empty();
+			// Do not empty searchContainerEl to preserve the persistent embed container
+			if (this.embedEl) this.embedEl.empty();
 		}
 	}
 
@@ -93,8 +137,9 @@ class SidePanel extends ItemView {
 		this.teardownUI();
 		this.showToolbar(false);
 		this.showSearchContainer(false);
+		this.showEmbedContainer(false);
+		this.showContentContainer(true);
 		const c = this.contentEl.createDiv({ cls: 'zoro-panel-blank' });
-		c.createEl('h4', { text: 'Zoro Panel' });
 		c.createEl('div', { text: 'Open this panel from a media card to use actions.' });
 	}
 
@@ -102,6 +147,8 @@ class SidePanel extends ItemView {
 		this.teardownUI();
 		this.showToolbar(true);
 		this.showSearchContainer(false); // Initially hidden
+		this.showEmbedContainer(false);
+		this.showContentContainer(true);
 
 		// Hook up actions
 		this.createBtn.onclick = async () => {
@@ -129,6 +176,55 @@ class SidePanel extends ItemView {
 			if (!connectInterface.classList.contains('zoro-note-hidden')) {
 				const inp = connectInterface.querySelector('.zoro-note-search-input');
 				setTimeout(() => inp?.focus(), 100);
+			}
+		};
+
+		// Wire inline Details and Edit buttons if media/entry context is available
+		this.detailsBtn.onclick = async () => {
+			try {
+				if (this.currentMode === 'details') {
+					this.clearEmbed();
+					return;
+				}
+				const media = ctx?.media || ctx?.entry?.media || null;
+				if (!media) {
+					new Notice('No media selected');
+					return;
+				}
+				await this.showDetailsForMedia(media, ctx?.entry || null);
+			} catch (e) {
+				console.error('[Zoro][SidePanel] Failed to show details inline', e);
+			}
+		};
+
+		this.editInlineBtn.onclick = async () => {
+			try {
+				if (this.currentMode === 'edit') {
+					this.clearEmbed();
+					return;
+				}
+				let entry = ctx?.entry || null;
+				let source = (ctx?.entry?._zoroMeta?.source || ctx?.source || this.plugin?.settings?.defaultApiSource || 'anilist');
+				if (!entry) {
+					const media = ctx?.media || null;
+					if (!media) {
+						new Notice('No entry to edit');
+						return;
+					}
+					// Create a minimal entry object compatible with edit form
+					entry = {
+						media,
+						status: 'PLANNING',
+						progress: 0,
+						score: null,
+						id: null,
+						_zoroMeta: { source: source, mediaType: (media.type || media.format || ctx?.mediaType || 'ANIME') }
+					};
+				}
+
+				await this.showEditForEntry(entry, { source });
+			} catch (e) {
+				console.error('[Zoro][SidePanel] Failed to show edit inline', e);
 			}
 		};
 
@@ -163,6 +259,55 @@ class SidePanel extends ItemView {
 			connectInterface?.remove?.();
 			listWrap?.remove?.();
 		};
+	}
+
+	async showDetailsForMedia(media, entry = null) {
+		if (!this.embedEl) return;
+		this.embedEl.empty();
+		this.showContentContainer(false);
+		this.showEmbedContainer(true);
+		try {
+			await this.plugin.moreDetailsPanel.showPanel(media, entry, null, this.embedEl);
+			this.currentMode = 'details';
+		} catch (e) {
+			console.error('[Zoro][SidePanel] Inline details failed', e);
+			new Notice('Failed to load details');
+		}
+	}
+
+	async showEditForEntry(entry, config = {}) {
+		if (!this.embedEl) return;
+		this.embedEl.empty();
+		this.showContentContainer(false);
+		this.showEmbedContainer(true);
+		try {
+			const source = config?.source || entry?._zoroMeta?.source || this.plugin?.settings?.defaultApiSource || 'anilist';
+			await this.plugin.edit.createInlineEdit(
+				entry,
+				async (updates) => {
+					// Route update to appropriate API
+					try {
+						if (source === 'mal') {
+							await this.plugin.malApi.updateMediaListEntry(entry.media.id, updates);
+						} else if (source === 'simkl') {
+							await this.plugin.simklApi.updateMediaListEntry(entry.media.id, updates, entry?._zoroMeta?.mediaType);
+						} else {
+							await this.plugin.api.updateMediaListEntry(entry.media.id, updates);
+						}
+					} catch (err) {
+						console.error('[Zoro][SidePanel] Update failed', err);
+						throw err;
+					}
+				},
+				() => {},
+				source,
+				this.embedEl
+			);
+			this.currentMode = 'edit';
+		} catch (e) {
+			console.error('[Zoro][SidePanel] Inline edit failed', e);
+			new Notice('Failed to open edit form');
+		}
 	}
 
 	async reloadNotesList(ctx) {

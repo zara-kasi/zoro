@@ -7,21 +7,14 @@ class RenderEditModal {
 
   createModalStructure() {
     const container = document.createElement('div');
-    container.className = 'zoro-edit-modal';
-    
-    const overlay = document.createElement('div');
-    overlay.className = 'zoro-modal-overlay';
-    
+    container.className = 'zoro-edit-modal zoro-inline';
     const content = document.createElement('div');
     content.className = 'zoro-modal-content';
-    
     const form = document.createElement('form');
     form.className = 'zoro-edit-form';
-    
     content.appendChild(form);
-    container.append(overlay, content);
-    
-    return { container, overlay, content, form };
+    container.append(content);
+    return { container, overlay: null, content, form };
   }
   
   createTitle(entry) {
@@ -32,32 +25,35 @@ class RenderEditModal {
   }
   
   createCloseButton(onClick) {
-    const btn = document.createElement('button');
-    btn.className = 'panel-close-btn';
-    btn.innerHTML = '×';
-    btn.title = 'Close';
+    const btn = document.createElement('span');
+    btn.style.display = 'none';
     btn.onclick = onClick;
     return btn;
   }
 
   createFavoriteButton(entry, source, onToggle) {
-    const favBtn = document.createElement('button');
-    favBtn.className = this.config.buttons.favorite.class;
-    favBtn.type = 'button';
-    favBtn.title = 'Toggle Favorite';
-    
-    if (source === 'mal') {
-      favBtn.style.display = 'none';
-      return favBtn;
-    }
-    
-    favBtn.className = entry.media.isFavourite ? 
-      'zoro-fav-btn zoro-heart' : 
-      'zoro-fav-btn zoro-no-heart';
-    
-    favBtn.onclick = () => onToggle(entry, favBtn, source);
+  const favBtn = document.createElement('button');
+  favBtn.className = this.config.buttons.favorite.class;
+  favBtn.type = 'button';
+  favBtn.title = 'Toggle Favorite';
+  
+  if (source === 'mal') {
+    favBtn.style.display = 'none';
     return favBtn;
   }
+  
+  // Use emoji hearts instead of CSS classes
+  if (entry.media.isFavourite) {
+    favBtn.className = 'zoro-fav-btn zoro-heart';
+    favBtn.createEl('span', { text: '❤️' });
+  } else {
+    favBtn.className = 'zoro-fav-btn zoro-no-heart';
+    favBtn.createEl('span', { text: '🤍' });
+  }
+  
+  favBtn.onclick = () => onToggle(entry, favBtn, source);
+  return favBtn;
+}
   
   createFormFields(entry, source = 'anilist') {
     const statusField = this.createStatusField(entry, source);
@@ -165,22 +161,28 @@ class RenderEditModal {
     });
   }
 
-  createScoreField(entry) {
-    const config = this.config.fields.score;
-    return this.createFormField({
-      type: 'number',
-      label: `${config.label} (${config.min}–${config.max})`,
-      emoji: config.emoji,
-      id: config.id,
-      value: entry.score,
-      options: {
-        min: config.min,
-        max: config.max,
-        step: config.step,
-        placeholder: `e.g. ${config.max/2 + config.max/5}` 
-      }
-    });
+createScoreField(entry) {
+  const config = this.config.fields.score;
+  
+  // Generate score options from 1 to max (10)
+  const scoreOptions = [
+    { value: '', label: 'Unrated' } // Default/empty option
+  ];
+  
+  // Add score options from 1 to 10 (0 is not a valid score)
+  for (let i = 1; i <= config.max; i += config.step) {
+    scoreOptions.push({ value: i.toString(), label: i.toString() });
   }
+  
+  return this.createFormField({
+    type: 'select',
+    label: `${config.label} (${config.min}–${config.max})`,
+    emoji: config.emoji,
+    id: config.id,
+    value: entry.score !== null && entry.score !== undefined ? entry.score.toString() : '',
+    options: { items: scoreOptions }
+  });
+}
 
   createProgressField(entry) {
     const config = this.config.fields.progress;

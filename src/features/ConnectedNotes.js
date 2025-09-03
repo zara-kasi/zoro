@@ -10,49 +10,230 @@ class ConnectedNotes {
     this.currentUrls = null; // Store current URLs as array for matching
     this.currentSource = null; // Store current source for code block generation
     this.currentMediaType = null; // Store current media type for code block generation
+    this.currentEntry = null; // Store current entry for enhanced frontmatter
   }
 
-   /**
- * Extract search IDs from media entry based on API source
- */
-extractSearchIds(media, entry, source) {
-  const ids = {};
-  
-  // mal_id is STANDARD for all anime/manga regardless of source
-  if (source === 'mal') {
-    ids.mal_id = media.id;
-  } else if (source === 'anilist') {
-    // Primary: use idMal if available, Fallback: use anilist id
-    if (media.idMal) {
-      ids.mal_id = media.idMal;
-    }
-    // Always add anilist_id as backup
-    ids.anilist_id = media.id;
-  } else if (source === 'simkl') {
-    ids.simkl_id = media.id;
-    
-    const mediaType = this.plugin.apiHelper ? 
-      this.plugin.apiHelper.detectMediaType(entry, {}, media) : 
-      (entry?._zoroMeta?.mediaType || 'ANIME');
-    
-    if (mediaType === 'ANIME' && media.idMal) {
-      ids.mal_id = media.idMal;
-    }
-    
-    if (mediaType !== 'ANIME' && media.idImdb) {
-      ids.imdb_id = media.idImdb;
-    }
-    if (mediaType !== 'ANIME' && media.idTmdb) {
-      ids.tmdb_id = media.idTmdb;
-    }
-  } else if (source === 'tmdb') {
-    if (media.idTmdb || media.id) ids.tmdb_id = media.idTmdb || media.id;
-    if (media.idImdb) ids.imdb_id = media.idImdb;
+  /**
+   * Get the custom property name from settings or return default
+   */
+  getPropertyName(defaultName) {
+    const customNames = this.plugin.settings?.customPropertyNames || {};
+    return customNames[defaultName] || defaultName;
   }
-  
-  return ids;
-}
 
+  /**
+   * Generate enhanced frontmatter properties with custom names
+   */
+  generateEnhancedFrontmatter(media, entry, mediaType) {
+    const enhanced = {};
+    
+    if (!media) return enhanced;
+    
+    if (media.title) {
+      enhanced[this.getPropertyName('title')] = media.title.english || media.title.romaji || media.title.native;
+    }
+    
+    // Aliases (alternative titles excluding main title)
+    const aliases = [];
+    if (media.title) {
+      const mainTitle = enhanced[this.getPropertyName('title')];
+      if (media.title.romaji && media.title.romaji !== mainTitle) {
+        aliases.push(media.title.romaji);
+      }
+      if (media.title.native && media.title.native !== mainTitle) {
+        aliases.push(media.title.native);
+      }
+      if (media.title.english && media.title.english !== mainTitle) {
+        aliases.push(media.title.english);
+      }
+    }
+    if (aliases.length > 0) {
+      enhanced[this.getPropertyName('aliases')] = aliases;
+    }
+    
+    // Format
+    if (media.format) {
+      enhanced[this.getPropertyName('format')] = media.format;
+    }
+    
+    // Status (from entry)
+    if (entry && entry.status) {
+      enhanced[this.getPropertyName('status')] = entry.status;
+    }
+    
+    // Rating (from entry score)
+    if (entry && entry.score !== null && entry.score !== undefined) {
+      enhanced[this.getPropertyName('rating')] = entry.score;
+    }
+    
+    // Favorite status
+    enhanced[this.getPropertyName('favorite')] = media.isFavourite || false;
+    
+    // Total episodes
+    if (media.episodes) {
+      enhanced[this.getPropertyName('total_episodes')] = media.episodes;
+    }
+    
+    // Total chapters
+    if (media.chapters) {
+      enhanced[this.getPropertyName('total_chapters')] = media.chapters;
+    }
+    
+    if (entry && entry.progress !== null && entry.progress !== undefined) {
+      const typeUpper = (mediaType || '').toString().toUpperCase();
+      if (typeUpper === 'ANIME' || typeUpper === 'TV') {
+        enhanced[this.getPropertyName('episodes_watched')] = entry.progress;
+      } else if (typeUpper === 'MANGA') {
+        enhanced[this.getPropertyName('chapters_read')] = entry.progress;
+        if (entry.progressVolumes !== null && entry.progressVolumes !== undefined) {
+          enhanced[this.getPropertyName('volumes_read')] = entry.progressVolumes;
+        }
+      }
+      // Skip progress for MOVIE type
+    }
+    
+    // Cover image
+    if (media.coverImage) {
+      enhanced[this.getPropertyName('cover')] = media.coverImage.large || media.coverImage.medium;
+    }
+    
+    // Genres
+    if (media.genres && Array.isArray(media.genres) && media.genres.length > 0) {
+      enhanced[this.getPropertyName('genres')] = media.genres;
+    }
+    
+    return enhanced;
+  }
+
+  buildOrderedFrontmatter(baseProps, enhancedProps, urls, tags) {
+    const orderedFrontmatter = {};
+    
+    // ===========================================
+    // CONTENT PROPERTIES
+    // ===========================================
+    const titleProp = this.getPropertyName('title');
+    const aliasesProp = this.getPropertyName('aliases');
+    const formatProp = this.getPropertyName('format');
+    const statusProp = this.getPropertyName('status');
+    const ratingProp = this.getPropertyName('rating');
+    const favoriteProp = this.getPropertyName('favorite');
+    
+    if (enhancedProps[titleProp] !== undefined) orderedFrontmatter[titleProp] = enhancedProps[titleProp];
+    if (enhancedProps[aliasesProp] !== undefined) orderedFrontmatter[aliasesProp] = enhancedProps[aliasesProp];
+    if (enhancedProps[formatProp] !== undefined) orderedFrontmatter[formatProp] = enhancedProps[formatProp];
+    if (enhancedProps[statusProp] !== undefined) orderedFrontmatter[statusProp] = enhancedProps[statusProp];
+    if (enhancedProps[ratingProp] !== undefined) orderedFrontmatter[ratingProp] = enhancedProps[ratingProp];
+    if (enhancedProps[favoriteProp] !== undefined) orderedFrontmatter[favoriteProp] = enhancedProps[favoriteProp];
+    
+    // ===========================================
+    // MEDIA METRICS
+    // ===========================================
+    const totalEpisodesProp = this.getPropertyName('total_episodes');
+    const totalChaptersProp = this.getPropertyName('total_chapters');
+    
+    if (enhancedProps[totalEpisodesProp] !== undefined) orderedFrontmatter[totalEpisodesProp] = enhancedProps[totalEpisodesProp];
+    if (enhancedProps[totalChaptersProp] !== undefined) orderedFrontmatter[totalChaptersProp] = enhancedProps[totalChaptersProp];
+    
+    // ===========================================
+    // PROGRESS PROPERTIES
+    // ===========================================
+    const episodesWatchedProp = this.getPropertyName('episodes_watched');
+    const chaptersReadProp = this.getPropertyName('chapters_read');
+    const volumesReadProp = this.getPropertyName('volumes_read');
+    
+    if (enhancedProps[episodesWatchedProp] !== undefined) orderedFrontmatter[episodesWatchedProp] = enhancedProps[episodesWatchedProp];
+    if (enhancedProps[chaptersReadProp] !== undefined) orderedFrontmatter[chaptersReadProp] = enhancedProps[chaptersReadProp];
+    if (enhancedProps[volumesReadProp] !== undefined) orderedFrontmatter[volumesReadProp] = enhancedProps[volumesReadProp];
+    
+    // ===========================================
+    // TECHNICAL METADATA
+    // ===========================================
+    const malIdProp = this.getPropertyName('mal_id');
+    const anilistIdProp = this.getPropertyName('anilist_id');
+    const simklIdProp = this.getPropertyName('simkl_id');
+    const imdbIdProp = this.getPropertyName('imdb_id');
+    const tmdbIdProp = this.getPropertyName('tmdb_id');
+    const mediaTypeProp = this.getPropertyName('media_type');
+    
+    if (baseProps[malIdProp] !== undefined) orderedFrontmatter[malIdProp] = baseProps[malIdProp];
+    if (baseProps[anilistIdProp] !== undefined) orderedFrontmatter[anilistIdProp] = baseProps[anilistIdProp];
+    if (baseProps[simklIdProp] !== undefined) orderedFrontmatter[simklIdProp] = baseProps[simklIdProp];
+    if (baseProps[imdbIdProp] !== undefined) orderedFrontmatter[imdbIdProp] = baseProps[imdbIdProp];
+    if (baseProps[tmdbIdProp] !== undefined) orderedFrontmatter[tmdbIdProp] = baseProps[tmdbIdProp];
+    if (baseProps[mediaTypeProp] !== undefined) orderedFrontmatter[mediaTypeProp] = baseProps[mediaTypeProp];
+    
+    // ===========================================
+    // MEDIA ASSETS
+    // ===========================================
+    const coverProp = this.getPropertyName('cover');
+    const genresProp = this.getPropertyName('genres');
+    
+    if (enhancedProps[coverProp] !== undefined) orderedFrontmatter[coverProp] = enhancedProps[coverProp];
+    if (enhancedProps[genresProp] !== undefined) orderedFrontmatter[genresProp] = enhancedProps[genresProp];
+    
+    // ===========================================
+    // SYSTEM PROPERTIES
+    // ===========================================
+    const urlsProp = this.getPropertyName('urls');
+    const tagsProp = this.getPropertyName('tags');
+    
+    if (urls !== undefined) orderedFrontmatter[urlsProp] = urls;
+    if (tags !== undefined) orderedFrontmatter[tagsProp] = tags;
+    
+    // Add any remaining properties from baseProps that weren't handled above
+    Object.entries(baseProps).forEach(([key, value]) => {
+      if (orderedFrontmatter[key] === undefined) {
+        orderedFrontmatter[key] = value;
+      }
+    });
+    
+    return orderedFrontmatter;
+  }
+
+  /**
+   * Extract search IDs from media entry based on API source
+   */
+  extractSearchIds(media, entry, source) {
+    const ids = {};
+    
+    // Use custom property names for IDs
+    const malIdProp = this.getPropertyName('mal_id');
+    const anilistIdProp = this.getPropertyName('anilist_id');
+    const simklIdProp = this.getPropertyName('simkl_id');
+    const imdbIdProp = this.getPropertyName('imdb_id');
+    const tmdbIdProp = this.getPropertyName('tmdb_id');
+    
+    if (source === 'mal') {
+      ids[malIdProp] = media.id;
+    } else if (source === 'anilist') {
+      if (media.idMal) {
+        ids[malIdProp] = media.idMal;
+      }
+      ids[anilistIdProp] = media.id;
+    } else if (source === 'simkl') {
+      ids[simklIdProp] = media.id;
+      
+      const mediaType = this.plugin.apiHelper ? 
+        this.plugin.apiHelper.detectMediaType(entry, {}, media) : 
+        (entry?._zoroMeta?.mediaType || 'ANIME');
+      
+      if (mediaType === 'ANIME' && media.idMal) {
+        ids[malIdProp] = media.idMal;
+      }
+      
+      if (mediaType !== 'ANIME' && media.idImdb) {
+        ids[imdbIdProp] = media.idImdb;
+      }
+      if (mediaType !== 'ANIME' && media.idTmdb) {
+        ids[tmdbIdProp] = media.idTmdb;
+      }
+    } else if (source === 'tmdb') {
+      if (media.idTmdb || media.id) ids[tmdbIdProp] = media.idTmdb || media.id;
+      if (media.idImdb) ids[imdbIdProp] = media.idImdb;
+    }
+    
+    return ids;
+  }
 /**
  * Build URLs array for current media to match against
  */
@@ -151,7 +332,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
 
       // Priority 4: Check URL array matching (fallback option)
       if (!hasMatchingId && this.currentUrls) {
-        if (this.hasMatchingUrl(frontmatter.url, this.currentUrls)) {
+        if (this.hasMatchingUrl(frontmatter.urls, this.currentUrls)) {
           hasMatchingId = true;
         }
       }
@@ -178,78 +359,66 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
    * Search vault for existing notes to connect (excludes already connected ones)
    */
   async findNotesToConnect(searchQuery, searchIds, mediaType) {
-    const allFiles = this.app.vault.getMarkdownFiles();
-    const searchResults = [];
-    
-    if (!searchQuery || searchQuery.trim().length < 2) {
-      return searchResults;
+  const searchResults = [];
+  if (!searchQuery || searchQuery.trim().length < 2) return searchResults;
+  const query = searchQuery.toLowerCase().trim();
+
+  const files = this.app.vault.getMarkdownFiles() || [];
+
+  const needRebuild =
+    !Array.isArray(this._filenameIndexList) ||
+    this._filenameIndexSnapshotCount !== files.length ||
+    (this._filenameIndexSnapshotSample || '') !== files.slice(0, 20).map(f => f?.basename || '').join('|');
+
+  if (needRebuild) {
+    const list = [];
+    for (const f of files) {
+      if (!f || !f.basename) continue;
+      list.push({ nameLower: f.basename.toLowerCase(), file: f });
     }
-    
-    const query = searchQuery.toLowerCase().trim();
-    
-    for (const file of allFiles) {
-      // Skip files that already have matching IDs or URLs
-      const metadata = this.app.metadataCache.getFileCache(file);
-      const frontmatter = metadata?.frontmatter;
-      
-      if (frontmatter) {
-        let alreadyConnected = false;
-        
-        // Check ID matching
-        for (const [idType, idValue] of Object.entries(searchIds)) {
-          if (frontmatter[idType] == idValue && frontmatter.media_type === mediaType) {
-            alreadyConnected = true;
-            break;
-          }
-        }
-        
-        // Check URL array matching if not already connected
-        if (!alreadyConnected && this.currentUrls) {
-          if (this.hasMatchingUrl(frontmatter.url, this.currentUrls)) {
-            alreadyConnected = true;
-          }
-        }
-        
-        if (alreadyConnected) continue;
-      }
-      
-      // Search in filename
-      if (file.basename.toLowerCase().includes(query)) {
-        searchResults.push({
-          file: file,
-          title: file.basename,
-          path: file.path,
-          matchType: 'title'
-        });
-        continue;
-      }
-      
-      // Search in content (first 500 chars for performance)
-      try {
-        const content = await this.app.vault.cachedRead(file);
-        const contentPreview = content.slice(0, 500).toLowerCase();
-        if (contentPreview.includes(query)) {
-          searchResults.push({
-            file: file,
-            title: file.basename,
-            path: file.path,
-            matchType: 'content'
-          });
-        }
-      } catch (error) {
-        // Skip files that can't be read
-        continue;
-      }
-    }
-    
-    // Sort by relevance (title matches first, then alphabetically)
-    return searchResults.sort((a, b) => {
-      if (a.matchType !== b.matchType) {
-        return a.matchType === 'title' ? -1 : 1;
-      }
-      return a.title.localeCompare(b.title);
-    }).slice(0, 20); // Limit to 20 results for performance
+    this._filenameIndexList = list;
+    this._filenameIndexSnapshotCount = files.length;
+    this._filenameIndexSnapshotSample = files.slice(0, 20).map(f => f?.basename || '').join('|');
   }
+
+  const list = this._filenameIndexList || [];
+
+  for (const e of list) {
+    if (!e || !e.nameLower) continue;
+    if (!e.nameLower.includes(query)) continue;
+
+    const metadata = this.app.metadataCache.getFileCache(e.file) || {};
+    const frontmatter = metadata.frontmatter || {};
+
+    let alreadyConnected = false;
+    for (const [idType, idValue] of Object.entries(searchIds || {})) {
+      if (frontmatter[idType] == idValue && frontmatter.media_type === mediaType) {
+        alreadyConnected = true;
+        break;
+      }
+    }
+
+    if (!alreadyConnected && this.currentUrls) {
+      if (this.hasMatchingUrl(frontmatter.urls, this.currentUrls)) {
+        alreadyConnected = true;
+      }
+    }
+
+    if (alreadyConnected) continue;
+
+    searchResults.push({
+      file: e.file,
+      title: e.file.basename,
+      path: e.file.path,
+      matchType: 'title'
+    });
+
+    if (searchResults.length >= 20) break;
+  }
+
+  searchResults.sort((a, b) => a.title.localeCompare(b.title));
+  return searchResults;
+}
 
   /**
    * Merge URL arrays, avoiding duplicates
@@ -310,147 +479,166 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
    * Add metadata to existing note
    */
    async connectExistingNote(file, searchIds, mediaType) {
-  try {
-    const content = await this.app.vault.read(file);
-    const metadata = this.app.metadataCache.getFileCache(file);
-    const existingFrontmatter = metadata?.frontmatter || {};
-    
-    // Parse existing frontmatter
-    let frontmatterEnd = 0;
-    let bodyContent = content;
-    
-    if (content.startsWith('---\n')) {
-      const secondDelimiter = content.indexOf('\n---\n', 4);
-      if (secondDelimiter !== -1) {
-        frontmatterEnd = secondDelimiter + 5;
-        bodyContent = content.slice(frontmatterEnd);
-      }
-    }
-    
-    // Check if note is already connected to Zoro (has Zoro tag and some metadata)
-    const hasZoroTag = metadata?.tags?.some(tag => tag.tag === '#Zoro') || 
-                      (Array.isArray(existingFrontmatter.tags) && existingFrontmatter.tags.includes('Zoro'));
-    
-    const hasExistingIds = existingFrontmatter.mal_id || 
-                          existingFrontmatter.anilist_id || 
-                          existingFrontmatter.simkl_id ||
-                          existingFrontmatter.imdb_id ||
-                          existingFrontmatter.tmdb_id ||
-                          existingFrontmatter.media_type ||
-                          existingFrontmatter.url;
-    
-    const isAlreadyConnected = hasZoroTag && hasExistingIds;
-    
-    // Start with existing frontmatter
-    const updatedFrontmatter = { ...existingFrontmatter };
-    
-    if (isAlreadyConnected) {
-      // Note is already connected - only merge URLs, don't overwrite other metadata
-      console.log(`[ConnectedNotes] Note "${file.basename}" is already connected, only adding URLs`);
+    try {
+      const content = await this.app.vault.read(file);
+      const metadata = this.app.metadataCache.getFileCache(file);
+      const existingFrontmatter = metadata?.frontmatter || {};
       
-      // Only merge URL arrays
-      if (this.currentUrls && this.currentUrls.length > 0) {
-        updatedFrontmatter.url = this.mergeUrlArrays(existingFrontmatter.url, this.currentUrls);
-      }
+      // Parse existing frontmatter
+      let frontmatterEnd = 0;
+      let bodyContent = content;
       
-      // Ensure Zoro tag is present (in case it was removed)
-      if (!updatedFrontmatter.tags) {
-        updatedFrontmatter.tags = ['Zoro'];
-      } else if (Array.isArray(updatedFrontmatter.tags)) {
-        if (!updatedFrontmatter.tags.includes('Zoro')) {
-          updatedFrontmatter.tags.push('Zoro');
+      if (content.startsWith('---\n')) {
+        const secondDelimiter = content.indexOf('\n---\n', 4);
+        if (secondDelimiter !== -1) {
+          frontmatterEnd = secondDelimiter + 5;
+          bodyContent = content.slice(frontmatterEnd);
         }
       }
       
-    } else {
-      // Note is not connected yet - add full metadata
-      console.log(`[ConnectedNotes] Note "${file.basename}" is not connected, adding full metadata`);
+      // Check if note is already connected to Zoro (has Zoro tag and some metadata)
+      const hasZoroTag = metadata?.tags?.some(tag => tag.tag === '#Zoro') || 
+                        (Array.isArray(existingFrontmatter.tags) && existingFrontmatter.tags.includes('Zoro'));
       
-      // Add new search IDs
-      Object.entries(searchIds).forEach(([key, value]) => {
-        updatedFrontmatter[key] = value;
-      });
+      const hasExistingIds = existingFrontmatter.mal_id || 
+                            existingFrontmatter.anilist_id || 
+                            existingFrontmatter.simkl_id ||
+                            existingFrontmatter.imdb_id ||
+                            existingFrontmatter.tmdb_id ||
+                            existingFrontmatter.media_type ||
+                            existingFrontmatter.urls;
       
-      // Merge URL arrays
-      if (this.currentUrls && this.currentUrls.length > 0) {
-        updatedFrontmatter.url = this.mergeUrlArrays(existingFrontmatter.url, this.currentUrls);
-      }
+      const isAlreadyConnected = hasZoroTag && hasExistingIds;
       
-      // Add media type
-      updatedFrontmatter.media_type = mediaType;
+      // Prepare base properties (existing + new technical metadata)
+      const baseProps = { ...existingFrontmatter };
       
-      // Add Zoro tag if not present
-      if (!updatedFrontmatter.tags) {
-        updatedFrontmatter.tags = ['Zoro'];
-      } else if (Array.isArray(updatedFrontmatter.tags)) {
-        if (!updatedFrontmatter.tags.includes('Zoro')) {
-          updatedFrontmatter.tags.push('Zoro');
+      if (isAlreadyConnected) {
+        // Note is already connected - only merge URLs, don't overwrite other metadata
+        console.log(`[ConnectedNotes] Note "${file.basename}" is already connected, only adding URLs`);
+        
+        // Only merge URL arrays
+        if (this.currentUrls && this.currentUrls.length > 0) {
+          baseProps.urls = this.mergeUrlArrays(existingFrontmatter.urls, this.currentUrls);
         }
-      }
-    }
-    
-    // Build new frontmatter
-    const frontmatterLines = ['---'];
-    Object.entries(updatedFrontmatter).forEach(([key, value]) => {
-      if (key === 'tags' && Array.isArray(value)) {
-        frontmatterLines.push('tags:');
-        value.forEach(tag => {
-          frontmatterLines.push(`  - ${tag}`);
-        });
-      } else if (key === 'urls' && Array.isArray(value)) {
-        frontmatterLines.push('urls:');
-        value.forEach(url => {
-          frontmatterLines.push(`  - "${url}"`);
-        });
+        
+        // Ensure Zoro tag is present (in case it was removed)
+        if (!baseProps.tags) {
+          baseProps.tags = ['Zoro'];
+        } else if (Array.isArray(baseProps.tags)) {
+          if (!baseProps.tags.includes('Zoro')) {
+            baseProps.tags.push('Zoro');
+          }
+        }
+        
       } else {
-        frontmatterLines.push(`${key}: "${value}"`);
+        // Note is not connected yet - add full metadata
+        console.log(`[ConnectedNotes] Note "${file.basename}" is not connected, adding full metadata`);
+        
+        // Add new search IDs
+        Object.entries(searchIds).forEach(([key, value]) => {
+          baseProps[key] = value;
+        });
+        
+        // Add media type
+        baseProps.media_type = mediaType;
+        
+        // Generate enhanced properties but don't merge yet - we'll order them
+        const enhancedProps = this.generateEnhancedFrontmatter(this.currentMedia, this.currentEntry, mediaType);
+        
+        // Only add enhanced properties if not already present (preserve existing values)
+        Object.entries(enhancedProps).forEach(([key, value]) => {
+          if (baseProps[key] === undefined) {
+            baseProps[key] = value;
+          }
+        });
+        
+        // Merge URL arrays
+        if (this.currentUrls && this.currentUrls.length > 0) {
+          baseProps.urls = this.mergeUrlArrays(existingFrontmatter.urls, this.currentUrls);
+        }
+        
+        // Add Zoro tag if not present
+        if (!baseProps.tags) {
+          baseProps.tags = ['Zoro'];
+        } else if (Array.isArray(baseProps.tags)) {
+          if (!baseProps.tags.includes('Zoro')) {
+            baseProps.tags.push('Zoro');
+          }
+        }
       }
-    });
-    frontmatterLines.push('---', '');
-    
-    // Handle code block generation
-    let finalBodyContent = bodyContent;
-    
-    if (!isAlreadyConnected) {
-      // Only add code block for new connections (not for URL-only updates)
-      const codeBlockContent = this.generateCodeBlockContent();
       
-      // Check if a zoro code block already exists in the body
-      const zoroCodeBlockRegex = /```zoro[\s\S]*?```/;
-      if (codeBlockContent && !zoroCodeBlockRegex.test(bodyContent)) {
-        // Add code block after frontmatter with proper spacing
-        finalBodyContent = codeBlockContent + '\n\n' + bodyContent;
+      // Build new frontmatter using proper ordering
+      const enhancedProps = this.generateEnhancedFrontmatter(this.currentMedia, this.currentEntry, mediaType);
+      const orderedFrontmatter = this.buildOrderedFrontmatter(baseProps, enhancedProps, baseProps.urls, baseProps.tags);
+      
+      // Build frontmatter lines
+      const frontmatterLines = ['---'];
+      Object.entries(orderedFrontmatter).forEach(([key, value]) => {
+        if ((key === 'tags' || key === 'aliases' || key === 'genres') && Array.isArray(value)) {
+          frontmatterLines.push(`${key}:`);
+          value.forEach(item => {
+            frontmatterLines.push(`  - ${item}`);
+          });
+        } else if (key === 'urls' && Array.isArray(value)) {
+          frontmatterLines.push('urls:');
+          value.forEach(url => {
+            frontmatterLines.push(`  - "${url}"`);
+          });
+        } else if (typeof value === 'boolean') {
+          frontmatterLines.push(`${key}: ${value}`);
+        } else {
+          frontmatterLines.push(`${key}: "${value}"`);
+        }
+      });
+      frontmatterLines.push('---', '');
+      
+      // Handle code block generation
+      let finalBodyContent = bodyContent;
+      
+      if (!isAlreadyConnected) {
+        // Only add code block for new connections (not for URL-only updates)
+        const codeBlockContent = this.generateCodeBlockContent();
+        
+        // Check if a zoro code block already exists in the body
+        const zoroCodeBlockRegex = /```zoro[\s\S]*?```/;
+        if (codeBlockContent && !zoroCodeBlockRegex.test(bodyContent)) {
+          // Add code block after frontmatter with proper spacing
+          finalBodyContent = codeBlockContent + '\n\n' + bodyContent;
+        }
       }
+      
+      const newContent = frontmatterLines.join('\n') + finalBodyContent;
+      
+      // Write updated content
+      await this.app.vault.modify(file, newContent);
+      
+      // Show appropriate success message
+      if (isAlreadyConnected) {
+        new Notice(`Updated URLs for: ${file.basename}`);
+      } else {
+        new Notice(`Connected note: ${file.basename}`);
+      }
+      
+      return true;
+      
+    } catch (error) {
+      console.error('[ConnectedNotes] Error connecting existing note:', error);
+      new Notice(`Failed to connect note: ${file.basename}`);
+      return false;
     }
-    
-    const newContent = frontmatterLines.join('\n') + finalBodyContent;
-    
-    // Write updated content
-    await this.app.vault.modify(file, newContent);
-    
-    // Show appropriate success message
-    if (isAlreadyConnected) {
-      new Notice(`Updated URLs for: ${file.basename}`);
-    } else {
-      new Notice(`Connected note: ${file.basename}`);
-    }
-    
-    return true;
-    
-  } catch (error) {
-    console.error('[ConnectedNotes] Error connecting existing note:', error);
-    new Notice(`Failed to connect note: ${file.basename}`);
-    return false;
   }
-}
 
 
   /**
    * Show connected notes in the permanent SidePanel
    */
-  async showConnectedNotes(searchIds, mediaType) {
+  async showConnectedNotes(searchIds, mediaType, media = null, entry = null, source = null) {
     try {
-      const context = { searchIds, mediaType };
+      // Store current entry for enhanced frontmatter generation
+      this.currentEntry = entry;
+      
+      const context = { searchIds, mediaType, media, entry, source };
       await this.openSidePanelWithContext(context);
     } catch (error) {
       console.error('[ConnectedNotes] Error showing connected notes:', error);
@@ -717,11 +905,11 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
       
       if (!connectInterface.classList.contains('zoro-note-hidden')) {
         // Focus on search input when opened
-        const searchInput = connectInterface.querySelector('.zoro-note-search-input');
+        const searchInput = connectInterface.querySelector('.zoro-search-input');
         setTimeout(() => searchInput.focus(), 100);
       } else {
         // Clear search when closed
-        const searchInput = connectInterface.querySelector('.zoro-note-search-input');
+        const searchInput = connectInterface.querySelector('.zoro-search-input');
         const resultsContainer = connectInterface.querySelector('.zoro-note-search-results');
         searchInput.value = '';
         resultsContainer.empty();
@@ -825,22 +1013,51 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
       // Ensure the directory path exists
       await this.ensurePathExists(uniqueFileName);
       
-      // Create frontmatter content
-      const frontmatterLines = [
-        '---',
-        ...Object.entries(searchIds).map(([key, value]) => `${key}: "${value}"`),
-        `media_type: "${mediaType}"`,
-      ];
+      // Prepare base properties (technical metadata)
+      const baseProps = {
+        ...searchIds,
+        media_type: mediaType
+      };
       
-      // Add URL array to frontmatter
+      // Add URL array to base props
       if (this.currentUrls && this.currentUrls.length > 0) {
-        frontmatterLines.push('url:');
-        this.currentUrls.forEach(url => {
-          frontmatterLines.push(`  - "${url}"`);
-        });
+        baseProps.urls = [...this.currentUrls];
       }
       
-      frontmatterLines.push('tags:', '  - Zoro', '---', '');
+      // Add Zoro tag
+      baseProps.tags = ['Zoro'];
+      
+      // Generate enhanced properties
+      const enhancedProps = this.generateEnhancedFrontmatter(this.currentMedia, this.currentEntry, mediaType);
+      
+      // Build ordered frontmatter
+      const orderedFrontmatter = this.buildOrderedFrontmatter(baseProps, enhancedProps, baseProps.urls, baseProps.tags);
+      
+      // Build frontmatter lines
+      const frontmatterLines = ['---'];
+      Object.entries(orderedFrontmatter).forEach(([key, value]) => {
+        if ((key === 'aliases' || key === 'genres') && Array.isArray(value)) {
+          frontmatterLines.push(`${key}:`);
+          value.forEach(item => {
+            frontmatterLines.push(`  - ${item}`);
+          });
+        } else if (key === 'urls' && Array.isArray(value)) {
+          frontmatterLines.push('urls:');
+          value.forEach(url => {
+            frontmatterLines.push(`  - "${url}"`);
+          });
+        } else if (key === 'tags' && Array.isArray(value)) {
+          frontmatterLines.push('tags:');
+          value.forEach(tag => {
+            frontmatterLines.push(`  - ${tag}`);
+          });
+        } else if (typeof value === 'boolean') {
+          frontmatterLines.push(`${key}: ${value}`);
+        } else {
+          frontmatterLines.push(`${key}: "${value}"`);
+        }
+      });
+      frontmatterLines.push('---', '');
       
       const frontmatter = frontmatterLines.join('\n');
 
@@ -902,6 +1119,9 @@ async handleConnectedNotesClick(e, media, entry, config) {
     // Store current media for filename generation (PREFER ENGLISH TITLE)
     this.currentMedia = media;
     
+    // Store current entry for enhanced frontmatter generation
+    this.currentEntry = entry;
+    
     // Store current source and media type for code block generation
     this.currentSource = source;
     this.currentMediaType = mediaType;
@@ -912,8 +1132,8 @@ async handleConnectedNotesClick(e, media, entry, config) {
     // Extract search IDs
     const searchIds = this.extractSearchIds(media, entry, source);
     
-    // Show connected notes
-    await this.showConnectedNotes(searchIds, mediaType);
+    // Show connected notes and pass media/entry/source for Side Panel inline actions
+    await this.showConnectedNotes(searchIds, mediaType, media, entry, source);
     
   } catch (error) {
     console.error('[ConnectedNotes] Button click error:', error);

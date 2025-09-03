@@ -270,7 +270,8 @@ async renderData(el, data, config) {
           this.plugin.render.renderSearchResults(el, data, {
             layout: config.layout || 'card',
             mediaType: config.mediaType || 'ANIME',
-            source: config.source
+            source: config.source,
+            type: 'trending'
           });
         } else if (data && data.isTrendingOperation) {
           // Fallback to the old render method if needed

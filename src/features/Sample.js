@@ -15,13 +15,25 @@ class Sample {
                 name: 'Anime',
                 files: ['Watching.md', 'Planning.md', 'Re-watching .md', 'On Hold.md', 'Completed.md', 'Dropped.md',
                 'Trending.md','Stats.md'],
-                firstFile: 'Watching.md'
+                firstFile: 'Trending.md'
             },
             {
                 name: 'Manga', 
                 files: ['Reading.md', 'Planning.md', 'Re-reading.md', 'On Hold.md', 'Completed.md', 'Dropped.md','Trending.md', 'Stats.md'],
-                firstFile: 'Reading.md'
+                firstFile: 'Trending.md'
+            },
+             {
+                name: 'Movie',
+                files: ['Planning.md', 'Completed.md', 'Dropped.md', 'Trending.md', 'Stats.md'],
+                firstFile: 'Planning.md'
+            },
+            {
+                name: 'TV',
+                files: ['Watching.md', 'Planning.md', 'On Hold.md', 'Completed.md', 'Dropped.md',
+                'Trending.md', 'Stats.md'],
+                firstFile: 'Watching.md'
             }
+            
         ];
 
         if (!vault.getAbstractFileByPath(parentFolder)) {

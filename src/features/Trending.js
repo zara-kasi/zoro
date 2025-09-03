@@ -119,163 +119,6 @@ class Trending {
     }
   }
 
-  async fetchTMDbTrending(mediaType = 'MOVIE', limit = 40) {
-    const tmdbApiKey = this.plugin.settings.tmdbApiKey;
-    
-    if (!tmdbApiKey) {
-      console.error('[Trending] TMDb API key not configured');
-      throw new Error('TMDb API key is required. Please add it in settings.');
-    }
-
-    const typeUpper = (mediaType || 'MOVIE').toUpperCase();
-    const cacheKey = this.getTrendingCacheKey('tmdb', mediaType, limit);
-
-    const cached = this.plugin.cache.get(cacheKey, {
-      scope: 'mediaData'
-    });
-    
-    if (cached) {
-      return cached;
-    }
-
-    let endpoint;
-    if (typeUpper === 'MOVIE' || typeUpper === 'MOVIES') {
-      endpoint = 'trending/movie/day';
-    } else if (typeUpper === 'TV' || typeUpper === 'SHOW' || typeUpper === 'SHOWS') {
-      endpoint = 'trending/tv/day';
-    } else {
-      console.log('[Trending] TMDb skipping anime request - should use AniList');
-      return [];
-    }
-
-    const pages = Math.ceil(limit / 20);
-    const allResults = [];
-
-    try {
-      for (let page = 1; page <= pages; page++) {
-        const url = `https://api.themoviedb.org/3/${endpoint}?api_key=${tmdbApiKey}&page=${page}`;
-        const requestFn = () => fetch(url, { headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' } });
-        const response = await this.plugin.requestQueue.add(requestFn, { priority: 'normal', service: 'tmdb', metadata: { type: 'trending' } });
-        if (!response || !response.ok) {
-          const errorText = response ? await response.text() : 'No response';
-          console.error('[Trending] TMDb error response:', errorText);
-          throw new Error(`TMDb API error: ${response ? response.status : 'NO-RESP'} - ${errorText}`);
-        }
-        const data = await response.json();
-        if (!data.results || !Array.isArray(data.results)) {
-          console.error('[Trending] Invalid TMDb response format:', data);
-          throw new Error('Invalid response format from TMDb');
-        }
-        allResults.push(...data.results);
-        if (allResults.length >= limit) break;
-      }
-
-      const mediaList = allResults
-        .slice(0, limit)
-        .map(item => this.transformTMDbMedia(item, mediaType))
-        .filter(Boolean);
-
-      try {
-        const idsToFetch = mediaList.map(m => m.idTmdb).filter(Boolean).slice(0, 20);
-        const fetches = idsToFetch.map(id => {
-          const url = `https://api.themoviedb.org/3/${typeUpper.includes('MOVIE') ? 'movie' : 'tv'}/${id}/external_ids?api_key=${tmdbApiKey}`;
-          const requestFn = () => fetch(url);
-          return this.plugin.requestQueue.add(requestFn, { priority: 'low', service: 'tmdb', metadata: { type: 'external_ids' } })
-            .then(r => r && r.ok ? r.json() : null)
-            .catch(() => null);
-        });
-        const results = await Promise.all(fetches);
-        const tmdbToImdb = new Map();
-        results.forEach((ext, idx) => {
-          if (ext && (ext.imdb_id || ext.imdb)) {
-            tmdbToImdb.set(idsToFetch[idx], ext.imdb_id || ext.imdb);
-          }
-        });
-        mediaList.forEach(m => {
-          const imdb = tmdbToImdb.get(m.idTmdb);
-          if (imdb) {
-            m.idImdb = imdb;
-            if (!m.ids) m.ids = {};
-            m.ids.imdb = imdb;
-          }
-        });
-      } catch {}
-
-      this.plugin.cache.set(cacheKey, mediaList, {
-        scope: 'mediaData',
-        ttl: 24 * 60 * 60 * 1000,
-        tags: ['trending', mediaType.toLowerCase()]
-      });
-
-      return mediaList;
-
-    } catch (error) {
-      console.error('[Trending] TMDb fetch failed:', error);
-      
-      const staleData = this.plugin.cache.get(cacheKey, {
-        scope: 'mediaData',
-        ttl: Infinity
-      });
-      
-      if (staleData) {
-        return staleData;
-      }
-      
-      throw error;
-    }
-  }
-
-  transformTMDbMedia(item, mediaType) {
-    try {
-      const isMovie = mediaType.toUpperCase() === 'MOVIE' || mediaType.toUpperCase() === 'MOVIES';
-      
-      return {
-        id: item.id,
-        idTmdb: item.id,
-        idImdb: null,
-        ids: {
-          tmdb: item.id,
-          imdb: null
-        },
-        title: {
-          english: isMovie ? item.title : item.name,
-          romaji: null,
-          native: null
-        },
-        coverImage: {
-          large: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : null,
-          medium: item.poster_path ? `https://image.tmdb.org/t/p/w342${item.poster_path}` : null
-        },
-        bannerImage: item.backdrop_path ? `https://image.tmdb.org/t/p/w1280${item.backdrop_path}` : null,
-        format: isMovie ? 'MOVIE' : 'TV',
-        averageScore: item.vote_average ? Math.round(item.vote_average * 10) : null,
-        popularity: item.popularity,
-        genres: item.genre_ids || [],
-        episodes: null,
-        status: null,
-        description: item.overview || null,
-        startDate: {
-          year: null,
-          month: null,
-          day: null
-        },
-        releaseDate: isMovie ? item.release_date : item.first_air_date,
-        _zoroMeta: {
-          mediaType: mediaType.toUpperCase(),
-          fetchedAt: Date.now(),
-          trending: {
-            popularity: item.popularity,
-            voteAverage: item.vote_average,
-            voteCount: item.vote_count
-          }
-        }
-      };
-    } catch (error) {
-      console.error('[Trending] Failed to transform TMDb item:', item, error);
-      return null;
-    }
-  }
-
   async fetchJikanTrending(mediaType = 'anime', limit = 40) {
   const type = mediaType.toLowerCase();
   const cacheKey = this.getTrendingCacheKey('mal', mediaType, limit);
@@ -450,22 +293,181 @@ class Trending {
   }
 }
 
-  async fetchTrending(source, mediaType, limit = 40) {
-    const typeUpper = String(mediaType || '').toUpperCase();
-    if (typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper === 'SHOW' || typeUpper === 'SHOWS') {
-      return await this.fetchTMDbTrending(typeUpper.includes('MOVIE') ? 'MOVIE' : 'TV', limit);
+ async fetchSimklTrending(mediaType = 'MOVIE', limit = 40) {
+  const simklClientId = this.plugin.settings.simklClientId;
+  
+  if (!simklClientId) {
+    throw new Error('Simkl Client ID is required. Please add it in settings.');
+  }
+
+  const typeUpper = (mediaType || 'MOVIE').toUpperCase();
+  const cacheKey = this.getTrendingCacheKey('simkl', mediaType, limit);
+
+  const cached = this.plugin.cache.get(cacheKey, {
+    scope: 'mediaData',
+    source: 'simkl'
+  });
+  
+  if (cached) {
+    return cached;
+  }
+
+  let endpoint;
+  if (typeUpper === 'MOVIE' || typeUpper === 'MOVIES') {
+    endpoint = 'movies/trending';
+  } else if (typeUpper === 'TV' || typeUpper === 'SHOW' || typeUpper === 'SHOWS') {
+    endpoint = 'tv/trending';
+  } else {
+    return [];
+  }
+
+  try {
+    const url = `https://api.simkl.com/${endpoint}?limit=${limit}`;
+    
+    const requestFn = () => fetch(url, {
+      headers: {
+        'Accept': 'application/json',
+        'simkl-api-key': simklClientId
+      }
+    });
+
+    const response = await this.plugin.requestQueue.add(requestFn, {
+      priority: 'normal',
+      service: 'simkl',
+      metadata: { type: 'trending' }
+    });
+
+    if (!response || !response.ok) {
+      const errorText = response ? await response.text() : 'No response';
+      throw new Error(`Simkl API error: ${response ? response.status : 'NO-RESP'} - ${errorText}`);
     }
 
-    switch ((source || '').toLowerCase()) {
-      case 'mal':
-        return await this.fetchJikanTrending(mediaType, limit);
-      case 'simkl':
-        return await this.fetchSimklTrending(mediaType, limit);
-      case 'anilist':
-      default:
-        return await this.fetchAniListTrending(mediaType, limit);
+    const data = await response.json();
+    
+    if (!Array.isArray(data)) {
+      throw new Error('Invalid response format from Simkl - expected array');
     }
+
+    const mediaList = data
+      .slice(0, limit)
+      .map((item) => this.transformSimklTrendingMedia(item, mediaType))
+      .filter(Boolean);
+
+    this.plugin.cache.set(cacheKey, mediaList, {
+      scope: 'mediaData',
+      source: 'simkl',
+      ttl: 24 * 60 * 60 * 1000,
+      tags: ['trending', mediaType.toLowerCase(), 'simkl']
+    });
+
+    return mediaList;
+
+  } catch (error) {
+    const staleData = this.plugin.cache.get(cacheKey, {
+      scope: 'mediaData',
+      source: 'simkl',
+      ttl: Infinity
+    });
+    
+    if (staleData) {
+      return staleData;
+    }
+    
+    throw error;
   }
+}
+
+transformSimklTrendingMedia(item, mediaType) {
+  try {
+    const isMovie = mediaType.toUpperCase() === 'MOVIE' || mediaType.toUpperCase() === 'MOVIES';
+    
+    // Use rank as the title since actual titles aren't available
+    const title = item.rank ? `Rank: ${item.rank}` : `Rank Unknown`;
+    
+    const simklId = item.ids?.simkl_id || item.ids?.simkl || item.id || null;
+    const tmdbId = item.ids?.tmdb || null;
+    const imdbId = item.ids?.imdb || null;
+    
+    const posterUrl = item.poster ? `https://simkl.in/posters/${item.poster}_m.jpg` : null;
+    const fanartUrl = item.fanart ? `https://simkl.in/fanart/${item.fanart}_m.jpg` : null;
+    
+    let year = null;
+    if (item.release_date) {
+      const dateMatch = item.release_date.match(/(\d{4})/);
+      year = dateMatch ? parseInt(dateMatch[1]) : null;
+    }
+    
+    const simklRating = item.ratings?.simkl?.rating || null;
+    const averageScore = simklRating ? Math.round(simklRating * 10) : null;
+    
+    return {
+      id: simklId,
+      idTmdb: tmdbId,
+      idImdb: imdbId,
+      idSimkl: simklId,
+      ids: {
+        simkl: simklId,
+        tmdb: tmdbId,
+        imdb: imdbId
+      },
+      title: {
+        english: title,
+        romaji: null,
+        native: null
+      },
+      coverImage: {
+        large: posterUrl,
+        medium: posterUrl
+      },
+      bannerImage: fanartUrl,
+      format: isMovie ? 'MOVIE' : 'TV',
+      averageScore: averageScore,
+      popularity: item.watched || null,
+      genres: item.genres || [],
+      episodes: isMovie ? 1 : (item.total_episodes || null),
+      status: item.status ? item.status.toUpperCase() : null,
+      description: item.overview || null,
+      startDate: {
+        year: year,
+        month: null,
+        day: null
+      },
+      releaseDate: item.release_date || null,
+      _zoroMeta: {
+        source: 'simkl',
+        mediaType: mediaType.toUpperCase(),
+        fetchedAt: Date.now(),
+        trending: {
+          watched: item.watched,
+          planToWatch: item.plan_to_watch,
+          rating: simklRating,
+          rank: item.rank
+        }
+      }
+    };
+  } catch (error) {
+    return null;
+  }
+}
+
+
+async fetchTrending(source, mediaType, limit = 40) {
+  const typeUpper = String(mediaType || '').toUpperCase();
+  
+  // Use Simkl for movies and TV shows instead of TMDb
+  if (typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper === 'SHOW' || typeUpper === 'SHOWS') {
+    return await this.fetchSimklTrending(typeUpper.includes('MOVIE') ? 'MOVIE' : 'TV', limit);
+  }
+
+  // Keep existing logic for anime/manga
+  switch ((source || '').toLowerCase()) {
+    case 'mal':
+      return await this.fetchJikanTrending(mediaType, limit);
+    case 'anilist':
+    default:
+      return await this.fetchAniListTrending(mediaType, limit);
+  }
+}
 
   async renderTrendingBlock(el, config) {
     el.empty();
@@ -486,19 +488,19 @@ class Trending {
       );
 
       items.forEach(item => {
-        const isTmdb = ['MOVIE','MOVIES','TV','SHOW','SHOWS'].includes((config.mediaType || '').toUpperCase());
-        if (!item._zoroMeta) {
-          item._zoroMeta = {
-            source: isTmdb ? 'tmdb' : source,
-            mediaType: config.mediaType || 'ANIME',
-            fetchedAt: Date.now()
-          };
-        } else {
-          item._zoroMeta.source = isTmdb ? 'tmdb' : source;
-          item._zoroMeta.mediaType = config.mediaType || 'ANIME';
-          item._zoroMeta.fetchedAt = Date.now();
-        }
-      });
+  const isSimkl = ['MOVIE','MOVIES','TV','SHOW','SHOWS'].includes((config.mediaType || '').toUpperCase());
+  if (!item._zoroMeta) {
+    item._zoroMeta = {
+      source: isSimkl ? 'simkl' : source,  // Changed from 'tmdb' to 'simkl'
+      mediaType: config.mediaType || 'ANIME',
+      fetchedAt: Date.now()
+    };
+  } else {
+    item._zoroMeta.source = isSimkl ? 'simkl' : source;  // Changed from 'tmdb' to 'simkl'
+    item._zoroMeta.mediaType = config.mediaType || 'ANIME';
+    item._zoroMeta.fetchedAt = Date.now();
+  }
+});
 
       el.empty();
       this.plugin.render.renderSearchResults(el, items, {

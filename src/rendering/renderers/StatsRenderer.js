@@ -8,6 +8,38 @@ class StatsRenderer {
     this.formatter = parentRenderer.formatter;
   }
 
+  // Force styles directly on DOM elements to override theme interference
+  forceImageStyles(imgElement, styles) {
+    // Apply styles directly to the element
+    Object.entries(styles).forEach(([property, value]) => {
+      imgElement.style.setProperty(property, value, 'important');
+    });
+    
+    // Also set up a MutationObserver to re-apply styles if they get overridden
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
+          // Re-apply our styles if something changed them
+          Object.entries(styles).forEach(([property, value]) => {
+            if (imgElement.style.getPropertyValue(property) !== value) {
+              imgElement.style.setProperty(property, value, 'important');
+            }
+          });
+        }
+      });
+    });
+    
+    observer.observe(imgElement, {
+      attributes: true,
+      attributeFilter: ['style']
+    });
+    
+    // Store observer reference for cleanup
+    if (!imgElement._zoroObserver) {
+      imgElement._zoroObserver = observer;
+    }
+  }
+
   render(el, user, options = {}) {
     const {
       layout = 'standard',
@@ -70,12 +102,25 @@ class StatsRenderer {
     const userInfo = header.createDiv({ cls: 'zoro-user-info' });
     
     if (user.avatar?.medium) {
-      userInfo.createEl('img', {
+      const avatarImg = userInfo.createEl('img', {
         cls: 'zoro-user-avatar',
         attr: { 
           src: user.avatar.medium,
           alt: `${user.name}'s avatar`
         }
+      });
+      
+      // Force avatar styles with JavaScript
+      this.forceImageStyles(avatarImg, {
+        'width': '50px',
+        'height': '50px',
+        'border-radius': '50%',
+        'border': '2px solid var(--border)',
+        'object-fit': 'cover',
+        'pointer-events': 'none',
+        'cursor': 'default',
+        'flex-shrink': '0',
+        'display': 'block'
       });
     }
 
@@ -88,18 +133,19 @@ class StatsRenderer {
     // Make the user name clickable
     userName.style.cursor = 'pointer';
     userName.addEventListener('click', () => {
-  const source = user?._zoroMeta?.source || 'anilist';
-  let url = '';
-  if (source === 'mal') {
-    url = `https://myanimelist.net/profile/${encodeURIComponent(user.name)}`;
-  } else if (source === 'simkl') {
-    const simklId = this.plugin.settings?.simklUserInfo?.account?.id;
-    url = simklId ? `https://simkl.com/${encodeURIComponent(simklId)}/` : `https://simkl.com/`;
-  } else {
-    url = `https://anilist.co/user/${encodeURIComponent(user.name)}`;
-  }
-  window.open(url, '_blank');
-});
+      const source = user?._zoroMeta?.source || 'anilist';
+      let url = '';
+      if (source === 'mal') {
+        url = `https://myanimelist.net/profile/${encodeURIComponent(user.name)}`;
+      } else if (source === 'simkl') {
+        const simklId = this.plugin.settings?.simklUserInfo?.account?.id;
+        url = simklId ? `https://simkl.com/${encodeURIComponent(simklId)}/` : `https://simkl.com/`;
+      } else {
+        url = `https://anilist.co/user/${encodeURIComponent(user.name)}`;
+      }
+      window.open(url, '_blank');
+    });
+    
     userName.addEventListener('mouseenter', () => {
       userName.style.textDecoration = 'underline';
     });
@@ -117,14 +163,13 @@ class StatsRenderer {
 
     // Anime stats
     const animeStats = user.statistics.anime;
-       // Extended: Simkl TV and Movie stats
+    // Extended: Simkl TV and Movie stats
     const tvStats = user.statistics.tv;
     const movieStats = user.statistics.movie;
 
     // Manga stats (AniList/MAL)
-   
     const mangaStats = user.statistics.manga;
-   const upperType = String(mediaType).toUpperCase();
+    const upperType = String(mediaType).toUpperCase();
     const showAnime = upperType === 'ANIME';
     const showManga = upperType === 'MANGA';
     const showTv = upperType === 'TV';
@@ -373,12 +418,24 @@ class StatsRenderer {
       const favItem = favGrid.createDiv({ cls: 'zoro-favorite-item' });
       
       if (item.coverImage?.medium) {
-        favItem.createEl('img', {
+        const coverImg = favItem.createEl('img', {
           cls: 'zoro-favorite-cover',
           attr: {
             src: item.coverImage.medium,
             alt: this.formatter.formatTitle(item)
           }
+        });
+        
+        // Force cover image styles with JavaScript
+        this.forceImageStyles(coverImg, {
+          'width': '45px',
+          'height': '65px',
+          'object-fit': 'cover',
+          'border-radius': '6px',
+          'border': '1px solid var(--border)',
+          'box-shadow': 'var(--shadow)',
+          'flex-shrink': '0',
+          'display': 'block'
         });
       }
       
@@ -436,36 +493,36 @@ class StatsRenderer {
   }
 
   renderScoreDistribution(container, scores, listOptions) {
-  const chartContainer = container.createDiv({ cls: 'zoro-breakdown-chart' });
-  chartContainer.createEl('h4', { 
-    text: 'Score Distribution',
-    cls: 'zoro-breakdown-title'
-  });
+    const chartContainer = container.createDiv({ cls: 'zoro-breakdown-chart' });
+    chartContainer.createEl('h4', { 
+      text: 'Score Distribution',
+      cls: 'zoro-breakdown-title'
+    });
 
-  const chart = chartContainer.createDiv({ cls: 'zoro-score-chart' });
-  const maxCount = Math.max(...scores.map(s => s.count));
+    const chart = chartContainer.createDiv({ cls: 'zoro-score-chart' });
+    const maxCount = Math.max(...scores.map(s => s.count));
 
-  scores.forEach((scoreData, index) => {
-    const barContainer = chart.createDiv({ cls: 'zoro-score-bar-container' });
-    
-    const label = barContainer.createDiv({ cls: 'zoro-score-label' });
-    const scoreFormat = listOptions?.scoreFormat || 'POINT_10';
-    let scoreValue = scoreData.score;
-    if (scoreFormat === 'POINT_10' && typeof scoreValue === 'number' && scoreValue <= 10) {
-      scoreValue = scoreValue * 10;
-    }
-    label.textContent = this.formatter.formatScore(scoreValue, scoreFormat);
-    
-    const bar = barContainer.createDiv({ cls: 'zoro-score-bar' });
-    const percentage = (scoreData.count / maxCount) * 100;
-    // Fix: Set --bar-height instead of --bar-width for vertical bars
-    bar.style.setProperty('--bar-height', `${percentage}%`);
-    bar.style.animationDelay = `${index * 0.1}s`;
-    
-    const value = barContainer.createDiv({ cls: 'zoro-score-value' });
-    value.textContent = scoreData.count;
-  });
-}
+    scores.forEach((scoreData, index) => {
+      const barContainer = chart.createDiv({ cls: 'zoro-score-bar-container' });
+      
+      const label = barContainer.createDiv({ cls: 'zoro-score-label' });
+      const scoreFormat = listOptions?.scoreFormat || 'POINT_10';
+      let scoreValue = scoreData.score;
+      if (scoreFormat === 'POINT_10' && typeof scoreValue === 'number' && scoreValue <= 10) {
+        scoreValue = scoreValue * 10;
+      }
+      label.textContent = this.formatter.formatScore(scoreValue, scoreFormat);
+      
+      const bar = barContainer.createDiv({ cls: 'zoro-score-bar' });
+      const percentage = (scoreData.count / maxCount) * 100;
+      // Fix: Set --bar-height instead of --bar-width for vertical bars
+      bar.style.setProperty('--bar-height', `${percentage}%`);
+      bar.style.animationDelay = `${index * 0.1}s`;
+      
+      const value = barContainer.createDiv({ cls: 'zoro-score-value' });
+      value.textContent = scoreData.count;
+    });
+  }
 
   renderYearlyActivity(container, yearData) {
     const chartContainer = container.createDiv({ cls: 'zoro-breakdown-chart' });
@@ -561,7 +618,7 @@ class StatsRenderer {
     // Genre diversity (if available)
     if (stats.genres && stats.genres.length >= 15) {
       insights.push({
-        icon: '🌈',
+        icon: '�rainbow',
         text: `Diverse taste: You enjoy ${stats.genres.length} different genres`
       });
     }

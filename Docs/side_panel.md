@@ -1,5 +1,5 @@
 The **Side Panel** is your main hub for managing media inside Obsidian.  
-Open it from the **menu icon** (three horizontal bars, Lucide icon) on any media card.
+Open it from the *aline-right* on any media card.
 
 The panel offers four actions: **Create Note**, **Connect Note**, **Edit**, and **Details**.
 

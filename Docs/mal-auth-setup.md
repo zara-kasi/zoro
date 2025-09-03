@@ -39,4 +39,4 @@ Watch a short tutorial here:
 
 ---
 
-✅ That’s it! Your MAL account is now securely connected to **Zoro**.
+That’s it! Your MAL account is now securely connected to **Zoro**.

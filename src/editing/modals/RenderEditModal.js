@@ -176,7 +176,7 @@ createScoreField(entry) {
   
   return this.createFormField({
     type: 'select',
-    label: `${config.label} (${config.min}–${config.max})`,
+    label: `${config.label}`,
     emoji: config.emoji,
     id: config.id,
     value: entry.score !== null && entry.score !== undefined ? entry.score.toString() : '',

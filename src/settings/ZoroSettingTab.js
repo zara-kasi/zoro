@@ -559,7 +559,7 @@ const exportDescEl = exportSetting.descEl;
 exportDescEl.createEl('br');
 const exportLinkEl = exportDescEl.createEl('a', {
   text: 'Guide 📖',
-  href: 'https://github.com/zara-kasi/zoro/blob/main/Docs/export-doc.md'
+  href: 'https://github.com/zara-kasi/zoro/blob/main/Docs/export_overview.md'
 });
 exportLinkEl.setAttr('target', '_blank');
 exportLinkEl.setAttr('rel', 'noopener noreferrer');

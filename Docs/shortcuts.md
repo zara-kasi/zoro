@@ -16,7 +16,7 @@ This lets you search an item’s title on any site with one click.
 Some sites use a search format the plugin can’t auto-detect. In that case:  
 
 1. **Turn off “Auto-format URL”** in settings.  
-2. On the target site, search exactly for: **zoro zoro**   
+2. On the target site, search exactly for: **`zoro zoro`**   
 3. Copy the resulting search URL. 
    - Example: `https://m.youtube.com/results?sp=mAEA&search_query=zoro+zoro`  
 4. Paste it into the plugin’s **Shortcuts** settings.  

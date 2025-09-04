@@ -474,16 +474,28 @@ new Setting(Note)
           }
         }));
         
-        new Setting(Shortcut)
+        const shortcutSetting = new Setting(Shortcut)
   .setName(' Open on site')
-  .setDesc('Adds a customizable external-link button to the More Details panel that opens a site-specific search for the current title.')
-  .addButton(button => button
-    .setButtonText('Add Anime URL')
-    .setClass('mod-cta')
-    .onClick(async () => {
-      await this.plugin.moreDetailsPanel.customExternalURL.addUrl('ANIME');
-      this.refreshCustomUrlSettings();
-    }));
+  .setDesc('Adds a customizable external-link button to the More Details panel that opens a site-specific search for the current title.');
+
+// Add the documentation link after the description
+const shortcutDescEl = shortcutSetting.descEl;
+shortcutDescEl.createEl('br');
+const shortcutLinkEl = shortcutDescEl.createEl('a', {
+  text: 'Guide 📖',
+  href: 'https://github.com/zara-kasi/zoro/blob/main/Docs/shortcuts.md'
+});
+shortcutLinkEl.setAttr('target', '_blank');
+shortcutLinkEl.setAttr('rel', 'noopener noreferrer');
+shortcutLinkEl.style.textDecoration = 'none';
+
+shortcutSetting.addButton(button => button
+  .setButtonText('Add Anime URL')
+  .setClass('mod-cta')
+  .onClick(async () => {
+    await this.plugin.moreDetailsPanel.customExternalURL.addUrl('ANIME');
+    this.refreshCustomUrlSettings();
+  }));
 
 // Create container for anime URLs
 const animeUrlContainer = Shortcut.createDiv('custom-url-container');

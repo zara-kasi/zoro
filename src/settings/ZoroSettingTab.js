@@ -531,7 +531,7 @@ movieTvUrlContainer.setAttribute('data-media-type', 'MOVIE_TV');
 this.renderCustomUrls(movieTvUrlContainer, 'MOVIE_TV');
 
 new Setting(Shortcut)
-  .setName('🔧 Auto-Format Search URLs')
+  .setName('Auto-Format')
   .setDesc('Automatically format URLs to search format. When disabled, URLs will be used exactly as entered.')
   .addToggle(toggle => toggle
     .setValue(this.plugin.settings.autoFormatSearchUrls)

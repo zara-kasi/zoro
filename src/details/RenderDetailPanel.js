@@ -625,7 +625,7 @@ class RenderDetailPanel {
     if (media.type === 'ANIME' || media.type === 'MANGA') {
       const anilistBtn = document.createElement('button');
       anilistBtn.className = 'external-link-btn anilist-btn';
-      anilistBtn.innerHTML = '🔗 View on AniList';
+      anilistBtn.innerHTML = 'AniList';
       anilistBtn.onclick = (e) => {
         e.stopPropagation();
         const url = this.plugin.getAniListUrl ? this.plugin.getAniListUrl(media.id, media.type) : `https://anilist.co/${media.type.toLowerCase()}/${media.id}`;
@@ -638,7 +638,7 @@ class RenderDetailPanel {
     if (media.idMal) {
       const malBtn = document.createElement('button');
       malBtn.className = 'external-link-btn mal-btn';
-      malBtn.innerHTML = '🔗 View on MAL';
+      malBtn.innerHTML = 'MAL';
       malBtn.onclick = (e) => {
         e.stopPropagation();
         const type = media.type === 'MANGA' ? 'manga' : 'anime';
@@ -653,7 +653,7 @@ if (media.type !== 'ANIME' && media.type !== 'MANGA') {
   if (simklId) {
     const simklBtn = document.createElement('button');
     simklBtn.className = 'external-link-btn simkl-btn';
-    simklBtn.innerHTML = '🔗 View on Simkl';
+    simklBtn.innerHTML = 'Simkl';
     simklBtn.onclick = (e) => {
       e.stopPropagation();
       const mediaType = media.type === 'MOVIE' ? 'movies' : 'tv';
@@ -668,7 +668,7 @@ if (media.type !== 'ANIME' && media.type !== 'MANGA') {
     if (media.idImdb) {
       const imdbBtn = document.createElement('button');
       imdbBtn.className = 'external-link-btn imdb-btn';
-      imdbBtn.innerHTML = '🔗 View on IMDB';
+      imdbBtn.innerHTML = 'IMDB';
       imdbBtn.onclick = (e) => {
         e.stopPropagation();
         window.open(`https://www.imdb.com/title/${media.idImdb}/`, '_blank');
@@ -680,7 +680,7 @@ if (media.type !== 'ANIME' && media.type !== 'MANGA') {
     if (media.idTmdb || media?.ids?.tmdb) {
       const tmdbBtn = document.createElement('button');
       tmdbBtn.className = 'external-link-btn tmdb-btn';
-      tmdbBtn.innerHTML = '🔗 View on TMDB';
+      tmdbBtn.innerHTML = 'TMDB';
       tmdbBtn.onclick = (e) => {
         e.stopPropagation();
         const typeHint = (media.type || media.format || media?._zoroMeta?.mediaType || '').toString().toUpperCase();

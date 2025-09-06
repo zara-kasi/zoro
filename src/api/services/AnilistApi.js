@@ -29,144 +29,130 @@ class AnilistApi {
   }
 
   async fetchAniListData(config) {
-    const requestId = this.generateRequestId();
-    const startTime = performance.now();
+  const requestId = this.generateRequestId();
+  const startTime = performance.now();
+  
+  try {
+    this.validateConfig(config);
     
-    try {
-      this.validateConfig(config);
-      
-      // Check cache first
-      const cacheKey = this.createCacheKey(config);
-      const cacheType = this.determineCacheType(config);
-      
-      if (!config.nocache) {
-        const cached = this.cache.get(cacheKey, { 
-          scope: cacheType, 
-          ttl: this.getCacheTTL(config)
-        });
-        
-        if (cached) {
-          this.log('CACHE_HIT', cacheType, requestId, `${(performance.now() - startTime).toFixed(1)}ms`);
-          return cached;
-        }
-      }
-      
-      // Build query and variables
-      const { query, variables } = this.buildQuery(config);
-      
-      // Execute request
-      const result = await this.executeRequestWithRetry({
-        query,
-        variables,
-        config,
-        requestId,
-        maxRetries: this.config.maxRetries
+    // Check cache first
+    const cacheKey = this.createCacheKey(config);
+    const cacheType = this.determineCacheType(config);
+    
+    if (!config.nocache) {
+      const cached = this.cache.get(cacheKey, { 
+        scope: cacheType,
+        source: 'anilist',  // Add source parameter
+        ttl: this.getCacheTTL(config)
       });
       
-      // Cache successful results
-      if (result && !config.nocache) {
-        this.cache.set(cacheKey, result, { scope: cacheType });
+      if (cached) {
+        this.log('CACHE_HIT', cacheType, requestId, `${(performance.now() - startTime).toFixed(1)}ms`);
+        return cached;
       }
-      
-      const duration = performance.now() - startTime;
-      this.log('REQUEST_SUCCESS', config.type, requestId, `${duration.toFixed(1)}ms`);
-      
-      return result;
-      
-    } catch (error) {
-      const duration = performance.now() - startTime;
-      const classifiedError = this.classifyError(error, config);
-      
-      this.log('REQUEST_FAILED', config.type, requestId, {
-        error: classifiedError.type,
-        message: classifiedError.message,
-        duration: `${duration.toFixed(1)}ms`
-      });
-      
-      throw this.createZoroError(classifiedError);
     }
+    
+    // Build query and variables
+    const { query, variables } = this.buildQuery(config);
+    
+    // Execute request using the existing executeRequestWithRetry method
+    const result = await this.executeRequestWithRetry({
+      query,
+      variables,
+      config,
+      requestId,
+      maxRetries: this.config.maxRetries
+    });
+    
+    // Cache successful results
+    if (result && !config.nocache) {
+      this.cache.set(cacheKey, result, { 
+        scope: cacheType,
+        source: 'anilist'  // Add source parameter
+      });
+    }
+    
+    const duration = performance.now() - startTime;
+    this.log('REQUEST_SUCCESS', config.type, requestId, `${duration.toFixed(1)}ms`);
+    
+    return result;
+    
+  } catch (error) {
+    const duration = performance.now() - startTime;
+    const classifiedError = this.classifyError(error, config);
+    
+    this.log('REQUEST_FAILED', config.type, requestId, {
+      error: classifiedError.type,
+      message: classifiedError.message,
+      duration: `${duration.toFixed(1)}ms`
+    });
+    
+    throw this.createZoroError(classifiedError);
   }
+}
 
   async executeRequestWithRetry({ query, variables, config, requestId, maxRetries }) {
-    let lastError;
-    
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const result = await this.makeRawRequest({
-          query,
-          variables,
-          config,
-          requestId,
-          attempt
-        });
-        
-        if (attempt > 1) {
-          this.log('RETRY_SUCCESS', config.type, requestId, `Attempt ${attempt}/${maxRetries}`);
-        }
-        
-        return result;
-        
-      } catch (error) {
-        lastError = error;
-        
-        if (attempt === maxRetries || !this.isRetryableError(error)) {
-          throw error;
-        }
-        
-        const delay = this.calculateRetryDelay(attempt);
-        this.log('RETRY_ATTEMPT', config.type, requestId, 
-          `Attempt ${attempt}/${maxRetries}, retrying in ${delay}ms: ${error.message}`);
-        
-        await this.sleep(delay);
-      }
-    }
-    
-    throw lastError;
-  }
+  // Use RequestQueue to handle the actual request execution
+  return await this.requestQueue.add(() => this.makeRawRequest({
+    query,
+    variables,
+    config,
+    requestId,
+    attempt: 1  // RequestQueue will handle retry attempts
+  }), {
+    priority: config.priority || 'normal',
+    timeout: this.config.requestTimeout,
+    retries: maxRetries,
+    metadata: { 
+      type: config.type, 
+      mediaType: config.mediaType,
+      requestId 
+    },
+    service: 'anilist'
+  });
+}
 
   async makeRawRequest({ query, variables, config, requestId, attempt = 1, skipAuth = false }) {
-    const headers = {
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      'User-Agent': `Zoro-Plugin/${this.plugin.manifest.version}`,
-      'X-Request-ID': requestId
-    };
-    
-    if (!skipAuth && this.plugin.settings.accessToken) {
-      await this.plugin.auth.ensureValidToken();
-      headers['Authorization'] = `Bearer ${this.plugin.settings.accessToken}`;
-    }
-    
-    const requestBody = JSON.stringify({ query, variables });
-    
-    try {
-      const response = await Promise.race([
-        this.requestQueue.add(() => requestUrl({
-          url: 'https://graphql.anilist.co',
-          method: 'POST',
-          headers,
-          body: requestBody
-        })),
-        this.createTimeoutPromise(this.config.requestTimeout)
-      ]);
-      
-      const result = response.json;
-      this.validateResponse(result);
-      
-      if (result.errors && result.errors.length > 0) {
-        throw this.createGraphQLError(result.errors[0]);
-      }
-      
-      if (!result.data) {
-        throw new Error('AniList returned no data');
-      }
-      
-      return result.data;
-      
-    } catch (error) {
-      throw error;
-    }
+  const headers = {
+    'Content-Type': 'application/json',
+    'Accept': 'application/json',
+    'User-Agent': `Zoro-Plugin/${this.plugin.manifest.version}`,
+    'X-Request-ID': requestId
+  };
+  
+  if (!skipAuth && this.plugin.settings.accessToken) {
+    await this.plugin.auth.ensureValidToken();
+    headers['Authorization'] = `Bearer ${this.plugin.settings.accessToken}`;
   }
+  
+  const requestBody = JSON.stringify({ query, variables });
+  
+  try {
+    // Direct requestUrl call - RequestQueue handles timeout and retries
+    const response = await requestUrl({
+      url: 'https://graphql.anilist.co',
+      method: 'POST',
+      headers,
+      body: requestBody
+    });
+    
+    const result = response.json;
+    this.validateResponse(result);
+    
+    if (result.errors && result.errors.length > 0) {
+      throw this.createGraphQLError(result.errors[0]);
+    }
+    
+    if (!result.data) {
+      throw new Error('AniList returned no data');
+    }
+    
+    return result.data;
+    
+  } catch (error) {
+    throw error;
+  }
+}
 
   // =================== UPDATE METHOD ===================
 
@@ -400,19 +386,20 @@ class AnilistApi {
   }
 
   async invalidateRelatedCache(mediaId, updates) {
-    this.cache.invalidateByMedia(mediaId);
-    
-    if (updates.status) {
-      try {
-        const username = await this.plugin.auth.getAuthenticatedUsername();
-        if (username) {
-          this.cache.invalidateByUser(username);
-        }
-      } catch (error) {
-        // Ignore errors getting username for cache invalidation
+  this.cache.invalidateByMedia(mediaId, { source: 'anilist' }); // Add source
+  
+  if (updates.status) {
+    try {
+      const username = await this.plugin.auth.getAuthenticatedUsername();
+      if (username) {
+        this.cache.invalidateByUser(username, { source: 'anilist' }); // Add source
       }
+    } catch (error) {
+      // Ignore errors getting username for cache invalidation
     }
   }
+}
+
 
   // =================== OAUTH METHOD ===================
 

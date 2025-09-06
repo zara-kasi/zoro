@@ -404,7 +404,7 @@ class CustomExternalURL {
         const domainName = this.extractDomainName(url);
         const searchBtn = document.createElement('button');
         searchBtn.className = 'external-link-btn zoro-custom-external-btn';
-        searchBtn.innerHTML = `🔍 ${domainName}`;
+        searchBtn.innerHTML = `${domainName}`;
         searchBtn.onclick = (e) => {
           e.stopPropagation();
           try {

@@ -57,18 +57,19 @@ class MalApi {
     const startTime = performance.now();
     
     try {
+      // Config validation and normalization
       this.validateConfig(config);
       
-      // Check cache first
+      // Check cache first with proper source parameter
       const cacheKey = this.createCacheKey(config);
       const cacheType = this.determineCacheType(config);
       
       if (!config.nocache) {
         const cached = this.cache.get(cacheKey, { 
-  scope: cacheType,
-  source: 'mal',
-  ttl: this.getCacheTTL(config)
-});
+          scope: cacheType,
+          source: 'mal',
+          ttl: this.getCacheTTL(config)
+        });
         
         if (cached) {
           this.log('CACHE_HIT', cacheType, requestId, `${(performance.now() - startTime).toFixed(1)}ms`);
@@ -79,18 +80,8 @@ class MalApi {
       // Build request parameters
       const requestParams = this.buildRequestParams(config, requestId);
       
-      // Execute request using RequestQueue with MAL service
-      const result = await this.requestQueue.add(() => this.makeRawRequest(requestParams), {
-        priority: config.priority || 'normal',
-        timeout: this.config.requestTimeout,
-        retries: 3,
-        metadata: { 
-          type: config.type, 
-          mediaType: config.mediaType,
-          requestId 
-        },
-        service: 'mal'
-      });
+      // Request execution through upgraded makeRawRequest
+      const result = await this.makeRawRequest(requestParams);
       
       // Transform response to AniList-compatible format
       const transformedData = this.transformResponse(result, config);
@@ -100,9 +91,12 @@ class MalApi {
         await this.attachMALDistributions(transformedData.User);
       }
       
-      // Cache successful results
+      // Cache successful results with proper source parameter
       if (transformedData && !config.nocache) {
-        this.cache.set(cacheKey, transformedData, { scope: cacheType });
+        this.cache.set(cacheKey, transformedData, { 
+          scope: cacheType,
+          source: 'mal'
+        });
       }
       
       const duration = performance.now() - startTime;
@@ -125,62 +119,80 @@ class MalApi {
   }
 
   async makeRawRequest(requestParams) {
-    const headers = {
-      'Accept': 'application/json',
-      'User-Agent': `Zoro-Plugin/${this.plugin.manifest.version}`,
-      'X-Request-ID': requestParams.requestId,
-      ...requestParams.headers
+    // Create requestFn that wraps the actual requestUrl call
+    const requestFn = async () => {
+      const headers = {
+        'Accept': 'application/json',
+        'User-Agent': `Zoro-Plugin/${this.plugin.manifest.version}`,
+        'X-Request-ID': requestParams.requestId,
+        ...requestParams.headers
+      };
+
+      // Always include MAL client id for public endpoints
+      if (this.plugin.settings.malClientId) {
+        headers['X-MAL-CLIENT-ID'] = this.plugin.settings.malClientId;
+      }
+
+      // Add authentication header only for non-search requests
+      if (this.requiresAuth(requestParams.metadata?.type)) {
+        if (this.plugin.settings.malAccessToken) {
+          headers['Authorization'] = `Bearer ${this.plugin.settings.malAccessToken}`;
+        }
+      }
+
+      // Direct requestUrl call
+      const response = await requestUrl({
+        url: requestParams.url,
+        method: requestParams.method || 'GET',
+        headers,
+        body: requestParams.body
+      });
+
+      // HTTP validation inside makeRawRequest
+      this.validateResponse(response);
+      
+      // Handle rate limiting
+      if (response.status === 429) {
+        const error = new Error('Rate limit exceeded');
+        error.status = 429;
+        error.type = 'RATE_LIMITED';
+        error.retryable = true;
+        throw error;
+      }
+      
+      if (response.status >= 400) {
+        const error = new Error(`HTTP ${response.status}: ${response.text || 'Unknown error'}`);
+        error.status = response.status;
+        error.type = 'HTTP_ERROR';
+        error.retryable = response.status >= 500;
+        throw error;
+      }
+      
+      const result = response.json;
+      
+      if (result?.error) {
+        const error = new Error(result.message || 'MAL API error');
+        error.type = 'API_ERROR';
+        error.originalError = result.error;
+        error.retryable = false;
+        throw error;
+      }
+      
+      return result;
     };
 
-    // Always include MAL client id for public endpoints
-    if (this.plugin.settings.malClientId) {
-      headers['X-MAL-CLIENT-ID'] = this.plugin.settings.malClientId;
-    }
-
-    // Add authentication header only for non-search requests
-    if (this.requiresAuth(requestParams.metadata?.type)) {
-      if (this.plugin.settings.malAccessToken) {
-        headers['Authorization'] = `Bearer ${this.plugin.settings.malAccessToken}`;
-      }
-    }
-
-    const response = await requestUrl({
-      url: requestParams.url,
-      method: requestParams.method || 'GET',
-      headers,
-      body: requestParams.body
-    });
-
-    this.validateResponse(response);
-    
-    // Handle rate limiting
-    if (response.status === 429) {
-      const error = new Error('Rate limit exceeded');
-      error.status = 429;
-      error.type = 'RATE_LIMITED';
-      error.retryable = true;
+    // Pass requestFn to requestQueue.add() with proper service metadata
+    try {
+      return await this.requestQueue.add(requestFn, {
+        priority: requestParams.priority || 'normal',
+        timeout: this.config.requestTimeout,
+        retries: 3,
+        metadata: requestParams.metadata,
+        service: 'mal'
+      });
+    } catch (error) {
       throw error;
     }
-    
-    if (response.status >= 400) {
-      const error = new Error(`HTTP ${response.status}: ${response.text || 'Unknown error'}`);
-      error.status = response.status;
-      error.type = 'HTTP_ERROR';
-      error.retryable = response.status >= 500;
-      throw error;
-    }
-    
-    const result = response.json;
-    
-    if (result?.error) {
-      const error = new Error(result.message || 'MAL API error');
-      error.type = 'API_ERROR';
-      error.originalError = result.error;
-      error.retryable = false;
-      throw error;
-    }
-    
-    return result;
   }
 
   // =================== UPDATE METHOD ===================
@@ -209,20 +221,11 @@ class MalApi {
           'Content-Type': 'application/x-www-form-urlencoded'
         },
         requestId,
+        priority: 'high',
         metadata: { type: 'update', mediaId }
       };
 
-      const result = await this.requestQueue.add(() => this.makeRawRequest(requestParams), {
-        priority: 'high',
-        timeout: this.config.requestTimeout,
-        retries: 2,
-        metadata: { 
-          type: 'update', 
-          mediaId,
-          requestId 
-        },
-        service: 'mal'
-      });
+      const result = await this.makeRawRequest(requestParams);
 
       // Invalidate related cache
       await this.invalidateRelatedCache(mediaId, updates);
@@ -439,13 +442,13 @@ class MalApi {
   }
 
   async invalidateRelatedCache(mediaId, updates) {
-    this.cache.invalidateByMedia(mediaId);
+    this.cache.invalidateByMedia(mediaId, { source: 'mal' });
     
     if (updates.status) {
       try {
         const username = await this.getAuthenticatedUsername();
         if (username) {
-          this.cache.invalidateByUser(username);
+          this.cache.invalidateByUser(username, { source: 'mal' });
         }
       } catch (error) {
         // Ignore errors getting username for cache invalidation
@@ -486,19 +489,11 @@ class MalApi {
         },
         body: body.toString(),
         requestId,
+        priority: 'high',
         metadata: { type: 'auth' }
       };
 
-      const result = await this.requestQueue.add(() => this.makeRawRequest(requestParams), {
-        priority: 'high',
-        timeout: this.config.requestTimeout,
-        retries: 2,
-        metadata: { 
-          type: 'auth',
-          requestId 
-        },
-        service: 'mal'
-      });
+      const result = await this.makeRawRequest(requestParams);
 
       if (!result || typeof result !== 'object') {
         throw new Error('Invalid response structure from MAL');
@@ -551,6 +546,7 @@ class MalApi {
       method: 'GET',
       headers: this.getBaseHeaders(requestId),
       requestId,
+      priority: config.priority || 'normal',
       metadata: { type: config.type, mediaType: config.mediaType }
     };
   }
@@ -727,6 +723,7 @@ class MalApi {
       studios: media.studios ? { nodes: media.studios.map(s => ({ name: s.name })) } : null
     };
   }
+
   transformUser(malUser) {
     const animeStats = malUser?.anime_statistics || {};
     const mangaStats = malUser?.manga_statistics || {};
@@ -844,20 +841,11 @@ class MalApi {
         url: `${this.baseUrl}/users/@me?fields=id,name`,
         method: 'GET',
         requestId: this.generateRequestId(),
+        priority: 'normal',
         metadata: { type: 'user_info' }
       };
       
-      const result = await this.requestQueue.add(() => this.makeRawRequest(requestParams), {
-        priority: 'normal',
-        timeout: this.config.requestTimeout,
-        retries: 1,
-        metadata: { 
-          type: 'user_info',
-          nocache: true 
-        },
-        service: 'mal'
-      });
-      
+      const result = await this.makeRawRequest(requestParams);
       return result?.name || null;
       
     } catch (error) {
@@ -881,20 +869,11 @@ class MalApi {
           url: `${this.baseUrl}/${type}/${mediaId}?fields=id`,
           method: 'GET',
           requestId: this.generateRequestId(),
+          priority: 'low',
           metadata: { type: 'media_type_check' }
         };
         
-        const response = await this.requestQueue.add(() => this.makeRawRequest(requestParams), {
-          priority: 'low',
-          timeout: this.config.requestTimeout,
-          retries: 1,
-          metadata: { 
-            type: 'media_type_check',
-            nocache: true 
-          },
-          service: 'mal'
-        });
-        
+        const response = await this.makeRawRequest(requestParams);
         if (response && !response.error) return type;
       } catch (error) {
         continue;
@@ -934,17 +913,7 @@ class MalApi {
     const listConfig = { type: 'list', mediaType, layout: 'card', limit: 1000 };
     const requestParams = this.buildRequestParams(listConfig, this.generateRequestId());
     
-    const raw = await this.requestQueue.add(() => this.makeRawRequest(requestParams), {
-      priority: 'normal',
-      timeout: this.config.requestTimeout,
-      retries: 2,
-      metadata: { 
-        type: 'list',
-        mediaType 
-      },
-      service: 'mal'
-    });
-    
+    const raw = await this.makeRawRequest(requestParams);
     const transformed = this.transformResponse(raw, listConfig);
     const entries = transformed?.MediaListCollection?.lists?.[0]?.entries || [];
     return entries;
@@ -1048,54 +1017,41 @@ class MalApi {
   // =================== ADDITIONAL API METHODS ===================
 
   async getMALRecommendations(mediaId, mediaType = 'ANIME') {
-    return await ZoroError.guard(async () => {
+    try {
       const type = mediaType === 'ANIME' ? 'anime' : 'manga';
       
       const requestParams = {
         url: `${this.baseUrl}/${type}/${mediaId}?fields=recommendations`,
         method: 'GET',
         requestId: this.generateRequestId(),
+        priority: 'low',
         metadata: { type: 'recommendations' }
       };
 
-      const response = await this.requestQueue.add(() => this.makeRawRequest(requestParams), {
-        priority: 'low',
-        timeout: this.config.requestTimeout,
-        retries: 1,
-        metadata: { 
-          type: 'recommendations',
-          nocache: false 
-        },
-        service: 'mal'
-      });
+      const response = await this.makeRawRequest(requestParams);
       
       return response.recommendations?.map(rec => ({
         node: this.transformMedia(rec.node),
         num_recommendations: rec.num_recommendations
       })) || [];
       
-    }, 'cache');
+    } catch (error) {
+      console.warn('[MAL] getMALRecommendations failed:', error);
+      return [];
+    }
   }
 
   async getMALSeasonalAnime(year, season) {
-    return await ZoroError.guard(async () => {
+    try {
       const requestParams = {
         url: `${this.baseUrl}/anime/season/${year}/${season}?fields=${this.getFieldsForLayout('card', true)}`,
         method: 'GET',
         requestId: this.generateRequestId(),
+        priority: 'low',
         metadata: { type: 'seasonal' }
       };
 
-      const response = await this.requestQueue.add(() => this.makeRawRequest(requestParams), {
-        priority: 'low',
-        timeout: this.config.requestTimeout,
-        retries: 1,
-        metadata: { 
-          type: 'seasonal',
-          nocache: false 
-        },
-        service: 'mal'
-      });
+      const response = await this.makeRawRequest(requestParams);
       
       return {
         Page: {
@@ -1103,7 +1059,10 @@ class MalApi {
         }
       };
       
-    }, 'cache');
+    } catch (error) {
+      console.warn('[MAL] getMALSeasonalAnime failed:', error);
+      return { Page: { media: [] } };
+    }
   }
 
   // =================== LOGGING ===================

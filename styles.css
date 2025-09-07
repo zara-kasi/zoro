@@ -280,15 +280,11 @@
 
 /* Progress & Score */
 .progress,
-.score {
+.score, .format {
   padding: var(--zoro-progress-padding);
-  background: var(--background-modifier-border);
   border-radius: var(--zoro-progress-border-radius);
   font-size: var(--zoro-progress-font-size);
   font-weight: var(--zoro-progress-font-weight);
-}
-.score {
-  color: var(--color-orange);
 }
 
 /* Genres */
@@ -780,10 +776,11 @@ transparent 70%
 .cover-overlay {
   position: absolute;
   bottom: 9px;
-  left: 1px;
-  right: 1px;
+  left: 0px;
+  right: 0px;
   padding: 0px 0px;
   display: flex;
+  background: linear-gradient(to top, var(--background-modifier-border), transparent);
   justify-content: space-between;
   align-items: center;
   pointer-events: none;
@@ -1034,7 +1031,7 @@ transparent 70%
 .zoro-no-heart {
   position: absolute;
   top: 5px;
-  left: 5px;
+  right: 5px;
   width: var(--heart-size);
   height: var(--heart-size);
   cursor: pointer;

@@ -1,7 +1,6 @@
 import { Notice, requestUrl } from 'obsidian';
 import { ZoroError } from '../../core/ZoroError.js';
 
-
 class AnilistApi {
   constructor(plugin) {
     this.plugin = plugin;
@@ -29,111 +28,128 @@ class AnilistApi {
   }
 
   async fetchAniListData(config) {
-  const requestId = this.generateRequestId();
-  const startTime = performance.now();
-  
-  try {
-    this.validateConfig(config);
+    const requestId = this.generateRequestId();
+    const startTime = performance.now();
     
-    // Check cache first
-    const cacheKey = this.createCacheKey(config);
-    const cacheType = this.determineCacheType(config);
-    
-    if (!config.nocache) {
-      const cached = this.cache.get(cacheKey, { 
-        scope: cacheType,
-        source: 'anilist',  // Add source parameter
-        ttl: this.getCacheTTL(config)
+    try {
+      // Config validation and normalization
+      this.validateConfig(config);
+      
+      // Check cache first with proper source parameter
+      const cacheKey = this.createCacheKey(config);
+      const cacheType = this.determineCacheType(config);
+      
+      if (!config.nocache) {
+        const cached = this.cache.get(cacheKey, { 
+          scope: cacheType,
+          source: 'anilist',
+          ttl: this.getCacheTTL(config)
+        });
+        
+        if (cached) {
+          this.log('CACHE_HIT', cacheType, requestId, `${(performance.now() - startTime).toFixed(1)}ms`);
+          return cached;
+        }
+      }
+      
+      // Build query and variables
+      const { query, variables } = this.buildQuery(config);
+      
+      // Request execution through upgraded makeRawRequest
+      const requestParams = {
+        query,
+        variables,
+        config,
+        requestId,
+        priority: config.priority || 'normal',
+        timeout: this.config.requestTimeout,
+        retries: this.config.maxRetries,
+        metadata: { type: config.type, mediaType: config.mediaType, requestId },
+        service: 'anilist'
+      };
+      
+      const result = await this.makeRawRequest(requestParams);
+      
+      // Cache successful results with proper source parameter
+      if (result && !config.nocache) {
+        this.cache.set(cacheKey, result, { 
+          scope: cacheType,
+          source: 'anilist'
+        });
+      }
+      
+      const duration = performance.now() - startTime;
+      this.log('REQUEST_SUCCESS', config.type, requestId, `${duration.toFixed(1)}ms`);
+      
+      return result;
+      
+    } catch (error) {
+      const duration = performance.now() - startTime;
+      const classifiedError = this.classifyError(error, config);
+      
+      this.log('REQUEST_FAILED', config.type, requestId, {
+        error: classifiedError.type,
+        message: classifiedError.message,
+        duration: `${duration.toFixed(1)}ms`
       });
       
-      if (cached) {
-        this.log('CACHE_HIT', cacheType, requestId, `${(performance.now() - startTime).toFixed(1)}ms`);
-        return cached;
-      }
+      throw this.createZoroError(classifiedError);
     }
-    
-    // Build query and variables
-    const { query, variables } = this.buildQuery(config);
-    
-    // Direct RequestQueue usage - removed executeRequestWithRetry wrapper
-    const result = await this.requestQueue.add(() => this.makeRawRequest({
-      query, variables, config, requestId, attempt: 1
-    }), {
-      priority: config.priority || 'normal',
-      timeout: this.config.requestTimeout,
-      retries: this.config.maxRetries,
-      metadata: { type: config.type, mediaType: config.mediaType, requestId },
-      service: 'anilist'
-    });
-    
-    // Cache successful results
-    if (result && !config.nocache) {
-      this.cache.set(cacheKey, result, { 
-        scope: cacheType,
-        source: 'anilist'  // Add source parameter
-      });
-    }
-    
-    const duration = performance.now() - startTime;
-    this.log('REQUEST_SUCCESS', config.type, requestId, `${duration.toFixed(1)}ms`);
-    
-    return result;
-    
-  } catch (error) {
-    const duration = performance.now() - startTime;
-    const classifiedError = this.classifyError(error, config);
-    
-    this.log('REQUEST_FAILED', config.type, requestId, {
-      error: classifiedError.type,
-      message: classifiedError.message,
-      duration: `${duration.toFixed(1)}ms`
-    });
-    
-    throw this.createZoroError(classifiedError);
   }
-}
 
-  async makeRawRequest({ query, variables, config, requestId, attempt = 1, skipAuth = false }) {
-  const headers = {
-    'Content-Type': 'application/json',
-    'Accept': 'application/json',
-    'User-Agent': `Zoro-Plugin/${this.plugin.manifest.version}`,
-    'X-Request-ID': requestId
-  };
-  
-  if (!skipAuth && this.plugin.settings.accessToken) {
-    await this.plugin.auth.ensureValidToken();
-    headers['Authorization'] = `Bearer ${this.plugin.settings.accessToken}`;
-  }
-  
-  const requestBody = JSON.stringify({ query, variables });
-  
-  try {
-    // Direct requestUrl call - RequestQueue handles timeout and retries
-    const response = await requestUrl({
-      url: 'https://graphql.anilist.co',
-      method: 'POST',
-      headers,
-      body: requestBody
-    });
-    
-    const result = response.json;
-    this.validateResponse(result);
-    
-    if (result.errors && result.errors.length > 0) {
-      throw this.createGraphQLError(result.errors[0]);
+  async makeRawRequest({ query, variables, config, requestId, priority = 'normal', timeout, retries, metadata, service }) {
+    // Create requestFn that wraps the actual requestUrl call
+    const requestFn = async () => {
+      const headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'User-Agent': `Zoro-Plugin/${this.plugin.manifest.version}`,
+        'X-Request-ID': requestId
+      };
+      
+      if (this.plugin.settings.accessToken) {
+        await this.plugin.auth.ensureValidToken();
+        headers['Authorization'] = `Bearer ${this.plugin.settings.accessToken}`;
+      }
+      
+      const requestBody = JSON.stringify({ query, variables });
+      
+      // Direct requestUrl call
+      const response = await requestUrl({
+        url: 'https://graphql.anilist.co',
+        method: 'POST',
+        headers,
+        body: requestBody
+      });
+      
+      // Response validation inside makeRawRequest
+      this.validateResponse(response.json);
+      
+      if (response.json.errors && response.json.errors.length > 0) {
+        throw this.createGraphQLError(response.json.errors[0]);
+      }
+      
+      if (!response.json.data) {
+        throw new Error('AniList returned no data');
+      }
+      
+      return response.json.data;
+    };
+
+    // Pass requestFn to requestQueue.add() with proper service metadata
+    try {
+      return await this.requestQueue.add(requestFn, {
+        priority,
+        timeout,
+        retries,
+        metadata,
+        service
+      });
+    } catch (error) {
+      // Error classification handled here
+      throw error;
     }
-    
-    if (!result.data) {
-      throw new Error('AniList returned no data');
-    }
-    
-    return result.data;
-    
-  } catch (error) {
-    throw error;
   }
-}
 
   // =================== UPDATE METHOD ===================
 
@@ -173,16 +189,20 @@ class AnilistApi {
         ...(updates.progress !== undefined && { progress: parseInt(updates.progress) }),
       };
       
-      // Direct RequestQueue usage - removed executeRequestWithRetry wrapper
-      const result = await this.requestQueue.add(() => this.makeRawRequest({
-        query: mutation, variables, config: { type: 'update', mediaId }, requestId, attempt: 1
-      }), {
+      // Use upgraded makeRawRequest following Simkl pattern
+      const requestParams = {
+        query: mutation,
+        variables,
+        config: { type: 'update', mediaId },
+        requestId,
         priority: 'high',
         timeout: this.config.requestTimeout,
         retries: 2,
         metadata: { type: 'update', mediaId, requestId },
         service: 'anilist'
-      });
+      };
+      
+      const result = await this.makeRawRequest(requestParams);
 
       await this.invalidateRelatedCache(mediaId, updates);
       
@@ -370,20 +390,19 @@ class AnilistApi {
   }
 
   async invalidateRelatedCache(mediaId, updates) {
-  this.cache.invalidateByMedia(mediaId, { source: 'anilist' }); // Add source
-  
-  if (updates.status) {
-    try {
-      const username = await this.plugin.auth.getAuthenticatedUsername();
-      if (username) {
-        this.cache.invalidateByUser(username, { source: 'anilist' }); // Add source
+    this.cache.invalidateByMedia(mediaId, { source: 'anilist' });
+    
+    if (updates.status) {
+      try {
+        const username = await this.plugin.auth.getAuthenticatedUsername();
+        if (username) {
+          this.cache.invalidateByUser(username, { source: 'anilist' });
+        }
+      } catch (error) {
+        // Ignore errors getting username for cache invalidation
       }
-    } catch (error) {
-      // Ignore errors getting username for cache invalidation
     }
   }
-}
-
 
   // =================== OAUTH METHOD ===================
 
@@ -444,7 +463,6 @@ class AnilistApi {
     }
   }
 
-
   getAniListUrl(mediaId, mediaType = 'ANIME') {
     try {
       this.validateMediaId(mediaId);
@@ -500,6 +518,7 @@ class AnilistApi {
     
     return { query, variables };
   }
+
   getMediaListQuery(layout = 'card') {
     const baseFields = `
       id
@@ -901,4 +920,5 @@ class AnilistApi {
     }
   }
 }
+
 export { AnilistApi };

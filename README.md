@@ -42,16 +42,16 @@
 
 ---    
 
-# Recommendation              
-
 # Recommendation
 
-| Media         | Option 1         | Option 2        |
-|---------------|------------------|-----------------|
-| Anime & Manga | AniList          | MyAnimeList     |
-| Movies & TV   | Simkl            | —               |
-| All Media     | AniList + Simkl  | MAL + Simkl     |
-    
+| Media         | Option 1         | Option 2     |
+|---------------|------------------|--------------|
+| Anime & Manga | AniList          | MyAnimeList  |
+| Movies & TV   | Simkl            | —            |
+| All media     | AniList + Simkl  | MAL + Simkl  |
+
+> AniList offers some extra features compared to MyAnimeList, but in most cases both feel very similar for everyday use.
+ 
 ---
 
 # Authentication      

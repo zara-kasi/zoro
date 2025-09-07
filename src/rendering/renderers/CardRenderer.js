@@ -197,16 +197,39 @@ return card;
     overlay.className = 'cover-overlay';
     
     
-    // Progress indicator
-    if (!isSearch && entry && this.plugin.settings.showProgress) {
-      const progress = document.createElement('span');
-      progress.className = 'progress';
-      const total = media.episodes || media.chapters || '?';
-      progress.textContent = this.formatter.formatProgress(entry.progress, total);
-      overlay.appendChild(progress);
+   // Progress indicator for user lists OR total count for search results
+if (this.plugin.settings.showProgress) {
+  if (!isSearch && entry && entry.progress != null) {
+    // Show progress for user list items
+    const progress = document.createElement('span');
+    progress.className = 'progress';
+    const total = media.episodes || media.chapters || '?';
+    progress.textContent = this.formatter.formatProgress(entry.progress, total);
+    overlay.appendChild(progress);
+  } else if (isSearch) {
+    // Show total count for search results or generic indicator as fallback
+    const searchInfo = document.createElement('span');
+    searchInfo.className = 'progress';
+    
+    if (media.episodes || media.chapters) {
+      const count = media.episodes || media.chapters;
+      const type = media.episodes ? 'eps' : 'ch';
+      searchInfo.textContent = `${count} ${type}`;
     } else {
-      overlay.appendChild(document.createElement('span'));
+      searchInfo.textContent = '—';
     }
+    
+    overlay.appendChild(searchInfo);
+  } else {
+    // Generic indicator when nothing is available to show
+    const fallback = document.createElement('span');
+    fallback.className = 'progress';
+    fallback.textContent = '—';
+    overlay.appendChild(fallback);
+  }
+} else {
+  overlay.appendChild(document.createElement('span'));
+}
     
             // Format indicator
     if (media.format) {

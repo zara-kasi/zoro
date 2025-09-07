@@ -65,9 +65,10 @@ class MalApi {
       
       if (!config.nocache) {
         const cached = this.cache.get(cacheKey, { 
-          scope: cacheType, 
-          ttl: this.getCacheTTL(config)
-        });
+  scope: cacheType,
+  source: 'mal',
+  ttl: this.getCacheTTL(config)
+});
         
         if (cached) {
           this.log('CACHE_HIT', cacheType, requestId, `${(performance.now() - startTime).toFixed(1)}ms`);

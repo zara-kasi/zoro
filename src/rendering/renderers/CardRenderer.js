@@ -462,11 +462,6 @@ createMediaDetails(media, entry, config, isSearch) {
       return;
     }
 
-    // show spinner
-    addBtn.dataset.loading = 'true';
-    addBtn.innerHTML = DOMHelper.createLoadingSpinner();
-    addBtn.style.pointerEvents = 'none';
-
     try {
       const typeUpper = String(entryMediaType || '').toUpperCase();
       const isMovieOrTv = typeUpper === 'MOVIE' || typeUpper === 'MOVIES' || typeUpper === 'TV' || typeUpper.includes('SHOW');
@@ -490,8 +485,7 @@ createMediaDetails(media, entry, config, isSearch) {
       new Notice('✅ Added to planning!', 3000);
       console.log(`[Zoro] Added ${media.id} to planning via add button`);
 
-      // ---- STOP SPINNER & SHOW SUCCESS ICON ----
-      addBtn.dataset.loading = 'false';
+
 
       // remove spinner and all children (this is the key step)
       if (typeof addBtn.replaceChildren === 'function') {

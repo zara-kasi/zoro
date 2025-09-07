@@ -44,13 +44,13 @@
 
 # Recommendation              
 
-| Media         | Best Option     | Alternative |
-| ------------- | --------------- | ----------- |
-| Anime & Manga | AniList         | MAL         |
-| Movies & TV   | Simkl           | —           |
-| All media     | AniList + Simkl | MAL + Simkl |
->AniList offers the fastest API and deepest integration with Zoro. MAL works too, but responses are slower — otherwise both feel very similar.
+# Recommendation
 
+| Media         | Option 1         | Option 2        |
+|---------------|------------------|-----------------|
+| Anime & Manga | AniList          | MyAnimeList     |
+| Movies & TV   | Simkl            | —               |
+| All Media     | AniList + Simkl  | MAL + Simkl     |
     
 ---
 

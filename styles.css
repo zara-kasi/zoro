@@ -1322,10 +1322,6 @@ transparent 70%
   cursor: pointer;
   border: none;
   padding: 0px;
-  background: radial-gradient(circle, var(--background-modifier-border) 0%, transparent 90%);
-backdrop-filter: blur(2px);
--webkit-backdrop-filter: blur(2px);
-  border-radius: 6px; 
 }
 
 /* Inline search icon styles */

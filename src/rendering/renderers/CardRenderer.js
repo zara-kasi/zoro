@@ -213,10 +213,10 @@ if (this.plugin.settings.showProgress) {
     
     if (media.episodes || media.chapters) {
       const count = media.episodes || media.chapters;
-      const type = media.episodes ? 'eps' : 'ch';
+      const type = media.episodes ? 'EP' : 'CH';
       searchInfo.textContent = `${count} ${type}`;
     } else {
-      searchInfo.textContent = '—';
+      searchInfo.textContent = '?';
     }
     
     overlay.appendChild(searchInfo);

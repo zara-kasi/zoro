@@ -276,16 +276,39 @@
   margin: 0 auto;
 }
 
+.cover-overlay {
+  position: absolute;
+  bottom: 9px;
+  left: 0px;
+  right: 0px;
+  padding: 0px 0px;
+  display: flex;
+  background: linear-gradient(to top, var(--background-modifier-border), transparent);
+  backdrop-filter: blur(1px);
+  -webkit-backdrop-filter: blur(1px); /* Safari support */
+  align-items: center;
+  pointer-events: none;
+  gap: 1px;
+}
 
-
-/* Progress & Score */
+/* Add flex properties to make each item equal width */
 .progress,
-.score, .format {
+.score, 
+.format {
+  flex: 1; /* Each takes equal space (33.33%) */
+  text-align: center; /* Center the text within each container */
+  min-width: 0; /* Prevents overflow issues */
   padding: var(--zoro-progress-padding);
   border-radius: var(--zoro-progress-border-radius);
   font-size: var(--zoro-progress-font-size);
   font-weight: var(--zoro-progress-font-weight);
+  
+  /* Handle text overflow */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+
 
 /* Genres */
 .genres {
@@ -773,18 +796,6 @@ transparent 70%
   transition: opacity 0.1s ease;
 }
 
-.cover-overlay {
-  position: absolute;
-  bottom: 9px;
-  left: 0px;
-  right: 0px;
-  padding: 0px 0px;
-  display: flex;
-  background: linear-gradient(to top, var(--background-modifier-border), transparent);
-  justify-content: space-between;
-  align-items: center;
-  pointer-events: none;
-}
 
 .media-title-link {
   text-decoration: none;
@@ -1354,12 +1365,12 @@ transparent 70%
   top: 5px;
   left: 5px;
   cursor: pointer;
-  color: WHITE;
-  background-color: 1px 1px 2px rgba(0, 0, 0, 0.8);
-  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.0));
   border: none;
-  padding: 0;
-  
+  padding: 0px;
+  background: radial-gradient(circle, var(--background-modifier-border) 0%, transparent 90%);
+backdrop-filter: blur(2px);
+-webkit-backdrop-filter: blur(2px);
+  border-radius: 6px; 
 }
 
 /* Inline search icon styles */

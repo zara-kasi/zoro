@@ -74,8 +74,8 @@ class FormatterHelper {
   }
 
   formatFormat(format) {
-    return format ? format.substring(0, 2).toUpperCase() : '';
-  }
+  return format ? format.toUpperCase() : '';
+}
 }
 
 export { FormatterHelper };

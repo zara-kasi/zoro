@@ -81,7 +81,10 @@ class SimklApi {
     
     // Check cache first
     if (!normalizedConfig.nocache) {
-      const cached = this.cache.get(cacheKey, { scope: cacheScope });
+      const cached = this.cache.get(cacheKey, { 
+  scope: cacheScope,
+  source: 'simkl'
+})
       if (cached) {
         this.metrics.cached++;
         return cached;
@@ -134,7 +137,10 @@ class SimklApi {
     
     // Cache successful results
     if (transformedData && !normalizedConfig.nocache) {
-      this.cache.set(cacheKey, transformedData, { scope: cacheScope });
+      this.cache.set(cacheKey, transformedData, { 
+  scope: cacheScope,
+  source: 'simkl'
+});
     }
     
     return transformedData;

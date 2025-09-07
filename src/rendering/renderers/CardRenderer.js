@@ -164,10 +164,7 @@ return card;
     coverContainer.appendChild(img);
     
     // Add format badge to cover if available
-    if (media.format) {
-      const formatBadge = this.createFormatBadgeForCover(media);
-      coverContainer.appendChild(formatBadge);
-    }
+    
     if (isSearch) {
   // For search and trending cards, show both Add and Edit
   const addBtn = this.createAddButton(media, entry, config);
@@ -199,6 +196,7 @@ return card;
     const overlay = document.createElement('div');
     overlay.className = 'cover-overlay';
     
+    
     // Progress indicator
     if (!isSearch && entry && this.plugin.settings.showProgress) {
       const progress = document.createElement('span');
@@ -222,6 +220,16 @@ return card;
       } else {
         overlay.appendChild(document.createElement('span'));
       }
+    }
+    
+        // Format indicator (new addition)
+    if (media.format) {
+      const format = document.createElement('span');
+      format.className = 'format';
+      format.textContent = this.formatter.formatFormat(media.format);
+      overlay.appendChild(format);
+    } else {
+      overlay.appendChild(document.createElement('span')); // Empty span to maintain layout
     }
     
     return overlay;

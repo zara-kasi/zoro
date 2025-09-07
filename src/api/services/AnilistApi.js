@@ -55,13 +55,15 @@ class AnilistApi {
     // Build query and variables
     const { query, variables } = this.buildQuery(config);
     
-    // Execute request using the existing executeRequestWithRetry method
-    const result = await this.executeRequestWithRetry({
-      query,
-      variables,
-      config,
-      requestId,
-      maxRetries: this.config.maxRetries
+    // Direct RequestQueue usage - removed executeRequestWithRetry wrapper
+    const result = await this.requestQueue.add(() => this.makeRawRequest({
+      query, variables, config, requestId, attempt: 1
+    }), {
+      priority: config.priority || 'normal',
+      timeout: this.config.requestTimeout,
+      retries: this.config.maxRetries,
+      metadata: { type: config.type, mediaType: config.mediaType, requestId },
+      service: 'anilist'
     });
     
     // Cache successful results
@@ -89,27 +91,6 @@ class AnilistApi {
     
     throw this.createZoroError(classifiedError);
   }
-}
-
-  async executeRequestWithRetry({ query, variables, config, requestId, maxRetries }) {
-  // Use RequestQueue to handle the actual request execution
-  return await this.requestQueue.add(() => this.makeRawRequest({
-    query,
-    variables,
-    config,
-    requestId,
-    attempt: 1  // RequestQueue will handle retry attempts
-  }), {
-    priority: config.priority || 'normal',
-    timeout: this.config.requestTimeout,
-    retries: maxRetries,
-    metadata: { 
-      type: config.type, 
-      mediaType: config.mediaType,
-      requestId 
-    },
-    service: 'anilist'
-  });
 }
 
   async makeRawRequest({ query, variables, config, requestId, attempt = 1, skipAuth = false }) {
@@ -192,12 +173,15 @@ class AnilistApi {
         ...(updates.progress !== undefined && { progress: parseInt(updates.progress) }),
       };
       
-      const result = await this.executeRequestWithRetry({
-        query: mutation,
-        variables,
-        config: { type: 'update', mediaId },
-        requestId,
-        maxRetries: 2
+      // Direct RequestQueue usage - removed executeRequestWithRetry wrapper
+      const result = await this.requestQueue.add(() => this.makeRawRequest({
+        query: mutation, variables, config: { type: 'update', mediaId }, requestId, attempt: 1
+      }), {
+        priority: 'high',
+        timeout: this.config.requestTimeout,
+        retries: 2,
+        metadata: { type: 'update', mediaId, requestId },
+        service: 'anilist'
       });
 
       await this.invalidateRelatedCache(mediaId, updates);

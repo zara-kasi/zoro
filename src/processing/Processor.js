@@ -205,7 +205,10 @@ async handleListOperation(api, config) {
     const entries = response?.MediaListCollection?.lists?.flatMap(l => l.entries) || [];
     return this.injectMetadata(entries, config);
   } else {
-    const data = await api.fetchAniListData?.({ ...config });
+    const data = await api.fetchAniListData?.({
+  ...config,
+  type: 'list'  
+});
     const entries = data?.MediaListCollection?.lists?.flatMap(l => l.entries) || [];
     return this.injectMetadata(entries, config);
   }
@@ -435,9 +438,16 @@ async executeProcessing(el, config, retryFn) {
     if (['MOVIE','MOVIES','TV','SHOW','SHOWS'].includes(mtUpper)) {
       config.source = 'simkl';
     } else if (mtUpper === 'MANGA' && config.source === 'simkl') {
-  config.source = 'mal';
-}
+      config.source = 'mal';
+    }
     
+    return config;
+  }
+
+  // Skip auto-authentication for search operations
+  if (config.type === 'search') {
+    config.mediaType = config.mediaType || 'ANIME';
+    config.layout = config.layout || this.plugin.settings.defaultLayout || 'card';
     return config;
   }
 

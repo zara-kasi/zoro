@@ -208,6 +208,16 @@ return card;
       overlay.appendChild(document.createElement('span'));
     }
     
+            // Format indicator
+    if (media.format) {
+      const format = document.createElement('span');
+      format.className = 'format';
+      format.textContent = this.formatter.formatFormat(media.format);
+      overlay.appendChild(format);
+    } else {
+      overlay.appendChild(document.createElement('span')); // Empty span to maintain layout
+    }
+    
     // Rating indicator
     if (this.plugin.settings.showRatings) {
       const publicScore = isSearch ? (media.averageScore ?? media._rawData?.rating ?? media.rating ?? null) : null;
@@ -222,15 +232,6 @@ return card;
       }
     }
     
-        // Format indicator (new addition)
-    if (media.format) {
-      const format = document.createElement('span');
-      format.className = 'format';
-      format.textContent = this.formatter.formatFormat(media.format);
-      overlay.appendChild(format);
-    } else {
-      overlay.appendChild(document.createElement('span')); // Empty span to maintain layout
-    }
     
     return overlay;
   }

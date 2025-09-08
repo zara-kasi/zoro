@@ -38,7 +38,7 @@ class SimklAuthentication {
 
     try {
       // Step 1: Request device code
-      const pinUrl = `${SimklAuthentication.SIMKL_PIN_URL}?client_id=${encodeURIComponent(this.plugin.settings.simklClientId)}&redirect_uri=${encodeURIComponent('urn:ietf:wg:oauth:2.0:oob')}`;
+      const pinUrl = `${SimklAuthentication.SIMKL_PIN_URL}?client_id=${encodeURIComponent(this.plugin.settings.simklClientId)}&redirect_uri=${encodeURIComponent('obsidian://zoro-auth/')}`;
       
       const deviceResponse = await requestUrl({
         url: pinUrl,
@@ -136,7 +136,7 @@ class SimklAuthentication {
             await this.fetchUserInfo();
           } catch (userError) {
             console.log('[SIMKL-AUTH] Failed to fetch user info but auth succeeded', userError);
-            new Notice('✅ Complete Authentication', 4000);
+            new Notice('✅ Authenticated successfully!', 0);
           }
           if (typeof this.plugin.updateDefaultApiSourceBasedOnAuth === 'function') {
   await this.plugin.updateDefaultApiSourceBasedOnAuth();

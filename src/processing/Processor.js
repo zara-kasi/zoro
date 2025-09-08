@@ -457,16 +457,22 @@ async executeProcessing(el, config, retryFn) {
       throw new Error(`❌ ${config.source.toUpperCase()} authentication required. Please authenticate in plugin settings.`);
     }
   } else {
-    if (!config.username) {
-      if (this.plugin.settings.defaultUsername) {
-        config.username = this.plugin.settings.defaultUsername;
-      } else if (this.hasValidAuthForSource(config.source)) {
+  // AniList authentication logic
+  if (!config.username) {
+    if (this.plugin.settings.defaultUsername) {
+      config.username = this.plugin.settings.defaultUsername;
+    } else if (this.plugin.settings.anilistUsername) { // NEW: Check cached username
+      config.username = this.plugin.settings.anilistUsername;
+    } else if (this.hasValidAuthForSource(config.source)) {
+      // Only set useAuthenticatedUser if we don't have stored username
+      if (config.type !== 'search') {
         config.useAuthenticatedUser = true;
-      } else {
-        throw new Error('❌ Username is required. Please set a default username in plugin settings, authenticate, or specify one in the code block.');
       }
+    } else {
+      throw new Error('❌ Username is required. Please set a default username in plugin settings, authenticate, or specify one in the code block.');
     }
   }
+}
 
   config.type = config.type || 'list';
   config.mediaType = config.mediaType || 'ANIME';

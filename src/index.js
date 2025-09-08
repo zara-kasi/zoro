@@ -237,7 +237,7 @@ this.registerObsidianProtocolHandler("zoro-auth", (params) => {
     showGenres: isBool(s?.showGenres) ? s.showGenres : def.showGenres,
     showLoadingIcon: isBool(s?.showLoadingIcon) ? s.showLoadingIcon : def.showLoadingIcon,
     gridColumns: validateGridColumns(s?.gridColumns), // updated to use new validation
-    theme: isString(s?.theme) ? s.theme : def.theme,
+    
     hideUrlsInTitles: isBool(s?.hideUrlsInTitles) ? s.hideUrlsInTitles : def.hideUrlsInTitles,
     forceScoreFormat: isBool(s?.forceScoreFormat) ? s.forceScoreFormat : def.forceScoreFormat,
     showAvatar: isBool(s?.showAvatar) ? s.showAvatar : def.showAvatar,
@@ -252,7 +252,6 @@ this.registerObsidianProtocolHandler("zoro-auth", (params) => {
     // AniList authentication
     clientId: isString(s?.clientId) ? s.clientId : def.clientId,
     clientSecret: isString(s?.clientSecret) ? s.clientSecret : def.clientSecret,
-    redirectUri: isString(s?.redirectUri) ? s.redirectUri : def.redirectUri,
     accessToken: isString(s?.accessToken) ? s.accessToken : def.accessToken,
     anilistUsername: isString(s?.anilistUsername) ? s.anilistUsername : def.anilistUsername,
   
@@ -277,7 +276,6 @@ this.registerObsidianProtocolHandler("zoro-auth", (params) => {
       MANGA: validateArrayStrings(s?.customSearchUrls?.MANGA),
       MOVIE_TV: validateArrayStrings(s?.customSearchUrls?.MOVIE_TV)
     },
-    tmdbApiKey: isString(s?.tmdbApiKey) ? s.tmdbApiKey : def.tmdbApiKey,
 
     // Custom property names (validated per-key)
     customPropertyNames: validatedCustomPropertyNames

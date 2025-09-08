@@ -98,7 +98,7 @@ class AuthModal extends Modal {
 
   static clientSecret(app, onSubmit) {
     return new AuthModal(app, {
-      title: '🔐 Enter Client Secret',
+      title: '🔒 Enter Client Secret',
       description: 'Enter your application Client Secret',
       placeholder: 'Client Secret',
       inputType: 'password',
@@ -109,7 +109,7 @@ class AuthModal extends Modal {
   // AniList PIN modal
   static aniListPin(app, onSubmit) {
     return new AuthModal(app, {
-      title: '🔓 AniList Authentication',
+      title: '🔐 AniList Authentication',
       description: 'Paste the PIN code from the browser:',
       placeholder: 'Paste PIN code here',
       submitText: '✅ Complete Authentication',
@@ -122,7 +122,7 @@ class AuthModal extends Modal {
   // MAL callback URL modal
   static malCallback(app, onSubmit) {
     return new AuthModal(app, {
-      title: '🔓 MAL Authentication',
+      title: '🔐 MAL Authentication',
       description: 'Paste the FULL callback URL from the browser:',
       placeholder: 'Paste callback URL here',
       submitText: '✅ Complete Authentication',

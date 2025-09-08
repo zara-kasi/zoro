@@ -41,7 +41,7 @@ class ZoroSettingTab extends PluginSettingTab {
 
     const authSetting = new Setting(Account)
   .setName('✳️ AniList')
-  .setDesc('Connect your AniList account to manage your anime and manga lists. (Recommended)');
+  .setDesc('Connect your AniList account to manage your anime and manga lists.');
 
 const authDescEl = authSetting.descEl;
 authDescEl.createEl('br');
@@ -85,7 +85,7 @@ malAuthSetting.addButton(btn => {
    
    const simklAuthSetting = new Setting(Account)
   .setName('🎬 SIMKL')
-  .setDesc('Connect your SIMKL account to manage your anime, movies, and TV shows. (Recommended)');
+  .setDesc('Connect your SIMKL account to manage your anime, movies, and TV shows.');
 
 const simklDescEl = simklAuthSetting.descEl;
 simklDescEl.createEl('br');

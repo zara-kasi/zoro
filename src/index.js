@@ -149,9 +149,15 @@ class ZoroPlugin extends Plugin {
 		this.registerMarkdownCodeBlockProcessor('zoro', this.processor.processZoroCodeBlock.bind(this.processor));
 		this.addSettingTab(new ZoroSettingTab(this.app, this));
 		
-		// Register custom URI handler for OAuth redirect
-  this.registerObsidianProtocolHandler("zoro-auth", (params) => {
-  this.auth.handleOAuthRedirect(params);
+   // Register custom URI handler for OAuth redirect
+this.registerObsidianProtocolHandler("zoro-auth", (params) => {
+  if (params.state && params.state.endsWith('_mal')) {
+    // MAL callback
+    this.malAuth.handleOAuthRedirect(params);
+  } else {
+    // AniList callback
+    this.auth.handleOAuthRedirect(params);
+  }
 });
 
 		// Register Zoro side panel view

@@ -54,6 +54,7 @@ const DEFAULT_SETTINGS = {
   clientSecret: '',                  
   redirectUri: 'https://anilist.co/api/v2/oauth/pin', // standard AniList OAuth URL
   accessToken: '',                   // gets filled in after user logs in
+  anilistUsername: '',
   
   // MyAnimeList API - more complex auth system
   malClientId: '',                   

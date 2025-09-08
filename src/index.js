@@ -243,7 +243,8 @@ class ZoroPlugin extends Plugin {
     clientSecret: isString(s?.clientSecret) ? s.clientSecret : def.clientSecret,
     redirectUri: isString(s?.redirectUri) ? s.redirectUri : def.redirectUri,
     accessToken: isString(s?.accessToken) ? s.accessToken : def.accessToken,
-
+    anilistUsername: isString(s?.anilistUsername) ? s.anilistUsername : def.anilistUsername,
+  
     // MyAnimeList authentication
     malClientId: isString(s?.malClientId) ? s.malClientId : def.malClientId,
     malClientSecret: isString(s?.malClientSecret) ? s.malClientSecret : def.malClientSecret,

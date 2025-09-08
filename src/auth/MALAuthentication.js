@@ -234,7 +234,7 @@ return;
       this.plugin.cache.invalidateByUser(this.plugin.settings.malUserInfo?.name);
 
       try {
-        
+        await this.fetchUserInfo();
       } catch (userError) {
         console.log('[MAL-AUTH] Failed to fetch user info but auth succeeded', userError);
         new Notice('✅ Complete Authentication', 4000);

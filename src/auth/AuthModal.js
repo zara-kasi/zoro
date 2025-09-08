@@ -106,19 +106,6 @@ class AuthModal extends Modal {
     });
   }
 
-  // AniList PIN modal
-  static aniListPin(app, onSubmit) {
-    return new AuthModal(app, {
-      title: '🔐 AniList Authentication',
-      description: 'Paste the PIN code from the browser:',
-      placeholder: 'Paste PIN code here',
-      submitText: '✅ Complete Authentication',
-      extraClasses: ['pin-modal'],
-      showReady: true,
-      onSubmit
-    });
-  }
-
   // MAL callback URL modal
   static malCallback(app, onSubmit) {
     return new AuthModal(app, {

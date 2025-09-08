@@ -134,10 +134,9 @@ class SimklAuthentication {
           // Fetch user info
           try {
             await this.fetchUserInfo();
-            new Notice(`✅ Successfully authenticated with SIMKL! Welcome ${this.plugin.settings.simklUserInfo?.user?.name || 'user'} 🎉`, 4000);
           } catch (userError) {
             console.log('[SIMKL-AUTH] Failed to fetch user info but auth succeeded', userError);
-            new Notice('✅ Authentication successful! 🎉', 4000);
+            new Notice('✅ Complete Authentication', 4000);
           }
           if (typeof this.plugin.updateDefaultApiSourceBasedOnAuth === 'function') {
   await this.plugin.updateDefaultApiSourceBasedOnAuth();

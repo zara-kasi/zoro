@@ -70,12 +70,32 @@ authSetting.addButton(button => {
   });
 });
    
+   const malAuthSetting = new Setting(Account)
+  .setName('🗾 MyAnimeList')
+  .setDesc('Connect your MAL account to manage your anime and manga lists');
+
+const descEl = malAuthSetting.descEl;
+descEl.createEl('br');
+const linkEl = descEl.createEl('a', {
+  text: 'Guide 📖',
+  href: 'https://github.com/zara-kasi/zoro/blob/main/Docs/mal-auth-setup.md'
+});
+linkEl.setAttr('target', '_blank');
+linkEl.setAttr('rel', 'noopener noreferrer');
+linkEl.style.textDecoration = 'none';
+
+malAuthSetting.addButton(btn => {  
+  this.malAuthButton = btn;  
+  this.updateMALAuthButton();  
+  btn.onClick(async () => {  
+    await this.handleMALAuthButtonClick();  
+  });  
+}); 
    
    const simklAuthSetting = new Setting(Account)
   .setName('🎬 SIMKL')
   .setDesc('Connect your SIMKL account to manage your anime, movies, and TV shows. (Recommended)');
 
-// Add the documentation link after the description
 const simklDescEl = simklAuthSetting.descEl;
 simklDescEl.createEl('br');
 const simklLinkEl = simklDescEl.createEl('a', {
@@ -94,28 +114,6 @@ simklAuthSetting.addButton(btn => {
   });
 });
     
-    const malAuthSetting = new Setting(Account)
-  .setName('🗾 MyAnimeList')
-  .setDesc('Connect your MAL account to manage your anime and manga lists');
-
-// Add the documentation link after the description
-const descEl = malAuthSetting.descEl;
-descEl.createEl('br');
-const linkEl = descEl.createEl('a', {
-  text: 'Guide 📖',
-  href: 'https://github.com/zara-kasi/zoro/blob/main/Docs/mal-auth-setup.md'
-});
-linkEl.setAttr('target', '_blank');
-linkEl.setAttr('rel', 'noopener noreferrer');
-linkEl.style.textDecoration = 'none';
-
-malAuthSetting.addButton(btn => {  
-  this.malAuthButton = btn;  
-  this.updateMALAuthButton();  
-  btn.onClick(async () => {  
-    await this.handleMALAuthButtonClick();  
-  });  
-}); 
     
     
     new Setting(Setup)

@@ -37,16 +37,7 @@ class ZoroSettingTab extends PluginSettingTab {
     const Exp = section('⚠️ Beta');
     const About = section('ℹ️ About');
 
-    new Setting(Account)
-      .setName('🆔 Public profile')
-      .setDesc("View your AniList profile and stats — no login needed.")
-      .addText(text => text
-        .setPlaceholder('AniList username')
-        .setValue(this.plugin.settings.defaultUsername)
-        .onChange(async (value) => {
-          this.plugin.settings.defaultUsername = value.trim();
-          await this.plugin.saveSettings();
-        }));
+    
 
     const authSetting = new Setting(Account)
   .setName('✳️ AniList')
@@ -398,6 +389,16 @@ new Setting(Note)
         });
       });
         
+        new Setting(More)
+      .setName('🆔 Public profile')
+      .setDesc("View your AniList profile and stats — no login needed.")
+      .addText(text => text
+        .setPlaceholder('AniList username')
+        .setValue(this.plugin.settings.defaultUsername)
+        .onChange(async (value) => {
+          this.plugin.settings.defaultUsername = value.trim();
+          await this.plugin.saveSettings();
+        }));
         
         new Setting(More)
       .setName('⏳ Loading Icon')

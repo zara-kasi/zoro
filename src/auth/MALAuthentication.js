@@ -234,11 +234,10 @@ return;
       this.plugin.cache.invalidateByUser(this.plugin.settings.malUserInfo?.name);
 
       try {
-        await this.fetchUserInfo();
-        new Notice(`✅ Successfully authenticated with MAL! Welcome ${this.plugin.settings.malUserInfo?.name || 'user'} 🎉`, 4000);
+        
       } catch (userError) {
         console.log('[MAL-AUTH] Failed to fetch user info but auth succeeded', userError);
-        new Notice('✅ Authentication successful! 🎉', 4000);
+        new Notice('✅ Complete Authentication', 4000);
       }
      if (typeof this.plugin.updateDefaultApiSourceBasedOnAuth === 'function') {
   await this.plugin.updateDefaultApiSourceBasedOnAuth();

@@ -50,6 +50,7 @@ modal.open();
     this.plugin.settings.accessToken  = '';
     this.plugin.settings.tokenExpiry  = 0;
     this.plugin.settings.authUsername = '';
+    this.plugin.settings.anilistUsername = '';
     this.plugin.settings.clientId     = '';
     this.plugin.settings.clientSecret = '';
     await this.plugin.saveSettings();
@@ -61,51 +62,60 @@ modal.open();
   }
 
   async exchangePin(pin) {
-    const body = new URLSearchParams({
-      grant_type:    'authorization_code',
-      code:          pin.trim(),
-      client_id:     this.plugin.settings.clientId,
-      client_secret: this.plugin.settings.clientSecret || '',
-      redirect_uri:  Authentication.REDIRECT_URI
-    });
+  const body = new URLSearchParams({
+    grant_type:    'authorization_code',
+    code:          pin.trim(),
+    client_id:     this.plugin.settings.clientId,
+    client_secret: this.plugin.settings.clientSecret || '',
+    redirect_uri:  Authentication.REDIRECT_URI
+  });
 
-    const headers = {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      Accept:         'application/json'
-    };
+  const headers = {
+    'Content-Type': 'application/x-www-form-urlencoded',
+    Accept:         'application/json'
+  };
 
-    try {
-      const res = await this.plugin.requestQueue.add(() =>
-        requestUrl({
-          url:    Authentication.ANILIST_TOKEN_URL,
-          method: 'POST',
-          headers,
-          body:   body.toString()
-        })
-      );
+  try {
+    const res = await this.plugin.requestQueue.add(() =>
+      requestUrl({
+        url:    Authentication.ANILIST_TOKEN_URL,
+        method: 'POST',
+        headers,
+        body:   body.toString()
+      })
+    );
 
-      const data = res.json;
-      if (!data?.access_token) {
-        throw new Error(data.error_description || 'No token returned');
-      }
-
-      this.plugin.settings.accessToken = data.access_token;
-      if (data.expires_in) {
-        this.plugin.settings.tokenExpiry = Date.now() + data.expires_in * 1000;
-      }
-      await this.plugin.saveSettings();
-      this.plugin.cache.invalidateByUser(await this.getAuthenticatedUsername());
-
-      await this.forceScoreFormat();
-      if (typeof this.plugin.updateDefaultApiSourceBasedOnAuth === 'function') {
-  await this.plugin.updateDefaultApiSourceBasedOnAuth();
-}
-      new Notice('✅ Authenticated successfully!', 4000);
-    } catch (err) {
-      new Notice(`❌ Auth failed: ${err.message}`, 5000);
-      throw err;
+    const data = res.json;
+    if (!data?.access_token) {
+      throw new Error(data.error_description || 'No token returned');
     }
+
+    this.plugin.settings.accessToken = data.access_token;
+    if (data.expires_in) {
+      this.plugin.settings.tokenExpiry = Date.now() + data.expires_in * 1000;
+    }
+    
+    // NEW: Fetch and store username immediately
+    try {
+      const username = await this.getAuthenticatedUsername();
+      // Username is already stored by getAuthenticatedUsername method
+    } catch (usernameError) {
+      console.warn('Failed to fetch username during authentication:', usernameError);
+    }
+    
+    await this.plugin.saveSettings();
+    this.plugin.cache.invalidateByUser(this.plugin.settings.anilistUsername);
+
+    await this.forceScoreFormat();
+    if (typeof this.plugin.updateDefaultApiSourceBasedOnAuth === 'function') {
+      await this.plugin.updateDefaultApiSourceBasedOnAuth();
+    }
+    new Notice('✅ Authenticated successfully!', 4000);
+  } catch (err) {
+    new Notice(`❌ Auth failed: ${err.message}`, 5000);
+    throw err;
   }
+}
 
   
 
@@ -198,29 +208,38 @@ modal.open();
     new Notice(`❌ Could not update score format: ${err.message}`, 5000);
   }
 }
-
-  async getAuthenticatedUsername() {
-    await this.ensureValidToken();
-
-    const query = `query { Viewer { name } }`;
-    const res = await this.plugin.requestQueue.add(() =>
-      requestUrl({
-        url:     'https://graphql.anilist.co',
-        method:  'POST',
-        headers: {
-          'Content-Type':  'application/json',
-          Authorization:   `Bearer ${this.plugin.settings.accessToken}`
-        },
-        body: JSON.stringify({ query })
-      })
-    );
-
-    const name = res.json?.data?.Viewer?.name;
-    if (!name) throw new Error('Could not fetch username');
-    this.plugin.settings.authUsername = name;
-    await this.plugin.saveSettings();
-    return name;
+ 
+ async getAuthenticatedUsername() {
+  // Check if we already have it stored
+  if (this.plugin.settings.anilistUsername) {
+    return this.plugin.settings.anilistUsername;
   }
+
+  await this.ensureValidToken();
+
+  const query = `query { Viewer { name } }`;
+  const res = await this.plugin.requestQueue.add(() =>
+    requestUrl({
+      url:     'https://graphql.anilist.co',
+      method:  'POST',
+      headers: {
+        'Content-Type':  'application/json',
+        Authorization:   `Bearer ${this.plugin.settings.accessToken}`
+      },
+      body: JSON.stringify({ query })
+    })
+  );
+
+  const name = res.json?.data?.Viewer?.name;
+  if (!name) throw new Error('Could not fetch username');
+  
+  // Store in both fields
+  this.plugin.settings.authUsername = name;
+  this.plugin.settings.anilistUsername = name; // NEW: Store in dedicated field
+  await this.plugin.saveSettings();
+  return name;
+}
+  
 }
 
 export { Authentication };

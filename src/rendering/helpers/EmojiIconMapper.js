@@ -69,6 +69,7 @@ class EmojiIconMapper {
       '🫔': 'wrap-text',
       '❤️': 'heart',
       '🤍': 'heart-crack',
+      '🔐': 'user-lock',
       ...Object.fromEntries(opts.map || [])
     }));
     

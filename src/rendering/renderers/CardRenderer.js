@@ -166,24 +166,14 @@ return card;
     // Add format badge to cover if available
     
     if (isSearch) {
-  // For search and trending cards, show both Add and Edit
-  const addBtn = this.createAddButton(media, entry, config);
-  coverContainer.appendChild(addBtn);
-}
-    
-    const needsOverlay = (!isSearch && entry && this.plugin.settings.showProgress) || 
-                       (this.plugin.settings.showRatings && (
-                          (isSearch && (media.averageScore != null || media._rawData?.rating != null || media.rating != null)) ||
-                          (!isSearch && entry?.score != null)
-                        ));
-                        
-    if (needsOverlay) {
-      const overlay = this.createCoverOverlay(media, entry, isSearch);
-      coverContainer.appendChild(overlay);
+      // For search and trending cards, show both Add and Edit
+      const addBtn = this.createAddButton(media, entry, config);
+      coverContainer.appendChild(addBtn);
     }
     
     return coverContainer;
   }
+
 
   createFormatBadgeForCover(media) {
     const formatBadge = document.createElement('div');
@@ -354,25 +344,79 @@ createCreateNoteButton(media, entry, config) {
 
 
 createMediaDetails(media, entry, config, isSearch) {
-  const details = document.createElement('div');
-  details.className = 'media-details';
+    const details = document.createElement('div');
+    details.className = 'media-details';
 
-  // Status badge or edit button
-  // if (!isSearch && entry && entry.status) {
-    // const statusBadge = this.createStatusBadge(entry, config);
-    // details.appendChild(statusBadge);
-    // }
+    // Create info row for progress/format/rating
+    const infoRow = document.createElement('div');
+    infoRow.className = 'zoro-card-media-info-row';
+
+    // Progress indicator for user lists OR total count for search results
+    if (this.plugin.settings.showProgress) {
+      if (!isSearch && entry && entry.progress != null) {
+        // Show progress for user list items
+        const progress = document.createElement('span');
+        progress.className = 'zoro-card-progress-info';
+        const total = media.episodes || media.chapters || '?';
+        progress.textContent = this.formatter.formatProgress(entry.progress, total);
+        infoRow.appendChild(progress);
+      } else if (isSearch) {
+        // Show total count for search results or generic indicator as fallback
+        const searchInfo = document.createElement('span');
+        searchInfo.className = 'zoro-card-progress-info';
+        
+        if (media.episodes || media.chapters) {
+          const count = media.episodes || media.chapters;
+          const type = media.episodes ? 'EP' : 'CH';
+          searchInfo.textContent = `${count} ${type}`;
+        } else {
+          searchInfo.textContent = '?';
+        }
+        
+        infoRow.appendChild(searchInfo);
+      }
+    }
+
+    // Rating indicator
+    if (this.plugin.settings.showRatings) {
+      const publicScore = isSearch ? (media.averageScore ?? media._rawData?.rating ?? media.rating ?? null) : null;
+      const score = isSearch ? publicScore : entry?.score;
+      if (score != null) {
+        const rating = document.createElement('span');
+        rating.className = 'zoro-card-score-info';
+        rating.textContent = this.formatter.formatRating(score, isSearch);
+        infoRow.appendChild(rating);
+      }
+    }
     
+        // Format indicator
+    if (media.format) {
+      const format = document.createElement('span');
+      format.className = 'zoro-card-format-info';
+      format.textContent = this.formatter.formatFormat(media.format);
+      infoRow.appendChild(format);
+    }
+
+
+    // Only add the info row if it has content
+    if (infoRow.children.length > 0) {
+      details.appendChild(infoRow);
+    }
+    
+    // Action buttons row
+    const actionsRow = document.createElement('div');
+    actionsRow.className = 'zoro-card-media-actions-row';
     
     const createNoteBtn = this.createCreateNoteButton(media, entry, config);
-    details.appendChild(createNoteBtn);
+    actionsRow.appendChild(createNoteBtn);
     
     const connectedNotesBtn = this.plugin.connectedNotes.createConnectedNotesButton(media, entry, config);
-    details.appendChild(connectedNotesBtn);
+    actionsRow.appendChild(connectedNotesBtn);
     
+    details.appendChild(actionsRow);
 
-  return details;
-}
+    return details;
+  }
   
   createStatusBadge(entry, config) {
     const statusBadge = document.createElement('span');

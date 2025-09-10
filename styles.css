@@ -11,7 +11,7 @@
 
 
   /* ---- Card Shell ---- */
-  --zoro-card-border-radius: 8px;
+  --zoro-card-border-radius: 12px;
   --zoro-card-border-width: 1px;
   --zoro-card-cover-aspect-ratio: 2 / 3;
   --zoro-card-padding: 0.5rem 0.75rem;
@@ -20,12 +20,12 @@
 
   /* ---- Typography ---- */
   --zoro-title-font-size: 0.9rem;
-  --zoro-title-font-weight: 600;
+  --zoro-title-font-weight: 500;
   --zoro-title-line-height: 1.2;
   --zoro-single-title-font-size: 1rem;
   --zoro-badge-font-size: 0.7rem;
   --zoro-badge-font-weight: 500;
-  --zoro-progress-font-size: 0.75rem;
+  --zoro-media-info-row-font-size: 0.6rem;
   --zoro-progress-font-weight: 500;
   --zoro-genre-font-size: 0.65rem;
   --zoro-genre-font-weight: 500;
@@ -205,17 +205,18 @@
 /* Cards */
 .zoro-card,
 .zoro-single-card {
-  background: var(--background-secondary);
-  border: var(--zoro-card-border-width) solid var(--border-color);
-  border-radius: var(--zoro-card-border-radius);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   transition: all var(--zoro-transition-duration) ease;
-  margin: 0;
   padding: 0;
   list-style: none;
+  border: var(--zoro-card-border-width) solid var(--background-modifier-border) !important;
+  border-radius: var(--zoro-card-border-radius) !important;
+  background: var(--background-primary) !important;
+  margin: 8px 0 !important;
 }
+
 
 .zoro-card:hover,
 .zoro-single-card:hover {
@@ -229,20 +230,23 @@
   aspect-ratio: var(--zoro-card-cover-aspect-ratio);
   object-fit: cover;
   flex-shrink: 0;
+  padding: 0px 0px ;
 }
 
 /* Info */
 .zoro-card .media-info,
 .zoro-single-card .media-info {
-  padding: var(--zoro-card-padding);
+  padding: 0 1px 0 8px;
   display: flex;
   flex-direction: column;
   gap: var(--zoro-card-gap);
+  background: var(--background-primary);
 }
 
 /* Titles */
 .zoro-card h4,
 .zoro-single-card h3 {
+  text-align: left;
   margin: 0;
   font-size: var(--zoro-title-font-size);
   font-weight: var(--zoro-title-font-weight);
@@ -250,10 +254,8 @@
   line-height: var(--zoro-title-line-height);
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: clip;
-}
-.zoro-single-card h3 {
-  font-size: var(--zoro-single-title-font-size);
+  text-overflow: ellipsis;
+  background: var(--background-primary);
 }
 
 /* Details */
@@ -276,32 +278,30 @@
   margin: 0 auto;
 }
 
-.cover-overlay {
-  position: absolute;
-  bottom: 9px;
-  left: 0px;
-  right: 0px;
-  padding: 0px 0px;
+/* New container for progress/format/rating info & Action Buttons*/
+
+.zoro-card-media-info-row,
+.zoro-card-media-actions-row {
+  padding: 0 2px 0 2px;
   display: flex;
-  background: linear-gradient(to top, var(--background-modifier-border), transparent);
-  backdrop-filter: blur(1px);
-  -webkit-backdrop-filter: blur(1px); /* Safari support */
+  width: 100%;
   align-items: center;
-  pointer-events: none;
-  gap: 1px;
+  gap: 6px;
 }
 
 /* Add flex properties to make each item equal width */
-.progress,
-.score, 
-.format {
-  flex: 1; /* Each takes equal space (33.33%) */
+.zoro-card-progress-info,
+.zoro-card-score-info, 
+.zoro-card-format-info {
   text-align: center; /* Center the text within each container */
   min-width: 0; /* Prevents overflow issues */
-  padding: var(--zoro-progress-padding);
-  border-radius: var(--zoro-progress-border-radius);
-  font-size: var(--zoro-progress-font-size);
+  font-size: var(--zoro-media-info-row-font-size);
   font-weight: var(--zoro-progress-font-weight);
+  border: var(--zoro-card-border-width) solid var(--background-modifier-border) !important;
+  border-radius: var(--zoro-card-border-radius) !important;
+  background: var(--background-primary) !important;
+  margin: 8px 0 !important;
+  padding: 0px 6px 0px 6px;
   
   /* Handle text overflow */
   overflow: hidden;
@@ -325,6 +325,7 @@
   font-size: var(--zoro-genre-font-size);
   font-weight: var(--zoro-genre-font-weight);
 }
+
 
 /* Table */
 .zoro-table {
@@ -575,15 +576,7 @@
     font-size: var(--zoro-setting-btn-mobile-font-size) !important;
   }
 }
-@media (max-width: 600px) {
-  .zoro-card h4,
-  .zoro-single-card h3 {
-    font-size: var(--zoro-mobile-title-font-size);
-  }
-  .user-header h3 {
-    font-size: var(--zoro-mobile-user-header-font-size);
-  }
-}
+
 
 /* Title link styles */
 .anilist-title-link {

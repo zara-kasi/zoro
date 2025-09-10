@@ -5,7 +5,6 @@
 
   /* ---- Grid ---- */
   --zoro-grid-gap: 1rem;
-  --zoro-grid-gap-mobile: 0.75rem;
   --zoro-grid-margin: 1rem 0;
   --zoro-grid-min-width: 280px;
 
@@ -179,6 +178,13 @@
 }
 
 /* Responsive grid behavior for "Default" setting */
+
+@media (max-width: 300px) {
+  .zoro-cards-grid {
+    --zoro-grid-columns: 2;
+  }
+}
+
 @media (min-width: 800px) { 
   .zoro-cards-grid { 
     --zoro-grid-columns: 4; 
@@ -194,12 +200,6 @@
     --zoro-grid-columns: 6; 
   } 
 }
-@media (max-width: 300px) {
-  .zoro-cards-grid {
-    gap: var(--zoro-grid-gap-mobile);
-  }
-}
-
 
 
 /* Cards */
@@ -214,7 +214,7 @@
   border: var(--zoro-card-border-width) solid var(--background-modifier-border) !important;
   border-radius: var(--zoro-card-border-radius) !important;
   background: var(--background-primary) !important;
-  margin: 8px 0 !important;
+  margin: 0 !important;
 }
 
 

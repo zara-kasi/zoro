@@ -1,22 +1,150 @@
+/**
+ * ConnectedNotes
+ * Migrated from ConnectedNotes.js → ConnectedNotes.ts
+ * - Added comprehensive type definitions for media objects, entries, and API responses
+ * - Converted ES module imports/exports
+ * - Added Obsidian-specific type imports
+ * - Preserved all runtime behavior and logic
+ */
+
 import { Notice } from 'obsidian';
+import type { App, Plugin, TFile, CachedMetadata } from 'obsidian';
 import { EmojiIconMapper } from '../rendering/helpers/EmojiIconMapper.js';
 
+// Type definitions for media and entry objects
+interface MediaTitle {
+  english?: string;
+  romaji?: string;
+  native?: string;
+}
 
-class ConnectedNotes {
-  constructor(plugin) {
+interface CoverImage {
+  large?: string;
+  medium?: string;
+}
+
+interface MediaObject {
+  id: number | string;
+  title?: MediaTitle;
+  format?: string;
+  isFavourite?: boolean;
+  episodes?: number;
+  chapters?: number;
+  coverImage?: CoverImage;
+  genres?: string[];
+  idMal?: number;
+  idImdb?: string;
+  idTmdb?: number;
+}
+
+interface EntryObject {
+  status?: string;
+  score?: number | null;
+  progress?: number | null;
+  progressVolumes?: number | null;
+  _zoroMeta?: {
+    source?: string;
+    mediaType?: string;
+  };
+}
+
+interface ConfigObject {
+  source?: string;
+  mediaType?: string;
+}
+
+interface SearchIds {
+  mal_id?: number;
+  anilist_id?: number;
+  simkl_id?: number;
+  imdb_id?: string;
+  tmdb_id?: number;
+}
+
+interface CustomPropertyNames {
+  [key: string]: string;
+}
+
+interface PluginSettings {
+  customPropertyNames?: CustomPropertyNames;
+  insertCodeBlockOnNote?: boolean;
+  notePath?: string;
+}
+
+interface PluginWithSettings extends Plugin {
+  settings?: PluginSettings;
+  apiHelper?: {
+    detectSource(entry: unknown, config: unknown): string;
+    detectMediaType(entry: unknown, config: unknown, media: unknown): string;
+  };
+}
+
+interface ConnectedNote {
+  file: TFile;
+  title: string;
+  path: string;
+  frontmatter?: Record<string, unknown>;
+  hasMatchingId: boolean;
+  hasZoroTag: boolean;
+}
+
+interface SearchResult {
+  file: TFile;
+  title: string;
+  path: string;
+  matchType: string;
+}
+
+interface FilenameIndexItem {
+  nameLower: string;
+  file: TFile;
+}
+
+interface ZoroPanelView {
+  containerEl: HTMLElement;
+  titleEl?: HTMLElement;
+  leaf?: {
+    tabHeaderEl?: HTMLElement;
+    updateHeader(): void;
+    setViewState(state: { type: string; active?: boolean }): Promise<void>;
+    detach(): void;
+  };
+  getDisplayText?(): string;
+  getViewType?(): string;
+  setContext?(context: PanelContext): void;
+}
+
+interface PanelContext {
+  searchIds: SearchIds;
+  mediaType: string;
+  media?: MediaObject;
+  entry?: EntryObject;
+  source?: string;
+}
+
+export class ConnectedNotes {
+  private plugin: PluginWithSettings;
+  private app: App;
+  private currentMedia: MediaObject | null = null;
+  private currentUrls: string[] | null = null;
+  private currentSource: string | null = null;
+  private currentMediaType: string | null = null;
+  private currentEntry: EntryObject | null = null;
+  
+  // Filename index cache for search optimization
+  private _filenameIndexList?: FilenameIndexItem[];
+  private _filenameIndexSnapshotCount?: number;
+  private _filenameIndexSnapshotSample?: string;
+
+  constructor(plugin: PluginWithSettings) {
     this.plugin = plugin;
     this.app = plugin.app;
-    this.currentMedia = null; // Store current media for filename generation
-    this.currentUrls = null; // Store current URLs as array for matching
-    this.currentSource = null; // Store current source for code block generation
-    this.currentMediaType = null; // Store current media type for code block generation
-    this.currentEntry = null; // Store current entry for enhanced frontmatter
   }
 
   /**
    * Get the custom property name from settings or return default
    */
-  getPropertyName(defaultName) {
+  getPropertyName(defaultName: string): string {
     const customNames = this.plugin.settings?.customPropertyNames || {};
     return customNames[defaultName] || defaultName;
   }
@@ -24,8 +152,8 @@ class ConnectedNotes {
   /**
    * Generate enhanced frontmatter properties with custom names
    */
-  generateEnhancedFrontmatter(media, entry, mediaType) {
-    const enhanced = {};
+  generateEnhancedFrontmatter(media: MediaObject | null, entry: EntryObject | null, mediaType: string): Record<string, unknown> {
+    const enhanced: Record<string, unknown> = {};
     
     if (!media) return enhanced;
     
@@ -34,9 +162,9 @@ class ConnectedNotes {
     }
     
     // Aliases (alternative titles excluding main title)
-    const aliases = [];
+    const aliases: string[] = [];
     if (media.title) {
-      const mainTitle = enhanced[this.getPropertyName('title')];
+      const mainTitle = enhanced[this.getPropertyName('title')] as string;
       if (media.title.romaji && media.title.romaji !== mainTitle) {
         aliases.push(media.title.romaji);
       }
@@ -105,8 +233,8 @@ class ConnectedNotes {
     return enhanced;
   }
 
-  buildOrderedFrontmatter(baseProps, enhancedProps, urls, tags) {
-    const orderedFrontmatter = {};
+  buildOrderedFrontmatter(baseProps: Record<string, unknown>, enhancedProps: Record<string, unknown>, urls?: string[], tags?: string[]): Record<string, unknown> {
+    const orderedFrontmatter: Record<string, unknown> = {};
     
     // ===========================================
     // CONTENT PROPERTIES
@@ -193,8 +321,8 @@ class ConnectedNotes {
   /**
    * Extract search IDs from media entry based on API source
    */
-  extractSearchIds(media, entry, source) {
-    const ids = {};
+  extractSearchIds(media: MediaObject, entry: EntryObject | null, source: string): SearchIds {
+    const ids: SearchIds = {};
     
     // Use custom property names for IDs
     const malIdProp = this.getPropertyName('mal_id');
@@ -204,92 +332,94 @@ class ConnectedNotes {
     const tmdbIdProp = this.getPropertyName('tmdb_id');
     
     if (source === 'mal') {
-      ids[malIdProp] = media.id;
+      ids[malIdProp as keyof SearchIds] = typeof media.id === 'number' ? media.id : parseInt(String(media.id));
     } else if (source === 'anilist') {
       if (media.idMal) {
-        ids[malIdProp] = media.idMal;
+        ids[malIdProp as keyof SearchIds] = media.idMal;
       }
-      ids[anilistIdProp] = media.id;
+      ids[anilistIdProp as keyof SearchIds] = typeof media.id === 'number' ? media.id : parseInt(String(media.id));
     } else if (source === 'simkl') {
-      ids[simklIdProp] = media.id;
+      ids[simklIdProp as keyof SearchIds] = typeof media.id === 'number' ? media.id : parseInt(String(media.id));
       
       const mediaType = this.plugin.apiHelper ? 
         this.plugin.apiHelper.detectMediaType(entry, {}, media) : 
         (entry?._zoroMeta?.mediaType || 'ANIME');
       
       if (mediaType === 'ANIME' && media.idMal) {
-        ids[malIdProp] = media.idMal;
+        ids[malIdProp as keyof SearchIds] = media.idMal;
       }
       
       if (mediaType !== 'ANIME' && media.idImdb) {
-        ids[imdbIdProp] = media.idImdb;
+        ids[imdbIdProp as keyof SearchIds] = media.idImdb;
       }
       if (mediaType !== 'ANIME' && media.idTmdb) {
-        ids[tmdbIdProp] = media.idTmdb;
+        ids[tmdbIdProp as keyof SearchIds] = media.idTmdb;
       }
     } else if (source === 'tmdb') {
-      if (media.idTmdb || media.id) ids[tmdbIdProp] = media.idTmdb || media.id;
-      if (media.idImdb) ids[imdbIdProp] = media.idImdb;
+      if (media.idTmdb || media.id) ids[tmdbIdProp as keyof SearchIds] = media.idTmdb || (typeof media.id === 'number' ? media.id : parseInt(String(media.id)));
+      if (media.idImdb) ids[imdbIdProp as keyof SearchIds] = media.idImdb;
     }
     
     return ids;
   }
-/**
- * Build URLs array for current media to match against
- */
-buildCurrentUrls(media, mediaType, source) {
-  const urls = [];
-  
-  // Build source-specific URL first
-  if (source === 'simkl') {
-    // Build SIMKL URL
-    const simklMediaType = (mediaType === 'ANIME' || mediaType.toLowerCase() === 'anime') ? 'anime' : 
-                      (mediaType.toLowerCase() === 'movie') ? 'movies' :  // Note: "movies" not "movie"
-                      mediaType.toLowerCase();
-urls.push(`https://simkl.com/${simklMediaType}/${media.id}`);
+
+  /**
+   * Build URLs array for current media to match against
+   */
+  buildCurrentUrls(media: MediaObject, mediaType: string, source: string): string[] {
+    const urls: string[] = [];
     
-    // For ANIME: Add MAL URL as backup
-    if (mediaType === 'ANIME' && media.idMal) {
-      const malMediaType = (mediaType.toLowerCase() === 'movie') ? 'anime' : mediaType.toLowerCase();
-urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
-    }
-    
-    // For Movies/TV/other: Add IMDB and TMDB URLs as backup
-    if (mediaType !== 'ANIME' && media.idImdb) {
-      urls.push(`https://www.imdb.com/title/${media.idImdb}/`);
-    }
-    if (mediaType !== 'ANIME' && media.idTmdb) {
+    // Build source-specific URL first
+    if (source === 'simkl') {
+      // Build SIMKL URL
+      const simklMediaType = (mediaType === 'ANIME' || mediaType.toLowerCase() === 'anime') ? 'anime' : 
+                        (mediaType.toLowerCase() === 'movie') ? 'movies' :  // Note: "movies" not "movie"
+                        mediaType.toLowerCase();
+      urls.push(`https://simkl.com/${simklMediaType}/${media.id}`);
+      
+      // For ANIME: Add MAL URL as backup
+      if (mediaType === 'ANIME' && media.idMal) {
+        const malMediaType = (mediaType.toLowerCase() === 'movie') ? 'anime' : mediaType.toLowerCase();
+        urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
+      }
+      
+      // For Movies/TV/other: Add IMDB and TMDB URLs as backup
+      if (mediaType !== 'ANIME' && media.idImdb) {
+        urls.push(`https://www.imdb.com/title/${media.idImdb}/`);
+      }
+      if (mediaType !== 'ANIME' && media.idTmdb) {
+        const isMovie = (mediaType || '').toString().toUpperCase().includes('MOVIE');
+        urls.push(`https://www.themoviedb.org/${isMovie ? 'movie' : 'tv'}/${media.idTmdb}`);
+      }
+      
+    } else if (source === 'tmdb') {
       const isMovie = (mediaType || '').toString().toUpperCase().includes('MOVIE');
-      urls.push(`https://www.themoviedb.org/${isMovie ? 'movie' : 'tv'}/${media.idTmdb}`);
+      urls.push(`https://www.themoviedb.org/${isMovie ? 'movie' : 'tv'}/${media.idTmdb || media.id}`);
+      if (media.idImdb) urls.push(`https://www.imdb.com/title/${media.idImdb}/`);
+    } else {
+      // Build MAL URL if MAL ID exists
+      if (media.idMal) {
+        const malMediaType = (mediaType.toLowerCase() === 'movie') ? 'anime' : mediaType.toLowerCase();
+        urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
+      }
+      
+      // Build AniList URL for non-SIMKL sources
+      if (source !== 'simkl') {
+        urls.push(`https://anilist.co/${mediaType.toLowerCase()}/${media.id}`);
+      }
     }
     
-  } else if (source === 'tmdb') {
-    const isMovie = (mediaType || '').toString().toUpperCase().includes('MOVIE');
-    urls.push(`https://www.themoviedb.org/${isMovie ? 'movie' : 'tv'}/${media.idTmdb || media.id}`);
-    if (media.idImdb) urls.push(`https://www.imdb.com/title/${media.idImdb}/`);
-  } else {
-    // Build MAL URL if MAL ID exists
-    if (media.idMal) {
-      const malMediaType = (mediaType.toLowerCase() === 'movie') ? 'anime' : mediaType.toLowerCase();
-urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
-    }
-    
-    // Build AniList URL for non-SIMKL sources
-    if (source !== 'simkl') {
-      urls.push(`https://anilist.co/${mediaType.toLowerCase()}/${media.id}`);
-    }
+    return urls;
   }
-  
-  return urls;
-}
+
   /**
    * Check if any URL in the array matches the current media URLs
    */
-  hasMatchingUrl(frontmatterUrls, currentUrls) {
+  hasMatchingUrl(frontmatterUrls: unknown, currentUrls: string[] | null): boolean {
     if (!frontmatterUrls || !currentUrls) return false;
     
     // Ensure frontmatterUrls is an array
-    const urlArray = Array.isArray(frontmatterUrls) ? frontmatterUrls : [frontmatterUrls];
+    const urlArray = Array.isArray(frontmatterUrls) ? frontmatterUrls as string[] : [frontmatterUrls as string];
     
     // Check if any URL in frontmatter matches any current URL
     return urlArray.some(url => currentUrls.includes(url));
@@ -298,8 +428,8 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
   /**
    * Search vault for notes with matching properties
    */
-  async searchConnectedNotes(searchIds, mediaType) {
-    const connectedNotes = [];
+  async searchConnectedNotes(searchIds: SearchIds, mediaType: string): Promise<ConnectedNote[]> {
+    const connectedNotes: ConnectedNote[] = [];
     const markdownFiles = this.app.vault.getMarkdownFiles();
 
     for (const file of markdownFiles) {
@@ -358,74 +488,74 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
   /**
    * Search vault for existing notes to connect (excludes already connected ones)
    */
-  async findNotesToConnect(searchQuery, searchIds, mediaType) {
-  const searchResults = [];
-  if (!searchQuery || searchQuery.trim().length < 2) return searchResults;
-  const query = searchQuery.toLowerCase().trim();
+  async findNotesToConnect(searchQuery: string, searchIds: SearchIds, mediaType: string): Promise<SearchResult[]> {
+    const searchResults: SearchResult[] = [];
+    if (!searchQuery || searchQuery.trim().length < 2) return searchResults;
+    const query = searchQuery.toLowerCase().trim();
 
-  const files = this.app.vault.getMarkdownFiles() || [];
+    const files = this.app.vault.getMarkdownFiles() || [];
 
-  const needRebuild =
-    !Array.isArray(this._filenameIndexList) ||
-    this._filenameIndexSnapshotCount !== files.length ||
-    (this._filenameIndexSnapshotSample || '') !== files.slice(0, 20).map(f => f?.basename || '').join('|');
+    const needRebuild =
+      !Array.isArray(this._filenameIndexList) ||
+      this._filenameIndexSnapshotCount !== files.length ||
+      (this._filenameIndexSnapshotSample || '') !== files.slice(0, 20).map(f => f?.basename || '').join('|');
 
-  if (needRebuild) {
-    const list = [];
-    for (const f of files) {
-      if (!f || !f.basename) continue;
-      list.push({ nameLower: f.basename.toLowerCase(), file: f });
-    }
-    this._filenameIndexList = list;
-    this._filenameIndexSnapshotCount = files.length;
-    this._filenameIndexSnapshotSample = files.slice(0, 20).map(f => f?.basename || '').join('|');
-  }
-
-  const list = this._filenameIndexList || [];
-
-  for (const e of list) {
-    if (!e || !e.nameLower) continue;
-    if (!e.nameLower.includes(query)) continue;
-
-    const metadata = this.app.metadataCache.getFileCache(e.file) || {};
-    const frontmatter = metadata.frontmatter || {};
-
-    let alreadyConnected = false;
-    for (const [idType, idValue] of Object.entries(searchIds || {})) {
-      if (frontmatter[idType] == idValue && frontmatter.media_type === mediaType) {
-        alreadyConnected = true;
-        break;
+    if (needRebuild) {
+      const list: FilenameIndexItem[] = [];
+      for (const f of files) {
+        if (!f || !f.basename) continue;
+        list.push({ nameLower: f.basename.toLowerCase(), file: f });
       }
+      this._filenameIndexList = list;
+      this._filenameIndexSnapshotCount = files.length;
+      this._filenameIndexSnapshotSample = files.slice(0, 20).map(f => f?.basename || '').join('|');
     }
 
-    if (!alreadyConnected && this.currentUrls) {
-      if (this.hasMatchingUrl(frontmatter.urls, this.currentUrls)) {
-        alreadyConnected = true;
+    const list = this._filenameIndexList || [];
+
+    for (const e of list) {
+      if (!e || !e.nameLower) continue;
+      if (!e.nameLower.includes(query)) continue;
+
+      const metadata = this.app.metadataCache.getFileCache(e.file) || {} as CachedMetadata;
+      const frontmatter = metadata.frontmatter || {};
+
+      let alreadyConnected = false;
+      for (const [idType, idValue] of Object.entries(searchIds || {})) {
+        if (frontmatter[idType] == idValue && frontmatter.media_type === mediaType) {
+          alreadyConnected = true;
+          break;
+        }
       }
+
+      if (!alreadyConnected && this.currentUrls) {
+        if (this.hasMatchingUrl(frontmatter.urls, this.currentUrls)) {
+          alreadyConnected = true;
+        }
+      }
+
+      if (alreadyConnected) continue;
+
+      searchResults.push({
+        file: e.file,
+        title: e.file.basename,
+        path: e.file.path,
+        matchType: 'title'
+      });
+
+      if (searchResults.length >= 20) break;
     }
 
-    if (alreadyConnected) continue;
-
-    searchResults.push({
-      file: e.file,
-      title: e.file.basename,
-      path: e.file.path,
-      matchType: 'title'
-    });
-
-    if (searchResults.length >= 20) break;
+    searchResults.sort((a, b) => a.title.localeCompare(b.title));
+    return searchResults;
   }
-
-  searchResults.sort((a, b) => a.title.localeCompare(b.title));
-  return searchResults;
-}
 
   /**
    * Merge URL arrays, avoiding duplicates
    */
-  mergeUrlArrays(existingUrls, newUrls) {
+  mergeUrlArrays(existingUrls: unknown, newUrls: string[]): string[] {
     if (!newUrls || newUrls.length === 0) {
-      return existingUrls || [];
+      return Array.isArray(existingUrls) ? existingUrls as string[] : (existingUrls ? [existingUrls as string] : []);
     }
     
     if (!existingUrls) {
@@ -433,7 +563,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
     }
     
     // Ensure existing is an array
-    const existingArray = Array.isArray(existingUrls) ? existingUrls : [existingUrls];
+    const existingArray = Array.isArray(existingUrls) ? existingUrls as string[] : [existingUrls as string];
     
     // Create new array with existing URLs plus new ones (no duplicates)
     const mergedUrls = [...existingArray];
@@ -450,8 +580,8 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
   /**
    * Generate code block content based on current media entry
    */
-  generateCodeBlockContent() {
-    if (!this.plugin.settings.insertCodeBlockOnNote) {
+  generateCodeBlockContent(): string {
+    if (!this.plugin.settings?.insertCodeBlockOnNote) {
       return ''; // Return empty if setting is disabled
     }
     if (!this.currentMedia || !this.currentSource || !this.currentMediaType) {
@@ -478,7 +608,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
   /**
    * Add metadata to existing note
    */
-   async connectExistingNote(file, searchIds, mediaType) {
+  async connectExistingNote(file: TFile, searchIds: SearchIds, mediaType: string): Promise<boolean> {
     try {
       const content = await this.app.vault.read(file);
       const metadata = this.app.metadataCache.getFileCache(file);
@@ -511,7 +641,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
       const isAlreadyConnected = hasZoroTag && hasExistingIds;
       
       // Prepare base properties (existing + new technical metadata)
-      const baseProps = { ...existingFrontmatter };
+      const baseProps: Record<string, unknown> = { ...existingFrontmatter };
       
       if (isAlreadyConnected) {
         // Note is already connected - only merge URLs, don't overwrite other metadata
@@ -570,7 +700,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
       
       // Build new frontmatter using proper ordering
       const enhancedProps = this.generateEnhancedFrontmatter(this.currentMedia, this.currentEntry, mediaType);
-      const orderedFrontmatter = this.buildOrderedFrontmatter(baseProps, enhancedProps, baseProps.urls, baseProps.tags);
+      const orderedFrontmatter = this.buildOrderedFrontmatter(baseProps, enhancedProps, baseProps.urls as string[], baseProps.tags as string[]);
       
       // Build frontmatter lines
       const frontmatterLines = ['---'];
@@ -629,16 +759,15 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
     }
   }
 
-
   /**
    * Show connected notes in the permanent SidePanel
    */
-  async showConnectedNotes(searchIds, mediaType, media = null, entry = null, source = null) {
+  async showConnectedNotes(searchIds: SearchIds, mediaType: string, media: MediaObject | null = null, entry: EntryObject | null = null, source: string | null = null): Promise<void> {
     try {
       // Store current entry for enhanced frontmatter generation
       this.currentEntry = entry;
       
-      const context = { searchIds, mediaType, media, entry, source };
+      const context: PanelContext = { searchIds, mediaType, media, entry, source };
       await this.openSidePanelWithContext(context);
     } catch (error) {
       console.error('[ConnectedNotes] Error showing connected notes:', error);
@@ -649,7 +778,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
   /**
    * Safely close the Zoro side panel by swapping the view to empty
    */
-  closePanelSafely(view) {
+  closePanelSafely(view: ZoroPanelView): boolean {
     try {
       const leaf = view?.leaf;
       if (leaf && typeof leaf.setViewState === 'function') {
@@ -663,109 +792,107 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
   /**
    * Render the connect existing notes interface
    */
-  renderConnectExistingInterface(container, searchIds, mediaType) {
-  // Create search interface container
-  const connectInterface = container.createEl('div', { cls: 'zoro-note-connect-interface' });
+  renderConnectExistingInterface(container: HTMLElement, searchIds: SearchIds, mediaType: string): HTMLElement {
+    // Create search interface container
+    const connectInterface = container.createEl('div', { cls: 'zoro-note-connect-interface' });
 
-  // Use the same input container classes as your other search bar so CSS matches
-  const searchWrapper = connectInterface.createEl('div', { cls: 'zoro-search-input-container' });
+    // Use the same input container classes as your other search bar so CSS matches
+    const searchWrapper = connectInterface.createEl('div', { cls: 'zoro-search-input-container' });
 
-  // Create icon element (mapper will convert this emoji -> icon)
-  const iconSpan = searchWrapper.createEl('span', { cls: 'zoro-search-icon' });
+    // Create icon element (mapper will convert this emoji -> icon)
+    const iconSpan = searchWrapper.createEl('span', { cls: 'zoro-search-icon' });
 
-  // Ensure emoji mapper is initialized (idempotent)
-  try {
-    if (!globalThis.__emojiIconMapper) {
-      // If EmojiIconMapper is available in scope
-      if (typeof EmojiIconMapper === 'function') {
-        new EmojiIconMapper().init({ patchCreateEl: true });
-      }
-    } else {
-      // make sure it's patched (safe to call)
-      globalThis.__emojiIconMapper.init?.({ patchCreateEl: true });
-    }
-  } catch (e) {
-    // swallow — we'll fallback to raw emoji below
-  }
-
-  // Render the icon via mapper if available, otherwise fallback to raw emoji
-  const mapper = globalThis.__emojiIconMapper;
-  if (mapper) {
-    const frag = mapper.parseToFragment('🔍');
-    if (frag) iconSpan.appendChild(frag);
-    else iconSpan.textContent = '🔍';
-  } else if (typeof iconSpan.createEl === 'function') {
-    // if createEl is patched but mapper not present, let patched createEl handle it
-    iconSpan.createEl('span', { text: '🔍' });
-  } else {
-    iconSpan.textContent = '🔍';
-  }
-
-  // Create actual input (reuse same class as other search bar)
-  const searchInput = searchWrapper.createEl('input', { cls: 'zoro-search-input' });
-  searchInput.type = 'text';
-  // plain-text placeholder (no emoji)
-  searchInput.placeholder = ' Search notes to connect...';
-
-  // Search results container
-  const resultsContainer = connectInterface.createEl('div', { cls: 'zoro-note-search-results' });
-
-  // Search functionality with debounce
-  let searchTimeout;
-  searchInput.addEventListener('input', () => {
-    clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(async () => {
-      const query = searchInput.value;
-      resultsContainer.empty();
-
-      if (query.trim().length >= 2) {
-        const results = await this.findNotesToConnect(query, searchIds, mediaType);
-
-        if (results.length === 0) {
-          resultsContainer.createEl('div', { text: 'No notes found', cls: 'zoro-note-no-results' });
-        } else {
-          results.forEach(result => {
-            const resultItem = resultsContainer.createEl('div', { cls: 'zoro-note-search-result' });
-
-            resultItem.createEl('span', { text: result.title, cls: 'zoro-note-result-title' });
-
-            const connectBtn = resultItem.createEl('button', { text: '➕', cls: 'zoro-note-connect-btn' });
-            connectBtn.title = 'Connect this note';
-
-            connectBtn.onclick = async (e) => {
-              e.stopPropagation();
-              const success = await this.connectExistingNote(result.file, searchIds, mediaType);
-              if (success) {
-                const connectedNotes = await this.searchConnectedNotes(searchIds, mediaType);
-                this.refreshConnectedNotesList(container.querySelector('.zoro-note-panel-content'), connectedNotes);
-                connectInterface.classList.add('zoro-note-hidden');
-                searchInput.value = '';
-                resultsContainer.empty();
-              }
-            };
-
-            // Click on item to preview
-            resultItem.onclick = (e) => {
-              if (e.target !== connectBtn) {
-                const mainLeaf = this.app.workspace.getLeaf('tab');
-                mainLeaf.openFile(result.file);
-              }
-            };
-          });
+    // Ensure emoji mapper is initialized (idempotent)
+    try {
+      if (!(globalThis as any).__emojiIconMapper) {
+        // If EmojiIconMapper is available in scope
+        if (typeof EmojiIconMapper === 'function') {
+          new EmojiIconMapper().init({ patchCreateEl: true });
         }
+      } else {
+        // make sure it's patched (safe to call)
+        (globalThis as any).__emojiIconMapper.init?.({ patchCreateEl: true });
       }
-    }, 300); // 300ms debounce
-  });
+    } catch (e) {
+      // swallow — we'll fallback to raw emoji below
+    }
 
-  return connectInterface;
-}
+    // Render the icon via mapper if available, otherwise fallback to raw emoji
+    const mapper = (globalThis as any).__emojiIconMapper;
+    if (mapper) {
+      const frag = mapper.parseToFragment('🔍');
+      if (frag) iconSpan.appendChild(frag);
+      else iconSpan.textContent = '🔍';
+    } else if (typeof (iconSpan as any).createEl === 'function') {
+      // if createEl is patched but mapper not present, let patched createEl handle it
+      (iconSpan as any).createEl('span', { text: '🔍' });
+    } else {
+      iconSpan.textContent = '🔍';
+    }
 
+    // Create actual input (reuse same class as other search bar)
+    const searchInput = searchWrapper.createEl('input', { cls: 'zoro-search-input' }) as HTMLInputElement;
+    searchInput.type = 'text';
+    // plain-text placeholder (no emoji)
+    searchInput.placeholder = ' Search notes to connect...';
 
+    // Search results container
+    const resultsContainer = connectInterface.createEl('div', { cls: 'zoro-note-search-results' });
+
+    // Search functionality with debounce
+    let searchTimeout: NodeJS.Timeout;
+    searchInput.addEventListener('input', () => {
+      clearTimeout(searchTimeout);
+      searchTimeout = setTimeout(async () => {
+        const query = searchInput.value;
+        resultsContainer.empty();
+
+        if (query.trim().length >= 2) {
+          const results = await this.findNotesToConnect(query, searchIds, mediaType);
+
+          if (results.length === 0) {
+            resultsContainer.createEl('div', { text: 'No notes found', cls: 'zoro-note-no-results' });
+          } else {
+            results.forEach(result => {
+              const resultItem = resultsContainer.createEl('div', { cls: 'zoro-note-search-result' });
+
+              resultItem.createEl('span', { text: result.title, cls: 'zoro-note-result-title' });
+
+              const connectBtn = resultItem.createEl('button', { text: '➕', cls: 'zoro-note-connect-btn' });
+              connectBtn.title = 'Connect this note';
+
+              connectBtn.onclick = async (e) => {
+                e.stopPropagation();
+                const success = await this.connectExistingNote(result.file, searchIds, mediaType);
+                if (success) {
+                  const connectedNotes = await this.searchConnectedNotes(searchIds, mediaType);
+                  this.refreshConnectedNotesList(container.querySelector('.zoro-note-panel-content') as HTMLElement, connectedNotes);
+                  connectInterface.classList.add('zoro-note-hidden');
+                  searchInput.value = '';
+                  resultsContainer.empty();
+                }
+              };
+
+              // Click on item to preview
+              resultItem.onclick = (e) => {
+                if (e.target !== connectBtn) {
+                  const mainLeaf = this.app.workspace.getLeaf('tab');
+                  mainLeaf.openFile(result.file);
+                }
+              };
+            });
+          }
+        }
+      }, 300); // 300ms debounce
+    });
+
+    return connectInterface;
+  }
 
   /**
    * Refresh the connected notes list without full re-render
    */
-  refreshConnectedNotesList(mainContent, connectedNotes) {
+  refreshConnectedNotesList(mainContent: HTMLElement, connectedNotes: ConnectedNote[]): void {
     const notesList = mainContent.querySelector('.zoro-note-notes-list');
     const emptyState = mainContent.querySelector('.zoro-note-empty-state');
     
@@ -812,7 +939,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
   /**
    * Render connected notes in the dedicated Zoro view
    */
-  renderConnectedNotesInView(view, connectedNotes, searchIds, mediaType) {
+  renderConnectedNotesInView(view: ZoroPanelView, connectedNotes: ConnectedNote[], searchIds: SearchIds, mediaType: string): void {
     const container = view.containerEl;
     container.empty();
     container.className = 'zoro-note-container';
@@ -841,7 +968,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
       const leaf = view.leaf;
       setTimeout(() => {
         if (leaf.tabHeaderEl) {
-          const titleEl = leaf.tabHeaderEl.querySelector('.workspace-tab-header-inner-title');
+          const titleEl = leaf.tabHeaderEl.querySelector('.workspace-tab-header-inner-title') as HTMLElement;
           if (titleEl) {
             titleEl.textContent = 'Zoro';
           }
@@ -905,12 +1032,12 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
       
       if (!connectInterface.classList.contains('zoro-note-hidden')) {
         // Focus on search input when opened
-        const searchInput = connectInterface.querySelector('.zoro-search-input');
+        const searchInput = connectInterface.querySelector('.zoro-search-input') as HTMLInputElement;
         setTimeout(() => searchInput.focus(), 100);
       } else {
         // Clear search when closed
-        const searchInput = connectInterface.querySelector('.zoro-search-input');
-        const resultsContainer = connectInterface.querySelector('.zoro-note-search-results');
+        const searchInput = connectInterface.querySelector('.zoro-search-input') as HTMLInputElement;
+        const resultsContainer = connectInterface.querySelector('.zoro-note-search-results') as HTMLElement;
         searchInput.value = '';
         resultsContainer.empty();
       }
@@ -920,7 +1047,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
   /**
    * Extract media title for filename (prefers English, falls back to romaji)
    */
-  getMediaTitleForFilename() {
+  getMediaTitleForFilename(): string {
     if (!this.currentMedia) {
       return 'Untitled'; // Fallback if no media stored
     }
@@ -938,7 +1065,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
   /**
    * Get the configured note path from settings
    */
-  getConfiguredNotePath() {
+  getConfiguredNotePath(): string {
     // Get the note path from plugin settings
     const notePath = this.plugin.settings?.notePath || '';
     
@@ -953,7 +1080,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
   /**
    * Generate unique filename with path like Obsidian does (Title, Title 1, Title 2, etc.)
    */
-  generateUniqueFilename(baseName = null) {
+  generateUniqueFilename(baseName: string | null = null): string {
     // Use media title if available, otherwise fallback to 'Untitled'
     const preferredBaseName = baseName || this.getMediaTitleForFilename();
     
@@ -970,7 +1097,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
     
     // Generate numbered variants until we find one that doesn't exist
     let counter = 1;
-    let uniqueFileName;
+    let uniqueFileName: string;
     do {
       uniqueFileName = `${notePath}${preferredBaseName} ${counter}.md`;
       counter++;
@@ -982,7 +1109,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
   /**
    * Ensure the configured path exists in the vault
    */
-  async ensurePathExists(filePath) {
+  async ensurePathExists(filePath: string): Promise<void> {
     // Extract directory path from file path
     const pathParts = filePath.split('/');
     pathParts.pop(); // Remove filename
@@ -1005,7 +1132,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
   /**
    * Create a new note with unique filename and add metadata
    */
-  async createNewConnectedNote(searchIds, mediaType) {
+  async createNewConnectedNote(searchIds: SearchIds, mediaType: string): Promise<void> {
     try {
       // Generate unique filename using media title with configured path
       const uniqueFileName = this.generateUniqueFilename();
@@ -1014,7 +1141,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
       await this.ensurePathExists(uniqueFileName);
       
       // Prepare base properties (technical metadata)
-      const baseProps = {
+      const baseProps: Record<string, unknown> = {
         ...searchIds,
         media_type: mediaType
       };
@@ -1031,7 +1158,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
       const enhancedProps = this.generateEnhancedFrontmatter(this.currentMedia, this.currentEntry, mediaType);
       
       // Build ordered frontmatter
-      const orderedFrontmatter = this.buildOrderedFrontmatter(baseProps, enhancedProps, baseProps.urls, baseProps.tags);
+      const orderedFrontmatter = this.buildOrderedFrontmatter(baseProps, enhancedProps, baseProps.urls as string[], baseProps.tags as string[]);
       
       // Build frontmatter lines
       const frontmatterLines = ['---'];
@@ -1089,7 +1216,7 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
   /**
    * Create the connected notes button for media cards
    */
-  createConnectedNotesButton(media, entry, config) {
+  createConnectedNotesButton(media: MediaObject, entry: EntryObject | null, config: ConfigObject): HTMLElement {
     const notesBtn = document.createElement('span');
     notesBtn.className = 'zoro-note-obsidian';
     notesBtn.createEl('span', { text: '🔮' });
@@ -1099,49 +1226,50 @@ urls.push(`https://myanimelist.net/${malMediaType}/${media.idMal}`);
     
     return notesBtn;
   }
-  /**
- * Handle connected notes button click
- */
-async handleConnectedNotesClick(e, media, entry, config) {
-  e.preventDefault();
-  e.stopPropagation();
-  
-  try {
-    // Extract source and media type
-    const source = this.plugin.apiHelper ? 
-      this.plugin.apiHelper.detectSource(entry, config) : 
-      (entry?._zoroMeta?.source || config?.source || 'anilist');
-    
-    const mediaType = this.plugin.apiHelper ? 
-      this.plugin.apiHelper.detectMediaType(entry, config, media) : 
-      (entry?._zoroMeta?.mediaType || config?.mediaType || 'ANIME');
-    
-    // Store current media for filename generation (PREFER ENGLISH TITLE)
-    this.currentMedia = media;
-    
-    // Store current entry for enhanced frontmatter generation
-    this.currentEntry = entry;
-    
-    // Store current source and media type for code block generation
-    this.currentSource = source;
-    this.currentMediaType = mediaType;
-    
-    // Build URLs array for current media (NOW PASSES SOURCE)
-    this.currentUrls = this.buildCurrentUrls(media, mediaType, source);
-    
-    // Extract search IDs
-    const searchIds = this.extractSearchIds(media, entry, source);
-    
-    // Show connected notes and pass media/entry/source for Side Panel inline actions
-    await this.showConnectedNotes(searchIds, mediaType, media, entry, source);
-    
-  } catch (error) {
-    console.error('[ConnectedNotes] Button click error:', error);
-    new Notice('Failed to open connected notes');
-  }
-}
 
-  async openSidePanelWithContext(context) {
+  /**
+   * Handle connected notes button click
+   */
+  async handleConnectedNotesClick(e: MouseEvent, media: MediaObject, entry: EntryObject | null, config: ConfigObject): Promise<void> {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    try {
+      // Extract source and media type
+      const source = this.plugin.apiHelper ? 
+        this.plugin.apiHelper.detectSource(entry, config) : 
+        (entry?._zoroMeta?.source || config?.source || 'anilist');
+      
+      const mediaType = this.plugin.apiHelper ? 
+        this.plugin.apiHelper.detectMediaType(entry, config, media) : 
+        (entry?._zoroMeta?.mediaType || config?.mediaType || 'ANIME');
+      
+      // Store current media for filename generation (PREFER ENGLISH TITLE)
+      this.currentMedia = media;
+      
+      // Store current entry for enhanced frontmatter generation
+      this.currentEntry = entry;
+      
+      // Store current source and media type for code block generation
+      this.currentSource = source;
+      this.currentMediaType = mediaType;
+      
+      // Build URLs array for current media (NOW PASSES SOURCE)
+      this.currentUrls = this.buildCurrentUrls(media, mediaType, source);
+      
+      // Extract search IDs
+      const searchIds = this.extractSearchIds(media, entry, source);
+      
+      // Show connected notes and pass media/entry/source for Side Panel inline actions
+      await this.showConnectedNotes(searchIds, mediaType, media, entry, source);
+      
+    } catch (error) {
+      console.error('[ConnectedNotes] Button click error:', error);
+      new Notice('Failed to open connected notes');
+    }
+  }
+
+  async openSidePanelWithContext(context: PanelContext): Promise<ZoroPanelView | undefined> {
     // Reuse existing zoro-panel leaf if present; detach extras
     const leaves = this.app.workspace.getLeavesOfType?.('zoro-panel') || [];
     let leaf = leaves[0] || this.app.workspace.getRightLeaf(true);
@@ -1153,7 +1281,7 @@ async handleConnectedNotesClick(e, media, entry, config) {
     }
 
     await leaf.setViewState({ type: 'zoro-panel', active: true });
-    const view = leaf.view;
+    const view = leaf.view as ZoroPanelView;
     if (view && typeof view.setContext === 'function') {
       view.setContext(context);
     }
@@ -1161,5 +1289,3 @@ async handleConnectedNotesClick(e, media, entry, config) {
     return view;
   }
 }
-
-export { ConnectedNotes };

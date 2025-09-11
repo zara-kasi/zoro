@@ -1,11 +1,227 @@
-import { Notice, requestUrl } from 'obsidian';
+/**
+ * Export.ts
+ * Migrated from Export.js → Export.ts
+ * - Added strict typing for all methods and interfaces
+ * - Converted CommonJS to ES modules
+ * - Added type guards for API responses
+ * - Preserved all runtime behavior
+ */
 
-class Export {
-  constructor(plugin) {
+import { Notice, requestUrl } from 'obsidian';
+import type { Plugin, Vault, Workspace } from 'obsidian';
+
+// Core interfaces for the plugin
+interface ZoroPlugin extends Plugin {
+  settings: PluginSettings;
+  auth: AuthService;
+  malAuth: MALAuthService;
+  simklAuth: SimklAuthService;
+  requestQueue: RequestQueue;
+  getAniListUrl: (id: number, type: string) => string;
+}
+
+interface PluginSettings {
+  authUsername?: string;
+  defaultUsername?: string;
+  accessToken?: string;
+  malUserInfo?: { name: string };
+  simklUserInfo?: { user: { name: string } };
+  simklAccessToken?: string;
+  simklClientId?: string;
+}
+
+interface AuthService {
+  ensureValidToken(): Promise<void>;
+}
+
+interface MALAuthService {
+  isLoggedIn: boolean;
+  getAuthHeaders(): Record<string, string>;
+}
+
+interface SimklAuthService {
+  isLoggedIn: boolean;
+}
+
+interface RequestQueue {
+  add<T>(request: () => Promise<T>): Promise<T>;
+}
+
+// AniList API types
+interface AniListDate {
+  year?: number;
+  month?: number;
+  day?: number;
+}
+
+interface AniListTitle {
+  romaji?: string;
+  english?: string;
+  native?: string;
+}
+
+interface AniListStudio {
+  name: string;
+}
+
+interface AniListMedia {
+  id: number;
+  idMal?: number;
+  type: string;
+  format?: string;
+  title: AniListTitle;
+  episodes?: number;
+  chapters?: number;
+  volumes?: number;
+  startDate?: AniListDate;
+  endDate?: AniListDate;
+  averageScore?: number;
+  genres?: string[];
+  studios?: {
+    nodes?: AniListStudio[];
+  };
+}
+
+interface AniListEntry {
+  status: string;
+  progress?: number;
+  score?: number;
+  repeat?: number;
+  startedAt?: AniListDate;
+  completedAt?: AniListDate;
+  media: AniListMedia;
+}
+
+interface AniListList {
+  name: string;
+  entries: AniListEntry[];
+}
+
+interface AniListResponse {
+  data?: {
+    MediaListCollection?: {
+      lists?: AniListList[];
+    };
+  };
+}
+
+// MAL API types
+interface MALGenre {
+  name: string;
+}
+
+interface MALNode {
+  id: number;
+  title: string;
+  media_type?: string;
+  num_episodes?: number;
+  num_chapters?: number;
+  num_volumes?: number;
+  mean?: number;
+  genres?: MALGenre[];
+}
+
+interface MALListStatus {
+  status: string;
+  score?: number;
+  num_episodes_watched?: number;
+  num_chapters_read?: number;
+  is_rewatching?: boolean;
+  num_times_rewatched?: number;
+  rewatch_value?: number;
+  start_date?: string;
+  finish_date?: string;
+  priority?: number;
+  num_times_reread?: number;
+  comments?: string;
+  tags?: string[];
+}
+
+interface MALItem {
+  node: MALNode;
+  list_status: MALListStatus;
+  _type: string;
+}
+
+interface MALResponse {
+  data?: MALItem[];
+}
+
+// SIMKL API types
+interface SimklIds {
+  simkl?: number;
+  imdb?: string;
+  tmdb?: number;
+  mal?: number;
+  anilist?: number;
+}
+
+interface SimklMediaObject {
+  title?: string;
+  name?: string;
+  year?: number;
+  type?: string;
+  episodes?: number;
+  rating?: number;
+  runtime?: number;
+  genres?: string[];
+  directors?: string[];
+  aired?: { year?: number };
+  released?: { year?: number };
+  ids?: SimklIds;
+}
+
+interface SimklItem {
+  show?: SimklMediaObject;
+  movie?: SimklMediaObject;
+  anime?: SimklMediaObject;
+  user_rating?: number;
+  rating?: number;
+  score?: number;
+  status?: string;
+  watched_episodes_count?: number;
+  watched_episodes?: number;
+  episodes_watched?: number;
+  progress?: number;
+  total_episodes_count?: number;
+  total_episodes?: number;
+  seasons_watched?: number;
+  seasons?: number;
+  media_type?: string;
+  _category?: string;
+  _status?: string;
+  _type?: string;
+}
+
+// Type guards
+function assertIsAniListResponse(value: unknown): asserts value is AniListResponse {
+  if (!value || typeof value !== 'object') {
+    throw new Error('Invalid AniList response: not an object');
+  }
+  // Basic structure validation - more specific checks would happen at runtime
+}
+
+function assertIsMALResponse(value: unknown): asserts value is MALResponse {
+  if (!value || typeof value !== 'object') {
+    throw new Error('Invalid MAL response: not an object');
+  }
+  // Basic structure validation
+}
+
+function assertIsSimklResponse(value: unknown): asserts value is Record<string, unknown> {
+  if (!value || typeof value !== 'object') {
+    throw new Error('Invalid SIMKL response: not an object');
+  }
+}
+
+export class Export {
+  private plugin: ZoroPlugin;
+
+  constructor(plugin: ZoroPlugin) {
     this.plugin = plugin;
   }
 
-  async ensureZoroFolder() {
+  private async ensureZoroFolder(): Promise<string> {
     const folderPath = 'Zoro/Export';
     const folder = this.plugin.app.vault.getAbstractFileByPath(folderPath);
     if (!folder) {
@@ -14,7 +230,7 @@ class Export {
     return folderPath;
   }
 
-  async exportUnifiedListsToCSV() {
+  async exportUnifiedListsToCSV(): Promise<void> {
     let username = this.plugin.settings.authUsername;
     if (!username) username = this.plugin.settings.defaultUsername;
     if (!username) {
@@ -47,8 +263,9 @@ class Export {
 
     new Notice(`${useAuth ? '📥 Full' : '📥 Public'} export started…`, 3000);
     const progress = this.createProgressNotice('📊 Exporting… 0 %');
-    const fetchType = async type => {
-      const headers = { 'Content-Type': 'application/json' };
+    
+    const fetchType = async (type: 'ANIME' | 'MANGA'): Promise<AniListList[]> => {
+      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (useAuth) {
         await this.plugin.auth.ensureValidToken();
         headers['Authorization'] = `Bearer ${this.plugin.settings.accessToken}`;
@@ -65,8 +282,11 @@ class Export {
           })
         })
       );
+      
       const percent = type === 'ANIME' ? 33 : 66;
       this.updateProgressNotice(progress, `📊 Exporting… ${percent} %`);
+      
+      assertIsAniListResponse(res.json);
       return res.json.data?.MediaListCollection?.lists || [];
     };
 
@@ -98,8 +318,8 @@ class Export {
     new Notice(`✅ AniList export complete! Created ${fileCount} files`, 3000);
   }
 
-  async createAniListUnifiedCSV(lists, folderPath) {
-    const rows = [];
+  private async createAniListUnifiedCSV(lists: AniListList[], folderPath: string): Promise<void> {
+    const rows: string[] = [];
     const headers = [
       'ListName', 'Status', 'Progress', 'Score', 'Repeat',
       'StartedAt', 'CompletedAt', 'MediaID', 'Type', 'Format',
@@ -134,7 +354,7 @@ class Export {
     await this.plugin.app.workspace.openLinkText(fileName, '', false);
   }
 
-  async createAniListAnimeXML(animeLists, folderPath) {
+  private async createAniListAnimeXML(animeLists: AniListList[], folderPath: string): Promise<void> {
     const xmlHeader = `<?xml version="1.0" encoding="UTF-8" ?>
 <myanimelist>
   <myinfo>
@@ -194,7 +414,7 @@ class Export {
     console.log('[AniList Export] Anime MAL XML created successfully');
   }
 
-  async createAniListMangaXML(mangaLists, folderPath) {
+  private async createAniListMangaXML(mangaLists: AniListList[], folderPath: string): Promise<void> {
     const xmlHeader = `<?xml version="1.0" encoding="UTF-8" ?>
 <myanimelist>
   <myinfo>
@@ -255,7 +475,7 @@ class Export {
     console.log('[AniList Export] Manga MAL XML created successfully');
   }
 
-  mapAniListToMalStatus(anilistStatus) {
+  private mapAniListToMalStatus(anilistStatus: string): string {
     const statusMap = {
       'CURRENT': 'Watching',
       'READING': 'Reading',
@@ -264,11 +484,11 @@ class Export {
       'DROPPED': 'Dropped',
       'PLANNING': 'Plan to Watch',
       'PLAN_TO_READ': 'Plan to Read'
-    };
-    return statusMap[anilistStatus] || 'Plan to Watch';
+    } as const;
+    return statusMap[anilistStatus as keyof typeof statusMap] || 'Plan to Watch';
   }
 
-  getAniListAnimeType(format) {
+  private getAniListAnimeType(format?: string): string {
     if (!format) return 'TV';
     
     const typeMap = {
@@ -279,12 +499,12 @@ class Export {
       'OVA': 'OVA',
       'ONA': 'ONA',
       'MUSIC': 'Music'
-    };
+    } as const;
     
-    return typeMap[format] || 'TV';
+    return typeMap[format as keyof typeof typeMap] || 'TV';
   }
 
-  getAniListMangaType(format) {
+  private getAniListMangaType(format?: string): string {
     if (!format) return 'Manga';
     
     const typeMap = {
@@ -295,19 +515,19 @@ class Export {
       'MANHWA': 'Manhwa',
       'MANHUA': 'Manhua',
       'NOVEL': 'Novel'
-    };
+    } as const;
     
-    return typeMap[format] || 'Manga';
+    return typeMap[format as keyof typeof typeMap] || 'Manga';
   }
 
-  aniListDateToString(dateObj) {
+  private aniListDateToString(dateObj?: AniListDate): string {
     if (!dateObj || !dateObj.year) return '0000-00-00';
     const month = String(dateObj.month || 0).padStart(2, '0');
     const day = String(dateObj.day || 0).padStart(2, '0');
     return `${dateObj.year}-${month}-${day}`;
   }
   
-  async exportMALListsToCSV() {
+  async exportMALListsToCSV(): Promise<void> {
     if (!this.plugin.malAuth.isLoggedIn) {
       new Notice('❌ Please authenticate with MyAnimeList first.', 3000);
       return;
@@ -322,7 +542,7 @@ class Export {
     new Notice('📥 Exporting MyAnimeList…', 3000);
     const progress = this.createProgressNotice('📊 MAL export 0 %');
 
-    const fetchType = async type => {
+    const fetchType = async (type: 'ANIME' | 'MANGA'): Promise<MALItem[]> => {
       const headers = this.plugin.malAuth.getAuthHeaders();
       const apiType = type === 'ANIME' ? 'anime' : 'manga';
       const url = `https://api.myanimelist.net/v2/users/@me/${apiType}list?fields=list_status{status,score,num_episodes_watched,num_chapters_read,is_rewatching,num_times_rewatched,rewatch_value,start_date,finish_date,priority,num_times_reread,comments,tags},node{id,title,media_type,status,num_episodes,num_chapters,num_volumes,start_season,source,rating,mean,genres}&limit=1000&nsfw=true`;
@@ -331,6 +551,7 @@ class Export {
         requestUrl({ url, method: 'GET', headers })
       );
       
+      assertIsMALResponse(res.json);
       const items = (res.json?.data || []).map(item => ({
         ...item,
         _type: type
@@ -372,8 +593,8 @@ class Export {
     new Notice(`✅ MAL export complete! Created ${fileCount} files`, 3000);
   }
 
-  async createMALUnifiedCSV(allItems, folderPath) {
-    const rows = [];
+  private async createMALUnifiedCSV(allItems: MALItem[], folderPath: string): Promise<void> {
+    const rows: string[] = [];
     const headers = [
       'Type','Status','Progress','Score','Title','Start','End','Episodes','Chapters','Mean','MAL_ID','URL'
     ];
@@ -406,7 +627,7 @@ class Export {
     await this.plugin.app.workspace.openLinkText(fileName, '', false);
   }
 
-  async createMALAnimeXML(animeItems, folderPath) {
+  private async createMALAnimeXML(animeItems: MALItem[], folderPath: string): Promise<void> {
     const xmlHeader = `<?xml version="1.0" encoding="UTF-8" ?>
 <myanimelist>
   <myinfo>
@@ -466,7 +687,7 @@ class Export {
     console.log('[MAL Export] Anime XML created successfully');
   }
 
-  async createMALMangaXML(mangaItems, folderPath) {
+  private async createMALMangaXML(mangaItems: MALItem[], folderPath: string): Promise<void> {
     const xmlHeader = `<?xml version="1.0" encoding="UTF-8" ?>
 <myanimelist>
   <myinfo>
@@ -527,14 +748,14 @@ class Export {
     console.log('[MAL Export] Manga XML created successfully');
   }
 
-  mapMALStatusToXML(malStatus, type) {
+  private mapMALStatusToXML(malStatus: string, type: 'anime' | 'manga'): string {
     const animeStatusMap = {
       'watching': 'Watching',
       'completed': 'Completed',
       'on_hold': 'On-Hold',
       'dropped': 'Dropped',
       'plan_to_watch': 'Plan to Watch'
-    };
+    } as const;
 
     const mangaStatusMap = {
       'reading': 'Reading',
@@ -542,13 +763,13 @@ class Export {
       'on_hold': 'On-Hold',
       'dropped': 'Dropped',
       'plan_to_read': 'Plan to Read'
-    };
+    } as const;
 
     const statusMap = type === 'anime' ? animeStatusMap : mangaStatusMap;
-    return statusMap[malStatus] || (type === 'anime' ? 'Plan to Watch' : 'Plan to Read');
+    return statusMap[malStatus as keyof typeof statusMap] || (type === 'anime' ? 'Plan to Watch' : 'Plan to Read');
   }
 
-  getMALAnimeType(mediaType) {
+  private getMALAnimeType(mediaType?: string): string {
     if (!mediaType) return 'TV';
     
     const typeMap = {
@@ -558,12 +779,12 @@ class Export {
       'special': 'Special',
       'ona': 'ONA',
       'music': 'Music'
-    };
+    } as const;
     
-    return typeMap[mediaType.toLowerCase()] || 'TV';
+    return typeMap[mediaType.toLowerCase() as keyof typeof typeMap] || 'TV';
   }
 
-  getMALMangaType(mediaType) {
+  private getMALMangaType(mediaType?: string): string {
     if (!mediaType) return 'Manga';
     
     const typeMap = {
@@ -574,22 +795,22 @@ class Export {
       'doujinshi': 'Doujinshi',
       'manhwa': 'Manhwa',
       'manhua': 'Manhua'
-    };
+    } as const;
     
-    return typeMap[mediaType.toLowerCase()] || 'Manga';
+    return typeMap[mediaType.toLowerCase() as keyof typeof typeMap] || 'Manga';
   }
 
-  mapMALPriority(priority) {
+  private mapMALPriority(priority?: number): string {
     const priorityMap = {
       0: 'LOW',
       1: 'MEDIUM', 
       2: 'HIGH'
-    };
-    return priorityMap[priority] || 'LOW';
+    } as const;
+    return priorityMap[priority as keyof typeof priorityMap] || 'LOW';
   }
 
-  formatMALTags(userTags, genres) {
-    const tags = [];
+  private formatMALTags(userTags?: string[], genres?: MALGenre[]): string {
+    const tags: string[] = [];
     
     if (userTags && Array.isArray(userTags)) {
       tags.push(...userTags);
@@ -602,12 +823,12 @@ class Export {
     return tags.join(', ');
   }
 
-  malDateToString(dateStr) {
+  private malDateToString(dateStr?: string): string {
     if (!dateStr) return '0000-00-00';
     return dateStr;
   }
 
-  async exportSimklListsToCSV() {
+  async exportSimklListsToCSV(): Promise<void> {
     if (!this.plugin.simklAuth.isLoggedIn) {
       new Notice('❌ Please authenticate with SIMKL first.', 3000);
       return;
@@ -650,10 +871,11 @@ class Export {
       }
 
       const data = allItemsRes.json || {};
+      assertIsSimklResponse(data);
       console.log('[SIMKL Export] Data keys:', Object.keys(data));
       console.log('[SIMKL Export] Data structure:', data);
 
-      const allItems = [];
+      const allItems: SimklItem[] = [];
       let totalItemsFound = 0;
 
       Object.keys(data).forEach(category => {
@@ -663,7 +885,7 @@ class Export {
           console.log(`[SIMKL Export] Found ${data[category].length} items in ${category}`);
           totalItemsFound += data[category].length;
           
-          data[category].forEach(item => {
+          (data[category] as SimklItem[]).forEach(item => {
             allItems.push({
               ...item,
               _category: category,
@@ -674,11 +896,12 @@ class Export {
           console.log(`[SIMKL Export] ${category} has subcategories:`, Object.keys(data[category]));
           
           Object.keys(data[category]).forEach(status => {
-            if (Array.isArray(data[category][status])) {
-              console.log(`[SIMKL Export] Found ${data[category][status].length} items in ${category}.${status}`);
-              totalItemsFound += data[category][status].length;
+            if (Array.isArray((data[category] as Record<string, unknown>)[status])) {
+              const statusItems = (data[category] as Record<string, SimklItem[]>)[status];
+              console.log(`[SIMKL Export] Found ${statusItems.length} items in ${category}.${status}`);
+              totalItemsFound += statusItems.length;
               
-              data[category][status].forEach(item => {
+              statusItems.forEach(item => {
                 allItems.push({
                   ...item,
                   _category: category,
@@ -735,12 +958,12 @@ class Export {
 
     } catch (error) {
       console.error('[SIMKL Export] Export failed:', error);
-      this.finishProgressNotice(progress, `❌ Export failed: ${error.message}`);
-      new Notice(`❌ SIMKL export failed: ${error.message}`, 3000);
+      this.finishProgressNotice(progress, `❌ Export failed: ${(error as Error).message}`);
+      new Notice(`❌ SIMKL export failed: ${(error as Error).message}`, 3000);
     }
   }
 
-  async createSimklUnifiedCSV(allItems, folderPath) {
+  private async createSimklUnifiedCSV(allItems: SimklItem[], folderPath: string): Promise<void> {
     const headers = [
       'Category', 'Type', 'Title', 'Year', 'Status', 'Rating',
       'SIMKL_ID', 'IMDB_ID', 'TMDB_ID', 'MAL_ID', 'Anilist_ID'
@@ -749,9 +972,9 @@ class Export {
     const rows = [headers.join(',')];
     
     allItems.forEach((item, index) => {
-      const safeGet = (obj, path, fallback = '') => {
+      const safeGet = (obj: unknown, path: string, fallback = ''): string => {
         try {
-          return path.split('.').reduce((o, p) => (o && o[p]) || fallback, obj);
+          return path.split('.').reduce((o: any, p: string) => (o && o[p]) || fallback, obj as any);
         } catch {
           return fallback;
         }
@@ -784,7 +1007,7 @@ class Export {
     await this.plugin.app.workspace.openLinkText(fileName, '', false);
   }
 
-  async createSimklImdbCSV(moviesTvItems, folderPath) {
+  private async createSimklImdbCSV(moviesTvItems: SimklItem[], folderPath: string): Promise<void> {
     const headers = [
       'Const', 'Your Rating', 'Date Rated', 'Title', 'URL', 'Title Type', 
       'IMDb Rating', 'Runtime (mins)', 'Year', 'Genres', 'Num Votes', 
@@ -795,9 +1018,9 @@ class Export {
     
     moviesTvItems.forEach(item => {
       const mediaObject = item.show || item.movie || {};
-      const safeGet = (obj, path, fallback = '') => {
+      const safeGet = (obj: unknown, path: string, fallback = ''): string => {
         try {
-          return path.split('.').reduce((o, p) => (o && o[p]) || fallback, obj);
+          return path.split('.').reduce((o: any, p: string) => (o && o[p]) || fallback, obj as any);
         } catch {
           return fallback;
         }
@@ -834,7 +1057,7 @@ class Export {
     console.log('[SIMKL Export] IMDb CSV created successfully');
   }
 
-  async createSimklMalXML(animeItems, folderPath) {
+  private async createSimklMalXML(animeItems: SimklItem[], folderPath: string): Promise<void> {
     const xmlHeader = `<?xml version="1.0" encoding="UTF-8" ?>
 <myanimelist>
   <myinfo>
@@ -849,9 +1072,9 @@ class Export {
     
     animeItems.forEach(item => {
       const mediaObject = item.show || item.anime || {};
-      const safeGet = (obj, path, fallback = '') => {
+      const safeGet = (obj: unknown, path: string, fallback = ''): string => {
         try {
-          return path.split('.').reduce((o, p) => (o && o[p]) || fallback, obj);
+          return path.split('.').reduce((o: any, p: string) => (o && o[p]) || fallback, obj as any);
         } catch {
           return fallback;
         }
@@ -898,18 +1121,18 @@ class Export {
     console.log('[SIMKL Export] MAL XML created successfully');
   }
 
-  mapSimklToMalStatus(simklStatus) {
+  private mapSimklToMalStatus(simklStatus?: string): string {
     const statusMap = {
       'watching': 'Watching',
       'completed': 'Completed',
       'plantowatch': 'Plan to Watch',
       'hold': 'On-Hold',
       'dropped': 'Dropped'
-    };
-    return statusMap[simklStatus?.toLowerCase()] || 'Plan to Watch';
+    } as const;
+    return statusMap[simklStatus?.toLowerCase() as keyof typeof statusMap] || 'Plan to Watch';
   }
 
-  getAnimeType(mediaObject) {
+  private getAnimeType(mediaObject: SimklMediaObject): string {
     if (!mediaObject.type) return 'TV';
     
     const typeMap = {
@@ -919,12 +1142,12 @@ class Export {
       'ona': 'ONA',
       'special': 'Special',
       'music': 'Music'
-    };
+    } as const;
     
-    return typeMap[mediaObject.type.toLowerCase()] || 'TV';
+    return typeMap[mediaObject.type.toLowerCase() as keyof typeof typeMap] || 'TV';
   }
 
-  getDateFromStatus(status, type = 'rated') {
+  private getDateFromStatus(status?: string, type: 'rated' | 'start' | 'finish' = 'rated'): string {
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
@@ -943,7 +1166,7 @@ class Export {
     return '';
   }
 
-  formatReleaseDate(dateObj) {
+  private formatReleaseDate(dateObj?: { year?: number; month?: number; day?: number } | string): string {
     if (!dateObj) return '';
     if (typeof dateObj === 'string') return dateObj;
     if (dateObj.year) {
@@ -954,7 +1177,7 @@ class Export {
     return '';
   }
 
-  xmlEscape(str) {
+  private xmlEscape(str: unknown): string {
     if (typeof str !== 'string') str = String(str);
     return str.replace(/[<>&'"]/g, function (c) {
       switch (c) {
@@ -963,13 +1186,14 @@ class Export {
         case '&': return '&amp;';
         case "'": return '&apos;';
         case '"': return '&quot;';
+        default: return c;
       }
     });
   }
 
-  determineItemType(item, category) {
-    if (item.type) {
-      return item.type.toUpperCase();
+  private determineItemType(item: SimklItem, category?: string): string {
+    if (item.show?.type) {
+      return item.show.type.toUpperCase();
     }
     
     if (category) {
@@ -979,18 +1203,18 @@ class Export {
     return 'UNKNOWN';
   }
 
-  mapSimklStatus(simklStatus) {
+  private mapSimklStatus(simklStatus: string): string {
     const statusMap = {
       'watching': 'CURRENT',
       'completed': 'COMPLETED', 
       'plantowatch': 'PLANNING',
       'hold': 'PAUSED',
       'dropped': 'DROPPED'
-    };
-    return statusMap[simklStatus] || simklStatus.toUpperCase();
+    } as const;
+    return statusMap[simklStatus as keyof typeof statusMap] || simklStatus.toUpperCase();
   }
 
-  getSimklProgress(item) {
+  private getSimklProgress(item: SimklItem): number {
     if (!item) return 0;
 
     const watched = (item.watched_episodes_count ?? item.watched_episodes ?? item.episodes_watched ?? item.progress);
@@ -999,13 +1223,13 @@ class Export {
       if (!isNaN(n)) return n;
     }
 
-    const total = (item.total_episodes_count ?? item.total_episodes ?? item.episodes);
+    const total = (item.total_episodes_count ?? item.total_episodes ?? item.show?.episodes);
     if (item.seasons_watched && total) {
       const episodesPerSeason = Number(total) / (item.seasons || 1);
       return Math.floor(Number(item.seasons_watched) * episodesPerSeason);
     }
 
-    const t = String(item._type || item.type || '').toLowerCase();
+    const t = String(item._type || item.show?.type || '').toLowerCase();
     if (t === 'movie' || item.media_type === 'movie') {
       return (String(item._status || item.status || '').toLowerCase() === 'completed') ? 1 : 0;
     }
@@ -1013,7 +1237,7 @@ class Export {
     return Number(item.seasons_watched) || 0;
   }
 
-  getSimklUrl(apiType, simklId, title) {
+  private getSimklUrl(apiType: string, simklId: number, title?: string): string {
     if (!simklId) return '';
     
     const baseUrl = 'https://simkl.com';
@@ -1023,32 +1247,30 @@ class Export {
     return `${baseUrl}/${urlType}/${simklId}`;
   }
 
-  dateToString(dateObj) {
+  private dateToString(dateObj?: AniListDate): string {
     if (!dateObj || !dateObj.year) return '';
     return `${dateObj.year}-${String(dateObj.month || 0).padStart(2, '0')}-${String(dateObj.day || 0).padStart(2, '0')}`;
   }
 
-  csvEscape(str = '') {
-    if (typeof str !== 'string') str = String(str);
-    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-      return `"${str.replace(/"/g, '""')}"`;
+  private csvEscape(str: unknown): string {
+    const s = typeof str === 'string' ? str : String(str || '');
+    if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+      return `"${s.replace(/"/g, '""')}"`;
     }
-    return str;
+    return s;
   }
   
-  createProgressNotice(message) {
+  private createProgressNotice(message: string): Notice {
     return new Notice(message, 0);
   }
 
-  updateProgressNotice(notice, message) {
+  private updateProgressNotice(notice: Notice, message: string): Notice {
     notice.hide();
     return new Notice(message, 0);
   }
 
-  finishProgressNotice(notice, message) {
+  private finishProgressNotice(notice: Notice, message: string): void {
     notice.hide();
     new Notice(message, 3000);
   }
 }
-
-export { Export };

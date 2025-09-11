@@ -1,21 +1,56 @@
-import { Notice } from 'obsidian';
+/**
+ * ZoroError - Error handling and user notification system
+ * Migrated from ZoroError.js → ZoroError.ts
+ * - Added types for plugin, recovery strategies, and error handling
+ * - Converted singleton pattern with proper typing
+ * - Added interfaces for recovery functions and error categories
+ */
 
-class ZoroError {
+import { Notice } from 'obsidian';
+import type { Plugin } from 'obsidian';
+
+type ErrorSeverity = 'fatal' | 'error' | 'warn' | 'info';
+
+type RecoveryResult<T = unknown> = T | null;
+
+type RecoveryFunction<T = unknown> = (
+  error: Error, 
+  originalFn: () => Promise<T>
+) => Promise<RecoveryResult<T>>;
+
+interface CacheProvider {
+  getLastKnown?(): unknown;
+}
+
+interface PluginWithCache extends Plugin {
+  cache?: CacheProvider;
+}
+
+export class ZoroError {
+  private static _singleton: ZoroError | null = null;
+  
+  private readonly plugin: PluginWithCache;
+  private readonly noticeRateLimit = new Map<string, number>();
+  private readonly recoveryStrategies = new Map<string, RecoveryFunction>();
+
   // Singleton pattern - only one error handler instance per plugin
-  static instance(plugin) {
-    if (!ZoroError._singleton) ZoroError._singleton = new ZoroError(plugin);
+  static instance(plugin?: PluginWithCache): ZoroError {
+    if (!ZoroError._singleton) {
+      if (!plugin) {
+        throw new Error('ZoroError singleton requires plugin instance on first call');
+      }
+      ZoroError._singleton = new ZoroError(plugin);
+    }
     return ZoroError._singleton;
   }
 
-  constructor(plugin) {
+  private constructor(plugin: PluginWithCache) {
     this.plugin = plugin;
-    this.noticeRateLimit = new Map(); // track when we last showed each error message
-    this.recoveryStrategies = new Map(); // different ways to handle failures
-    this.initRecoveryStrategies(); // set up the recovery options
+    this.initRecoveryStrategies();
   }
 
   // Main way to show error messages to users - keeps them friendly and not spammy
-  static notify(message, severity = 'error', duration = null) {
+  static notify(message: string, severity: ErrorSeverity = 'error', duration: number | null = null): Error {
     const instance = ZoroError.instance();
     
     // Don't spam the user with the same error over and over
@@ -34,34 +69,40 @@ class ZoroError {
   }
 
   // Wraps risky functions and tries to recover automatically before bothering the user
-  static async guard(fn, recoveryStrategy = null) {
+  static async guard<T>(
+    fn: () => Promise<T>, 
+    recoveryStrategy: string | null = null
+  ): Promise<T> {
     const instance = ZoroError.instance();
     
     try {
       return await fn(); // try the original function first
     } catch (error) {
+      const err = error instanceof Error ? error : new Error(String(error));
+      
       // Something went wrong - let's see if we can fix it silently
       if (recoveryStrategy && instance.recoveryStrategies.has(recoveryStrategy)) {
         try {
-          const result = await instance.recoveryStrategies.get(recoveryStrategy)(error, fn);
-          if (result !== null) return result; // recovery worked!
+          const recoveryFn = instance.recoveryStrategies.get(recoveryStrategy)!;
+          const result = await recoveryFn(err, fn);
+          if (result !== null) return result as T; // recovery worked!
         } catch (recoveryError) {
           // Recovery failed too, oh well we tried
         }
       }
       
       // Couldn't fix it automatically, so tell the user nicely
-      const userMessage = instance.getUserMessage(error.message || String(error), 'error');
-      if (!instance.isRateLimited(error.message)) {
+      const userMessage = instance.getUserMessage(err.message || String(err), 'error');
+      if (!instance.isRateLimited(err.message)) {
         new Notice(userMessage, 6000);
       }
       
-      throw error; // still throw the original error for code that needs to handle it
+      throw err; // still throw the original error for code that needs to handle it
     }
   }
 
   // Keep trying something a few times before giving up - useful for network stuff
-  static async withRetry(fn, maxRetries = 2) {
+  static async withRetry<T>(fn: () => Promise<T>, maxRetries: number = 2): Promise<T> {
     const instance = ZoroError.instance();
     
     for (let attempt = 1; attempt <= maxRetries; attempt++) {
@@ -79,12 +120,15 @@ class ZoroError {
         await instance.sleep(1000 * attempt);
       }
     }
+    
+    // TypeScript requires this but it should never be reached
+    throw new Error('Unreachable code in withRetry');
   }
 
   // Set up different ways to handle common problems
-  initRecoveryStrategies() {
+  private initRecoveryStrategies(): void {
     // If network is down, try using cached data instead
-    this.recoveryStrategies.set('cache', async (error, originalFn) => {
+    this.recoveryStrategies.set('cache', async (error: Error) => {
       if (this.isNetworkError(error)) {
         const cachedResult = this.plugin.cache?.getLastKnown?.();
         if (cachedResult) {
@@ -96,7 +140,7 @@ class ZoroError {
     });
 
     // For temporary problems, wait a bit and try once more
-    this.recoveryStrategies.set('retry', async (error, originalFn) => {
+    this.recoveryStrategies.set('retry', async (error: Error, originalFn) => {
       if (this.isTemporaryError(error)) {
         await this.sleep(1500); // give it a moment
         return await originalFn(); // try again
@@ -105,13 +149,13 @@ class ZoroError {
     });
 
     // When all else fails, return something basic that won't crash the app
-    this.recoveryStrategies.set('degrade', async (error) => {
+    this.recoveryStrategies.set('degrade', async () => {
       return { error: true, message: 'Limited functionality available' };
     });
   }
 
   // Turn scary technical error messages into friendly user messages
-  getUserMessage(message, severity) {
+  private getUserMessage(message: string, severity: ErrorSeverity): string {
     const lowerMessage = message.toLowerCase();
     
     // Internet problems - very common
@@ -143,18 +187,18 @@ class ZoroError {
     }
     
     // Generic messages with nice emojis based on how bad it is
-    const prefixes = {
+    const prefixes: Record<ErrorSeverity, string> = {
       fatal: '🧨 Critical error occurred',   // really bad
       error: '❌ Something went wrong',       // bad but not end of world
       warn: '⚠️ Minor issue detected',        // heads up
       info: 'ℹ️ Information'                 // just FYI
-    };
+    } as const;
     
     return `${prefixes[severity] || prefixes.error}. Please try again.`;
   }
 
   // Don't spam users with the same error message over and over
-  isRateLimited(message) {
+  private isRateLimited(message: string): boolean {
     const now = Date.now();
     const key = this.getMessageKey(message); // normalize the message
     const lastShown = this.noticeRateLimit.get(key) || 0;
@@ -174,25 +218,25 @@ class ZoroError {
   }
 
   // How long to show different types of notifications
-  getNoticeDuration(severity) {
-    const durations = {
+  private getNoticeDuration(severity: ErrorSeverity): number {
+    const durations: Record<ErrorSeverity, number> = {
       fatal: 10000,  // critical stuff stays longer
       error: 6000,   // regular errors
       warn: 4000,    // warnings are shorter
       info: 3000     // info disappears quickly
-    };
+    } as const;
     return durations[severity] || 5000; // default 5 seconds
   }
 
   // Check if this looks like a network problem
-  isNetworkError(error) {
+  private isNetworkError(error: Error): boolean {
     const message = error.message?.toLowerCase() || '';
     return message.includes('network') || message.includes('fetch') || 
            message.includes('timeout') || message.includes('connection');
   }
 
   // Check if this is probably temporary and worth retrying
-  isTemporaryError(error) {
+  private isTemporaryError(error: Error): boolean {
     const message = error.message?.toLowerCase() || '';
     return message.includes('temporary') || message.includes('retry') ||
            message.includes('503') || message.includes('502'); // common temporary HTTP errors
@@ -200,12 +244,12 @@ class ZoroError {
 
   // Create a simplified version of error messages for rate limiting
   // This way "Error 404 on page 1" and "Error 404 on page 2" are treated as the same
-  getMessageKey(message) {
+  private getMessageKey(message: string): string {
     return message.replace(/\d+/g, '').replace(/[^\w\s]/g, '').trim().toLowerCase();
   }
 
   // Clean up old rate limit entries so we don't leak memory
-  cleanupRateLimit() {
+  private cleanupRateLimit(): void {
     const now = Date.now();
     const cutoff = now - 60000; // anything older than 1 minute
     
@@ -217,15 +261,14 @@ class ZoroError {
   }
 
   // Simple promise-based sleep function
-  sleep(ms) {
+  private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   // Clean up when the plugin gets disabled
-  destroy() {
+  destroy(): void {
     this.noticeRateLimit.clear();
     this.recoveryStrategies.clear();
+    ZoroError._singleton = null;
   }
 }
-
-export { ZoroError };

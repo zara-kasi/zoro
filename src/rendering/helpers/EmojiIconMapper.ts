@@ -1,12 +1,3 @@
-/**
- * EmojiIconMapper
- * Migrated from EmojiIconMapper.js → EmojiIconMapper.ts
- * - Added strict typing for all methods and properties
- * - Created interfaces for options and match objects
- * - Added type guards for runtime safety
- * - Preserved all patching functionality with proper typing
- */
-
 import { Setting, Notice, setIcon } from 'obsidian';
 
 interface EmojiIconMapperOptions {

@@ -1,12 +1,66 @@
-// No obsidian imports needed here
+/**
+ * CustomExternalURL
+ * Migrated from CustomExternalURL.js → CustomExternalURL.ts
+ * - Added strict typing for all methods and properties
+ * - Created interfaces for template data and media objects
+ * - Added type guards for JSON parsing operations
+ * - Typed plugin as Obsidian Plugin interface
+ */
 
-class CustomExternalURL {
-  constructor(plugin) {
+import type { Plugin } from 'obsidian';
+
+interface TemplateData {
+  template: string;
+  spacePattern: string;
+  originalUrl: string;
+  searchTerm: string;
+}
+
+interface MediaTitle {
+  english?: string;
+  romaji?: string;
+  native?: string;
+}
+
+interface MediaObject {
+  type: 'MOVIE' | 'TV' | 'ANIME' | 'MANGA' | 'MOVIE_TV';
+  title?: MediaTitle;
+}
+
+interface PluginSettings {
+  customSearchUrls: Record<string, string[]>;
+  autoFormatSearchUrls: boolean;
+}
+
+interface ZoroPlugin extends Plugin {
+  settings: PluginSettings;
+  saveSettings(): Promise<void>;
+}
+
+function isTemplateData(value: unknown): value is TemplateData {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    'template' in value &&
+    'spacePattern' in value &&
+    'originalUrl' in value &&
+    'searchTerm' in value &&
+    typeof (value as any).template === 'string' &&
+    typeof (value as any).spacePattern === 'string' &&
+    typeof (value as any).originalUrl === 'string' &&
+    typeof (value as any).searchTerm === 'string'
+  );
+}
+
+export class CustomExternalURL {
+  private plugin: ZoroPlugin;
+
+  constructor(plugin: ZoroPlugin) {
     this.plugin = plugin;
   }
 
   // Auto-format URL - removes everything after equals sign
-  formatSearchUrl(url) {
+  formatSearchUrl(url: string): string {
     if (!url || !url.trim()) return '';
     
     const trimmedUrl = url.trim();
@@ -25,7 +79,7 @@ class CustomExternalURL {
   }
   
   // Smart template learning from user examples
-  learnTemplateFromExample(url, searchTerm = 'zoro zoro') {
+  learnTemplateFromExample(url: string, searchTerm = 'zoro zoro'): TemplateData | null {
     if (!url || !searchTerm) return null;
     
     try {
@@ -46,7 +100,7 @@ class CustomExternalURL {
           'zoro/zoro',
           'zoro%20zoro',
           'zoro%2Bzoro'
-        ];
+        ] as const;
         
         for (const variation of variations) {
           const idx = url.toLowerCase().indexOf(variation.toLowerCase());
@@ -69,8 +123,6 @@ class CustomExternalURL {
       // Detect space replacement pattern using the base term
       const spacePattern = this.detectSpacePattern(baseTerm, actualSearchTerm);
       
-
-      
       return {
         template: template,
         spacePattern: spacePattern,
@@ -83,7 +135,7 @@ class CustomExternalURL {
   }
   
   // Detect how spaces are replaced in the URL
-  detectSpacePattern(originalTerm, urlTerm) {
+  private detectSpacePattern(originalTerm: string, urlTerm: string): string {
     if (originalTerm === urlTerm) return ' ';
     
     // Handle the case where "zoro zoro" becomes "zoro-zoro" (no space)
@@ -123,7 +175,7 @@ class CustomExternalURL {
     if (originalWords.length !== urlWords.length) return ' ';
     
     // Find the separator used between words
-    const separators = ['+', '-', '_', '/', '%20', '%2B'];
+    const separators = ['+', '-', '_', '/', '%20', '%2B'] as const;
     
     for (const separator of separators) {
       if (urlTerm.includes(separator)) {
@@ -135,7 +187,7 @@ class CustomExternalURL {
   }
   
   // Build URL using learned template
-  buildUrlWithTemplate(template, title, spacePattern) {
+  buildUrlWithTemplate(template: string, title: string, spacePattern: string): string {
     if (!template || !title) return template;
     
     // Replace spaces with the detected pattern
@@ -155,7 +207,7 @@ class CustomExternalURL {
   }
   
   // Build URL using learned template with proper replacement
-  buildUrlWithTemplateAndReplacement(template, title, spacePattern, originalSearchTerm) {
+  buildUrlWithTemplateAndReplacement(template: string, title: string, spacePattern: string, originalSearchTerm: string): string {
     if (!template || !title) return template;
     
     // Replace spaces with the detected pattern
@@ -175,7 +227,7 @@ class CustomExternalURL {
   }
   
   // Extract basic template from URL when no "zoro zoro" is found
-  extractBasicTemplate(url) {
+  extractBasicTemplate(url: string): TemplateData | null {
     if (!url) return null;
     
     try {
@@ -239,7 +291,7 @@ class CustomExternalURL {
   }
 
   // Validate if URL has proper search format
-  isValidSearchUrl(url) {
+  isValidSearchUrl(url: string): boolean {
     if (!url || !url.trim()) return false;
     
     try {
@@ -251,7 +303,7 @@ class CustomExternalURL {
   }
 
   // Extract clean domain name for button text
-  extractDomainName(url) {
+  extractDomainName(url: string): string {
     try {
       // Support learned template JSON by using originalUrl or template for domain extraction
       let sourceUrl = url;
@@ -259,10 +311,13 @@ class CustomExternalURL {
         const trimmed = url.trim();
         if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
           try {
-            const data = JSON.parse(trimmed);
-            if (data?.originalUrl) sourceUrl = data.originalUrl;
-            else if (data?.template) sourceUrl = data.template;
-          } catch {}
+            const data: unknown = JSON.parse(trimmed);
+            if (isTemplateData(data)) {
+              sourceUrl = data.originalUrl || data.template;
+            }
+          } catch {
+            // JSON parsing failed, use original URL
+          }
         }
       }
 
@@ -280,7 +335,7 @@ class CustomExternalURL {
   }
 
   // Get best title from media object
-  getBestTitle(media) {
+  getBestTitle(media: MediaObject): string {
     return media.title?.english || 
            media.title?.romaji || 
            media.title?.native || 
@@ -288,14 +343,14 @@ class CustomExternalURL {
   }
 
   // Build search URL with encoded title
-  buildSearchUrl(template, title) {
+  buildSearchUrl(template: string, title: string): string {
     if (!template || !title) return template;
     
     try {
       // Check if this is a learned template (JSON string)
       if (template.startsWith('{') && template.endsWith('}')) {
-        const templateData = JSON.parse(template);
-        if (templateData.template && templateData.spacePattern) {
+        const templateData: unknown = JSON.parse(template);
+        if (isTemplateData(templateData)) {
           // Use the template with proper replacement
           const result = this.buildUrlWithTemplateAndReplacement(
             templateData.template, 
@@ -317,7 +372,7 @@ class CustomExternalURL {
   }
 
   // Add new URL to settings
-  async addUrl(mediaType, url = '') {
+  async addUrl(mediaType: string, url = ''): Promise<string> {
     if (!this.plugin.settings.customSearchUrls[mediaType]) {
       this.plugin.settings.customSearchUrls[mediaType] = [];
     }
@@ -348,7 +403,7 @@ class CustomExternalURL {
   }
 
   // Remove URL from settings
-  async removeUrl(mediaType, index) {
+  async removeUrl(mediaType: string, index: number): Promise<void> {
     if (this.plugin.settings.customSearchUrls[mediaType]) {
       this.plugin.settings.customSearchUrls[mediaType].splice(index, 1);
       await this.plugin.saveSettings();
@@ -356,7 +411,7 @@ class CustomExternalURL {
   }
 
   // Update URL in settings
-  async updateUrl(mediaType, index, newUrl) {
+  async updateUrl(mediaType: string, index: number, newUrl: string): Promise<string | undefined> {
     if (this.plugin.settings.customSearchUrls[mediaType] && 
         this.plugin.settings.customSearchUrls[mediaType][index] !== undefined) {
       let finalUrl = newUrl.trim();
@@ -383,17 +438,18 @@ class CustomExternalURL {
       await this.plugin.saveSettings();
       return finalUrl;
     }
+    return undefined;
   }
 
   // Get URLs for specific media type
-  getUrls(mediaType) {
+  getUrls(mediaType: string): string[] {
     // Map MOVIE and TV to MOVIE_TV for unified search URLs
     const mappedType = (mediaType === 'MOVIE' || mediaType === 'TV') ? 'MOVIE_TV' : mediaType;
     return this.plugin.settings.customSearchUrls?.[mappedType] || [];
   }
 
   // Create search buttons for panel
-  createSearchButtons(media, container) {
+  createSearchButtons(media: MediaObject, container: HTMLElement): void {
     const customUrls = this.getUrls(media.type);
     if (!customUrls || customUrls.length === 0) return;
 
@@ -405,7 +461,7 @@ class CustomExternalURL {
         const searchBtn = document.createElement('button');
         searchBtn.className = 'external-link-btn zoro-custom-external-btn';
         searchBtn.innerHTML = `${domainName}`;
-        searchBtn.onclick = (e) => {
+        searchBtn.onclick = (e: Event) => {
           e.stopPropagation();
           try {
             const searchUrl = this.buildSearchUrl(url, mediaTitle);
@@ -419,5 +475,3 @@ class CustomExternalURL {
     });
   }
 }
-
-export { CustomExternalURL };

@@ -1,10 +1,3 @@
-/**
- * SupportEditModal - Support utilities for edit modal operations
- * Migrated from SupportEditModal.js → SupportEditModal.ts
- * - Added Plugin typing from obsidian
- * - Typed method parameters and validation structures
- * - Added interfaces for form data and validation results
- */
 import { Notice } from 'obsidian';
 import type { Plugin } from 'obsidian';
 import { DOMHelper } from '../../rendering/helpers/DOMHelper';

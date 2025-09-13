@@ -1,11 +1,3 @@
-/**
- * Simkl API request handler with rate limiting, authentication, and retry logic
- * Migrated from SimklRequest.js → SimklRequest.ts
- * - Added comprehensive types for configuration and authentication state
- * - Typed rate limiting with Simkl-specific parameters and search context
- * - Added proper error handling with request type awareness
- */
-
 import type { Plugin } from 'obsidian';
 
 // Configuration and state interfaces
@@ -411,5 +403,3 @@ export class SimklRequest {
       : 0;
   }
 }
-
-export { SimklRequest };

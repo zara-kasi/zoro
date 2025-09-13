@@ -1,10 +1,3 @@
-/**
- * MALEditModal - MyAnimeList-specific edit operations
- * Migrated from MALEditModal.js → MALEditModal.ts
- * - Added Plugin typing from obsidian
- * - Typed method parameters and MAL API structures
- * - Added interfaces for entry data and API responses
- */
 import { Notice } from 'obsidian';
 import type { Plugin } from 'obsidian';
 

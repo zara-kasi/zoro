@@ -1,12 +1,3 @@
-/**
- * Export.ts
- * Migrated from Export.js → Export.ts
- * - Added strict typing for all methods and interfaces
- * - Converted CommonJS to ES modules
- * - Added type guards for API responses
- * - Preserved all runtime behavior
- */
-
 import { Notice, requestUrl } from 'obsidian';
 import type { Plugin, Vault, Workspace } from 'obsidian';
 

@@ -7,7 +7,7 @@
  */
 import { Notice } from 'obsidian';
 import type { Plugin } from 'obsidian';
-import { DOMHelper } from '../../rendering/helpers/DOMHelper.js';
+import { DOMHelper } from '../../rendering/helpers/DOMHelper';
 
 // Core interfaces
 interface ValidationResult {

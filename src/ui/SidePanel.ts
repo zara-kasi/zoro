@@ -1,11 +1,3 @@
-/**
- * SidePanel - Side panel view for Zoro plugin
- * Migrated from SidePanel.js → SidePanel.ts
- * - Added comprehensive typing for Obsidian ItemView integration
- * - Typed plugin dependencies and context objects
- * - Added proper DOM element typing and event handling
- */
-
 import { ItemView, Notice, WorkspaceLeaf, TFile } from 'obsidian';
 import type { App } from 'obsidian';
 import type { ZoroPluginSettings, MediaType, ApiSource } from '../settings';

@@ -1,12 +1,3 @@
-/**
- * AnilistApi
- * Migrated from AnilistApi.js → AnilistApi.ts
- * - Added comprehensive TypeScript interfaces for all data structures
- * - Converted ES module imports/exports
- * - Added type guards for API responses
- * - Typed all method parameters and return values
- */
-
 import { Notice, requestUrl } from 'obsidian';
 import type { Plugin } from 'obsidian';
 import { ZoroError } from '../../core/ZoroError';

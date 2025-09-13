@@ -1,11 +1,3 @@
-/**
- * MyAnimeList OAuth2 PKCE authentication handler for Obsidian plugin
- * Migrated from MALAuthentication.js → MALAuthentication.ts
- * - Added comprehensive types for OAuth2 PKCE flow and MAL API responses
- * - Typed plugin integration with proper error handling
- * - Added token management and refresh logic with proper typing
- */
-
 import type { Plugin, RequestUrlResponse } from 'obsidian';
 import { Notice, requestUrl } from 'obsidian';
 
@@ -506,5 +498,3 @@ export class MALAuthentication {
     return this.plugin.settings.malUserInfo;
   }
 }
-
-export { MALAuthentication };

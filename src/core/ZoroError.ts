@@ -1,11 +1,3 @@
-/**
- * ZoroError - Error handling and user notification system
- * Migrated from ZoroError.js → ZoroError.ts
- * - Added types for plugin, recovery strategies, and error handling
- * - Converted singleton pattern with proper typing
- * - Added interfaces for recovery functions and error categories
- */
-
 import { Notice } from 'obsidian';
 import type { Plugin } from 'obsidian';
 

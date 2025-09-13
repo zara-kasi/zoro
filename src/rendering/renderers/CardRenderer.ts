@@ -1,10 +1,3 @@
-/**
- * CardRenderer
- * Migrated from CardRenderer.js → CardRenderer.ts
- * - Added comprehensive types for media objects, entries, and card creation
- * - Typed event handlers for mouse/touch interactions and button clicks
- * - Added proper async/await typing for API operations
- */
 import { Notice, setIcon } from 'obsidian';
 import type { Plugin } from 'obsidian';
 import { DOMHelper } from '../helpers/DOMHelper';

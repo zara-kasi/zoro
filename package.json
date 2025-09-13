@@ -1,8 +1,7 @@
 {
-  "name": "zoro",
+  "name": "Zoro",
   "version": "1.1.1",
   "description": "Zoro — Track anime, manga, movies and TV with AniList, MyAnimeList and Simkl.",
-  "type": "module",
   "main": "main.js",
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -10,9 +9,17 @@
     "build:fast": "esbuild src/main.ts --bundle --platform=node --format=cjs --outfile=main.js --external:obsidian --sourcemap",
     "dev": "esbuild src/main.ts --bundle --platform=node --format=cjs --outfile=main.js --external:obsidian --sourcemap --watch"
   },
+  "files": [
+    "main.js",
+    "manifest.json"
+  ],
   "devDependencies": {
-    "esbuild": "^0.23.1",
-    "typescript": "^5.1.6"
+    "@types/node": "20.14.0",
+    "builtin-modules": "3.1.0",
+    "esbuild": "0.23.1",
+    "obsidian": "1.5.0",
+    "obsidian-typings": "4.49.0",
+    "typescript": "5.1.6"
   },
   "engines": {
     "node": ">=18"

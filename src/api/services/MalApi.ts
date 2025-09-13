@@ -10,7 +10,7 @@
 
 import { requestUrl } from 'obsidian';
 import type { Plugin } from 'obsidian';
-import { ZoroError } from '../../core/ZoroError.js';
+import { ZoroError } from '../../core/ZoroError';
 
 // =================== TYPE DEFINITIONS ===================
 

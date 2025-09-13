@@ -14,7 +14,7 @@ import { SimklRequest } from './SimklRequest';
 
 // Queue and request types
 type Priority = 'high' | 'normal' | 'low';
-type ServiceName = 'anilist' | 'mal' | 'simkl' | 'tmdb';
+type ServiceName = 'anilist' | 'mal' | 'simkl';
 
 interface RequestOptions {
   priority?: Priority;
@@ -161,19 +161,6 @@ interface ZoroPlugin extends Plugin {
   settings: PluginSettings;
 }
 
-// Placeholder for missing service classes - these would need to be migrated too
-class TMDbRequest implements ServiceHandler {
-  rateLimiter = { requests: [], maxRequests: 100, remaining: 100 };
-  metrics = { requests: 0, errors: 0, avgTime: 0 };
-  
-  constructor(config: QueueConfig) {}
-  checkRateLimit() { return { allowed: true, waitTime: 0 }; }
-  shouldRetry() { return false; }
-  getRetryDelay() { return 1000; }
-  updateMetrics() {}
-  getUtilization() { return '0%'; }
-}
-
 export class RequestQueue {
   private readonly plugin: ZoroPlugin;
   private readonly queues: Record<Priority, RequestItem[]>;
@@ -183,7 +170,6 @@ export class RequestQueue {
     anilist: ServiceHandler;
     mal: MALServiceHandler;
     simkl: SimklServiceHandler;
-    tmdb: ServiceHandler;
   };
   private readonly metrics: QueueMetrics;
   private readonly requestTracker: Map<string, { queueTime: number; priority: Priority; service: ServiceName }>;
@@ -233,8 +219,7 @@ export class RequestQueue {
     this.services = {
       anilist: new AniListRequest(this.config),
       mal: new MALRequest(this.config, plugin) as MALServiceHandler,
-      simkl: new SimklRequest(this.config, plugin) as SimklServiceHandler,
-      tmdb: new TMDbRequest(this.config)
+      simkl: new SimklRequest(this.config, plugin) as SimklServiceHandler
     };
     
     this.metrics = {
@@ -780,8 +765,7 @@ export class RequestQueue {
       rateLimitUtilization: {
         anilist: this.services.anilist.getUtilization(),
         mal: this.services.mal.getUtilization(),
-        simkl: this.services.simkl.getUtilization(),
-        tmdb: this.services.tmdb.getUtilization()
+        simkl: this.services.simkl.getUtilization()
       },
       authStatus: {
         mal: this.services.mal.getAuthStatus(),
@@ -895,7 +879,7 @@ export class RequestQueue {
   }
   
   clearRequestsByService(serviceName: ServiceName): number {
-    if (!(['anilist', 'mal', 'simkl', 'tmdb'] as ServiceName[]).includes(serviceName)) {
+    if (!(['anilist', 'mal', 'simkl'] as ServiceName[]).includes(serviceName)) {
       throw new Error(`Unknown service: ${serviceName}`);
     }
     
@@ -921,8 +905,7 @@ export class RequestQueue {
     const stats: Record<ServiceName, Record<Priority | 'total', number>> = {
       anilist: { high: 0, normal: 0, low: 0, total: 0 },
       mal: { high: 0, normal: 0, low: 0, total: 0 },
-      simkl: { high: 0, normal: 0, low: 0, total: 0 },
-      tmdb: { high: 0, normal: 0, low: 0, total: 0 }
+      simkl: { high: 0, normal: 0, low: 0, total: 0 }
     };
     
     const priorities: Priority[] = ['high', 'normal', 'low'];

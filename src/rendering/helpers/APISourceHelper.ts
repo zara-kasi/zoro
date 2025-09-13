@@ -1,12 +1,3 @@
-/**
- * APISourceHelper
- * Migrated from APISourceHelper.js → APISourceHelper.ts
- * - Added strict typing for plugin, API interfaces, and method parameters
- * - Created interfaces for media entries, configurations, and API responses
- * - Added type guards for source validation and data structure detection
- * - Preserved all source detection and API routing logic
- */
-
 import type { Notice } from 'obsidian';
 
 type MediaSource = 'anilist' | 'mal' | 'simkl';

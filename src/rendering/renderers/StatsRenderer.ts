@@ -1,10 +1,3 @@
-/**
- * StatsRenderer
- * Migrated from StatsRenderer.js → StatsRenderer.ts
- * - Added comprehensive types for user statistics and media objects
- * - Typed all renderer methods and DOM manipulation
- * - Added Plugin type from obsidian for parent reference
- */
 import type { Plugin } from 'obsidian';
 import { DOMHelper } from '../helpers/DOMHelper';
 

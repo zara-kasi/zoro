@@ -1,10 +1,3 @@
-/**
- * MoreDetailsPanel
- * Migrated from MoreDetailsPanel.js → MoreDetailsPanel.ts
- * - Added type definitions for dependencies and method parameters
- * - Plugin typed generically to match expected interface
- */
-
 import { OpenDetailPanel } from './OpenDetailPanel';
 import { CustomExternalURL } from './CustomExternalURL';
 
@@ -21,7 +14,7 @@ interface EntryData {
   [key: string]: unknown; // TODO: confirm entry structure from usage
 }
 
-export default class MoreDetailsPanel {
+export class MoreDetailsPanel {
   private plugin: Plugin;
   private openDetailPanel: OpenDetailPanel;
   private customExternalURL: CustomExternalURL;
@@ -49,5 +42,3 @@ export default class MoreDetailsPanel {
     return this.openDetailPanel.currentPanel;
   }
 }
-
-export { MoreDetailsPanel };

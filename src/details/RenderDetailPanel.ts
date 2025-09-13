@@ -1,11 +1,3 @@
-/**
- * RenderDetailPanel
- * Migrated from RenderDetailPanel.js → RenderDetailPanel.ts
- * - Added comprehensive type definitions for all DOM elements and data structures
- * - Used unknown for external API data with proper type narrowing
- * - Preserved all runtime behavior and DOM manipulation exactly as original
- */
-
 import { CustomExternalURL } from './CustomExternalURL';
 
 // Type definitions
@@ -100,7 +92,7 @@ declare global {
   function setIcon(element: HTMLElement, iconName: string): void;
 }
 
-export default class RenderDetailPanel {
+export class RenderDetailPanel {
   private plugin: Plugin;
 
   constructor(plugin: Plugin) {
@@ -928,5 +920,3 @@ export default class RenderDetailPanel {
     });
   }
 }
-
-export { RenderDetailPanel }

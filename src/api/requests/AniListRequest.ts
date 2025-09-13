@@ -1,11 +1,3 @@
-/**
- * AniList API request handler with rate limiting and retry logic
- * Migrated from AniListRequest.js → AniListRequest.ts
- * - Added comprehensive types for configuration and metrics
- * - Typed rate limiting and retry mechanisms
- * - Added proper error handling with typed responses
- */
-
 // Configuration and state interfaces
 interface AniListRequestConfig {
   rateLimitBuffer: number;

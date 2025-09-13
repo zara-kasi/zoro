@@ -1,10 +1,3 @@
-/**
- * Sample
- * Migrated from Sample.js → Sample.ts
- * - Added proper TypeScript types for plugin, vault, and folder structure
- * - Converted to ES modules with proper import/export
- * - Added interface for folder configuration
- */
 import { Notice, type Plugin, type Vault } from 'obsidian';
 
 interface FolderConfig {

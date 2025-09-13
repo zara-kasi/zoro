@@ -8,7 +8,7 @@
 
 import { ItemView, Notice, WorkspaceLeaf, TFile } from 'obsidian';
 import type { App } from 'obsidian';
-import type { ZoroPluginSettings, MediaType, ApiSource } from '../settings.js';
+import type { ZoroPluginSettings, MediaType, ApiSource } from '../settings';
 
 export const ZORO_VIEW_TYPE = 'zoro-panel';
 

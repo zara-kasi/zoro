@@ -1,10 +1,3 @@
-/**
- * SimklEditModal - Simkl-specific edit operations
- * Migrated from SimklEditModal.js → SimklEditModal.ts
- * - Added Plugin typing from obsidian
- * - Typed method parameters and Simkl API structures
- * - Added interfaces for entry data and API responses
- */
 import { Notice } from 'obsidian';
 import type { Plugin } from 'obsidian';
 

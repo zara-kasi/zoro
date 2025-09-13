@@ -8,7 +8,7 @@
  */
 
 import { setIcon } from 'obsidian';
-import { GRID_COLUMN_OPTIONS } from '../../core/constants.js';
+import { GRID_COLUMN_OPTIONS } from '../../core/constants';
 
 // Extended DOM interfaces for Obsidian's createEl functionality
 interface ObsidianElementAttributes {

@@ -1,10 +1,195 @@
-// No obsidian import needed here
-import { AniListRequest } from './AniListRequest.js';
-import { MALRequest } from './MALRequest.js';
-import { SimklRequest } from './SimklRequest.js';
+/**
+ * Multi-service request queue with priority handling, rate limiting, and authentication
+ * Migrated from RequestQueue.js → RequestQueue.ts
+ * - Added comprehensive types for queue management and service configurations
+ * - Typed all API service handlers and their specific behaviors
+ * - Added proper error handling with service-specific retry logic
+ */
 
-class RequestQueue {
-  constructor(plugin) {
+import type { Plugin } from 'obsidian';
+import { AniListRequest } from './AniListRequest';
+import { MALRequest } from './MALRequest';
+import { SimklRequest } from './SimklRequest';
+
+
+// Queue and request types
+type Priority = 'high' | 'normal' | 'low';
+type ServiceName = 'anilist' | 'mal' | 'simkl' | 'tmdb';
+
+interface RequestOptions {
+  priority?: Priority;
+  timeout?: number;
+  retries?: number;
+  metadata?: Record<string, unknown>;
+  service?: ServiceName;
+}
+
+interface RequestItem {
+  requestFn: () => Promise<unknown>;
+  resolve: (value: unknown) => void;
+  reject: (error: Error) => void;
+  id: string;
+  priority: Priority;
+  timeout: number;
+  retries: number;
+  metadata: Record<string, unknown>;
+  queueTime: number;
+  startTime: number | null;
+  attempt: number;
+  maxAttempts: number;
+  service: ServiceName;
+}
+
+interface QueueConfig {
+  baseDelay: number;
+  maxDelay: number;
+  minDelay: number;
+  maxConcurrent: number;
+  maxRetries: number;
+  timeoutMs: number;
+  rateLimitBuffer: number;
+  malConfig: {
+    baseDelay: number;
+    maxConcurrent: number;
+    rateLimitBuffer: number;
+    authRetryDelay: number;
+    maxAuthRetries: number;
+  };
+  simklConfig: {
+    baseDelay: number;
+    maxConcurrent: number;
+    rateLimitBuffer: number;
+    authRetryDelay: number;
+    maxAuthRetries: number;
+  };
+}
+
+interface QueueState {
+  isProcessing: boolean;
+  activeRequests: Map<string, RequestItem>;
+  completedRequests: number;
+  failedRequests: number;
+  concurrentCount: number;
+}
+
+interface QueueMetrics {
+  requestsQueued: number;
+  requestsProcessed: number;
+  requestsFailed: number;
+  queuePeakSize: number;
+  rateLimitHits: number;
+  retries: number;
+  startTime: number;
+}
+
+interface LoaderState {
+  visible: boolean;
+  requestCount: number;
+  lastUpdate: number;
+  debounceTimeout: NodeJS.Timeout | null;
+}
+
+interface ServiceMetrics {
+  requests: number;
+  errors: number;
+  avgTime: number;
+  authErrors?: number;
+}
+
+interface RateLimitStatus {
+  requests: number;
+  maxRequests: number;
+  remaining: number;
+  utilization: string;
+}
+
+interface AuthValidation {
+  valid: boolean;
+  error?: string;
+}
+
+// Service handler interfaces
+interface ServiceHandler {
+  checkRateLimit(): { allowed: boolean; waitTime: number };
+  shouldRetry(error: Error, attempt: number, maxAttempts: number): boolean;
+  getRetryDelay(attempt: number): number;
+  updateMetrics(processingTime: number, isError?: boolean): void;
+  getUtilization(): string;
+  rateLimiter: {
+    requests: number[];
+    maxRequests: number;
+    remaining: number;
+  };
+  metrics: ServiceMetrics;
+}
+
+interface MALServiceHandler extends ServiceHandler {
+  validateAuth(): Promise<AuthValidation>;
+  getAuthStatus(): 'healthy' | 'degraded';
+  authState: {
+    lastAuthCheck: number;
+    consecutiveAuthFailures: number;
+    lastRequest: number;
+    authCheckInterval: number;
+  };
+}
+
+interface SimklServiceHandler extends ServiceHandler {
+  validateAuth(): Promise<AuthValidation>;
+  setRequestContext(isSearchRequest: boolean): void;
+  handleRateLimitError(): void;
+  getAuthStatus(): 'healthy' | 'degraded';
+  getDetailedMetrics(): ServiceMetrics & { additionalData?: unknown };
+  updateTokenExpiry(expiresIn: number): void;
+  authState: {
+    lastAuthCheck: number;
+    consecutiveAuthFailures: number;
+    lastRequest: number;
+    tokenExpiry: number | null;
+    authCheckInterval: number;
+  };
+}
+
+// Plugin settings interface
+interface PluginSettings {
+  showLoadingIcon: boolean;
+  [key: string]: unknown;
+}
+
+// Plugin interface with required methods and properties
+interface ZoroPlugin extends Plugin {
+  settings: PluginSettings;
+}
+
+// Placeholder for missing service classes - these would need to be migrated too
+class TMDbRequest implements ServiceHandler {
+  rateLimiter = { requests: [], maxRequests: 100, remaining: 100 };
+  metrics = { requests: 0, errors: 0, avgTime: 0 };
+  
+  constructor(config: QueueConfig) {}
+  checkRateLimit() { return { allowed: true, waitTime: 0 }; }
+  shouldRetry() { return false; }
+  getRetryDelay() { return 1000; }
+  updateMetrics() {}
+  getUtilization() { return '0%'; }
+}
+
+export class RequestQueue {
+  private readonly plugin: ZoroPlugin;
+  private readonly queues: Record<Priority, RequestItem[]>;
+  private readonly config: QueueConfig;
+  private readonly state: QueueState;
+  private readonly services: {
+    anilist: ServiceHandler;
+    mal: MALServiceHandler;
+    simkl: SimklServiceHandler;
+    tmdb: ServiceHandler;
+  };
+  private readonly metrics: QueueMetrics;
+  private readonly requestTracker: Map<string, { queueTime: number; priority: Priority; service: ServiceName }>;
+  private readonly loaderState: LoaderState;
+
+  constructor(plugin: ZoroPlugin) {
     this.plugin = plugin;
     
     this.queues = {
@@ -47,8 +232,8 @@ class RequestQueue {
     
     this.services = {
       anilist: new AniListRequest(this.config),
-      mal: new MALRequest(this.config, plugin),
-      simkl: new SimklRequest(this.config, plugin),
+      mal: new MALRequest(this.config, plugin) as MALServiceHandler,
+      simkl: new SimklRequest(this.config, plugin) as SimklServiceHandler,
       tmdb: new TMDbRequest(this.config)
     };
     
@@ -74,7 +259,7 @@ class RequestQueue {
     this.startBackgroundTasks();
   }
 
-  add(requestFn, options = {}) {
+  add<T = unknown>(requestFn: () => Promise<T>, options: RequestOptions = {}): Promise<T> {
     const {
       priority = 'normal',
       timeout = this.config.timeoutMs,
@@ -90,10 +275,10 @@ class RequestQueue {
       timeout, retries, priority, metadata
     });
     
-    return new Promise((resolve, reject) => {
-      const requestItem = {
-        requestFn,
-        resolve,
+    return new Promise<T>((resolve, reject) => {
+      const requestItem: RequestItem = {
+        requestFn: requestFn as () => Promise<unknown>,
+        resolve: resolve as (value: unknown) => void,
         reject,
         id: requestId,
         priority,
@@ -125,7 +310,12 @@ class RequestQueue {
     });
   }
   
-  adjustOptionsForService(service, options) {
+  private adjustOptionsForService(service: ServiceName, options: {
+    timeout: number;
+    retries: number;
+    priority: Priority;
+    metadata: Record<string, unknown>;
+  }): typeof options {
     if (service === 'mal') {
       return {
         timeout: Math.max(options.timeout, 30000),
@@ -147,7 +337,7 @@ class RequestQueue {
     return options;
   }
   
-  async process() {
+  private async process(): Promise<void> {
     if (this.state.isProcessing || this.getTotalQueueSize() === 0) {
       if (this.getTotalQueueSize() === 0) {
         this.updateLoaderState(false);
@@ -187,19 +377,21 @@ class RequestQueue {
       
       // Service-specific auth validation
       if (requestItem.service === 'mal') {
-        const authCheck = await serviceHandler.validateAuth();
+        const malService = this.services.mal;
+        const authCheck = await malService.validateAuth();
         if (!authCheck.valid) {
           this.handleMalAuthFailure(requestItem, authCheck.error);
           return;
         }
       } else if (requestItem.service === 'simkl') {
+        const simklService = this.services.simkl;
         // Set request context for Simkl (helps with auth decisions)
         const isSearchRequest = requestItem.metadata?.type === 'search';
-        serviceHandler.setRequestContext(isSearchRequest);
+        simklService.setRequestContext(Boolean(isSearchRequest));
         
         // Only validate auth for non-search requests
         if (!isSearchRequest) {
-          const authCheck = await serviceHandler.validateAuth();
+          const authCheck = await simklService.validateAuth();
           if (!authCheck.valid) {
             this.handleSimklAuthFailure(requestItem, authCheck.error);
             return;
@@ -220,7 +412,7 @@ class RequestQueue {
     }
   }
   
-  canProcessRequest(requestItem) {
+  private canProcessRequest(requestItem: RequestItem): boolean {
     const service = requestItem.service || 'anilist';
     const currentServiceRequests = Array.from(this.state.activeRequests.values())
       .filter(req => req.service === service).length;
@@ -231,7 +423,7 @@ class RequestQueue {
            currentServiceRequests < maxConcurrent;
   }
   
-  getMaxConcurrentForService(service) {
+  private getMaxConcurrentForService(service: ServiceName): number {
     switch (service) {
       case 'mal':
         return this.config.malConfig.maxConcurrent;
@@ -242,8 +434,8 @@ class RequestQueue {
     }
   }
   
-  async executeRequest(requestItem, serviceHandler) {
-    const { requestFn, resolve, reject, id, timeout, service } = requestItem;
+  private async executeRequest(requestItem: RequestItem, serviceHandler: ServiceHandler): Promise<void> {
+    const { requestFn, resolve, reject, id, timeout } = requestItem;
     
     this.state.concurrentCount++;
     this.state.activeRequests.set(id, requestItem);
@@ -253,19 +445,20 @@ class RequestQueue {
     const waitTime = requestItem.startTime - requestItem.queueTime;
     
     try {
-      const timeoutPromise = new Promise((_, timeoutReject) => {
+      const timeoutPromise = new Promise<never>((_, timeoutReject) => {
         setTimeout(() => timeoutReject(new Error('Request timeout')), timeout);
       });
       
       const result = await Promise.race([requestFn(), timeoutPromise]);
       
-      const processingTime = Date.now() - requestItem.startTime;
+      const processingTime = Date.now() - requestItem.startTime!;
       this.handleRequestSuccess(requestItem, result, processingTime, waitTime, serviceHandler);
       resolve(result);
       
     } catch (error) {
-      const processingTime = Date.now() - requestItem.startTime;
-      const shouldRetry = await this.handleRequestError(requestItem, error, processingTime, waitTime, serviceHandler);
+      const processingTime = Date.now() - requestItem.startTime!;
+      const err = error instanceof Error ? error : new Error(String(error));
+      const shouldRetry = await this.handleRequestError(requestItem, err, processingTime, waitTime, serviceHandler);
       
       if (shouldRetry) {
         const retryDelay = serviceHandler.getRetryDelay(requestItem.attempt);
@@ -275,7 +468,7 @@ class RequestQueue {
         }, retryDelay);
         this.metrics.retries++;
       } else {
-        reject(error);
+        reject(err);
       }
     } finally {
       this.state.concurrentCount--;
@@ -286,11 +479,11 @@ class RequestQueue {
     }
   }
 
-  handleMalAuthFailure(requestItem, errorMessage) {
+  private handleMalAuthFailure(requestItem: RequestItem, errorMessage?: string): void {
     const malService = this.services.mal;
     
     if (malService.authState.consecutiveAuthFailures >= this.config.malConfig.maxAuthRetries) {
-      requestItem.reject(new Error(`MAL authentication persistently failing: ${errorMessage}`));
+      requestItem.reject(new Error(`MAL authentication persistently failing: ${errorMessage || 'Unknown error'}`));
       this.state.isProcessing = false;
       this.updateLoaderState(false);
       return;
@@ -303,11 +496,11 @@ class RequestQueue {
     }, this.config.malConfig.authRetryDelay);
   }
 
-  handleSimklAuthFailure(requestItem, errorMessage) {
+  private handleSimklAuthFailure(requestItem: RequestItem, errorMessage?: string): void {
     const simklService = this.services.simkl;
     
     if (simklService.authState.consecutiveAuthFailures >= this.config.simklConfig.maxAuthRetries) {
-      requestItem.reject(new Error(`Simkl authentication persistently failing: ${errorMessage}`));
+      requestItem.reject(new Error(`Simkl authentication persistently failing: ${errorMessage || 'Unknown error'}`));
       this.state.isProcessing = false;
       this.updateLoaderState(false);
       return;
@@ -320,19 +513,20 @@ class RequestQueue {
     }, this.config.simklConfig.authRetryDelay);
   }
 
-  handleRequestSuccess(requestItem, result, processingTime, waitTime, serviceHandler) {
+  private handleRequestSuccess(requestItem: RequestItem, result: unknown, processingTime: number, waitTime: number, serviceHandler: ServiceHandler): void {
     this.state.completedRequests++;
     serviceHandler.updateMetrics(processingTime);
     this.metrics.requestsProcessed++;
   }
   
-  async handleRequestError(requestItem, error, processingTime, waitTime, serviceHandler) {
+  private async handleRequestError(requestItem: RequestItem, error: Error, processingTime: number, waitTime: number, serviceHandler: ServiceHandler): Promise<boolean> {
     this.state.failedRequests++;
     serviceHandler.updateMetrics(processingTime, true);
     
     // Simkl-specific error handling
     if (requestItem.service === 'simkl' && error.message.includes('rate limit')) {
-      serviceHandler.handleRateLimitError();
+      const simklService = this.services.simkl;
+      simklService.handleRateLimitError();
     }
     
     const shouldRetry = serviceHandler.shouldRetry(error, requestItem.attempt, requestItem.maxAttempts);
@@ -344,15 +538,14 @@ class RequestQueue {
     return shouldRetry;
   }
 
-  // Updated loader state management remains the same
-  updateLoaderState(forceShow = null) {
+  private updateLoaderState(forceShow: boolean | null = null): void {
     if (this.loaderState.debounceTimeout) {
       clearTimeout(this.loaderState.debounceTimeout);
       this.loaderState.debounceTimeout = null;
     }
     
     const totalRequests = this.getTotalQueueSize() + this.state.concurrentCount;
-    let shouldShow;
+    let shouldShow: boolean;
     
     if (forceShow !== null) {
       shouldShow = forceShow;
@@ -378,7 +571,7 @@ class RequestQueue {
     }
   }
   
-  showGlobalLoader() {
+  private showGlobalLoader(): void {
     if (!this.plugin?.settings?.showLoadingIcon) return;
     
     const loader = document.getElementById('zoro-global-loader');
@@ -389,7 +582,7 @@ class RequestQueue {
     }
   }
   
-  hideGlobalLoader() {
+  private hideGlobalLoader(): void {
     const loader = document.getElementById('zoro-global-loader');
     if (loader) {
       loader.classList.remove('zoro-show');
@@ -398,24 +591,68 @@ class RequestQueue {
     }
   }
   
-  updateLoaderCounter() {
+  private updateLoaderCounter(): void {
     const loader = document.getElementById('zoro-global-loader');
     if (loader && this.loaderState.visible) {
       const queueSize = this.getTotalQueueSize() + this.state.concurrentCount;
       if (queueSize > 1) {
-        loader.setAttribute('data-count', queueSize);
+        loader.setAttribute('data-count', String(queueSize));
       } else {
         loader.removeAttribute('data-count');
       }
     }
   }
   
-  updateQueueMetrics() {
+  private updateQueueMetrics(): void {
     const totalQueued = this.getTotalQueueSize();
     this.metrics.queuePeakSize = Math.max(this.metrics.queuePeakSize, totalQueued);
   }
 
-  getMetrics() {
+  getMetrics(): {
+    uptime: string;
+    queue: {
+      current: Record<Priority, number>;
+      total: number;
+      peak: number;
+      processed: number;
+      failed: number;
+      retries: number;
+    };
+    performance: {
+      successRate: string;
+    };
+    rateLimit: {
+      anilist: RateLimitStatus;
+      mal: RateLimitStatus;
+      simkl: RateLimitStatus;
+      hits: number;
+    };
+    concurrency: {
+      active: number;
+      max: number;
+    };
+    services: {
+      anilist: ServiceMetrics;
+      mal: ServiceMetrics;
+      simkl: ServiceMetrics;
+    };
+    mal: {
+      lastAuthCheck: string;
+      authFailures: number;
+      lastRequest: string;
+    };
+    simkl: {
+      lastAuthCheck: string;
+      authFailures: number;
+      lastRequest: string;
+      authStatus: string;
+      tokenExpiry: string | null;
+    };
+    loader: {
+      visible: boolean;
+      requestCount: number;
+    };
+  } {
     const now = Date.now();
     const uptime = now - this.metrics.startTime;
     const totalRequests = this.metrics.requestsProcessed + this.metrics.requestsFailed;
@@ -486,33 +723,43 @@ class RequestQueue {
     };
   }
 
-  getNextRequest() {
-    const priorities = ['high', 'normal', 'low'];
+  private getNextRequest(): RequestItem | null {
+    const priorities: Priority[] = ['high', 'normal', 'low'];
     for (const priority of priorities) {
       if (this.queues[priority].length > 0) {
-        return this.queues[priority].shift();
+        return this.queues[priority].shift()!;
       }
     }
     return null;
   }
   
-  getTotalQueueSize() {
+  private getTotalQueueSize(): number {
     return Object.values(this.queues).reduce((total, queue) => total + queue.length, 0);
   }
   
-  getQueueSizes() {
-    const sizes = {};
+  private getQueueSizes(): Record<Priority, number> {
+    const sizes: Record<Priority, number> = {} as Record<Priority, number>;
     Object.keys(this.queues).forEach(priority => {
-      sizes[priority] = this.queues[priority].length;
+      sizes[priority as Priority] = this.queues[priority as Priority].length;
     });
     return sizes;
   }
   
-  getHealthStatus() {
+  getHealthStatus(): {
+    status: 'healthy' | 'degraded' | 'unhealthy';
+    queueSize: number;
+    errorRate: string;
+    activeRequests: number;
+    rateLimitUtilization: Record<ServiceName, string>;
+    authStatus: {
+      mal: string;
+      simkl: string;
+    };
+  } {
     const queueSize = this.getTotalQueueSize();
     const errorRate = this.metrics.requestsFailed / (this.metrics.requestsProcessed + this.metrics.requestsFailed);
     
-    let status = 'healthy';
+    let status: 'healthy' | 'degraded' | 'unhealthy' = 'healthy';
     const malAuthFailures = this.services.mal.authState.consecutiveAuthFailures;
     const simklAuthFailures = this.services.simkl.authState.consecutiveAuthFailures;
     
@@ -533,7 +780,8 @@ class RequestQueue {
       rateLimitUtilization: {
         anilist: this.services.anilist.getUtilization(),
         mal: this.services.mal.getUtilization(),
-        simkl: this.services.simkl.getUtilization()
+        simkl: this.services.simkl.getUtilization(),
+        tmdb: this.services.tmdb.getUtilization()
       },
       authStatus: {
         mal: this.services.mal.getAuthStatus(),
@@ -542,18 +790,19 @@ class RequestQueue {
     };
   }
   
-  startBackgroundTasks() {
+  private startBackgroundTasks(): void {
     setInterval(() => {
       this.cleanup();
-    }, 5 * 60 * 1000);
+    }, 5 * 60 * 1000); // Every 5 minutes
   }
   
-  cleanup() {
+  private cleanup(): void {
     const now = Date.now();
     
+    // Clean up rate limiter data for all services
     Object.values(this.services).forEach(service => {
       service.rateLimiter.requests = service.rateLimiter.requests.filter(
-        time => now - time < service.rateLimiter.windowMs * 2
+        time => now - time < 120000 // Keep 2 minutes of history
       );
     });
     
@@ -568,11 +817,11 @@ class RequestQueue {
     }
   }
   
-  generateRequestId() {
+  private generateRequestId(): string {
     return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
   
-  formatDuration(ms) {
+  private formatDuration(ms: number): string {
     const seconds = Math.floor(ms / 1000);
     const minutes = Math.floor(seconds / 60);
     const hours = Math.floor(minutes / 60);
@@ -582,15 +831,16 @@ class RequestQueue {
     return `${seconds}s`;
   }
   
-  pause() {
+  pause(): void {
     this.state.isProcessing = true;
   }
   
-  resume() {
+  resume(): void {
     this.state.isProcessing = false;
     this.process();
   }
-  clear(priority = null) {
+
+  clear(priority: Priority | null = null): number {
     if (priority) {
       const cleared = this.queues[priority].length;
       this.queues[priority] = [];
@@ -598,7 +848,8 @@ class RequestQueue {
       return cleared;
     } else {
       let total = 0;
-      Object.keys(this.queues).forEach(p => {
+      const priorities: Priority[] = ['high', 'normal', 'low'];
+      priorities.forEach(p => {
         total += this.queues[p].length;
         this.queues[p] = [];
       });
@@ -607,9 +858,11 @@ class RequestQueue {
     }
   }
   
-  clearMalRequests() {
+  clearMalRequests(): number {
     let cleared = 0;
-    Object.keys(this.queues).forEach(priority => {
+    const priorities: Priority[] = ['high', 'normal', 'low'];
+    
+    priorities.forEach(priority => {
       const malRequests = this.queues[priority].filter(req => req.service === 'mal');
       this.queues[priority] = this.queues[priority].filter(req => req.service !== 'mal');
       cleared += malRequests.length;
@@ -623,9 +876,11 @@ class RequestQueue {
     return cleared;
   }
   
-  clearSimklRequests() {
+  clearSimklRequests(): number {
     let cleared = 0;
-    Object.keys(this.queues).forEach(priority => {
+    const priorities: Priority[] = ['high', 'normal', 'low'];
+    
+    priorities.forEach(priority => {
       const simklRequests = this.queues[priority].filter(req => req.service === 'simkl');
       this.queues[priority] = this.queues[priority].filter(req => req.service !== 'simkl');
       cleared += simklRequests.length;
@@ -639,13 +894,15 @@ class RequestQueue {
     return cleared;
   }
   
-  clearRequestsByService(serviceName) {
-    if (!['anilist', 'mal', 'simkl'].includes(serviceName)) {
+  clearRequestsByService(serviceName: ServiceName): number {
+    if (!(['anilist', 'mal', 'simkl', 'tmdb'] as ServiceName[]).includes(serviceName)) {
       throw new Error(`Unknown service: ${serviceName}`);
     }
     
     let cleared = 0;
-    Object.keys(this.queues).forEach(priority => {
+    const priorities: Priority[] = ['high', 'normal', 'low'];
+    
+    priorities.forEach(priority => {
       const serviceRequests = this.queues[priority].filter(req => req.service === serviceName);
       this.queues[priority] = this.queues[priority].filter(req => req.service !== serviceName);
       cleared += serviceRequests.length;
@@ -660,14 +917,16 @@ class RequestQueue {
   }
   
   // Get service-specific queue statistics
-  getServiceQueueStats() {
-    const stats = {
+  getServiceQueueStats(): Record<ServiceName, Record<Priority | 'total', number>> {
+    const stats: Record<ServiceName, Record<Priority | 'total', number>> = {
       anilist: { high: 0, normal: 0, low: 0, total: 0 },
       mal: { high: 0, normal: 0, low: 0, total: 0 },
-      simkl: { high: 0, normal: 0, low: 0, total: 0 }
+      simkl: { high: 0, normal: 0, low: 0, total: 0 },
+      tmdb: { high: 0, normal: 0, low: 0, total: 0 }
     };
     
-    Object.keys(this.queues).forEach(priority => {
+    const priorities: Priority[] = ['high', 'normal', 'low'];
+    priorities.forEach(priority => {
       this.queues[priority].forEach(req => {
         const service = req.service || 'anilist';
         stats[service][priority]++;
@@ -679,30 +938,38 @@ class RequestQueue {
   }
   
   // Update token expiry for Simkl
-  updateSimklTokenExpiry(expiresIn) {
+  updateSimklTokenExpiry(expiresIn: number): void {
     this.services.simkl.updateTokenExpiry(expiresIn);
   }
   
-  async destroy() {
+  async destroy(): Promise<void> {
     // Clear debounce timeout
     if (this.loaderState.debounceTimeout) {
       clearTimeout(this.loaderState.debounceTimeout);
     }
     
+    // Wait for all active requests to complete
     const activeRequests = Array.from(this.state.activeRequests.values());
     if (activeRequests.length > 0) {
       await Promise.allSettled(
         activeRequests.map(req => 
-          new Promise(resolve => {
+          new Promise<void>(resolve => {
             const originalResolve = req.resolve;
             const originalReject = req.reject;
-            req.resolve = (...args) => { originalResolve(...args); resolve(); };
-            req.reject = (...args) => { originalReject(...args); resolve(); };
+            req.resolve = (...args: unknown[]) => { 
+              originalResolve(...args); 
+              resolve(); 
+            };
+            req.reject = (...args: unknown[]) => { 
+              originalReject(...args); 
+              resolve(); 
+            };
           })
         )
       );
     }
     
+    // Clear all queues
     this.clear();
     this.hideGlobalLoader();
   }

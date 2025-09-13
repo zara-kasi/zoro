@@ -1,13 +1,3 @@
-/**
- * MalApi
- * Migrated from MalApi.js → MalApi.ts
- * - Added comprehensive TypeScript interfaces for MAL API data structures
- * - Converted ES module imports/exports
- * - Added type guards for API responses and OAuth flows
- * - Typed all method parameters and return values
- * - Preserved all runtime behavior and status mapping logic
- */
-
 import { requestUrl } from 'obsidian';
 import type { Plugin } from 'obsidian';
 import { ZoroError } from '../../core/ZoroError';

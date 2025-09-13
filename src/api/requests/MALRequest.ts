@@ -1,11 +1,3 @@
-/**
- * MyAnimeList API request handler with rate limiting, authentication, and retry logic
- * Migrated from MALRequest.js → MALRequest.ts
- * - Added comprehensive types for configuration and authentication state
- * - Typed rate limiting and authentication validation
- * - Added proper error handling with authentication awareness
- */
-
 import type { Plugin } from 'obsidian';
 
 // Configuration and state interfaces
@@ -293,4 +285,3 @@ export class MALRequest {
   }
 }
 
-export { MALRequest };

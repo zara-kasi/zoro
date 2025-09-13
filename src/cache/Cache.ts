@@ -1,11 +1,3 @@
-/**
- * Cache system for Obsidian plugin data persistence
- * Migrated from Cache.js → Cache.ts
- * - Added comprehensive types for all data structures and method signatures
- * - Converted ES module syntax (already present)
- * - Typed Obsidian plugin integration
- */
-
 import type { Plugin } from 'obsidian';
 import { Notice } from 'obsidian';
 
@@ -1194,5 +1186,3 @@ export class Cache {
     return cleared;
   }
 }
-
-export { Cache };

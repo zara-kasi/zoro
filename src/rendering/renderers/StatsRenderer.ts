@@ -6,7 +6,7 @@
  * - Added Plugin type from obsidian for parent reference
  */
 import type { Plugin } from 'obsidian';
-import { DOMHelper } from '../helpers/DOMHelper.js';
+import { DOMHelper } from '../helpers/DOMHelper';
 
 interface MediaTitle {
   english?: string;

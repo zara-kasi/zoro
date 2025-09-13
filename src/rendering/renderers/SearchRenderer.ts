@@ -1,10 +1,3 @@
-/**
- * SearchRenderer
- * Migrated from SearchRenderer.js → SearchRenderer.ts
- * - Added types for media objects, config, and API responses
- * - Typed parent renderer dependencies and plugin interface
- * - Added proper event handler typing for input events
- */
 import { setIcon } from 'obsidian';
 import type { Plugin } from 'obsidian';
 import { DOMHelper } from '../helpers/DOMHelper';

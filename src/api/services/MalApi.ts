@@ -1,11 +1,271 @@
+/**
+ * MalApi
+ * Migrated from MalApi.js → MalApi.ts
+ * - Added comprehensive TypeScript interfaces for MAL API data structures
+ * - Converted ES module imports/exports
+ * - Added type guards for API responses and OAuth flows
+ * - Typed all method parameters and return values
+ * - Preserved all runtime behavior and status mapping logic
+ */
+
 import { requestUrl } from 'obsidian';
+import type { Plugin } from 'obsidian';
 import { ZoroError } from '../../core/ZoroError.js';
 
-class MalApi {
-  constructor(plugin) {
+// =================== TYPE DEFINITIONS ===================
+
+interface MalApiConfig {
+  requestTimeout: number;
+}
+
+interface RequestConfig {
+  type?: 'stats' | 'single' | 'search' | 'list' | 'item';
+  mediaType?: 'ANIME' | 'MANGA';
+  username?: string;
+  mediaId?: string | number;
+  search?: string;
+  query?: string;
+  page?: number;
+  perPage?: number;
+  limit?: number;
+  listType?: string;
+  layout?: 'compact' | 'card' | 'full' | 'standard' | 'minimal' | 'detailed';
+  nocache?: boolean;
+  priority?: 'low' | 'normal' | 'high';
+}
+
+interface CacheOptions {
+  scope: string;
+  source: string;
+  ttl?: number | null;
+}
+
+interface MediaListUpdates {
+  status?: string;
+  score?: number | null;
+  progress?: number;
+}
+
+interface ClassifiedError {
+  type: string;
+  message: string;
+  severity: 'error' | 'warn' | 'info';
+  retryable: boolean;
+}
+
+interface RequestParams {
+  url: string;
+  method?: string;
+  headers?: Record<string, string>;
+  body?: string;
+  requestId: string;
+  priority?: 'low' | 'normal' | 'high';
+  metadata?: Record<string, unknown>;
+}
+
+interface MALResponse {
+  data?: unknown[];
+  error?: string;
+  message?: string;
+  [key: string]: unknown;
+}
+
+interface MALListEntry {
+  node?: MALMedia;
+  list_status?: {
+    id?: number;
+    status: string;
+    score: number;
+    num_episodes_watched?: number;
+    num_chapters_read?: number;
+    num_volumes_read?: number;
+    is_rewatching?: boolean;
+    is_rereading?: boolean;
+    updated_at?: string;
+  };
+  id?: number;
+  title?: string;
+  main_picture?: {
+    medium?: string;
+    large?: string;
+  };
+  media_type?: string;
+  status?: string;
+  genres?: Array<{ name: string }>;
+  num_episodes?: number;
+  num_chapters?: number;
+  mean?: number;
+  start_date?: string;
+  end_date?: string;
+}
+
+interface MALMedia {
+  id: number;
+  title: string;
+  main_picture?: {
+    medium?: string;
+    large?: string;
+  };
+  alternative_titles?: {
+    en?: string;
+    ja?: string;
+  };
+  start_date?: string;
+  end_date?: string;
+  synopsis?: string;
+  mean?: number;
+  rank?: number;
+  popularity?: number;
+  num_list_users?: number;
+  num_scoring_users?: number;
+  nsfw?: string;
+  created_at?: string;
+  updated_at?: string;
+  media_type?: string;
+  status?: string;
+  genres?: Array<{ name: string }>;
+  num_episodes?: number;
+  num_chapters?: number;
+  studios?: Array<{ name: string }>;
+}
+
+interface MALUser {
+  id: number;
+  name: string;
+  picture?: string;
+  anime_statistics?: {
+    num_items?: number;
+    num_days_watched?: number;
+    num_episodes?: number;
+    mean_score?: number;
+  };
+  manga_statistics?: {
+    num_items?: number;
+    num_chapters?: number;
+    num_volumes?: number;
+    mean_score?: number;
+  };
+}
+
+interface OAuthTokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  refresh_token?: string;
+}
+
+interface TransformedMedia {
+  id: number;
+  idMal: number;
+  title: {
+    romaji: string;
+    english: string;
+    native: string;
+  };
+  coverImage: {
+    large: string | null;
+    medium: string | null;
+  };
+  format: string | null;
+  averageScore: number | null;
+  status: string | null;
+  genres: string[];
+  episodes: number | null;
+  chapters: number | null;
+  isFavourite: boolean;
+  startDate: DateObject | null;
+  endDate: DateObject | null;
+  description: string | null;
+  meanScore: number | null;
+  popularity: number | null;
+  favourites: number | null;
+  studios: { nodes: Array<{ name: string }> } | null;
+}
+
+interface DateObject {
+  year: number;
+  month: number;
+  day: number;
+}
+
+interface TransformedListEntry {
+  id: number | null;
+  status: string | null;
+  score: number;
+  progress: number;
+  chaptersRead: number | null;
+  volumesRead: number | null;
+  media: TransformedMedia;
+}
+
+interface TransformedUser {
+  id: number | null;
+  name: string;
+  avatar: {
+    large: string | null;
+    medium: string | null;
+  };
+  mediaListOptions: {
+    scoreFormat: string;
+  };
+  statistics: {
+    anime: UserStats;
+    manga: UserStats;
+  };
+  favourites: {
+    anime: { nodes: unknown[] };
+    manga: { nodes: unknown[] };
+  };
+}
+
+interface UserStats {
+  count: number;
+  meanScore: number;
+  standardDeviation: number;
+  episodesWatched?: number;
+  minutesWatched?: number;
+  chaptersRead?: number;
+  volumesRead?: number;
+  statuses: Array<{ status: string; count: number }>;
+  scores: Array<{ score: number; count: number }>;
+  formats: Array<{ format: string; count: number }>;
+  releaseYears: Array<{ releaseYear: number; count: number }>;
+  genres: string[];
+}
+
+// Type guard functions
+function assertIsMALResponse(value: unknown): asserts value is MALResponse {
+  if (!value || typeof value !== 'object') {
+    throw new Error('Invalid MAL API response structure');
+  }
+}
+
+function assertIsOAuthResponse(value: unknown): asserts value is OAuthTokenResponse {
+  if (!value || typeof value !== 'object') {
+    throw new Error('Invalid OAuth response structure');
+  }
+  const response = value as Record<string, unknown>;
+  if (typeof response.access_token !== 'string') {
+    throw new Error('OAuth response missing access_token');
+  }
+}
+
+export class MalApi {
+  private plugin: Plugin;
+  private requestQueue: any; // TODO: type when RequestQueue is migrated
+  private cache: any; // TODO: type when Cache is migrated
+  private baseUrl: string;
+  private tokenUrl: string;
+  private config: MalApiConfig;
+  private fieldSets: Record<string, string>;
+  private searchFieldSets: Record<string, string>;
+  private malToAniListStatus: Record<string, string>;
+  private aniListToMalStatus: Record<string, string>;
+
+  constructor(plugin: Plugin) {
     this.plugin = plugin;
-    this.requestQueue = plugin.requestQueue; // Use the RequestQueue instance
-    this.cache = plugin.cache;
+    this.requestQueue = (plugin as any).requestQueue;
+    this.cache = (plugin as any).cache;
     
     this.baseUrl = 'https://api.myanimelist.net/v2';
     this.tokenUrl = 'https://myanimelist.net/v1/oauth2/token';
@@ -43,16 +303,16 @@ class MalApi {
 
   // =================== CORE REQUEST METHODS ===================
 
-  createCacheKey(config) {
-    const sortedConfig = {};
+  createCacheKey(config: RequestConfig): string {
+    const sortedConfig: Record<string, unknown> = {};
     Object.keys(config).sort().forEach(key => {
       if (key === 'malAccessToken' || key === 'malClientSecret') return;
-      sortedConfig[key] = config[key];
+      sortedConfig[key] = (config as any)[key];
     });
     return JSON.stringify(sortedConfig);
   }
 
-  async fetchMALData(config) {
+  async fetchMALData(config: RequestConfig): Promise<unknown> {
     const requestId = this.generateRequestId();
     const startTime = performance.now();
     
@@ -87,8 +347,8 @@ class MalApi {
       const transformedData = this.transformResponse(result, config);
       
       // Handle stats enrichment if needed
-      if (config.type === 'stats' && transformedData?.User) {
-        await this.attachMALDistributions(transformedData.User);
+      if (config.type === 'stats' && transformedData && typeof transformedData === 'object' && 'User' in transformedData) {
+        await this.attachMALDistributions((transformedData as any).User);
       }
       
       // Cache successful results with proper source parameter
@@ -100,7 +360,7 @@ class MalApi {
       }
       
       const duration = performance.now() - startTime;
-      this.log('REQUEST_SUCCESS', config.type, requestId, `${duration.toFixed(1)}ms`);
+      this.log('REQUEST_SUCCESS', config.type || 'unknown', requestId, `${duration.toFixed(1)}ms`);
       
       return transformedData;
       
@@ -108,7 +368,7 @@ class MalApi {
       const duration = performance.now() - startTime;
       const classifiedError = this.classifyError(error, config);
       
-      this.log('REQUEST_FAILED', config.type, requestId, {
+      this.log('REQUEST_FAILED', config.type || 'unknown', requestId, {
         error: classifiedError.type,
         message: classifiedError.message,
         duration: `${duration.toFixed(1)}ms`
@@ -118,25 +378,25 @@ class MalApi {
     }
   }
 
-  async makeRawRequest(requestParams) {
+  async makeRawRequest(requestParams: RequestParams): Promise<unknown> {
     // Create requestFn that wraps the actual requestUrl call
-    const requestFn = async () => {
-      const headers = {
+    const requestFn = async (): Promise<unknown> => {
+      const headers: Record<string, string> = {
         'Accept': 'application/json',
-        'User-Agent': `Zoro-Plugin/${this.plugin.manifest.version}`,
+        'User-Agent': `Zoro-Plugin/${(this.plugin as any).manifest.version}`,
         'X-Request-ID': requestParams.requestId,
         ...requestParams.headers
       };
 
       // Always include MAL client id for public endpoints
-      if (this.plugin.settings.malClientId) {
-        headers['X-MAL-CLIENT-ID'] = this.plugin.settings.malClientId;
+      if ((this.plugin as any).settings.malClientId) {
+        headers['X-MAL-CLIENT-ID'] = (this.plugin as any).settings.malClientId;
       }
 
       // Add authentication header only for non-search requests
-      if (this.requiresAuth(requestParams.metadata?.type)) {
-        if (this.plugin.settings.malAccessToken) {
-          headers['Authorization'] = `Bearer ${this.plugin.settings.malAccessToken}`;
+      if (this.requiresAuth(requestParams.metadata?.type as string)) {
+        if ((this.plugin as any).settings.malAccessToken) {
+          headers['Authorization'] = `Bearer ${(this.plugin as any).settings.malAccessToken}`;
         }
       }
 
@@ -153,7 +413,7 @@ class MalApi {
       
       // Handle rate limiting
       if (response.status === 429) {
-        const error = new Error('Rate limit exceeded');
+        const error = new Error('Rate limit exceeded') as any;
         error.status = 429;
         error.type = 'RATE_LIMITED';
         error.retryable = true;
@@ -161,7 +421,7 @@ class MalApi {
       }
       
       if (response.status >= 400) {
-        const error = new Error(`HTTP ${response.status}: ${response.text || 'Unknown error'}`);
+        const error = new Error(`HTTP ${response.status}: ${response.text || 'Unknown error'}`) as any;
         error.status = response.status;
         error.type = 'HTTP_ERROR';
         error.retryable = response.status >= 500;
@@ -171,7 +431,7 @@ class MalApi {
       const result = response.json;
       
       if (result?.error) {
-        const error = new Error(result.message || 'MAL API error');
+        const error = new Error(result.message || 'MAL API error') as any;
         error.type = 'API_ERROR';
         error.originalError = result.error;
         error.retryable = false;
@@ -197,7 +457,7 @@ class MalApi {
 
   // =================== UPDATE METHOD ===================
 
-  async updateMediaListEntry(mediaId, updates) {
+  async updateMediaListEntry(mediaId: string | number, updates: MediaListUpdates): Promise<TransformedListEntry> {
     const requestId = this.generateRequestId();
     const startTime = performance.now();
     
@@ -205,7 +465,7 @@ class MalApi {
       this.validateMediaId(mediaId);
       this.validateUpdates(updates);
       
-      if (!this.plugin.settings.malAccessToken) {
+      if (!(this.plugin as any).settings.malAccessToken) {
         throw new Error('Authentication required to update entries');
       }
 
@@ -213,7 +473,7 @@ class MalApi {
       const endpoint = mediaType === 'anime' ? 'anime' : 'manga';
       const body = this.buildUpdateBody(updates, mediaType);
       
-      const requestParams = {
+      const requestParams: RequestParams = {
         url: `${this.baseUrl}/${endpoint}/${mediaId}/my_list_status`,
         method: 'PUT',
         body: body.toString(),
@@ -225,7 +485,7 @@ class MalApi {
         metadata: { type: 'update', mediaId }
       };
 
-      const result = await this.makeRawRequest(requestParams);
+      const result = await this.makeRawRequest(requestParams) as MALListEntry;
 
       // Invalidate related cache
       await this.invalidateRelatedCache(mediaId, updates);
@@ -254,7 +514,7 @@ class MalApi {
     }
   }
 
-  buildUpdateBody(updates, mediaType) {
+  buildUpdateBody(updates: MediaListUpdates, mediaType: string): URLSearchParams {
     const body = new URLSearchParams();
     
     // Set rewatching/rereading to false by default
@@ -277,7 +537,7 @@ class MalApi {
     }
     
     if (updates.progress !== undefined && updates.progress !== null) {
-      const progress = Math.max(0, parseInt(updates.progress) || 0);
+      const progress = Math.max(0, parseInt(String(updates.progress)) || 0);
       const progressField = mediaType === 'anime' ? 'num_watched_episodes' : 'num_chapters_read';
       body.append(progressField, progress.toString());
     }
@@ -289,33 +549,54 @@ class MalApi {
     return body;
   }
 
-  transformUpdateResponse(malResponse, originalUpdates, mediaType) {
+  transformUpdateResponse(malResponse: MALListEntry, originalUpdates: MediaListUpdates, mediaType: string): TransformedListEntry {
     return {
-      id: malResponse.id || null,
-      status: malResponse.status ? 
-        this.mapMALStatusToAniList(malResponse.status, mediaType) : 
-        originalUpdates.status,
-      score: malResponse.score !== undefined ? 
-        malResponse.score : 
+      id: (malResponse as any).id || null,
+      status: (malResponse as any).status ? 
+        this.mapMALStatusToAniList((malResponse as any).status, mediaType) : 
+        originalUpdates.status || null,
+      score: (malResponse as any).score !== undefined ? 
+        (malResponse as any).score : 
         (originalUpdates.score || 0),
       progress: mediaType === 'anime' 
-        ? (malResponse.num_episodes_watched !== undefined ? 
-           malResponse.num_episodes_watched : 
+        ? ((malResponse as any).num_episodes_watched !== undefined ? 
+           (malResponse as any).num_episodes_watched : 
            (originalUpdates.progress || 0))
-        : (malResponse.num_chapters_read !== undefined ? 
-           malResponse.num_chapters_read : 
+        : ((malResponse as any).num_chapters_read !== undefined ? 
+           (malResponse as any).num_chapters_read : 
            (originalUpdates.progress || 0)),
+      chaptersRead: null,
+      volumesRead: null,
       media: {
-        id: malResponse.id || null,
-        idMal: malResponse.id || null,
-        title: { romaji: malResponse.title || 'Unknown Title' }
+        id: (malResponse as any).id || 0,
+        idMal: (malResponse as any).id || 0,
+        title: { 
+          romaji: (malResponse as any).title || 'Unknown Title',
+          english: (malResponse as any).title || 'Unknown Title',
+          native: (malResponse as any).title || 'Unknown Title'
+        },
+        coverImage: { large: null, medium: null },
+        format: null,
+        averageScore: null,
+        status: null,
+        genres: [],
+        episodes: null,
+        chapters: null,
+        isFavourite: false,
+        startDate: null,
+        endDate: null,
+        description: null,
+        meanScore: null,
+        popularity: null,
+        favourites: null,
+        studios: null
       }
     };
   }
 
   // =================== ERROR HANDLING ===================
 
-  classifyError(error, context = {}) {
+  classifyError(error: any, context: RequestConfig = {}): ClassifiedError {
     if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
       return { type: 'NETWORK_ERROR', message: error.message, severity: 'error', retryable: true };
     }
@@ -347,8 +628,8 @@ class MalApi {
     return { type: 'UNKNOWN_ERROR', message: error.message, severity: 'error', retryable: false };
   }
 
-  createZoroError(classifiedError) {
-    const errorMessages = {
+  createZoroError(classifiedError: ClassifiedError): Error {
+    const errorMessages: Record<string, string> = {
       'NETWORK_ERROR': 'Connection issue. Please check your internet connection and try again.',
       'TIMEOUT': 'Request timed out. Please try again.',
       'RATE_LIMITED': 'Too many requests. Please wait a moment and try again.',
@@ -364,7 +645,7 @@ class MalApi {
     // Use ZoroError.notify for user feedback and create a proper Error object
     ZoroError.notify(userMessage, classifiedError.severity);
     
-    const error = new Error(classifiedError.message);
+    const error = new Error(classifiedError.message) as any;
     error.type = classifiedError.type;
     error.severity = classifiedError.severity;
     error.retryable = classifiedError.retryable;
@@ -375,7 +656,7 @@ class MalApi {
 
   // =================== VALIDATION & UTILITY METHODS ===================
 
-  validateConfig(config) {
+  validateConfig(config: RequestConfig): void {
     if (!config || typeof config !== 'object') {
       throw new Error('Configuration must be an object');
     }
@@ -393,14 +674,14 @@ class MalApi {
     }
   }
 
-  validateMediaId(mediaId) {
-    const id = parseInt(mediaId);
+  validateMediaId(mediaId: string | number): void {
+    const id = parseInt(String(mediaId));
     if (!id || id <= 0) {
       throw new Error(`Invalid media ID: ${mediaId}`);
     }
   }
 
-  validateUpdates(updates) {
+  validateUpdates(updates: MediaListUpdates): void {
     if (!updates || typeof updates !== 'object') {
       throw new Error('Updates must be an object');
     }
@@ -410,38 +691,38 @@ class MalApi {
     }
   }
 
-  validateResponse(response) {
+  validateResponse(response: any): void {
     if (!response || typeof response !== 'object') {
       throw new Error('Invalid response from MAL');
     }
   }
 
-  generateRequestId() {
+  generateRequestId(): string {
     return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
-  sleep(ms) {
+  sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   // =================== CACHE MANAGEMENT ===================
 
-  determineCacheType(config) {
-    const typeMap = {
+  determineCacheType(config: RequestConfig): string {
+    const typeMap: Record<string, string> = {
       'stats': 'userData',
       'single': 'mediaData',
       'item': 'mediaData',
       'search': 'searchResults',
       'list': 'userData'
     };
-    return typeMap[config.type] || 'userData';
+    return typeMap[config.type || ''] || 'userData';
   }
 
-  getCacheTTL(config) {
+  getCacheTTL(config: RequestConfig): null {
     return null; // Use cache's built-in TTL system
   }
 
-  async invalidateRelatedCache(mediaId, updates) {
+  async invalidateRelatedCache(mediaId: string | number, updates: MediaListUpdates): Promise<void> {
     this.cache.invalidateByMedia(mediaId, { source: 'mal' });
     
     if (updates.status) {
@@ -458,7 +739,7 @@ class MalApi {
 
   // =================== OAUTH METHOD ===================
 
-  async makeObsidianRequest(code, redirectUri) {
+  async makeObsidianRequest(code: string, redirectUri: string): Promise<OAuthTokenResponse> {
     const requestId = this.generateRequestId();
     const startTime = performance.now();
     
@@ -473,14 +754,14 @@ class MalApi {
 
       const body = new URLSearchParams({
         grant_type: 'authorization_code',
-        client_id: this.plugin.settings.malClientId,
-        client_secret: this.plugin.settings.malClientSecret || '',
+        client_id: (this.plugin as any).settings.malClientId,
+        client_secret: (this.plugin as any).settings.malClientSecret || '',
         redirect_uri: redirectUri,
         code: code,
-        code_verifier: this.plugin.settings.malCodeVerifier || ''
+        code_verifier: (this.plugin as any).settings.malCodeVerifier || ''
       });
 
-      const requestParams = {
+      const requestParams: RequestParams = {
         url: this.tokenUrl,
         method: 'POST',
         headers: {
@@ -498,6 +779,8 @@ class MalApi {
       if (!result || typeof result !== 'object') {
         throw new Error('Invalid response structure from MAL');
       }
+
+      assertIsOAuthResponse(result);
 
       const duration = performance.now() - startTime;
       this.log('AUTH_SUCCESS', 'oauth', requestId, `${duration.toFixed(1)}ms`);
@@ -517,7 +800,7 @@ class MalApi {
     }
   }
 
-  getMALUrl(mediaId, mediaType = 'ANIME') {
+  getMALUrl(mediaId: string | number, mediaType: string = 'ANIME'): string {
     try {
       this.validateMediaId(mediaId);
       
@@ -529,7 +812,7 @@ class MalApi {
       this.log('URL_GENERATION_FAILED', 'utility', this.generateRequestId(), {
         mediaId,
         mediaType,
-        error: error.message
+        error: (error as Error).message
       });
       throw error;
     }
@@ -537,7 +820,7 @@ class MalApi {
 
   // =================== REQUEST BUILDERS ===================
 
-  buildRequestParams(config, requestId) {
+  buildRequestParams(config: RequestConfig, requestId: string): RequestParams {
     const url = this.buildEndpointUrl(config);
     const params = this.buildQueryParams(config);
     
@@ -551,7 +834,7 @@ class MalApi {
     };
   }
 
-  buildEndpointUrl(config) {
+  buildEndpointUrl(config: RequestConfig): string {
     switch (config.type) {
       case 'stats':
         return `${this.baseUrl}/users/@me`;
@@ -568,20 +851,20 @@ class MalApi {
         }
       case 'item':
         const itemType = config.mediaType === 'ANIME' ? 'anime' : 'manga';
-        return `${this.baseUrl}/${itemType}/${parseInt(config.mediaId)}`;
+        return `${this.baseUrl}/${itemType}/${parseInt(String(config.mediaId))}`;
       default:
         throw new Error(`Unknown type: ${config.type}`);
     }
   }
 
-  buildQueryParams(config) {
-    const params = {};
+  buildQueryParams(config: RequestConfig): Record<string, string> {
+    const params: Record<string, string> = {};
     
     switch (config.type) {
       case 'single':
       case 'list':
         params.fields = this.getFieldsForLayout(config.layout || 'card', false);
-        params.limit = config.limit || 1000;
+        params.limit = String(config.limit || 1000);
         
         if (config.listType && config.listType !== 'ALL') {
           const malStatus = this.mapAniListStatusToMAL(config.listType, config.mediaType?.toLowerCase());
@@ -594,7 +877,7 @@ class MalApi {
         
       case 'search':
         params.q = (config.search || config.query || '').trim();
-        params.limit = config.perPage || 25;
+        params.limit = String(config.perPage || 25);
         // MAL search does not support offset param on v2 search; keep limit only
         // fields are not accepted on search endpoints
         break;
@@ -611,57 +894,57 @@ class MalApi {
     return params;
   }
 
-  buildFullUrl(baseUrl, params) {
+  buildFullUrl(baseUrl: string, params: Record<string, string>): string {
     if (!params || Object.keys(params).length === 0) return baseUrl;
     const queryString = new URLSearchParams(params).toString();
     return `${baseUrl}?${queryString}`;
   }
 
-  getBaseHeaders(requestId) {
+  getBaseHeaders(requestId: string): Record<string, string> {
     return {
       'Accept': 'application/json',
-      'User-Agent': `Zoro-Plugin/${this.plugin.manifest.version}`,
+      'User-Agent': `Zoro-Plugin/${(this.plugin as any).manifest.version}`,
       'X-Request-ID': requestId
     };
   }
 
-  getFieldsForLayout(layout = 'card', isSearch = false) {
+  getFieldsForLayout(layout: string = 'card', isSearch: boolean = false): string {
     const fieldSet = isSearch ? this.searchFieldSets : this.fieldSets;
     return fieldSet[layout] || fieldSet.card;
   }
 
   // =================== RESPONSE TRANSFORMERS ===================
 
-  transformResponse(data, config) {
+  transformResponse(data: unknown, config: RequestConfig): unknown {
     switch (config.type) {
       case 'search':
-        return { Page: { media: data.data?.map(item => this.transformMedia(item)) || [] } };
+        return { Page: { media: (data as any).data?.map((item: MALListEntry) => this.transformMedia(item)) || [] } };
       case 'single':
         return { MediaList: null };
       case 'item':
-        return { Media: this.transformMedia(data) };
+        return { Media: this.transformMedia(data as MALListEntry) };
       case 'stats':
-        return { User: this.transformUser(data) };
+        return { User: this.transformUser(data as MALUser) };
       default:
         return {
           MediaListCollection: {
             lists: [{ 
-              entries: data.data?.map(item => this.transformListEntry(item, config)) || [] 
+              entries: (data as any).data?.map((item: MALListEntry) => this.transformListEntry(item, config)) || [] 
             }]
           }
         };
     }
   }
 
-  transformListEntry(malEntry, config = {}) {
+  transformListEntry(malEntry: MALListEntry, config: RequestConfig = {}): TransformedListEntry {
     const media = malEntry.node || malEntry;
     const listStatus = malEntry.list_status;
-    const mediaType = media?.media_type || 'tv';
+    const mediaType = (media as any)?.media_type || 'tv';
     
-    let status = null;
+    let status: string | null = null;
     let score = 0;
     let progress = 0;
-    let entryId = null;
+    let entryId: number | null = null;
 
     if (listStatus) {
       status = this.mapMALStatusToAniList(listStatus.status, mediaType);
@@ -692,8 +975,8 @@ class MalApi {
     };
   }
 
-  transformMedia(malMedia) {
-    const media = malMedia.node || malMedia;
+  transformMedia(malMedia: MALListEntry | MALMedia): TransformedMedia {
+    const media = (malMedia as MALListEntry).node || malMedia as MALMedia;
     
     return {
       id: media.id,
@@ -724,7 +1007,7 @@ class MalApi {
     };
   }
 
-  transformUser(malUser) {
+  transformUser(malUser: MALUser): TransformedUser {
     const animeStats = malUser?.anime_statistics || {};
     const mangaStats = malUser?.manga_statistics || {};
 
@@ -778,7 +1061,7 @@ class MalApi {
     };
   }
 
-  parseDate(dateString) {
+  parseDate(dateString: string | undefined): DateObject | null {
     if (!dateString) return null;
     
     try {
@@ -797,13 +1080,13 @@ class MalApi {
 
   // =================== STATUS MAPPING ===================
 
-  mapAniListStatusToMAL(aniListStatus, mediaType = 'anime') {
+  mapAniListStatusToMAL(aniListStatus: string, mediaType: string = 'anime'): string | null {
     if (!aniListStatus) return null;
     
     const isAnime = mediaType === 'anime' || mediaType === 'tv' || mediaType === 'movie' || 
                    mediaType === 'special' || mediaType === 'ova' || mediaType === 'ona';
     
-    const statusMap = {
+    const statusMap: Record<string, string> = {
       'CURRENT': isAnime ? 'watching' : 'reading',
       'COMPLETED': 'completed',
       'PAUSED': 'on_hold',
@@ -815,10 +1098,10 @@ class MalApi {
     return statusMap[aniListStatus] || null;
   }
 
-  mapMALStatusToAniList(malStatus, mediaType = 'anime') {
+  mapMALStatusToAniList(malStatus: string, mediaType: string = 'anime'): string | null {
     if (!malStatus) return null;
     
-    const statusMap = {
+    const statusMap: Record<string, string> = {
       'watching': 'CURRENT',
       'reading': 'CURRENT', 
       'completed': 'COMPLETED',
@@ -833,11 +1116,11 @@ class MalApi {
 
   // =================== AUTHENTICATION ===================
 
-  async getAuthenticatedUsername() {
+  async getAuthenticatedUsername(): Promise<string | null> {
     try {
-      if (!this.plugin.settings.malAccessToken) return null;
+      if (!(this.plugin as any).settings.malAccessToken) return null;
       
-      const requestParams = {
+      const requestParams: RequestParams = {
         url: `${this.baseUrl}/users/@me?fields=id,name`,
         method: 'GET',
         requestId: this.generateRequestId(),
@@ -845,27 +1128,27 @@ class MalApi {
         metadata: { type: 'user_info' }
       };
       
-      const result = await this.makeRawRequest(requestParams);
+      const result = await this.makeRawRequest(requestParams) as { name?: string };
       return result?.name || null;
       
     } catch (error) {
-      console.warn('[MAL] getAuthenticatedUsername failed:', error.message);
+      console.warn('[MAL] getAuthenticatedUsername failed:', (error as Error).message);
       return null;
     }
   }
 
-  requiresAuth(requestType) {
+  requiresAuth(requestType: string): boolean {
     return requestType !== 'search';
   }
 
   // =================== UTILITY METHODS ===================
 
-  async getMediaType(mediaId) {
+  async getMediaType(mediaId: string | number): Promise<string> {
     const types = ['anime', 'manga'];
     
     for (const type of types) {
       try {
-        const requestParams = {
+        const requestParams: RequestParams = {
           url: `${this.baseUrl}/${type}/${mediaId}?fields=id`,
           method: 'GET',
           requestId: this.generateRequestId(),
@@ -873,7 +1156,7 @@ class MalApi {
           metadata: { type: 'media_type_check' }
         };
         
-        const response = await this.makeRawRequest(requestParams);
+        const response = await this.makeRawRequest(requestParams) as { error?: string };
         if (response && !response.error) return type;
       } catch (error) {
         continue;
@@ -884,7 +1167,7 @@ class MalApi {
 
   // =================== ENHANCED FEATURES ===================
 
-  async attachMALDistributions(user) {
+  async attachMALDistributions(user: TransformedUser): Promise<void> {
     try {
       const [animeEntries, mangaEntries] = await Promise.all([
         this.fetchUserListEntries('ANIME'),
@@ -909,18 +1192,18 @@ class MalApi {
     }
   }
 
-  async fetchUserListEntries(mediaType) {
-    const listConfig = { type: 'list', mediaType, layout: 'card', limit: 1000 };
+  async fetchUserListEntries(mediaType: string): Promise<TransformedListEntry[]> {
+    const listConfig: RequestConfig = { type: 'list', mediaType, layout: 'card', limit: 1000 };
     const requestParams = this.buildRequestParams(listConfig, this.generateRequestId());
     
     const raw = await this.makeRawRequest(requestParams);
     const transformed = this.transformResponse(raw, listConfig);
-    const entries = transformed?.MediaListCollection?.lists?.[0]?.entries || [];
+    const entries = (transformed as any)?.MediaListCollection?.lists?.[0]?.entries || [];
     return entries;
   }
 
-  aggregateDistributionsFromEntries(entries, typeLower) {
-    const result = {
+  aggregateDistributionsFromEntries(entries: TransformedListEntry[], typeLower: string): Partial<UserStats> {
+    const result: Partial<UserStats> = {
       statuses: [],
       scores: [],
       formats: [],
@@ -930,11 +1213,11 @@ class MalApi {
 
     if (!Array.isArray(entries) || entries.length === 0) return result;
 
-    const statusCounts = new Map();
-    const scoreCounts = new Map();
-    const formatCounts = new Map();
-    const yearCounts = new Map();
-    const genreSet = new Set();
+    const statusCounts = new Map<string, number>();
+    const scoreCounts = new Map<number, number>();
+    const formatCounts = new Map<string, number>();
+    const yearCounts = new Map<number, number>();
+    const genreSet = new Set<string>();
 
     for (const entry of entries) {
       const status = entry?.status;
@@ -985,7 +1268,7 @@ class MalApi {
     return result;
   }
 
-  applyStatsFallbacks(entries, statsObj, type) {
+  applyStatsFallbacks(entries: TransformedListEntry[], statsObj: UserStats | undefined, type: string): void {
     if (!statsObj) return;
 
     if (!statsObj.count || statsObj.count === 0) {
@@ -1016,11 +1299,11 @@ class MalApi {
 
   // =================== ADDITIONAL API METHODS ===================
 
-  async getMALRecommendations(mediaId, mediaType = 'ANIME') {
+  async getMALRecommendations(mediaId: string | number, mediaType: string = 'ANIME'): Promise<Array<{ node: TransformedMedia; num_recommendations: number }>> {
     try {
       const type = mediaType === 'ANIME' ? 'anime' : 'manga';
       
-      const requestParams = {
+      const requestParams: RequestParams = {
         url: `${this.baseUrl}/${type}/${mediaId}?fields=recommendations`,
         method: 'GET',
         requestId: this.generateRequestId(),
@@ -1028,7 +1311,7 @@ class MalApi {
         metadata: { type: 'recommendations' }
       };
 
-      const response = await this.makeRawRequest(requestParams);
+      const response = await this.makeRawRequest(requestParams) as { recommendations?: Array<{ node: MALMedia; num_recommendations: number }> };
       
       return response.recommendations?.map(rec => ({
         node: this.transformMedia(rec.node),
@@ -1041,9 +1324,9 @@ class MalApi {
     }
   }
 
-  async getMALSeasonalAnime(year, season) {
+  async getMALSeasonalAnime(year: number, season: string): Promise<{ Page: { media: TransformedMedia[] } }> {
     try {
-      const requestParams = {
+      const requestParams: RequestParams = {
         url: `${this.baseUrl}/anime/season/${year}/${season}?fields=${this.getFieldsForLayout('card', true)}`,
         method: 'GET',
         requestId: this.generateRequestId(),
@@ -1051,7 +1334,7 @@ class MalApi {
         metadata: { type: 'seasonal' }
       };
 
-      const response = await this.makeRawRequest(requestParams);
+      const response = await this.makeRawRequest(requestParams) as { data?: MALListEntry[] };
       
       return {
         Page: {
@@ -1067,7 +1350,7 @@ class MalApi {
 
   // =================== LOGGING ===================
 
-  log(level, category, requestId, data = '') {
+  log(level: string, category: string, requestId: string, data: any = ''): void {
     if (level === 'ERROR') {
       const timestamp = new Date().toISOString();
       const logData = typeof data === 'object' ? JSON.stringify(data, null, 2) : data;
@@ -1077,7 +1360,7 @@ class MalApi {
 
   // =================== METRICS ===================
 
-  getMetrics() {
+  getMetrics(): Record<string, unknown> {
     // Get metrics from the MAL service in RequestQueue
     const requestQueueMetrics = this.requestQueue.getMetrics();
     const malServiceMetrics = requestQueueMetrics.services?.mal || {};
@@ -1093,13 +1376,11 @@ class MalApi {
 
   // =================== COMPATIBILITY METHODS ===================
 
-  async fetchMALStats(config) {
+  async fetchMALStats(config: RequestConfig): Promise<unknown> {
     return this.fetchMALData({ ...config, type: 'stats' });
   }
 
-  async fetchMALList(config) {
+  async fetchMALList(config: RequestConfig): Promise<unknown> {
     return this.fetchMALData(config);
   }
 }
-
-export { MalApi };

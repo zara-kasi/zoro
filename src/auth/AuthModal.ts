@@ -1,11 +1,3 @@
-/**
- * Authentication modal for user credential input
- * Migrated from AuthModal.js → AuthModal.ts
- * - Added comprehensive types for configuration and DOM elements
- * - Typed Obsidian Modal integration
- * - Added proper event handler typing
- */
-
 import type { App } from 'obsidian';
 import { Modal } from 'obsidian';
 
@@ -170,5 +162,3 @@ export class AuthModal extends Modal {
     });
   }
 }
-
-export { AuthModal };

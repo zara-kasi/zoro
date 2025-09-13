@@ -2,7 +2,6 @@
 import { AniListRequest } from './AniListRequest.js';
 import { MALRequest } from './MALRequest.js';
 import { SimklRequest } from './SimklRequest.js';
-import { TMDbRequest } from './TMDbRequest.js';
 
 class RequestQueue {
   constructor(plugin) {

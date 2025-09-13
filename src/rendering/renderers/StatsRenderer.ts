@@ -1,15 +1,163 @@
-// No direct obsidian dependency except DOM APIs
+/**
+ * StatsRenderer
+ * Migrated from StatsRenderer.js → StatsRenderer.ts
+ * - Added comprehensive types for user statistics and media objects
+ * - Typed all renderer methods and DOM manipulation
+ * - Added Plugin type from obsidian for parent reference
+ */
+import type { Plugin } from 'obsidian';
 import { DOMHelper } from '../helpers/DOMHelper.js';
 
-class StatsRenderer {
-  constructor(parentRenderer) {
+interface MediaTitle {
+  english?: string;
+  romaji?: string;
+  native?: string;
+}
+
+interface CoverImage {
+  medium?: string;
+  large?: string;
+}
+
+interface Avatar {
+  medium?: string;
+  large?: string;
+}
+
+interface MediaListOptions {
+  scoreFormat?: 'POINT_10' | 'POINT_100' | 'POINT_10_DECIMAL' | 'POINT_5';
+}
+
+interface StatusCount {
+  status: string;
+  count: number;
+}
+
+interface ScoreCount {
+  score: number;
+  count: number;
+}
+
+interface FormatCount {
+  format: string;
+  count: number;
+}
+
+interface GenreCount {
+  genre: string;
+  count: number;
+}
+
+interface YearCount {
+  releaseYear: number;
+  count: number;
+}
+
+interface MediaStatistics {
+  count: number;
+  meanScore: number;
+  standardDeviation?: number;
+  episodesWatched?: number;
+  minutesWatched?: number;
+  chaptersRead?: number;
+  volumesRead?: number;
+  statuses?: StatusCount[];
+  scores?: ScoreCount[];
+  formats?: FormatCount[];
+  genres?: GenreCount[];
+  releaseYears?: YearCount[];
+}
+
+interface FavoriteMedia {
+  id: number;
+  title: MediaTitle;
+  coverImage?: CoverImage;
+  meanScore?: number;
+}
+
+interface FavoriteNodes {
+  nodes: FavoriteMedia[];
+}
+
+interface Favourites {
+  anime?: FavoriteNodes;
+  manga?: FavoriteNodes;
+  tv?: FavoriteNodes;
+  movie?: FavoriteNodes;
+}
+
+interface UserStatistics {
+  anime?: MediaStatistics;
+  manga?: MediaStatistics;
+  tv?: MediaStatistics;
+  movie?: MediaStatistics;
+}
+
+interface ZoroMeta {
+  source?: 'anilist' | 'mal' | 'simkl';
+}
+
+interface User {
+  name: string;
+  avatar?: Avatar;
+  statistics: UserStatistics;
+  mediaListOptions?: MediaListOptions;
+  favourites?: Favourites;
+  _zoroMeta?: ZoroMeta;
+}
+
+interface RenderOptions {
+  layout?: 'minimal' | 'standard' | 'detailed';
+  mediaType?: 'ANIME' | 'MANGA' | 'TV' | 'MOVIE' | 'MOVIES';
+  showComparisons?: boolean;
+  showTrends?: boolean;
+}
+
+interface OverviewOptions {
+  showComparisons: boolean;
+  mediaType: string;
+}
+
+interface BreakdownChartOptions {
+  showPercentages?: boolean;
+  maxItems?: number;
+}
+
+interface Insight {
+  icon: string;
+  text: string;
+}
+
+interface ParentRenderer {
+  plugin: Plugin & {
+    settings: {
+      simklUserInfo?: {
+        account?: {
+          id: string;
+        };
+      };
+    };
+  };
+  formatter: {
+    formatScore(score: number, format: string): string;
+    formatWatchTime(minutes: number): string;
+    formatTitle(media: FavoriteMedia): string;
+  };
+}
+
+export class StatsRenderer {
+  private parent: ParentRenderer;
+  private plugin: ParentRenderer['plugin'];
+  private formatter: ParentRenderer['formatter'];
+
+  constructor(parentRenderer: ParentRenderer) {
     this.parent = parentRenderer;
     this.plugin = parentRenderer.plugin;
     this.formatter = parentRenderer.formatter;
   }
 
   // Force styles directly on DOM elements to override theme interference
-  forceImageStyles(imgElement, styles) {
+  forceImageStyles(imgElement: HTMLImageElement, styles: Record<string, string>): void {
     // Apply styles directly to the element
     Object.entries(styles).forEach(([property, value]) => {
       imgElement.style.setProperty(property, value, 'important');
@@ -35,12 +183,12 @@ class StatsRenderer {
     });
     
     // Store observer reference for cleanup
-    if (!imgElement._zoroObserver) {
-      imgElement._zoroObserver = observer;
+    if (!(imgElement as any)._zoroObserver) {
+      (imgElement as any)._zoroObserver = observer;
     }
   }
 
-  render(el, user, options = {}) {
+  render(el: HTMLElement, user: User | null, options: RenderOptions = {}): void {
     const {
       layout = 'standard',
       mediaType = 'ANIME',
@@ -80,7 +228,7 @@ class StatsRenderer {
     el.appendChild(fragment);
   }
 
-  renderError(el, message) {
+  renderError(el: HTMLElement, message: string): void {
     const errorDiv = el.createDiv({ cls: 'zoro-stats-error' });
     errorDiv.createEl('div', { 
       cls: 'zoro-error-icon',
@@ -96,7 +244,7 @@ class StatsRenderer {
     });
   }
 
-  renderHeader(fragment, user) {
+  renderHeader(fragment: DocumentFragment, user: User): void {
     const header = fragment.createDiv({ cls: 'zoro-stats-header' });
     
     const userInfo = header.createDiv({ cls: 'zoro-user-info' });
@@ -108,7 +256,7 @@ class StatsRenderer {
           src: user.avatar.medium,
           alt: `${user.name}'s avatar`
         }
-      });
+      }) as HTMLImageElement;
       
       // Force avatar styles with JavaScript
       this.forceImageStyles(avatarImg, {
@@ -155,7 +303,7 @@ class StatsRenderer {
     });
   }
 
-  renderOverview(fragment, user, options) {
+  renderOverview(fragment: DocumentFragment, user: User, options: OverviewOptions): void {
     const { showComparisons, mediaType = 'ANIME' } = options;
     const overview = fragment.createDiv({ cls: 'zoro-stats-overview' });
     
@@ -188,12 +336,12 @@ class StatsRenderer {
       this.renderMediaTypeCard(statsGrid, 'movie', movieStats, user.mediaListOptions);
     }
 
-    if (showAnime && showManga && animeStats?.count > 0 && mangaStats?.count > 0 && showComparisons) {
+    if (showAnime && showManga && animeStats?.count && animeStats.count > 0 && mangaStats?.count && mangaStats.count > 0 && showComparisons) {
       this.renderComparisonCard(statsGrid, animeStats, mangaStats);
     }
   }
 
-  renderMediaTypeCard(container, type, stats, listOptions) {
+  renderMediaTypeCard(container: HTMLElement, type: string, stats: MediaStatistics, listOptions?: MediaListOptions): void {
     const card = container.createDiv({ 
       cls: `zoro-stat-card zoro-${type}-card`,
       attr: { 'data-type': type }
@@ -261,7 +409,7 @@ class StatsRenderer {
     }
   }
 
-  renderComparisonCard(container, animeStats, mangaStats) {
+  renderComparisonCard(container: HTMLElement, animeStats: MediaStatistics, mangaStats: MediaStatistics): void {
     const card = container.createDiv({ cls: 'zoro-stat-card zoro-comparison-card' });
 
     const header = card.createDiv({ cls: 'zoro-card-header' });
@@ -325,10 +473,10 @@ class StatsRenderer {
     }
   }
 
-  renderBreakdowns(fragment, user, mediaType) {
+  renderBreakdowns(fragment: DocumentFragment, user: User, mediaType: string): void {
     const type = mediaType.toLowerCase();
     const normalizedType = (type === 'movies') ? 'movie' : type;
-    const stats = user.statistics[normalizedType];
+    const stats = user.statistics[normalizedType as keyof UserStatistics];
     
     if (!stats || stats.count === 0) return;
 
@@ -370,10 +518,10 @@ class StatsRenderer {
     }
   }
 
-  renderInsights(fragment, user, mediaType) {
+  renderInsights(fragment: DocumentFragment, user: User, mediaType: string): void {
     const type = mediaType.toLowerCase();
     const normalizedType = (type === 'movies') ? 'movie' : type;
-    const stats = user.statistics[normalizedType];
+    const stats = user.statistics[normalizedType as keyof UserStatistics];
     
     if (!stats) return;
 
@@ -400,9 +548,9 @@ class StatsRenderer {
     });
   }
 
-  renderFavorites(fragment, user, mediaType) {
+  renderFavorites(fragment: DocumentFragment, user: User, mediaType: string): void {
     const type = mediaType.toLowerCase();
-    const favorites = user.favourites?.[type]?.nodes;
+    const favorites = user.favourites?.[type as keyof Favourites]?.nodes;
     
     if (!favorites?.length) return;
 
@@ -424,7 +572,7 @@ class StatsRenderer {
             src: item.coverImage.medium,
             alt: this.formatter.formatTitle(item)
           }
-        });
+        }) as HTMLImageElement;
         
         // Force cover image styles with JavaScript
         this.forceImageStyles(coverImg, {
@@ -454,7 +602,7 @@ class StatsRenderer {
     });
   }
 
-  renderBreakdownChart(container, title, data, keyField, options = {}) {
+  renderBreakdownChart(container: HTMLElement, title: string, data: any[], keyField: string, options: BreakdownChartOptions = {}): void {
     const { showPercentages = false, maxItems = 8 } = options;
     
     const chartContainer = container.createDiv({ cls: 'zoro-breakdown-chart' });
@@ -492,7 +640,7 @@ class StatsRenderer {
     });
   }
 
-  renderScoreDistribution(container, scores, listOptions) {
+  renderScoreDistribution(container: HTMLElement, scores: ScoreCount[], listOptions?: MediaListOptions): void {
     const chartContainer = container.createDiv({ cls: 'zoro-breakdown-chart' });
     chartContainer.createEl('h4', { 
       text: 'Score Distribution',
@@ -520,11 +668,11 @@ class StatsRenderer {
       bar.style.animationDelay = `${index * 0.1}s`;
       
       const value = barContainer.createDiv({ cls: 'zoro-score-value' });
-      value.textContent = scoreData.count;
+      value.textContent = scoreData.count.toString();
     });
   }
 
-  renderYearlyActivity(container, yearData) {
+  renderYearlyActivity(container: HTMLElement, yearData: YearCount[]): void {
     const chartContainer = container.createDiv({ cls: 'zoro-breakdown-chart' });
     chartContainer.createEl('h4', { 
       text: 'Activity by Year',
@@ -544,7 +692,7 @@ class StatsRenderer {
       const yearItem = timeline.createDiv({ cls: 'zoro-year-item' });
       
       yearItem.createEl('div', { 
-        text: yearData.releaseYear,
+        text: yearData.releaseYear.toString(),
         cls: 'zoro-year-label'
       });
       
@@ -554,14 +702,14 @@ class StatsRenderer {
       bar.style.animationDelay = `${index * 0.1}s`;
       
       yearItem.createEl('div', { 
-        text: yearData.count,
+        text: yearData.count.toString(),
         cls: 'zoro-year-count'
       });
     });
   }
 
-  generateInsights(stats, type, user) {
-    const insights = [];
+  generateInsights(stats: MediaStatistics, type: string, user: User): Insight[] {
+    const insights: Insight[] = [];
     
     // Completion rate insight
     if (stats.statuses) {
@@ -569,12 +717,12 @@ class StatsRenderer {
       const total = stats.count;
       const completionRate = (completed / total * 100).toFixed(0);
       
-      if (completionRate >= 80) {
+      if (parseInt(completionRate) >= 80) {
         insights.push({
           icon: '🏆',
           text: `High completion rate: ${completionRate}% of your ${type} are completed`
         });
-      } else if (completionRate <= 30) {
+      } else if (parseInt(completionRate) <= 30) {
         insights.push({
           icon: '📚',
           text: `Lots to explore: Only ${completionRate}% completed, plenty of ${type} to discover!`
@@ -606,7 +754,7 @@ class StatsRenderer {
         });
       }
       
-      if (stats.minutesWatched >= 100000) { // ~69 days
+      if (stats.minutesWatched && stats.minutesWatched >= 100000) { // ~69 days
         const days = Math.floor(stats.minutesWatched / (60 * 24));
         insights.push({
           icon: '⏰',
@@ -618,7 +766,7 @@ class StatsRenderer {
     // Genre diversity (if available)
     if (stats.genres && stats.genres.length >= 15) {
       insights.push({
-        icon: '�rainbow',
+        icon: '🌈',
         text: `Diverse taste: You enjoy ${stats.genres.length} different genres`
       });
     }
@@ -626,5 +774,3 @@ class StatsRenderer {
     return insights.slice(0, 4); // Limit to 4 insights
   }
 }
-
-export { StatsRenderer };

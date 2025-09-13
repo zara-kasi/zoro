@@ -1,11 +1,3 @@
-/**
- * Multi-service request queue with priority handling, rate limiting, and authentication
- * Migrated from RequestQueue.js → RequestQueue.ts
- * - Added comprehensive types for queue management and service configurations
- * - Typed all API service handlers and their specific behaviors
- * - Added proper error handling with service-specific retry logic
- */
-
 import type { Plugin } from 'obsidian';
 import { AniListRequest } from './AniListRequest';
 import { MALRequest } from './MALRequest';
@@ -957,5 +949,3 @@ export class RequestQueue {
     this.hideGlobalLoader();
   }
 }
-
-export { RequestQueue };

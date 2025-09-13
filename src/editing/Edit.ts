@@ -1,10 +1,3 @@
-/**
- * Edit - Main edit modal orchestrator
- * Migrated from Edit.js → Edit.ts
- * - Added Plugin typing from obsidian
- * - Typed method parameters and return values
- * - Added interfaces for entry, config, and modal structures
- */
 import { Notice } from 'obsidian';
 import type { Plugin } from 'obsidian';
 import { RenderEditModal } from './modals/RenderEditModal';
@@ -105,7 +98,7 @@ interface MountContainer {
   appendChild(node: Node): Node;
 }
 
-class Edit {
+export class Edit {
   private plugin: Plugin;
   private saving: boolean;
   private config: EditConfig;
@@ -390,5 +383,3 @@ class Edit {
     this.support.closeModal(modalElement, onCancel);
   }
 }
-
-export { Edit };

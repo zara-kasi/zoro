@@ -1,11 +1,3 @@
-/**
- * Processor - Main code block processing and API orchestration
- * Migrated from Processor.js → Processor.ts
- * - Added comprehensive types for API operations and configurations
- * - Typed plugin interface and API registry
- * - Added runtime validation with proper error handling
- */
-
 import { Notice } from 'obsidian';
 import type { Plugin } from 'obsidian';
 import { Trending } from '../features/Trending';

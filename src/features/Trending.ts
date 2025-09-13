@@ -1,11 +1,3 @@
-/**
- * Trending
- * Migrated from Trending.js → Trending.ts
- * - Added comprehensive types for all API responses and internal data structures
- * - Converted CommonJS exports to ES modules
- * - Added runtime type guards for external API responses
- * - Typed all plugin dependencies and cache operations
- */
 import { Notice } from 'obsidian';
 
 // Type definitions for plugin dependencies

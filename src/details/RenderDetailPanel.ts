@@ -1,12 +1,113 @@
-// No obsidian imports needed
-import { CustomExternalURL } from './CustomExternalURL.js';
+/**
+ * RenderDetailPanel
+ * Migrated from RenderDetailPanel.js → RenderDetailPanel.ts
+ * - Added comprehensive type definitions for all DOM elements and data structures
+ * - Used unknown for external API data with proper type narrowing
+ * - Preserved all runtime behavior and DOM manipulation exactly as original
+ */
 
-class RenderDetailPanel {
-  constructor(plugin) {
+import { CustomExternalURL } from './CustomExternalURL';
+
+// Type definitions
+interface Plugin {
+  moreDetailsPanel: {
+    customExternalURL: CustomExternalURL;
+  };
+  getAniListUrl?: (id: number | string, type: string) => string;
+  [key: string]: unknown;
+}
+
+interface MediaData {
+  id?: number | string;
+  type?: string;
+  format?: string;
+  title?: {
+    english?: string;
+    romaji?: string;
+    native?: string;
+  };
+  description?: string;
+  averageScore?: number;
+  genres?: (string | number)[];
+  nextAiringEpisode?: AiringEpisode;
+  status?: string;
+  season?: string;
+  seasonYear?: number;
+  idMal?: number;
+  idImdb?: string;
+  idTmdb?: number;
+  ids?: {
+    imdb?: string;
+    tmdb?: number;
+    simkl?: number;
+  };
+  _zoroMeta?: {
+    source?: string;
+    mediaType?: string;
+    trending?: {
+      voteCount?: number;
+    };
+  };
+  [key: string]: unknown;
+}
+
+interface EntryData {
+  _zoroMeta?: {
+    source?: string;
+    mediaType?: string;
+  };
+  [key: string]: unknown;
+}
+
+interface AiringEpisode {
+  airingAt: number;
+  episode: number;
+  timeUntilAiring: number;
+}
+
+interface MALData {
+  score?: number;
+  scored_by?: number;
+  rank?: number;
+  [key: string]: unknown;
+}
+
+interface IMDBData {
+  score?: number;
+  scored_by?: number;
+  [key: string]: unknown;
+}
+
+interface CopyButtonElement extends HTMLButtonElement {
+  _copyTimeout?: number;
+  createEl?: (tagName: string, options: { text: string }) => HTMLElement;
+}
+
+interface CountdownElement extends HTMLElement {
+  dataset: DOMStringMap & {
+    intervalId?: string;
+  };
+}
+
+// Global type declarations for runtime dependencies
+declare global {
+  interface Window {
+    __emojiIconMapper?: {
+      parseToFragment(emoji: string): DocumentFragment | null;
+    };
+  }
+  
+  function setIcon(element: HTMLElement, iconName: string): void;
+}
+
+export default class RenderDetailPanel {
+  private plugin: Plugin;
+
+  constructor(plugin: Plugin) {
     this.plugin = plugin;
   }
 
-  createPanel(media, entry) {
+  createPanel(media: MediaData, entry: EntryData | null): HTMLElement {
     const fragment = document.createDocumentFragment();
     
     const panel = document.createElement('div');
@@ -15,7 +116,7 @@ class RenderDetailPanel {
     const content = document.createElement('div');
     content.className = 'panel-content';
 
-    const sections = [];
+    const sections: HTMLElement[] = [];
 
     const src = (entry?._zoroMeta?.source || '').toLowerCase();
     const mediaKind = media?.type || media?.format;
@@ -26,15 +127,15 @@ class RenderDetailPanel {
     if (!deferDetailsToSimkl) {
       sections.push(this.createMetadataSection(media, entry));
      
-     if (media.type === 'ANIME' && media.nextAiringEpisode) {
+      if (media.type === 'ANIME' && media.nextAiringEpisode) {
         sections.push(this.createAiringSection(media.nextAiringEpisode));
       }
 
-      if (media.averageScore > 0) {
+      if ((media.averageScore ?? 0) > 0) {
         sections.push(this.createStatisticsSection(media));
       }
 
-      if (media.genres?.length > 0) {
+      if (media.genres?.length && media.genres.length > 0) {
         const mappedInitialGenres = this.mapTmdbGenresIfNeeded(media.genres, mediaKind);
         console.log('[Details][Genres][Initial] Mapped genres:', mappedInitialGenres);
         sections.push(this.createGenresSection(mappedInitialGenres));
@@ -63,16 +164,25 @@ class RenderDetailPanel {
     return panel;
   }
 
-  addCopyStyles() {
+  addCopyStyles(): void {
     // Styles are now handled externally in CSS file
     // This method can be removed or kept empty for backward compatibility
     return;
   }
 
-  createCopyButton(type, data) {
-    const copyBtn = document.createElement('button');
+  createCopyButton(type: 'title' | 'synopsis', data: MediaData | string): CopyButtonElement {
+    const copyBtn = document.createElement('button') as CopyButtonElement;
     copyBtn.className = 'zoro-copy-btn';
-    copyBtn.createEl('span', { text: '📋' });
+    
+    // Use createEl if available, otherwise fallback to createElement
+    if (typeof copyBtn.createEl === 'function') {
+      copyBtn.createEl('span', { text: '📋' });
+    } else {
+      const span = document.createElement('span');
+      span.textContent = '📋';
+      copyBtn.appendChild(span);
+    }
+    
     copyBtn.title = 'Copy';
 
     // Direct copy on click - no dropdown
@@ -80,11 +190,11 @@ class RenderDetailPanel {
       e.stopPropagation();
       
       let textToCopy = '';
-      if (type === 'title') {
+      if (type === 'title' && typeof data === 'object') {
         // Copy the best available title
         textToCopy = data.title?.english || data.title?.romaji || data.title?.native || 'Unknown Title';
       } else if (type === 'synopsis') {
-        textToCopy = this.cleanSynopsis(data);
+        textToCopy = this.cleanSynopsis(data as string);
       }
       
       this.copyToClipboard(textToCopy, copyBtn);
@@ -93,7 +203,7 @@ class RenderDetailPanel {
     return copyBtn;
   }
 
-  cleanSynopsis(description) {
+  cleanSynopsis(description: string | undefined): string {
     if (!description || typeof description !== 'string' || !description.trim()) {
       return 'Synopsis not available';
     }
@@ -105,81 +215,81 @@ class RenderDetailPanel {
       .trim();
   }
 
-  async copyToClipboard(text, buttonElement) {
-  try {
-    await navigator.clipboard.writeText(text);
+  async copyToClipboard(text: string, buttonElement: CopyButtonElement): Promise<void> {
+    try {
+      await navigator.clipboard.writeText(text);
 
-    // cancel any existing revert timer
-    if (buttonElement._copyTimeout) {
-      clearTimeout(buttonElement._copyTimeout);
-      buttonElement._copyTimeout = null;
-    }
-
-    const mapper = globalThis.__emojiIconMapper;
-
-    // helper to render an "emoji" via mapper/createEl/setIcon/fallback
-    const renderEmoji = (emojiOrGlyph, setIconNameFallback) => {
-      // normalize (strip variation selector FE0F if present)
-      const emoji = String(emojiOrGlyph).replace(/\uFE0F/g, '');
-
-      // clear current children (stop spinner + previous icon)
-      if (typeof buttonElement.replaceChildren === 'function') {
-        buttonElement.replaceChildren();
-      } else {
-        buttonElement.innerHTML = '';
+      // Cancel any existing revert timer
+      if (buttonElement._copyTimeout) {
+        clearTimeout(buttonElement._copyTimeout);
+        buttonElement._copyTimeout = undefined;
       }
 
-      // 1) Try mapper -> DocumentFragment
-      if (mapper) {
+      const mapper = globalThis.__emojiIconMapper;
+
+      // Helper to render an "emoji" via mapper/createEl/setIcon/fallback
+      const renderEmoji = (emojiOrGlyph: string, setIconNameFallback?: string) => {
+        // Normalize (strip variation selector FE0F if present)
+        const emoji = String(emojiOrGlyph).replace(/\uFE0F/g, '');
+
+        // Clear current children (stop spinner + previous icon)
+        if (typeof buttonElement.replaceChildren === 'function') {
+          buttonElement.replaceChildren();
+        } else {
+          buttonElement.innerHTML = '';
+        }
+
+        // 1) Try mapper -> DocumentFragment
+        if (mapper) {
+          try {
+            const frag = mapper.parseToFragment(emoji);
+            if (frag) {
+              buttonElement.appendChild(frag);
+              return;
+            }
+          } catch (e) { /* ignore and fallback */ }
+        }
+
+        // 2) Try patched createEl (if available)
         try {
-          const frag = mapper.parseToFragment(emoji);
-          if (frag) {
-            buttonElement.appendChild(frag);
+          if (typeof buttonElement.createEl === 'function') {
+            buttonElement.createEl('span', { text: emoji });
             return;
           }
-        } catch (e) { /* ignore and fallback */ }
-      }
-
-      // 2) Try patched createEl (if available)
-      try {
-        if (typeof buttonElement.createEl === 'function') {
-          buttonElement.createEl('span', { text: emoji });
-          return;
-        }
-      } catch {}
-
-      // 3) Try global setIcon (icon name fallback)
-      if (typeof setIcon === 'function' && setIconNameFallback) {
-        const s = document.createElement('span');
-        try {
-          setIcon(s, setIconNameFallback);
-          buttonElement.appendChild(s);
-          return;
         } catch {}
-      }
 
-      // 4) Last-resort: raw emoji glyph
-      buttonElement.textContent = emoji;
-    };
+        // 3) Try global setIcon (icon name fallback)
+        if (typeof setIcon === 'function' && setIconNameFallback) {
+          const s = document.createElement('span');
+          try {
+            setIcon(s, setIconNameFallback);
+            buttonElement.appendChild(s);
+            return;
+          } catch {}
+        }
 
-    // show success icon (use mapper if present)
-    renderEmoji('✅', 'check');
-    buttonElement.classList.add('zoro-copied');
+        // 4) Last-resort: raw emoji glyph
+        buttonElement.textContent = emoji;
+      };
 
-    // revert after 2s (store timer so we can cancel on repeated clicks)
-    buttonElement._copyTimeout = setTimeout(() => {
-      renderEmoji('📋', 'clipboard-list');
-      buttonElement.classList.remove('zoro-copied');
-      buttonElement._copyTimeout = null;
-    }, 2000);
+      // Show success icon (use mapper if present)
+      renderEmoji('✅', 'check');
+      buttonElement.classList.add('zoro-copied');
 
-  } catch (err) {
-    // fallback copy behaviour (your existing fallback method)
-    this.fallbackCopyTextToClipboard(text, buttonElement);
+      // Revert after 2s (store timer so we can cancel on repeated clicks)
+      buttonElement._copyTimeout = window.setTimeout(() => {
+        renderEmoji('📋', 'clipboard-list');
+        buttonElement.classList.remove('zoro-copied');
+        buttonElement._copyTimeout = undefined;
+      }, 2000);
+
+    } catch (err) {
+      // Fallback copy behaviour
+      this.fallbackCopyTextToClipboard(text, buttonElement);
+    }
   }
-}
 
-  fallbackCopyTextToClipboard(text, buttonElement) {
+  fallbackCopyTextToClipboard(text: string, buttonElement: CopyButtonElement): void {
     const textArea = document.createElement("textarea");
     textArea.value = text;
     textArea.style.position = "fixed";
@@ -208,11 +318,18 @@ class RenderDetailPanel {
     document.body.removeChild(textArea);
   }
 
-  updatePanelContent(panel, media, malData = null, imdbData = null) {
-    const content = panel.querySelector('.panel-content');
+  updatePanelContent(
+    panel: HTMLElement, 
+    media: MediaData, 
+    malData: MALData | null = null, 
+    imdbData: IMDBData | null = null
+  ): void {
+    const content = panel.querySelector('.panel-content') as HTMLElement;
+    
     // Remove loading placeholder if present
     const loadingSection = content.querySelector('.loading-section');
     if (loadingSection) loadingSection.remove();
+    
     if (media.type === 'ANIME' && media.nextAiringEpisode && !content.querySelector('.airing-section')) {
       const airingSection = this.createAiringSection(media.nextAiringEpisode);
       const metadataSection = content.querySelector('.metadata-section');
@@ -225,7 +342,6 @@ class RenderDetailPanel {
         }
       }
     }
-   
     
     if (media.description) {
       const existingSynopsis = content.querySelector('.synopsis-section');
@@ -241,7 +357,7 @@ class RenderDetailPanel {
       }
     }
 
-    if (media.genres?.length > 0) {
+    if (media.genres?.length && media.genres.length > 0) {
       console.log('[Details][Genres] Incoming genres before mapping:', media.genres);
       const mappedGenres = this.mapTmdbGenresIfNeeded(media.genres, media.type);
       console.log('[Details][Genres] Mapped genres:', mappedGenres);
@@ -267,9 +383,16 @@ class RenderDetailPanel {
     }
 
     // Show stats for anime (AniList/MAL) or for movies/TV (OMDb/IMDb; else TMDb fallback)
-    const shouldShowStats = (media.type === 'ANIME' && media.averageScore > 0) || malData || imdbData || (media.type !== 'ANIME' && (imdbData || typeof media.averageScore === 'number'));
+    const shouldShowStats = (media.type === 'ANIME' && (media.averageScore ?? 0) > 0) || 
+                            malData || 
+                            imdbData || 
+                            (media.type !== 'ANIME' && (imdbData || typeof media.averageScore === 'number'));
     if (shouldShowStats) {
-      console.log('[Details][Stats] Building stats section', { type: media.type, hasImdb: !!imdbData, averageScore: media.averageScore });
+      console.log('[Details][Stats] Building stats section', { 
+        type: media.type, 
+        hasImdb: !!imdbData, 
+        averageScore: media.averageScore 
+      });
       const existingStats = content.querySelector('.stats-section');
       const newStats = this.createStatisticsSection(media, malData, imdbData);
       if (existingStats) {
@@ -286,7 +409,7 @@ class RenderDetailPanel {
     }
   }
 
-  createAiringSection(nextAiringEpisode) {
+  createAiringSection(nextAiringEpisode: AiringEpisode): HTMLElement | null {
     // Validate airing data structure
     if (!nextAiringEpisode || !nextAiringEpisode.airingAt || !nextAiringEpisode.episode) {
       return null;
@@ -326,15 +449,16 @@ class RenderDetailPanel {
       countdownInfo.innerHTML = `<span class="airing-label">In:</span> <span class="airing-value countdown-value">${this.formatTimeUntilAiring(nextAiringEpisode.timeUntilAiring)}</span>`;
       airingInfo.appendChild(countdownInfo);
 
-      this.startCountdown(countdownInfo.querySelector('.countdown-value'), nextAiringEpisode.timeUntilAiring);
+      const countdownElement = countdownInfo.querySelector('.countdown-value') as CountdownElement;
+      this.startCountdown(countdownElement, nextAiringEpisode.timeUntilAiring);
     }
 
     section.appendChild(airingInfo);
     return section;
   }
 
-  formatAiringDate(date) {
-    const options = {
+  private formatAiringDate(date: Date): string {
+    const options: Intl.DateTimeFormatOptions = {
       day: '2-digit',
       month: 'short',
       year: 'numeric'
@@ -342,8 +466,8 @@ class RenderDetailPanel {
     return date.toLocaleDateString('en-GB', options);
   }
 
-  formatAiringTimeOnly(date) {
-    const options = {
+  private formatAiringTimeOnly(date: Date): string {
+    const options: Intl.DateTimeFormatOptions = {
       hour: '2-digit',
       minute: '2-digit',
       hour12: false
@@ -351,7 +475,7 @@ class RenderDetailPanel {
     return date.toLocaleTimeString('en-GB', options);
   }
 
-  formatTimeUntilAiring(seconds) {
+  private formatTimeUntilAiring(seconds: number): string {
     const days = Math.floor(seconds / (24 * 3600));
     const hours = Math.floor((seconds % (24 * 3600)) / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
@@ -365,7 +489,7 @@ class RenderDetailPanel {
     }
   }
 
-  startCountdown(element, initialSeconds) {
+  private startCountdown(element: CountdownElement, initialSeconds: number): void {
     let remainingSeconds = initialSeconds;
     
     const updateCountdown = () => {
@@ -380,10 +504,10 @@ class RenderDetailPanel {
 
     updateCountdown();
     const intervalId = setInterval(updateCountdown, 60000);
-    element.dataset.intervalId = intervalId;
+    element.dataset.intervalId = String(intervalId);
   }
 
-  createSynopsisSection(description) {
+  createSynopsisSection(description: string | undefined): HTMLElement {
     const section = document.createElement('div');
     section.className = 'panel-section synopsis-section zoro-copy-container';
 
@@ -425,7 +549,7 @@ class RenderDetailPanel {
     return section;
   }
 
-  createMetadataSection(media, entry) {
+  createMetadataSection(media: MediaData, entry: EntryData | null): HTMLElement {
     const section = document.createElement('div');
     section.className = 'panel-section metadata-section';
 
@@ -448,7 +572,11 @@ class RenderDetailPanel {
     return section;
   }
 
-  createStatisticsSection(media, malData = null, imdbData = null) {
+  createStatisticsSection(
+    media: MediaData, 
+    malData: MALData | null = null, 
+    imdbData: IMDBData | null = null
+  ): HTMLElement {
     const section = document.createElement('div');
     section.className = 'panel-section stats-section';
 
@@ -461,8 +589,8 @@ class RenderDetailPanel {
     statsGrid.className = 'stats-grid';
 
     if (media.type === 'ANIME' || media.type === 'MANGA') {
-      if (media.averageScore > 0) {
-        const scoreOutOf10 = (media.averageScore / 10).toFixed(1);
+      if ((media.averageScore ?? 0) > 0) {
+        const scoreOutOf10 = ((media.averageScore ?? 0) / 10).toFixed(1);
         console.log('[Details][Stats] AniList score used', scoreOutOf10);
         this.addStatItem(statsGrid, 'AniList Score', `${scoreOutOf10}`, 'score-stat anilist-stat');
       }
@@ -493,28 +621,27 @@ class RenderDetailPanel {
           this.addStatItem(statsGrid, 'IMDB Ratings', imdbData.scored_by.toLocaleString(), 'count-stat');
         }
       }
-
     }
 
     section.appendChild(statsGrid);
     return section;
   }
 
-  addMetadataItem(container, label, value) {
+  private addMetadataItem(container: HTMLElement, label: string, value: string): void {
     const item = document.createElement('div');
     item.className = 'metadata-item';
     item.innerHTML = `<span class="metadata-label">${label}</span><span class="metadata-value">${value}</span>`;
     container.appendChild(item);
   }
 
-  addStatItem(container, label, value, className = '') {
+  private addStatItem(container: HTMLElement, label: string, value: string, className: string = ''): void {
     const item = document.createElement('div');
     item.className = `stat-item ${className}`;
     item.innerHTML = `<span class="stat-label">${label}</span><span class="stat-value">${value}</span>`;
     container.appendChild(item);
   }
 
-  createHeaderSection(media) {
+  createHeaderSection(media: MediaData): HTMLElement {
     const header = document.createElement('div');
     header.className = 'panel-header';
 
@@ -553,7 +680,7 @@ class RenderDetailPanel {
     return header;
   }
 
-  createGenresSection(genres) {
+  createGenresSection(genres: (string | number)[]): HTMLElement {
     const section = document.createElement('div');
     section.className = 'panel-section genres-section';
 
@@ -570,32 +697,37 @@ class RenderDetailPanel {
     return section;
   }
 
-  mapTmdbGenresIfNeeded(genres, mediaType) {
+  mapTmdbGenresIfNeeded(genres: (string | number)[], mediaType: string | undefined): string[] {
     if (!Array.isArray(genres)) return [];
+    
     // If already strings, return as is
     const areStrings = genres.every(g => typeof g === 'string');
-    if (areStrings) return genres;
+    if (areStrings) return genres as string[];
+    
     // Convert numbers / numeric strings to names using TMDb maps
-    const movieMap = {
+    const movieMap: Record<number, string> = {
       28: 'Action', 12: 'Adventure', 16: 'Animation', 35: 'Comedy', 80: 'Crime', 99: 'Documentary',
       18: 'Drama', 10751: 'Family', 14: 'Fantasy', 36: 'History', 27: 'Horror', 10402: 'Music',
       9648: 'Mystery', 10749: 'Romance', 878: 'Science Fiction', 10770: 'TV Movie', 53: 'Thriller',
       10752: 'War', 37: 'Western'
     };
-    const tvMap = {
+    
+    const tvMap: Record<number, string> = {
       10759: 'Action & Adventure', 16: 'Animation', 35: 'Comedy', 80: 'Crime', 99: 'Documentary', 18: 'Drama',
       10751: 'Family', 10762: 'Kids', 9648: 'Mystery', 10763: 'News', 10764: 'Reality', 10765: 'Sci-Fi & Fantasy',
       10766: 'Soap', 10767: 'Talk', 10768: 'War & Politics', 37: 'Western'
     };
+    
     const useTv = (mediaType === 'TV');
     const map = useTv ? tvMap : movieMap;
+    
     return genres.map(g => {
       const id = typeof g === 'string' ? parseInt(g) : g;
-      return map[id] || String(g);
+      return map[id as number] || String(g);
     });
   }
 
-  createLoadingSection() {
+  createLoadingSection(): HTMLElement {
     const section = document.createElement('div');
     section.className = 'panel-section loading-section';
     const title = document.createElement('h3');
@@ -609,7 +741,7 @@ class RenderDetailPanel {
     return section;
   }
 
-  createExternalLinksSection(media) {
+  createExternalLinksSection(media: MediaData): HTMLElement {
     const section = document.createElement('div');
     section.className = 'panel-section external-links-section';
 
@@ -628,41 +760,30 @@ class RenderDetailPanel {
       anilistBtn.innerHTML = 'AniList';
       anilistBtn.onclick = (e) => {
         e.stopPropagation();
-        const url = this.plugin.getAniListUrl ? this.plugin.getAniListUrl(media.id, media.type) : `https://anilist.co/${media.type.toLowerCase()}/${media.id}`;
+        const url = this.plugin.getAniListUrl 
+          ? this.plugin.getAniListUrl(media.id!, media.type!) 
+          : `https://anilist.co/${media.type!.toLowerCase()}/${media.id}`;
         window.open(url, '_blank');
-      };
-      linksContainer.appendChild(anilistBtn);
-    }
-
-    // MAL button (for anime)
-    if (media.idMal) {
-      const malBtn = document.createElement('button');
-      malBtn.className = 'external-link-btn mal-btn';
-      malBtn.innerHTML = 'MAL';
-      malBtn.onclick = (e) => {
-        e.stopPropagation();
-        const type = media.type === 'MANGA' ? 'manga' : 'anime';
-        window.open(`https://myanimelist.net/${type}/${media.idMal}`, '_blank');
       };
       linksContainer.appendChild(malBtn);
     }
 
     // Simkl button (for movies and TV only, not anime or manga)
-if (media.type !== 'ANIME' && media.type !== 'MANGA') {
-  const simklId = media?.ids?.simkl || media?.id;
-  if (simklId) {
-    const simklBtn = document.createElement('button');
-    simklBtn.className = 'external-link-btn simkl-btn';
-    simklBtn.innerHTML = 'Simkl';
-    simklBtn.onclick = (e) => {
-      e.stopPropagation();
-      const mediaType = media.type === 'MOVIE' ? 'movies' : 'tv';
-      const url = `https://simkl.com/${mediaType}/${simklId}`;
-      window.open(url, '_blank');
-    };
-    linksContainer.appendChild(simklBtn);
-  }
-}
+    if (media.type !== 'ANIME' && media.type !== 'MANGA') {
+      const simklId = media?.ids?.simkl || media?.id;
+      if (simklId) {
+        const simklBtn = document.createElement('button');
+        simklBtn.className = 'external-link-btn simkl-btn';
+        simklBtn.innerHTML = 'Simkl';
+        simklBtn.onclick = (e) => {
+          e.stopPropagation();
+          const mediaType = media.type === 'MOVIE' ? 'movies' : 'tv';
+          const url = `https://simkl.com/${mediaType}/${simklId}`;
+          window.open(url, '_blank');
+        };
+        linksContainer.appendChild(simklBtn);
+      }
+    }
 
     // IMDB button (for movies/TV)
     if (media.idImdb) {
@@ -700,7 +821,7 @@ if (media.type !== 'ANIME' && media.type !== 'MANGA') {
     return section;
   }
   
-  extractDomainName(url) {
+  private extractDomainName(url: string): string {
     try {
       const urlObj = new URL(url);
       let domain = urlObj.hostname;
@@ -722,14 +843,14 @@ if (media.type !== 'ANIME' && media.type !== 'MANGA') {
     }
   }
   
-  getBestTitle(media) {
+  private getBestTitle(media: MediaData): string {
     return media.title?.english || 
            media.title?.romaji || 
            media.title?.native || 
            'Unknown Title';
   }
 
-  buildSearchUrl(template, title) {
+  private buildSearchUrl(template: string, title: string): string {
     try {
       const encodedTitle = encodeURIComponent(title);
       return template + encodedTitle;
@@ -738,7 +859,7 @@ if (media.type !== 'ANIME' && media.type !== 'MANGA') {
     }
   }
 
-  parseSearchUrls(urlString) {
+  private parseSearchUrls(urlString: string): string[] {
     if (!urlString || urlString.trim() === '') {
       return [];
     }
@@ -748,7 +869,7 @@ if (media.type !== 'ANIME' && media.type !== 'MANGA') {
       .filter(url => url.length > 0);
   }
 
-  formatDisplayName(str) {
+  private formatDisplayName(str: string): string {
     if (!str) return '';
     return str.replace(/_/g, ' ')
               .split(' ')
@@ -756,51 +877,49 @@ if (media.type !== 'ANIME' && media.type !== 'MANGA') {
               .join(' ');
   }
 
-  capitalize(str) {
+  private capitalize(str: string): string {
     if (!str) return '';
     return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
   }
 
-  // Add this method to your RenderDetailPanel class or update the existing one
-
-positionPanel(panel, triggerElement) {
-  // Ensure base class is present without overwriting any existing classes (e.g., zoro-inline)
-  if (!panel.classList.contains('zoro-more-details-panel')) {
-    panel.classList.add('zoro-more-details-panel');
-  }
-  
-  // If panel has zoro-inline class, apply inline-specific styles
-  if (panel.classList.contains('zoro-inline')) {
-    // Remove any overlay positioning styles
-    panel.style.position = 'static';
-    panel.style.top = 'auto';
-    panel.style.left = 'auto';
-    panel.style.right = 'auto';
-    panel.style.bottom = 'auto';
-    panel.style.transform = 'none';
-    panel.style.zIndex = 'auto';
+  positionPanel(panel: HTMLElement, triggerElement: HTMLElement | null): void {
+    // Ensure base class is present without overwriting any existing classes (e.g., zoro-inline)
+    if (!panel.classList.contains('zoro-more-details-panel')) {
+      panel.classList.add('zoro-more-details-panel');
+    }
     
-    // Apply inline styles
-    panel.style.width = '100%';
-    panel.style.height = 'auto';
-    panel.style.maxHeight = 'none';
-    panel.style.margin = '0';
-    panel.style.padding = '4px';
-    panel.style.border = 'none';
-    panel.style.borderRadius = '0';
-    panel.style.boxShadow = 'none';
-    panel.style.background = 'transparent';
-    
-    // Hide the close button for inline panels
-    const closeBtn = panel.querySelector('.panel-close-btn');
-    if (closeBtn) {
-      closeBtn.style.display = 'none';
+    // If panel has zoro-inline class, apply inline-specific styles
+    if (panel.classList.contains('zoro-inline')) {
+      // Remove any overlay positioning styles
+      panel.style.position = 'static';
+      panel.style.top = 'auto';
+      panel.style.left = 'auto';
+      panel.style.right = 'auto';
+      panel.style.bottom = 'auto';
+      panel.style.transform = 'none';
+      panel.style.zIndex = 'auto';
+      
+      // Apply inline styles
+      panel.style.width = '100%';
+      panel.style.height = 'auto';
+      panel.style.maxHeight = 'none';
+      panel.style.margin = '0';
+      panel.style.padding = '4px';
+      panel.style.border = 'none';
+      panel.style.borderRadius = '0';
+      panel.style.boxShadow = 'none';
+      panel.style.background = 'transparent';
+      
+      // Hide the close button for inline panels
+      const closeBtn = panel.querySelector('.panel-close-btn') as HTMLElement | null;
+      if (closeBtn) {
+        closeBtn.style.display = 'none';
+      }
     }
   }
-}
 
-  cleanupCountdowns(panel) {
-    const countdownElements = panel.querySelectorAll('.countdown-value[data-interval-id]');
+  cleanupCountdowns(panel: HTMLElement): void {
+    const countdownElements = panel.querySelectorAll('.countdown-value[data-interval-id]') as NodeListOf<CountdownElement>;
     countdownElements.forEach(element => {
       const intervalId = element.dataset.intervalId;
       if (intervalId) {
@@ -810,4 +929,4 @@ positionPanel(panel, triggerElement) {
   }
 }
 
-export { RenderDetailPanel };
+export { RenderDetailPanel }

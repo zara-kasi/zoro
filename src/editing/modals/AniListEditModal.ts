@@ -1,10 +1,3 @@
-/**
- * AniListEditModal - AniList-specific edit operations
- * Migrated from AniListEditModal.js → AniListEditModal.ts
- * - Added Plugin typing from obsidian
- * - Typed method parameters and GraphQL response structures
- * - Added interfaces for entry data and API responses
- */
 import { Notice, requestUrl } from 'obsidian';
 import type { Plugin, RequestUrlResponse } from 'obsidian';
 

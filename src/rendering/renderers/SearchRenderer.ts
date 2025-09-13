@@ -7,8 +7,8 @@
  */
 import { setIcon } from 'obsidian';
 import type { Plugin } from 'obsidian';
-import { DOMHelper } from '../helpers/DOMHelper.js';
-import { GRID_COLUMN_OPTIONS } from '../../core/constants.js';
+import { DOMHelper } from '../helpers/DOMHelper';
+import { GRID_COLUMN_OPTIONS } from '../../core/constants';
 
 interface MediaTitle {
   english?: string;

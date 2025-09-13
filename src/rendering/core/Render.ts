@@ -1,10 +1,3 @@
-/**
- * Render - Main rendering orchestrator
- * Migrated from Render.js → Render.ts
- * - Added Plugin typing from obsidian
- * - Typed method parameters and return values
- * - Added interfaces for config objects and media data
- */
 import { Notice, setIcon } from 'obsidian';
 import type { Plugin } from 'obsidian';
 import { APISourceHelper } from '../helpers/APISourceHelper';
@@ -63,7 +56,7 @@ interface ListOptions {
   [key: string]: unknown;
 }
 
-class Render {
+export class Render {
   private plugin: Plugin;
   private apiHelper: APISourceHelper;
   private formatter: FormatterHelper;
@@ -274,5 +267,3 @@ class Render {
     return this.statsRenderer.generateInsights(stats, type, user);
   }
 }
-
-export { Render };

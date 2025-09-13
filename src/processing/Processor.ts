@@ -8,8 +8,8 @@
 
 import { Notice } from 'obsidian';
 import type { Plugin } from 'obsidian';
-import { Trending } from '../features/Trending.js';
-import type { ZoroPluginSettings, ApiSource, Layout, MediaType } from '../settings.js';
+import { Trending } from '../features/Trending';
+import type { ZoroPluginSettings, ApiSource, Layout, MediaType } from '../settings';
 
 export type OperationType = 'stats' | 'search' | 'single' | 'list' | 'trending';
 export type ListType = 'CURRENT' | 'COMPLETED' | 'PAUSED' | 'DROPPED' | 'PLANNING' | 'REPEATING';

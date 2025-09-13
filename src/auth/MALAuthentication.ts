@@ -199,18 +199,8 @@ export class MALAuthentication {
 
     new Notice('🔐 Opening MyAnimeList login page…', 3000);
 
-    // Try Electron shell first, fallback to window.open
-    if (window.require) {
-      try {
-        const { shell } = window.require('electron');
-        await shell.openExternal(authUrl);
-      } catch (error) {
-        console.warn('[MAL-AUTH] Electron shell failed, using fallback:', error);
-        window.open(authUrl, '_blank');
-      }
-    } else {
-      window.open(authUrl, '_blank');
-    }
+   // Open auth URL using standard web API (works in all Obsidian versions)
+   window.open(authUrl, '_blank');
   }
 
   async handleOAuthRedirect(params: OAuthRedirectParams | string): Promise<void> {

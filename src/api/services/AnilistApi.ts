@@ -1,11 +1,137 @@
+/**
+ * AnilistApi
+ * Migrated from AnilistApi.js → AnilistApi.ts
+ * - Added comprehensive TypeScript interfaces for all data structures
+ * - Converted ES module imports/exports
+ * - Added type guards for API responses
+ * - Typed all method parameters and return values
+ */
+
 import { Notice, requestUrl } from 'obsidian';
+import type { Plugin } from 'obsidian';
 import { ZoroError } from '../../core/ZoroError.js';
 
-class AnilistApi {
-  constructor(plugin) {
+// =================== TYPE DEFINITIONS ===================
+
+interface AnilistApiConfig {
+  maxRetries: number;
+  baseRetryDelay: number;
+  maxRetryDelay: number;
+  requestTimeout: number;
+}
+
+interface RequestConfig {
+  type?: 'stats' | 'single' | 'search' | 'list';
+  mediaType?: 'ANIME' | 'MANGA';
+  username?: string;
+  mediaId?: string | number;
+  search?: string;
+  page?: number;
+  perPage?: number;
+  listType?: string;
+  layout?: 'compact' | 'card' | 'full' | 'standard' | 'minimal' | 'detailed';
+  nocache?: boolean;
+  priority?: 'low' | 'normal' | 'high';
+  accessToken?: string;
+  clientSecret?: string;
+  useViewer?: boolean;
+}
+
+interface CacheOptions {
+  scope: string;
+  source: string;
+  ttl?: number | null;
+}
+
+interface MediaListUpdates {
+  status?: string;
+  score?: number | null;
+  progress?: number;
+}
+
+interface ClassifiedError {
+  type: string;
+  message: string;
+  severity: 'error' | 'warn' | 'info';
+  retryable: boolean;
+}
+
+interface RequestParams {
+  query: string;
+  variables: Record<string, unknown>;
+  config: RequestConfig;
+  requestId: string;
+  priority?: 'low' | 'normal' | 'high';
+  timeout: number;
+  retries: number;
+  metadata: Record<string, unknown>;
+  service: string;
+}
+
+interface GraphQLError {
+  message: string;
+  extensions?: Record<string, unknown>;
+  locations?: Array<{ line: number; column: number }>;
+  path?: string[];
+}
+
+interface AniListResponse {
+  data?: Record<string, unknown>;
+  errors?: GraphQLError[];
+}
+
+interface MediaListEntry {
+  id: number;
+  status: string;
+  score: number;
+  progress: number;
+  updatedAt: number;
+  media: {
+    id: number;
+    idMal: number;
+    title: { romaji: string; english: string };
+  };
+}
+
+interface OAuthTokenResponse {
+  access_token: string;
+  token_type: string;
+  expires_in: number;
+  refresh_token?: string;
+}
+
+interface QueryResult {
+  query: string;
+  variables: Record<string, unknown>;
+}
+
+// Type guard functions
+function assertIsAniListResponse(value: unknown): asserts value is AniListResponse {
+  if (!value || typeof value !== 'object') {
+    throw new Error('Invalid AniList response structure');
+  }
+}
+
+function assertIsOAuthResponse(value: unknown): asserts value is OAuthTokenResponse {
+  if (!value || typeof value !== 'object') {
+    throw new Error('Invalid OAuth response structure');
+  }
+  const response = value as Record<string, unknown>;
+  if (typeof response.access_token !== 'string') {
+    throw new Error('OAuth response missing access_token');
+  }
+}
+
+export class AnilistApi {
+  private plugin: Plugin;
+  private requestQueue: any; // TODO: type when RequestQueue is migrated
+  private cache: any; // TODO: type when Cache is migrated
+  private config: AnilistApiConfig;
+
+  constructor(plugin: Plugin) {
     this.plugin = plugin;
-    this.requestQueue = plugin.requestQueue;
-    this.cache = plugin.cache;
+    this.requestQueue = (plugin as any).requestQueue;
+    this.cache = (plugin as any).cache;
     
     // Basic configuration - removed enterprise features
     this.config = {
@@ -18,16 +144,16 @@ class AnilistApi {
 
   // =================== CORE REQUEST METHODS ===================
 
-  createCacheKey(config) {
-    const sortedConfig = {};
+  createCacheKey(config: RequestConfig): string {
+    const sortedConfig: Record<string, unknown> = {};
     Object.keys(config).sort().forEach(key => {
       if (key === 'accessToken' || key === 'clientSecret') return;
-      sortedConfig[key] = config[key];
+      sortedConfig[key] = (config as any)[key];
     });
     return JSON.stringify(sortedConfig);
   }
 
-  async fetchAniListData(config) {
+  async fetchAniListData(config: RequestConfig): Promise<unknown> {
     const requestId = this.generateRequestId();
     const startTime = performance.now();
     
@@ -56,7 +182,7 @@ class AnilistApi {
       const { query, variables } = this.buildQuery(config);
       
       // Request execution through upgraded makeRawRequest
-      const requestParams = {
+      const requestParams: RequestParams = {
         query,
         variables,
         config,
@@ -79,7 +205,7 @@ class AnilistApi {
       }
       
       const duration = performance.now() - startTime;
-      this.log('REQUEST_SUCCESS', config.type, requestId, `${duration.toFixed(1)}ms`);
+      this.log('REQUEST_SUCCESS', config.type || 'unknown', requestId, `${duration.toFixed(1)}ms`);
       
       return result;
       
@@ -87,7 +213,7 @@ class AnilistApi {
       const duration = performance.now() - startTime;
       const classifiedError = this.classifyError(error, config);
       
-      this.log('REQUEST_FAILED', config.type, requestId, {
+      this.log('REQUEST_FAILED', config.type || 'unknown', requestId, {
         error: classifiedError.type,
         message: classifiedError.message,
         duration: `${duration.toFixed(1)}ms`
@@ -97,19 +223,19 @@ class AnilistApi {
     }
   }
 
-  async makeRawRequest({ query, variables, config, requestId, priority = 'normal', timeout, retries, metadata, service }) {
+  async makeRawRequest({ query, variables, config, requestId, priority = 'normal', timeout, retries, metadata, service }: RequestParams): Promise<unknown> {
     // Create requestFn that wraps the actual requestUrl call
-    const requestFn = async () => {
-      const headers = {
+    const requestFn = async (): Promise<unknown> => {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'User-Agent': `Zoro-Plugin/${this.plugin.manifest.version}`,
+        'User-Agent': `Zoro-Plugin/${(this.plugin as any).manifest.version}`,
         'X-Request-ID': requestId
       };
       
-      if (this.plugin.settings.accessToken) {
-        await this.plugin.auth.ensureValidToken();
-        headers['Authorization'] = `Bearer ${this.plugin.settings.accessToken}`;
+      if ((this.plugin as any).settings.accessToken) {
+        await (this.plugin as any).auth.ensureValidToken();
+        headers['Authorization'] = `Bearer ${(this.plugin as any).settings.accessToken}`;
       }
       
       const requestBody = JSON.stringify({ query, variables });
@@ -153,7 +279,7 @@ class AnilistApi {
 
   // =================== UPDATE METHOD ===================
 
-  async updateMediaListEntry(mediaId, updates) {
+  async updateMediaListEntry(mediaId: string | number, updates: MediaListUpdates): Promise<MediaListEntry> {
     const requestId = this.generateRequestId();
     const startTime = performance.now();
     
@@ -161,7 +287,7 @@ class AnilistApi {
       this.validateMediaId(mediaId);
       this.validateUpdates(updates);
       
-      if (!this.plugin.settings.accessToken || !(await this.plugin.auth.ensureValidToken())) {
+      if (!(this.plugin as any).settings.accessToken || !(await (this.plugin as any).auth.ensureValidToken())) {
         throw new Error('Authentication required to update entries');
       }
 
@@ -182,18 +308,19 @@ class AnilistApi {
         }
       `;
       
-      const variables = {
-        mediaId: parseInt(mediaId),
-        ...(updates.status !== undefined && { status: updates.status }),
-        ...(updates.score !== undefined && updates.score !== null && { score: parseFloat(updates.score) }),
-        ...(updates.progress !== undefined && { progress: parseInt(updates.progress) }),
+      const variables: Record<string, unknown> = {
+        mediaId: parseInt(String(mediaId)),
       };
       
+      if (updates.status !== undefined) variables.status = updates.status;
+      if (updates.score !== undefined && updates.score !== null) variables.score = parseFloat(String(updates.score));
+      if (updates.progress !== undefined) variables.progress = parseInt(String(updates.progress));
+      
       // Use upgraded makeRawRequest following Simkl pattern
-      const requestParams = {
+      const requestParams: RequestParams = {
         query: mutation,
         variables,
-        config: { type: 'update', mediaId },
+        config: { type: 'update' as const, mediaId },
         requestId,
         priority: 'high',
         timeout: this.config.requestTimeout,
@@ -202,7 +329,7 @@ class AnilistApi {
         service: 'anilist'
       };
       
-      const result = await this.makeRawRequest(requestParams);
+      const result = await this.makeRawRequest(requestParams) as { SaveMediaListEntry: MediaListEntry };
 
       await this.invalidateRelatedCache(mediaId, updates);
       
@@ -232,7 +359,7 @@ class AnilistApi {
 
   // =================== ERROR HANDLING ===================
 
-  classifyError(error, context = {}) {
+  classifyError(error: any, context: RequestConfig = {}): ClassifiedError {
     if (error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
       return { type: 'NETWORK_ERROR', message: error.message, severity: 'error', retryable: true };
     }
@@ -264,8 +391,8 @@ class AnilistApi {
     return { type: 'UNKNOWN_ERROR', message: error.message, severity: 'error', retryable: false };
   }
 
-  createZoroError(classifiedError) {
-    const errorMessages = {
+  createZoroError(classifiedError: ClassifiedError): Error {
+    const errorMessages: Record<string, string> = {
       'NETWORK_ERROR': 'Connection issue. Please check your internet connection and try again.',
       'TIMEOUT': 'Request timed out. Please try again.',
       'RATE_LIMITED': 'Too many requests. Please wait a moment and try again.',
@@ -281,7 +408,7 @@ class AnilistApi {
     // Use ZoroError.notify for user feedback and create a proper Error object
     ZoroError.notify(userMessage, classifiedError.severity);
     
-    const error = new Error(classifiedError.message);
+    const error = new Error(classifiedError.message) as any;
     error.type = classifiedError.type;
     error.severity = classifiedError.severity;
     error.retryable = classifiedError.retryable;
@@ -290,8 +417,8 @@ class AnilistApi {
     return error;
   }
 
-  createGraphQLError(graphqlError) {
-    const error = new Error(graphqlError.message);
+  createGraphQLError(graphqlError: GraphQLError): Error {
+    const error = new Error(graphqlError.message) as any;
     error.type = 'GRAPHQL_ERROR';
     error.extensions = graphqlError.extensions;
     error.locations = graphqlError.locations;
@@ -301,7 +428,7 @@ class AnilistApi {
 
   // =================== VALIDATION & UTILITY METHODS ===================
 
-  validateConfig(config) {
+  validateConfig(config: RequestConfig): void {
     if (!config || typeof config !== 'object') {
       throw new Error('Configuration must be an object');
     }
@@ -315,14 +442,14 @@ class AnilistApi {
     }
   }
 
-  validateMediaId(mediaId) {
-    const id = parseInt(mediaId);
+  validateMediaId(mediaId: string | number): void {
+    const id = parseInt(String(mediaId));
     if (!id || id <= 0) {
       throw new Error(`Invalid media ID: ${mediaId}`);
     }
   }
 
-  validateUpdates(updates) {
+  validateUpdates(updates: MediaListUpdates): void {
     if (!updates || typeof updates !== 'object') {
       throw new Error('Updates must be an object');
     }
@@ -332,13 +459,13 @@ class AnilistApi {
     }
   }
 
-  validateResponse(response) {
+  validateResponse(response: unknown): void {
     if (!response || typeof response !== 'object') {
       throw new Error('Invalid response from AniList');
     }
   }
 
-  isRetryableError(error) {
+  isRetryableError(error: any): boolean {
     return error.retryable !== false && (
       error.status >= 500 ||
       error.code === 'ENOTFOUND' ||
@@ -348,7 +475,7 @@ class AnilistApi {
     );
   }
 
-  calculateRetryDelay(attempt) {
+  calculateRetryDelay(attempt: number): number {
     const baseDelay = this.config.baseRetryDelay;
     const maxDelay = this.config.maxRetryDelay;
     const exponentialDelay = baseDelay * Math.pow(2, attempt - 1);
@@ -357,7 +484,7 @@ class AnilistApi {
     return Math.min(exponentialDelay + jitter, maxDelay);
   }
 
-  createTimeoutPromise(timeout) {
+  createTimeoutPromise(timeout: number): Promise<never> {
     return new Promise((_, reject) => {
       setTimeout(() => {
         reject(new Error('Request timeout'));
@@ -365,36 +492,36 @@ class AnilistApi {
     });
   }
 
-  generateRequestId() {
+  generateRequestId(): string {
     return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
 
-  sleep(ms) {
+  sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   // =================== CACHE MANAGEMENT ===================
 
-  determineCacheType(config) {
-    const typeMap = {
+  determineCacheType(config: RequestConfig): string {
+    const typeMap: Record<string, string> = {
       'stats': 'userData',
       'single': 'mediaData',
       'search': 'searchResults',
       'list': 'userData'
     };
-    return typeMap[config.type] || 'userData';
+    return typeMap[config.type || ''] || 'userData';
   }
 
-  getCacheTTL(config) {
+  getCacheTTL(config: RequestConfig): null {
     return null; // Use cache's built-in TTL system
   }
 
-  async invalidateRelatedCache(mediaId, updates) {
+  async invalidateRelatedCache(mediaId: string | number, updates: MediaListUpdates): Promise<void> {
     this.cache.invalidateByMedia(mediaId, { source: 'anilist' });
     
     if (updates.status) {
       try {
-        const username = await this.plugin.auth.getAuthenticatedUsername();
+        const username = await (this.plugin as any).auth.getAuthenticatedUsername();
         if (username) {
           this.cache.invalidateByUser(username, { source: 'anilist' });
         }
@@ -406,7 +533,7 @@ class AnilistApi {
 
   // =================== OAUTH METHOD ===================
 
-  async makeObsidianRequest(code, redirectUri) {
+  async makeObsidianRequest(code: string, redirectUri: string): Promise<OAuthTokenResponse> {
     const requestId = this.generateRequestId();
     const startTime = performance.now();
     
@@ -421,16 +548,16 @@ class AnilistApi {
 
       const body = new URLSearchParams({
         grant_type: 'authorization_code',
-        client_id: this.plugin.settings.clientId,
-        client_secret: this.plugin.settings.clientSecret || '',
+        client_id: (this.plugin as any).settings.clientId,
+        client_secret: (this.plugin as any).settings.clientSecret || '',
         redirect_uri: redirectUri,
         code: code
       });
 
-      const headers = {
+      const headers: Record<string, string> = {
         'Content-Type': 'application/x-www-form-urlencoded',
         'Accept': 'application/json',
-        'User-Agent': `Zoro-Plugin/${this.plugin.manifest.version}`,
+        'User-Agent': `Zoro-Plugin/${(this.plugin as any).manifest.version}`,
         'X-Request-ID': requestId
       };
 
@@ -445,6 +572,8 @@ class AnilistApi {
         throw new Error('Invalid response structure from AniList');
       }
 
+      assertIsOAuthResponse(result.json);
+
       const duration = performance.now() - startTime;
       this.log('AUTH_SUCCESS', 'oauth', requestId, `${duration.toFixed(1)}ms`);
 
@@ -452,7 +581,7 @@ class AnilistApi {
 
     } catch (error) {
       const duration = performance.now() - startTime;
-      const classifiedError = this.classifyError(error, { type: 'auth' });
+      const classifiedError = this.classifyError(error, { type: 'auth' as const });
       
       this.log('AUTH_FAILED', 'oauth', requestId, {
         error: classifiedError.type,
@@ -463,7 +592,7 @@ class AnilistApi {
     }
   }
 
-  getAniListUrl(mediaId, mediaType = 'ANIME') {
+  getAniListUrl(mediaId: string | number, mediaType: string = 'ANIME'): string {
     try {
       this.validateMediaId(mediaId);
       
@@ -476,7 +605,7 @@ class AnilistApi {
       this.log('URL_GENERATION_FAILED', 'utility', this.generateRequestId(), {
         mediaId,
         mediaType,
-        error: error.message
+        error: (error as Error).message
       });
       throw error;
     }
@@ -484,19 +613,21 @@ class AnilistApi {
 
   // =================== QUERY BUILDERS ===================
 
-  buildQuery(config) {
-    let query, variables;
+  buildQuery(config: RequestConfig): QueryResult {
+    let query: string;
+    let variables: Record<string, unknown>;
     
     if (config.type === 'stats') {
       query = this.getUserStatsQuery({
         mediaType: config.mediaType || 'ANIME',
-        layout: config.layout || 'standard'
+        layout: config.layout || 'standard',
+        useViewer: config.useViewer
       });
       variables = { username: config.username };
     } else if (config.type === 'single') {
       query = this.getSingleMediaQuery(config.layout);
       variables = {
-        mediaId: parseInt(config.mediaId),
+        mediaId: parseInt(String(config.mediaId)),
         type: config.mediaType
       };
     } else if (config.type === 'search') {
@@ -519,7 +650,7 @@ class AnilistApi {
     return { query, variables };
   }
 
-  getMediaListQuery(layout = 'card') {
+  getMediaListQuery(layout: string = 'card'): string {
     const baseFields = `
       id
       status
@@ -527,7 +658,7 @@ class AnilistApi {
       progress
     `;
 
-    const mediaFields = {
+    const mediaFields: Record<string, string> = {
       compact: `
         id
         idMal
@@ -617,8 +748,8 @@ class AnilistApi {
     `;
   }
 
-  getSingleMediaQuery(layout = 'card') {
-    const mediaFields = {
+  getSingleMediaQuery(layout: string = 'card'): string {
+    const mediaFields: Record<string, string> = {
       compact: `
         id
         idMal
@@ -705,10 +836,14 @@ class AnilistApi {
     mediaType = 'ANIME', 
     layout = 'standard',
     useViewer = false
-  } = {}) {
+  }: {
+    mediaType?: string;
+    layout?: string;
+    useViewer?: boolean;
+  } = {}): string {
     const typeKey = mediaType.toLowerCase();
 
-    const statFields = {
+    const statFields: Record<string, string> = {
       minimal: `
         count
         meanScore
@@ -822,8 +957,8 @@ class AnilistApi {
     `;
   }
 
-  getSearchMediaQuery(layout = 'card') {
-    const mediaFields = {
+  getSearchMediaQuery(layout: string = 'card'): string {
+    const mediaFields: Record<string, string> = {
       compact: `
         id
         idMal
@@ -912,7 +1047,7 @@ class AnilistApi {
 
   // =================== LOGGING ===================
 
-  log(level, category, requestId, data = '') {
+  log(level: string, category: string, requestId: string, data: any = ''): void {
     if (level === 'ERROR') {
       const timestamp = new Date().toISOString();
       const logData = typeof data === 'object' ? JSON.stringify(data, null, 2) : data;
@@ -920,5 +1055,3 @@ class AnilistApi {
     }
   }
 }
-
-export { AnilistApi };

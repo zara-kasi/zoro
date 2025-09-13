@@ -1,11 +1,3 @@
-/**
- * SIMKL PIN-based authentication handler for Obsidian plugin
- * Migrated from SimklAuthentication.js → SimklAuthentication.ts
- * - Added comprehensive types for SIMKL API responses and PIN flow
- * - Typed polling mechanism for device authentication
- * - Added proper error handling and timeout management
- */
-
 import type { Plugin, RequestUrlResponse } from 'obsidian';
 import { Notice, requestUrl } from 'obsidian';
 
@@ -344,5 +336,3 @@ export class SimklAuthentication {
     return this.plugin.settings.simklUserInfo;
   }
 }
-
-export { SimklAuthentication };

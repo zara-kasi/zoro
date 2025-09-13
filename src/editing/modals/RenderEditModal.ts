@@ -1,10 +1,3 @@
-/**
- * RenderEditModal - UI component builder for edit modals
- * Migrated from RenderEditModal.js → RenderEditModal.ts
- * - Added strict typing for DOM elements and configuration
- * - Typed method parameters and return values
- * - Added interfaces for form fields and modal elements
- */
 import { Notice } from 'obsidian';
 
 // Core interfaces

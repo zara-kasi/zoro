@@ -1,10 +1,3 @@
-/**
- * TableRenderer
- * Migrated from TableRenderer.js → TableRenderer.ts
- * - Added types for parentRenderer, entries, config parameters
- * - Typed media objects and entry structures
- * - Added Plugin type from obsidian
- */
 import type { Plugin } from 'obsidian';
 
 interface MediaTitle {

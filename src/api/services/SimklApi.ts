@@ -1,12 +1,3 @@
-/**
- * SimklApi.ts
- * Migrated from SimklApi.js → SimklApi.ts
- * - Added strict TypeScript types and interfaces
- * - Converted ES module imports
- * - Added proper Obsidian plugin typing
- * - Added validation functions for API responses
- */
-
 import { requestUrl } from 'obsidian';
 import type { Plugin } from 'obsidian';
 import { ZoroError } from '../../core/ZoroError';
@@ -262,7 +253,7 @@ interface SimklPlugin extends Plugin {
   };
 }
 
-class SimklApi {
+export class SimklApi {
   private plugin: SimklPlugin;
   private requestQueue: SimklPlugin['requestQueue'];
   private cache: SimklPlugin['cache'];
@@ -2796,5 +2787,3 @@ class SimklApi {
     return 'anime'; // Default fallback
   }
 }
-
-export { SimklApi };

@@ -1,11 +1,3 @@
-/**
- * AniList OAuth authentication handler for Obsidian plugin
- * Migrated from Authentication.js → Authentication.ts
- * - Added comprehensive types for OAuth flow and API responses
- * - Typed plugin integration and settings access
- * - Added proper error handling with typed exceptions
- */
-
 import type { Plugin, RequestUrlResponse } from 'obsidian';
 import { Notice, requestUrl, Modal } from 'obsidian';
 import { AuthModal } from '../modals/AuthModal';
@@ -407,5 +399,3 @@ export class Authentication {
     }
   }
 }
-
-export { Authentication };

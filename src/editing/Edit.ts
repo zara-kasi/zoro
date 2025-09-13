@@ -7,11 +7,11 @@
  */
 import { Notice } from 'obsidian';
 import type { Plugin } from 'obsidian';
-import { RenderEditModal } from './modals/RenderEditModal.js';
-import { AniListEditModal } from './modals/AniListEditModal.js';
-import { MALEditModal } from './modals/MALEditModal.js';
-import { SimklEditModal } from './modals/SimklEditModal.js';
-import { SupportEditModal } from './modals/SupportEditModal.js';
+import { RenderEditModal } from './modals/RenderEditModal';
+import { AniListEditModal } from './modals/AniListEditModal';
+import { MALEditModal } from './modals/MALEditModal';
+import { SimklEditModal } from './modals/SimklEditModal';
+import { SupportEditModal } from './modals/SupportEditModal';
 
 // Core interfaces
 interface MediaEntry {

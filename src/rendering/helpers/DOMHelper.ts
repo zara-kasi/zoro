@@ -1,12 +1,3 @@
-/**
- * DOMHelper
- * Migrated from DOMHelper.js → DOMHelper.ts
- * - Added strict typing for all DOM manipulation methods
- * - Created interfaces for Obsidian DOM elements and attributes
- * - Added type guards for window.zoroPlugin settings access
- * - Preserved all DOM creation and event handling behavior
- */
-
 import { setIcon } from 'obsidian';
 import { GRID_COLUMN_OPTIONS } from '../../core/constants';
 

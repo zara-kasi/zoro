@@ -1,12 +1,3 @@
-/**
- * Settings configuration and constants
- * Migrated from settings.js → settings.ts
- * - Added strict typing for all settings and grid options
- * - Created interfaces for complex nested objects
- * - Used const assertions and union types for better type safety
- */
-
-// Define all possible grid column options for the layout system
 export const GRID_COLUMN_OPTIONS = {
   DEFAULT: 'default',
   ONE: '1',

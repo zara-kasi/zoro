@@ -1,11 +1,3 @@
-/**
- * ZoroSettingTab
- * Migrated from ZoroSettingTab.js → ZoroSettingTab.ts
- * - Added types for all class properties and methods
- * - Converted CommonJS imports to ES modules
- * - Added Obsidian-specific types from 'obsidian'
- * - Typed plugin settings and auth button references
- */
 import type { App, Plugin } from 'obsidian';
 import { PluginSettingTab, Setting, Notice, setIcon } from 'obsidian';
 import { AuthModal } from '../auth/AuthModal';

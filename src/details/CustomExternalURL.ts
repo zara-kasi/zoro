@@ -1,12 +1,3 @@
-/**
- * CustomExternalURL
- * Migrated from CustomExternalURL.js → CustomExternalURL.ts
- * - Added strict typing for all methods and properties
- * - Created interfaces for template data and media objects
- * - Added type guards for JSON parsing operations
- * - Typed plugin as Obsidian Plugin interface
- */
-
 import type { Plugin } from 'obsidian';
 
 interface TemplateData {

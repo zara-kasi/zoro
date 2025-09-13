@@ -7,14 +7,14 @@
  */
 import { Notice, setIcon } from 'obsidian';
 import type { Plugin } from 'obsidian';
-import { APISourceHelper } from '../helpers/APISourceHelper.js';
-import { FormatterHelper } from '../helpers/FormatterHelper.js';
-import { CardRenderer } from '../renderers/CardRenderer.js';
-import { SearchRenderer } from '../renderers/SearchRenderer.js';
-import { TableRenderer } from '../renderers/TableRenderer.js';
-import { MediaListRenderer } from '../renderers/MediaListRenderer.js';
-import { StatsRenderer } from '../renderers/StatsRenderer.js';
-import { DOMHelper } from '../helpers/DOMHelper.js';
+import { APISourceHelper } from '../helpers/APISourceHelper';
+import { FormatterHelper } from '../helpers/FormatterHelper';
+import { CardRenderer } from '../renderers/CardRenderer';
+import { SearchRenderer } from '../renderers/SearchRenderer';
+import { TableRenderer } from '../renderers/TableRenderer';
+import { MediaListRenderer } from '../renderers/MediaListRenderer';
+import { StatsRenderer } from '../renderers/StatsRenderer';
+import { DOMHelper } from '../helpers/DOMHelper';
 
 // Core interfaces
 interface RenderConfig {

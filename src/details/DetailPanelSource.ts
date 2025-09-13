@@ -1,11 +1,3 @@
-/**
- * DetailPanelSource
- * Migrated from DetailPanelSource.js → DetailPanelSource.ts
- * - Added comprehensive type definitions for all methods and interfaces
- * - Used unknown for external API responses with type guards
- * - Preserved all runtime behavior exactly as original
- */
-
 // Type definitions
 interface Plugin {
   cache: CacheService;
@@ -146,7 +138,7 @@ function assertIsOMDBResponse(value: unknown): asserts value is { Response: stri
   }
 }
 
-export default class DetailPanelSource {
+export class DetailPanelSource {
   private plugin: Plugin;
 
   constructor(plugin: Plugin) {
@@ -818,5 +810,3 @@ export default class DetailPanelSource {
     }
   }
 }
-
-export { DetailPanelSource };

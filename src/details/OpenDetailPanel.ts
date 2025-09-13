@@ -1,11 +1,3 @@
-/**
- * OpenDetailPanel
- * Migrated from OpenDetailPanel.js → OpenDetailPanel.ts
- * - Added comprehensive type definitions for all dependencies and data structures
- * - Used unknown for plugin methods with type guards where needed
- * - Preserved all runtime behavior exactly as original
- */
-
 import { RenderDetailPanel } from './RenderDetailPanel';
 import { DetailPanelSource } from './DetailPanelSource';
 
@@ -71,7 +63,7 @@ interface IMDBData {
 
 type UpdateCallback = (detailedMedia: MediaData, malData: MALData | null, imdbData: IMDBData | null) => void;
 
-export default class OpenDetailPanel {
+export class OpenDetailPanel {
   private plugin: Plugin;
   public currentPanel: HTMLElement | null;
   private boundOutsideClickHandler: (event: MouseEvent) => void;
@@ -179,5 +171,3 @@ export default class OpenDetailPanel {
     }
   }
 }
-
-export { OpenDetailPanel };

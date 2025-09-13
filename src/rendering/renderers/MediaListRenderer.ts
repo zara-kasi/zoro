@@ -6,7 +6,7 @@
  * - Added error handling types for single media rendering
  */
 import type { Plugin } from 'obsidian';
-import { GRID_COLUMN_OPTIONS } from '../../core/constants.js';
+import { GRID_COLUMN_OPTIONS } from '../../core/constants';
 
 interface MediaTitle {
   english?: string;

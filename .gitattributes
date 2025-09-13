@@ -1,0 +1,4 @@
+# Ignore build artifacts
+main.js linguist-generated=true
+dist/* linguist-generated=true
+node_modules/* linguist-vendored

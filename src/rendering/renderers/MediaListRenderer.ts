@@ -1,10 +1,3 @@
-/**
- * MediaListRenderer
- * Migrated from MediaListRenderer.js → MediaListRenderer.ts
- * - Added types for media entries, config, and renderer dependencies
- * - Typed chunk rendering with proper async behavior
- * - Added error handling types for single media rendering
- */
 import type { Plugin } from 'obsidian';
 import { GRID_COLUMN_OPTIONS } from '../../core/constants';
 

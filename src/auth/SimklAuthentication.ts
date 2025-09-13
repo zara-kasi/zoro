@@ -147,18 +147,8 @@ export class SimklAuthentication {
       new Notice('🔐 Opening SIMKL PIN page…', 3000);
       const pinPageUrl = deviceData.verification_url || 'https://simkl.com/pin';
       
-      // Try Electron shell first, fallback to window.open
-      if (window.require) {
-        try {
-          const { shell } = window.require('electron');
-          await shell.openExternal(pinPageUrl);
-        } catch (error) {
-          console.warn('[SIMKL-AUTH] Electron shell failed, using fallback:', error);
-          window.open(pinPageUrl, '_blank');
-        }
-      } else {
-        window.open(pinPageUrl, '_blank');
-      }
+      // Open auth URL using standard web API (works in all Obsidian versions)
+     window.open(pinPageUrl, '_blank');
      
       // Start polling for authentication
       this.startPolling(deviceData);

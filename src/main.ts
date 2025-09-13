@@ -1,11 +1,3 @@
-/**
- * main.ts - Zoro Plugin Entry Point
- * Migrated from index.js → main.ts
- * - Updated all imports to TypeScript (.ts extensions)
- * - Added strict typing for plugin components and settings
- * - Preserved all runtime behavior and OAuth handling
- */
-
 import { Plugin, Notice, WorkspaceLeaf } from 'obsidian';
 
 import { Cache } from './cache/Cache';

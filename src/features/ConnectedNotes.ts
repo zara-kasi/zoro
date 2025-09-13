@@ -1,12 +1,3 @@
-/**
- * ConnectedNotes
- * Migrated from ConnectedNotes.js → ConnectedNotes.ts
- * - Added comprehensive type definitions for media objects, entries, and API responses
- * - Converted ES module imports/exports
- * - Added Obsidian-specific type imports
- * - Preserved all runtime behavior and logic
- */
-
 import { Notice } from 'obsidian';
 import type { App, Plugin, TFile, CachedMetadata } from 'obsidian';
 import { EmojiIconMapper } from '../rendering/helpers/EmojiIconMapper';

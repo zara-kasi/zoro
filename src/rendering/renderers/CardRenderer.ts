@@ -1,30 +1,176 @@
+/**
+ * CardRenderer
+ * Migrated from CardRenderer.js → CardRenderer.ts
+ * - Added comprehensive types for media objects, entries, and card creation
+ * - Typed event handlers for mouse/touch interactions and button clicks
+ * - Added proper async/await typing for API operations
+ */
 import { Notice, setIcon } from 'obsidian';
+import type { Plugin } from 'obsidian';
 import { DOMHelper } from '../helpers/DOMHelper.js';
 
-class CardRenderer {
-  constructor(parentRenderer) {
+interface MediaTitle {
+  english?: string;
+  romaji?: string;
+  native?: string;
+}
+
+interface CoverImage {
+  medium?: string;
+  large?: string;
+}
+
+interface MediaIds {
+  tmdb?: number;
+  imdb?: string;
+  simkl?: number;
+  id?: number;
+}
+
+interface Media {
+  id: number;
+  title: MediaTitle;
+  coverImage?: CoverImage;
+  format?: string;
+  status?: string;
+  episodes?: number;
+  chapters?: number;
+  meanScore?: number;
+  averageScore?: number;
+  rating?: number;
+  startDate?: {
+    year?: number;
+    month?: number;
+    day?: number;
+  };
+  genres?: string[];
+  isFavourite?: boolean;
+  idTmdb?: number;
+  idImdb?: string;
+  idMal?: number;
+  ids?: MediaIds;
+  _rawData?: {
+    rating?: number;
+  };
+}
+
+interface ZoroMeta {
+  source?: string;
+  mediaType?: string;
+}
+
+interface MediaEntry {
+  media: Media;
+  status: string;
+  progress?: number;
+  score?: number;
+  id?: number | null;
+  _zoroMeta?: ZoroMeta;
+}
+
+interface RenderConfig {
+  layout?: 'cards' | 'compact' | 'table';
+  source?: string;
+  mediaType?: string;
+}
+
+interface CardOptions {
+  isSearch?: boolean;
+}
+
+interface ParentRenderer {
+  plugin: Plugin & {
+    settings: {
+      showCoverImages: boolean;
+      showProgress: boolean;
+      showRatings: boolean;
+      showGenres: boolean;
+      hideUrlsInTitles: boolean;
+    };
+    connectedNotes: {
+      openSidePanelWithContext(context: { media: Media; entry: MediaEntry; source: string; mediaType: string }): Promise<any>;
+      extractSearchIds(media: Media, entry: MediaEntry, source: string): any;
+      currentMedia: Media | null;
+      currentEntry: MediaEntry | null;
+      currentSource: string | null;
+      currentMediaType: string | null;
+      currentUrls: any;
+      buildCurrentUrls(media: Media, mediaType: string, source: string): any;
+      createNewConnectedNote(searchIds: any, mediaType: string): Promise<void>;
+      createConnectedNotesButton(media: Media, entry: MediaEntry, config: RenderConfig): HTMLElement;
+    };
+    prompt: {
+      createAuthenticationPrompt(source?: string): void;
+    };
+    cache: {
+      set(key: string, value: any, options?: { scope?: string }): void;
+    };
+    simklApi?: {
+      updateMediaListEntryWithIds?(ids: MediaIds, updates: any, mediaType: string): Promise<void>;
+      normalizeSimklId(id: number): number;
+      resolveSimklIdByTitle(title: string, mediaType: string): Promise<number>;
+    };
+    handleEditClick(e: Event, entry: MediaEntry, element: HTMLElement, config: any): void;
+    getSourceSpecificUrl?(id: number, mediaType: string, source: string): string;
+  };
+  apiHelper: {
+    validateAndReturnSource(source?: string): string;
+    detectFromDataStructure(data: any): string;
+    getFallbackSource(): string;
+    detectSource(entry: MediaEntry, config: RenderConfig): string;
+    detectMediaType(entry: MediaEntry, config: RenderConfig, media?: Media): string;
+    isAuthenticated(source: string): boolean;
+    updateMediaListEntry(id: number, updates: any, source: string, mediaType: string): Promise<void>;
+    getSourceSpecificUrl(id: number, mediaType: string, source: string): string;
+    getSourceUrl(id: number, mediaType: string, source: string): string;
+  };
+  formatter: {
+    formatTitle(media: Media): string;
+    formatFormat(format?: string): string;
+    formatProgress(progress: number, total: number | string): string;
+    formatRating(score: number, isSearch?: boolean): string;
+    formatGenres(genres: string[]): string[];
+    getStatusClass(status: string): string;
+    getStatusText(status: string): string;
+  };
+  refreshActiveViews(): void;
+}
+
+export class CardRenderer {
+  private parent: ParentRenderer;
+  private plugin: ParentRenderer['plugin'];
+  private apiHelper: ParentRenderer['apiHelper'];
+  private formatter: ParentRenderer['formatter'];
+
+  constructor(parentRenderer: ParentRenderer) {
     this.parent = parentRenderer;
     this.plugin = parentRenderer.plugin;
     this.apiHelper = parentRenderer.apiHelper;
     this.formatter = parentRenderer.formatter;
   }
 
-  createMediaCard(data, config, options = {}) {
+  createMediaCard(data: MediaEntry | Media, config: RenderConfig, options: CardOptions = {}): HTMLElement {
     const isSearch = options.isSearch || false;
     const isCompact = config.layout === 'compact';
-    const media = isSearch ? data : data.media;
+    const media = isSearch ? (data as Media) : (data as MediaEntry).media;
+    
     // Ensure we have a usable numeric id for card actions
     if (!media.id || Number.isNaN(Number(media.id))) {
       media.id = Number(media?.id || media?.idTmdb || media?.idImdb || media?.idMal || media?.ids?.tmdb || media?.ids?.imdb || media?.ids?.simkl || media?.ids?.id || 0) || 0;
     }
+    
     // For search/trending items, synthesize a lightweight entry carrying metadata for proper source/mediaType detection
     const entry = isSearch
       ? {
           media,
-          _zoroMeta: data?._zoroMeta || {
+          status: 'PLANNING',
+          progress: 0,
+          score: null,
+          id: null,
+          _zoroMeta: (data as any)?._zoroMeta || {
             source:
               this.apiHelper.validateAndReturnSource(config?.source) ||
-              data?._zoroMeta?.source ||
+              (data as any)?._zoroMeta?.source ||
               this.apiHelper.detectFromDataStructure({ media }) ||
               this.apiHelper.getFallbackSource(),
             mediaType: (() => {
@@ -35,8 +181,9 @@ class CardRenderer {
               return 'ANIME';
             })()
           }
-        }
-      : data;
+        } as MediaEntry
+      : (data as MediaEntry);
+      
     const source = this.apiHelper.detectSource(entry, config);
     const mediaType = this.apiHelper.detectMediaType(entry, config, media);
     
@@ -56,29 +203,29 @@ class CardRenderer {
     
     // Add heart for favorites
     const heart = document.createElement('span');
-heart.className = 'zoro-heart';
-heart.createEl('span', { text: '❤️' });
-if (!media.isFavourite) heart.style.display = 'none';
-card.appendChild(heart);
-return card;
+    heart.className = 'zoro-heart';
+    heart.createEl('span', { text: '❤️' });
+    if (!media.isFavourite) heart.style.display = 'none';
+    card.appendChild(heart);
+    
+    return card;
   }
 
-  createCoverContainer(media, entry, isSearch, isCompact, config) {
+  createCoverContainer(media: Media, entry: MediaEntry, isSearch: boolean, isCompact: boolean, config: RenderConfig): HTMLElement {
     const coverContainer = document.createElement('div');
     coverContainer.className = 'cover-container';
     
     const img = document.createElement('img');
-    img.src = media.coverImage.large;
-    img.alt = media.title.english || media.title.romaji;
+    img.src = media.coverImage!.large!;
+    img.alt = media.title.english || media.title.romaji || 'Untitled';
     img.className = 'media-cover pressable-cover';
     img.loading = 'lazy';
 
-    
-    let pressTimer = null;
+    let pressTimer: NodeJS.Timeout | null = null;
     let isPressed = false;
     const pressHoldDuration = 400;
     
-    img.onmousedown = (e) => {
+    img.onmousedown = (e: MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
       isPressed = true;
@@ -102,7 +249,7 @@ return card;
       }, pressHoldDuration);
     };
 
-    img.onmouseup = img.onmouseleave = (e) => {
+    const clearPressState = () => {
       if (pressTimer) {
         clearTimeout(pressTimer);
         pressTimer = null;
@@ -110,24 +257,27 @@ return card;
       img.classList.remove('pressed');
       isPressed = false;
     };
+
+    img.onmouseup = clearPressState;
+    img.onmouseleave = clearPressState;
     
-    img.onclick = (e) => {
+    img.onclick = (e: MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
       return false;
     };
     
-    img.oncontextmenu = (e) => {
+    img.oncontextmenu = (e: MouseEvent) => {
       e.preventDefault();
       return false;
     };
     
-    img.ondragstart = (e) => {
+    img.ondragstart = (e: DragEvent) => {
       e.preventDefault();
       return false;
     };
     
-    img.ontouchstart = (e) => {
+    img.ontouchstart = (e: TouchEvent) => {
       isPressed = true;
       img.classList.add('pressed');
       
@@ -150,7 +300,7 @@ return card;
       }, pressHoldDuration);
     };
 
-    img.ontouchend = img.ontouchcancel = img.ontouchmove = (e) => {
+    const clearTouchState = () => {
       if (pressTimer) {
         clearTimeout(pressTimer);
         pressTimer = null;
@@ -158,13 +308,16 @@ return card;
       img.classList.remove('pressed');
       isPressed = false;
     };
+
+    img.ontouchend = clearTouchState;
+    img.ontouchcancel = clearTouchState;
+    img.ontouchmove = clearTouchState;
     
     img.title = 'Press and hold for more details';
     
     coverContainer.appendChild(img);
     
     // Add format badge to cover if available
-    
     if (isSearch) {
       // For search and trending cards, show both Add and Edit
       const addBtn = this.createAddButton(media, entry, config);
@@ -174,54 +327,52 @@ return card;
     return coverContainer;
   }
 
-
-  createFormatBadgeForCover(media) {
+  createFormatBadgeForCover(media: Media): HTMLElement {
     const formatBadge = document.createElement('div');
     formatBadge.className = 'zoro-format-badge-cover';
     formatBadge.textContent = this.formatter.formatFormat(media.format);
     return formatBadge;
   }
 
-  createCoverOverlay(media, entry, isSearch) {
+  createCoverOverlay(media: Media, entry: MediaEntry, isSearch: boolean): HTMLElement {
     const overlay = document.createElement('div');
     overlay.className = 'cover-overlay';
     
-    
-   // Progress indicator for user lists OR total count for search results
-if (this.plugin.settings.showProgress) {
-  if (!isSearch && entry && entry.progress != null) {
-    // Show progress for user list items
-    const progress = document.createElement('span');
-    progress.className = 'progress';
-    const total = media.episodes || media.chapters || '?';
-    progress.textContent = this.formatter.formatProgress(entry.progress, total);
-    overlay.appendChild(progress);
-  } else if (isSearch) {
-    // Show total count for search results or generic indicator as fallback
-    const searchInfo = document.createElement('span');
-    searchInfo.className = 'progress';
-    
-    if (media.episodes || media.chapters) {
-      const count = media.episodes || media.chapters;
-      const type = media.episodes ? 'EP' : 'CH';
-      searchInfo.textContent = `${count} ${type}`;
+    // Progress indicator for user lists OR total count for search results
+    if (this.plugin.settings.showProgress) {
+      if (!isSearch && entry && entry.progress != null) {
+        // Show progress for user list items
+        const progress = document.createElement('span');
+        progress.className = 'progress';
+        const total = media.episodes || media.chapters || '?';
+        progress.textContent = this.formatter.formatProgress(entry.progress, total);
+        overlay.appendChild(progress);
+      } else if (isSearch) {
+        // Show total count for search results or generic indicator as fallback
+        const searchInfo = document.createElement('span');
+        searchInfo.className = 'progress';
+        
+        if (media.episodes || media.chapters) {
+          const count = media.episodes || media.chapters;
+          const type = media.episodes ? 'EP' : 'CH';
+          searchInfo.textContent = `${count} ${type}`;
+        } else {
+          searchInfo.textContent = '?';
+        }
+        
+        overlay.appendChild(searchInfo);
+      } else {
+        // Generic indicator when nothing is available to show
+        const fallback = document.createElement('span');
+        fallback.className = 'progress';
+        fallback.textContent = '—';
+        overlay.appendChild(fallback);
+      }
     } else {
-      searchInfo.textContent = '?';
+      overlay.appendChild(document.createElement('span'));
     }
     
-    overlay.appendChild(searchInfo);
-  } else {
-    // Generic indicator when nothing is available to show
-    const fallback = document.createElement('span');
-    fallback.className = 'progress';
-    fallback.textContent = '—';
-    overlay.appendChild(fallback);
-  }
-} else {
-  overlay.appendChild(document.createElement('span'));
-}
-    
-            // Format indicator
+    // Format indicator
     if (media.format) {
       const format = document.createElement('span');
       format.className = 'format';
@@ -245,11 +396,10 @@ if (this.plugin.settings.showProgress) {
       }
     }
     
-    
     return overlay;
   }
 
-  createMediaInfo(media, entry, config, isSearch, isCompact) {
+  createMediaInfo(media: Media, entry: MediaEntry, config: RenderConfig, isSearch: boolean, isCompact: boolean): HTMLElement {
     const info = document.createElement('div');
     info.className = 'media-info';
 
@@ -272,7 +422,7 @@ if (this.plugin.settings.showProgress) {
     return info;
   }
 
-  createTitle(media, entry, config) {
+  createTitle(media: Media, entry: MediaEntry, config: RenderConfig): HTMLElement {
     const title = document.createElement('h4');
 
     if (this.plugin.settings.hideUrlsInTitles) {
@@ -303,47 +453,46 @@ if (this.plugin.settings.showProgress) {
     return title;
   }
   
-createCreateNoteButton(media, entry, config) {
-  const createBtn = document.createElement('span');
-  createBtn.className = 'zoro-note-obsidian';
-  createBtn.createEl('span', { text: '📝' });
-  createBtn.title = 'Create connected note';
-  
-  createBtn.onclick = async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
+  createCreateNoteButton(media: Media, entry: MediaEntry, config: RenderConfig): HTMLElement {
+    const createBtn = document.createElement('span');
+    createBtn.className = 'zoro-note-obsidian';
+    createBtn.createEl('span', { text: '📝' });
+    createBtn.title = 'Create connected note';
     
-    try {
-      // Extract source and media type using existing logic
-      const source = this.apiHelper.detectSource(entry, config);
-      const mediaType = this.apiHelper.detectMediaType(entry, config, media);
+    createBtn.onclick = async (e: MouseEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
       
-      // Extract search IDs using the same logic as ConnectedNotes
-      const searchIds = this.plugin.connectedNotes.extractSearchIds(media, entry, source);
-      
-      // Store current media context for note creation
-      this.plugin.connectedNotes.currentMedia = media;
-      this.plugin.connectedNotes.currentEntry = entry;
-      this.plugin.connectedNotes.currentSource = source;
-      this.plugin.connectedNotes.currentMediaType = mediaType;
-      this.plugin.connectedNotes.currentUrls = this.plugin.connectedNotes.buildCurrentUrls(media, mediaType, source);
-      
-      // Create the connected note
-      await this.plugin.connectedNotes.createNewConnectedNote(searchIds, mediaType);
-      
-      new Notice('Created connected note');
-      
-    } catch (error) {
-      console.error('[Zoro] Create note button error:', error);
-      new Notice('Failed to create connected note');
-    }
-  };
-  
-  return createBtn;
-}
+      try {
+        // Extract source and media type using existing logic
+        const source = this.apiHelper.detectSource(entry, config);
+        const mediaType = this.apiHelper.detectMediaType(entry, config, media);
+        
+        // Extract search IDs using the same logic as ConnectedNotes
+        const searchIds = this.plugin.connectedNotes.extractSearchIds(media, entry, source);
+        
+        // Store current media context for note creation
+        this.plugin.connectedNotes.currentMedia = media;
+        this.plugin.connectedNotes.currentEntry = entry;
+        this.plugin.connectedNotes.currentSource = source;
+        this.plugin.connectedNotes.currentMediaType = mediaType;
+        this.plugin.connectedNotes.currentUrls = this.plugin.connectedNotes.buildCurrentUrls(media, mediaType, source);
+        
+        // Create the connected note
+        await this.plugin.connectedNotes.createNewConnectedNote(searchIds, mediaType);
+        
+        new Notice('Created connected note');
+        
+      } catch (error) {
+        console.error('[Zoro] Create note button error:', error);
+        new Notice('Failed to create connected note');
+      }
+    };
+    
+    return createBtn;
+  }
 
-
-createMediaDetails(media, entry, config, isSearch) {
+  createMediaDetails(media: Media, entry: MediaEntry, config: RenderConfig, isSearch: boolean): HTMLElement {
     const details = document.createElement('div');
     details.className = 'media-details';
 
@@ -389,14 +538,13 @@ createMediaDetails(media, entry, config, isSearch) {
       }
     }
     
-        // Format indicator
+    // Format indicator
     if (media.format) {
       const format = document.createElement('span');
       format.className = 'zoro-card-format-info';
       format.textContent = this.formatter.formatFormat(media.format);
       infoRow.appendChild(format);
     }
-
 
     // Only add the info row if it has content
     if (infoRow.children.length > 0) {
@@ -418,45 +566,43 @@ createMediaDetails(media, entry, config, isSearch) {
     return details;
   }
   
-  createStatusBadge(entry, config) {
+  createStatusBadge(entry: MediaEntry, config: RenderConfig): HTMLElement {
     const statusBadge = document.createElement('span');
     const statusClass = this.formatter.getStatusClass(entry.status);
     const statusText = this.formatter.getStatusText(entry.status);
     
     statusBadge.className = `status-badge status-${statusClass} clickable-status`;
     statusBadge.createEl('span', { text: '☑️' });
-    statusBadge.onclick = (e) => this.handleStatusClick(e, entry, statusBadge, config);
+    statusBadge.onclick = (e: MouseEvent) => this.handleStatusClick(e, entry, statusBadge, config);
     
     return statusBadge;
   }
 
-    createEditButton(media, entry, config) {
+  createEditButton(media: Media, entry: MediaEntry, config: RenderConfig): HTMLElement {
     const editBtn = document.createElement('span');
     editBtn.className = 'status-badge status-edit clickable-status';
     editBtn.textContent = 'Edit';
     editBtn.dataset.loading = 'false';
-    editBtn.onclick = (e) => this.handleEditClick(e, media, entry, config, editBtn);
+    editBtn.onclick = (e: MouseEvent) => this.handleEditClick(e, media, entry, config, editBtn);
     
     return editBtn;
   }
 
-  createAddButton(media, entry, config) {
-  const addBtn = document.createElement('span');
-  addBtn.classList.add('zoro-add-button-cover');
-  addBtn.createEl('span', { text: '🔖' });
-  addBtn.dataset.loading = 'false';
-  addBtn.onclick = (e) => this.handleAddClick(e, media, entry, config, addBtn);
-  
+  createAddButton(media: Media, entry: MediaEntry, config: RenderConfig): HTMLElement {
+    const addBtn = document.createElement('span');
+    addBtn.classList.add('zoro-add-button-cover');
+    addBtn.createEl('span', { text: '🔖' });
+    addBtn.dataset.loading = 'false';
+    addBtn.onclick = (e: MouseEvent) => this.handleAddClick(e, media, entry, config, addBtn);
+    
+    return addBtn;
+  }
 
-  return addBtn;
-}
-
-
-  createGenres(media) {
+  createGenres(media: Media): HTMLElement {
     const genres = document.createElement('div');
     genres.className = 'genres';
     
-    const genreList = this.formatter.formatGenres(media.genres);
+    const genreList = this.formatter.formatGenres(media.genres || []);
     genreList.forEach(g => {
       const tag = document.createElement('span');
       tag.className = 'genre-tag';
@@ -467,7 +613,7 @@ createMediaDetails(media, entry, config, isSearch) {
     return genres;
   }
 
-  handleStatusClick(e, entry, badge, config) {
+  handleStatusClick(e: MouseEvent, entry: MediaEntry, badge: HTMLElement, config: RenderConfig): void {
     e.preventDefault();
     e.stopPropagation();
     
@@ -483,8 +629,9 @@ createMediaDetails(media, entry, config, isSearch) {
     this.plugin.handleEditClick(e, entry, badge, { source, mediaType });
   }
 
-  async handleAddClick(e, media, entry, config, addBtn) {
-    e.preventDefault(); e.stopPropagation();
+  async handleAddClick(e: MouseEvent, media: Media, entry: MediaEntry, config: RenderConfig, addBtn: HTMLElement): Promise<void> {
+    e.preventDefault(); 
+    e.stopPropagation();
 
     let entrySource = this.apiHelper.detectSource(entry, config);
     const entryMediaType = this.apiHelper.detectMediaType(entry, config, media);
@@ -497,7 +644,9 @@ createMediaDetails(media, entry, config, isSearch) {
         if (numericId > 0) {
           this.plugin.cache.set(String(numericId), { media }, { scope: 'mediaData' });
         }
-      } catch {}
+      } catch {
+        // Silently handle cache errors
+      }
     }
 
     if (!this.apiHelper.isAuthenticated(entrySource)) {
@@ -529,23 +678,21 @@ createMediaDetails(media, entry, config, isSearch) {
       new Notice('✅ Added to planning!', 3000);
       console.log(`[Zoro] Added ${media.id} to planning via add button`);
 
-
-
       // remove spinner and all children (this is the key step)
-      if (typeof addBtn.replaceChildren === 'function') {
-        addBtn.replaceChildren();
+      if (typeof (addBtn as any).replaceChildren === 'function') {
+        (addBtn as any).replaceChildren();
       } else {
         addBtn.innerHTML = '';
       }
 
       // Add success icon via mapper/createEl/fallback
-      const mapper = globalThis.__emojiIconMapper;
+      const mapper = (globalThis as any).__emojiIconMapper;
       if (mapper) {
         const frag = mapper.parseToFragment('📑');
         if (frag) {
           addBtn.appendChild(frag);
-        } else if (typeof addBtn.createEl === 'function') {
-          addBtn.createEl('span', { text: '📑' });
+        } else if (typeof (addBtn as any).createEl === 'function') {
+          (addBtn as any).createEl('span', { text: '📑' });
         } else {
           addBtn.textContent = '📑';
         }
@@ -569,6 +716,7 @@ createMediaDetails(media, entry, config, isSearch) {
 
     } catch (error) {
       console.error('[Zoro] Add failed:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
       // Reset button on error
       addBtn.dataset.loading = 'false';
@@ -578,11 +726,11 @@ createMediaDetails(media, entry, config, isSearch) {
       addBtn.textContent = 'Add';
       addBtn.style.pointerEvents = 'auto';
 
-      new Notice(`❌ Failed to add: ${error.message}`, 5000);
+      new Notice(`❌ Failed to add: ${errorMessage}`, 5000);
     }
   }
 
-  async handleEditClick(e, media, entry, config, editBtn) {
+  async handleEditClick(e: MouseEvent, media: Media, entry: MediaEntry, config: RenderConfig, editBtn: HTMLElement): Promise<void> {
     e.preventDefault();
     e.stopPropagation();
     
@@ -601,23 +749,25 @@ createMediaDetails(media, entry, config, isSearch) {
 
     try {
       const numericId = Number(media.id) || 0;
-          const normalizedId = entrySource === 'simkl' ? this.plugin.simklApi.normalizeSimklId(numericId) : numericId;
-    console.log('[Zoro][Edit] entrySource', entrySource, 'entryMediaType', entryMediaType);
-    console.log('[Zoro][Edit] mediaTitle', this.formatter.formatTitle(media));
-    console.log(`[Zoro] Checking user entry for media ${normalizedId} via ${entrySource}`);
-    
-    let existingEntry = null;
+      const normalizedId = entrySource === 'simkl' ? this.plugin.simklApi!.normalizeSimklId(numericId) : numericId;
+      console.log('[Zoro][Edit] entrySource', entrySource, 'entryMediaType', entryMediaType);
+      console.log('[Zoro][Edit] mediaTitle', this.formatter.formatTitle(media));
+      console.log(`[Zoro] Checking user entry for media ${normalizedId} via ${entrySource}`);
+      
+      let existingEntry: MediaEntry | null = null;
       if (normalizedId > 0) {
+        // TODO: Check for existing entry in user list
       } else if (entrySource === 'simkl') {
         // Attempt to resolve a Simkl ID by title before editing
-        const guessId = await this.plugin.simklApi.resolveSimklIdByTitle(this.formatter.formatTitle(media), entryMediaType);
+        const guessId = await this.plugin.simklApi!.resolveSimklIdByTitle(this.formatter.formatTitle(media), entryMediaType);
         if (guessId > 0) {
           media.id = guessId;
         }
       }
+      
       console.log(`[Zoro] User entry result:`, existingEntry ? 'Found existing entry' : 'Not in user list');
       
-      const entryToEdit = existingEntry || {
+      const entryToEdit: MediaEntry = existingEntry || {
         media: media,
         status: 'PLANNING',
         progress: 0,
@@ -652,7 +802,7 @@ createMediaDetails(media, entry, config, isSearch) {
       
       new Notice('⚠️ Could not check list status, assuming new entry', 3000);
       
-      const defaultEntry = {
+      const defaultEntry: MediaEntry = {
         media: media,
         status: 'PLANNING',
         progress: 0,
@@ -665,5 +815,3 @@ createMediaDetails(media, entry, config, isSearch) {
     }
   }
 }
-
-export { CardRenderer };

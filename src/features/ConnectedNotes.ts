@@ -9,7 +9,7 @@
 
 import { Notice } from 'obsidian';
 import type { App, Plugin, TFile, CachedMetadata } from 'obsidian';
-import { EmojiIconMapper } from '../rendering/helpers/EmojiIconMapper.js';
+import { EmojiIconMapper } from '../rendering/helpers/EmojiIconMapper';
 
 // Type definitions for media and entry objects
 interface MediaTitle {

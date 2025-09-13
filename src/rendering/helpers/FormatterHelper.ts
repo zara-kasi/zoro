@@ -1,11 +1,3 @@
-/**
- * FormatterHelper
- * Migrated from FormatterHelper.js → FormatterHelper.ts
- * - Added type definitions for all parameters and return types
- * - Created interfaces for media objects and title structures
- * - Added type guards for runtime safety
- */
-
 type ScoreFormat = 'POINT_100' | 'POINT_10' | 'POINT_5' | 'POINT_3';
 
 interface MediaTitle {

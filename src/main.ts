@@ -9,15 +9,11 @@ import { SimklApi } from './api/services/SimklApi';
 import { Authentication } from './auth/Authentication';
 import { MALAuthentication } from './auth/MALAuthentication';
 import { SimklAuthentication } from './auth/SimklAuthentication';
-
-import { Theme } from './features/Theme';
 import { Processor } from './processing/Processor';
 import { Edit } from './editing/Edit';
 import { MoreDetailsPanel } from './details/MoreDetailsPanel';
 import { Export } from './features/Export';
 import { Sample } from './features/Sample';
-import { Prompt } from './features/Prompt';
-
 import { Render } from './rendering/core/Render';
 import { EmojiIconMapper } from './rendering/helpers/EmojiIconMapper';
 import { ConnectedNotes } from './features/ConnectedNotes';
@@ -114,13 +110,11 @@ class ZoroPlugin extends Plugin {
   public simklApi: SimklApi;
   
   // Features
-  public theme: Theme;
   public processor: Processor;
   public edit: Edit;
   public moreDetailsPanel: MoreDetailsPanel;
   public export: Export;
   public sample: Sample;
-  public prompt: Prompt;
   
   // Rendering and UI
   public render!: Render; // Initialized in onload
@@ -142,13 +136,11 @@ class ZoroPlugin extends Plugin {
     this.simklApi = new SimklApi(this);
     
     // Initialize features
-    this.theme = new Theme(this);
     this.processor = new Processor(this);
     this.edit = new Edit(this);
     this.moreDetailsPanel = new MoreDetailsPanel(this);
     this.export = new Export(this);
     this.sample = new Sample(this);
-    this.prompt = new Prompt(this);
   }
 
   renderError(el: HTMLElement, message: string, context = '', onRetry: (() => void) | null = null): void {
@@ -245,9 +237,6 @@ class ZoroPlugin extends Plugin {
       console.error('[Zoro] Failed to inject CSS:', err);
     }
 
-    if (this.settings.theme) {
-      await this.theme.applyTheme(this.settings.theme);
-    }
 
     this.registerMarkdownCodeBlockProcessor('zoro', this.processor.processZoroCodeBlock.bind(this.processor));
     this.addSettingTab(new ZoroSettingTab(this.app, this));
@@ -481,7 +470,6 @@ class ZoroPlugin extends Plugin {
 
   onunload(): void {
     this.cache.stopAutoPrune().stopBackgroundRefresh().destroy();
-    this.theme.removeTheme();
     
     // Convert any zoro-panel leaves to empty to avoid orphaned tabs
     try {

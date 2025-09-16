@@ -1,7 +1,7 @@
 import { Notice } from 'obsidian';
 import type { Plugin } from 'obsidian';
 import { Trending } from '../features/Trending';
-import type { ZoroPluginSettings, ApiSource, Layout, MediaType } from '../settings';
+import type { ZoroPluginSettings, ApiSource, Layout, MediaType } from '../core/constants';
 
 export type OperationType = 'stats' | 'search' | 'single' | 'list' | 'trending';
 export type ListType = 'CURRENT' | 'COMPLETED' | 'PAUSED' | 'DROPPED' | 'PLANNING' | 'REPEATING';

@@ -37,9 +37,6 @@ interface ParentRenderer {
     };
     getMALUrl(id: number | string, mediaType: string): string;
     getAniListUrl(id: number | string, mediaType: string): string;
-    prompt: {
-      createAuthenticationPrompt(): void;
-    };
     handleEditClick(event: MouseEvent, entry: MediaEntry, element: HTMLElement, config: RenderConfig): void;
   };
   apiHelper: unknown; // TODO: type based on actual apiHelper interface
@@ -107,7 +104,6 @@ export class TableRenderer {
             : this.plugin.settings.accessToken;
             
           if (!isAuthenticated) {
-            this.plugin.prompt.createAuthenticationPrompt();
             return;
           }
           this.plugin.handleEditClick(e, entry, s, config);

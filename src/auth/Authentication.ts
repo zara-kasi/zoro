@@ -1,6 +1,6 @@
 import type { Plugin, RequestUrlResponse } from 'obsidian';
 import { Notice, requestUrl, Modal } from 'obsidian';
-import { AuthModal } from '../modals/AuthModal';
+import { AuthModal } from './AuthModal';
 
 // OAuth and API response types
 interface OAuthRedirectParams {

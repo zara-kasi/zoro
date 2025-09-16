@@ -92,9 +92,6 @@ interface ParentRenderer {
       createNewConnectedNote(searchIds: any, mediaType: string): Promise<void>;
       createConnectedNotesButton(media: Media, entry: MediaEntry, config: RenderConfig): HTMLElement;
     };
-    prompt: {
-      createAuthenticationPrompt(source?: string): void;
-    };
     cache: {
       set(key: string, value: any, options?: { scope?: string }): void;
     };
@@ -614,7 +611,6 @@ export class CardRenderer {
     const mediaType = this.apiHelper.detectMediaType(entry, config);
     
     if (!this.apiHelper.isAuthenticated(source)) {
-      this.plugin.prompt.createAuthenticationPrompt(source);
       return;
     }
     
@@ -644,7 +640,6 @@ export class CardRenderer {
 
     if (!this.apiHelper.isAuthenticated(entrySource)) {
       console.log(`[Zoro] Not authenticated with ${entrySource}`);
-      this.plugin.prompt.createAuthenticationPrompt(entrySource);
       return;
     }
 
@@ -732,7 +727,6 @@ export class CardRenderer {
 
     if (!this.apiHelper.isAuthenticated(entrySource)) {
       console.log(`[Zoro] Not authenticated with ${entrySource}`);
-      this.plugin.prompt.createAuthenticationPrompt(entrySource);
       return;
     }
 

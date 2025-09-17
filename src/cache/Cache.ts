@@ -518,7 +518,7 @@ export class Cache {
     return deleted;
   }
 
-  invalidateByUser(userKey: string, options: Pick<CacheOptions, 'source') = {}): number {
+  invalidateByUser(userKey: string, options: Pick<CacheOptions, 'source'> = {}): number {
     const { source = null } = options;
     const keys = this.indexes.byUser.get(userKey);
     if (!keys) return 0;
@@ -544,7 +544,7 @@ export class Cache {
     return deleted;
   }
 
-  invalidateByMedia(mediaId: string | number, options: Pick<CacheOptions, 'source') = {}): number {
+  invalidateByMedia(mediaId: string | number, options: Pick<CacheOptions, 'source'> = {}): number {
     const { source = null } = options;
     const keys = this.indexes.byMedia.get(String(mediaId));
     if (!keys) return 0;
@@ -569,8 +569,7 @@ export class Cache {
     this.schedulePersistence();
     return deleted;
   }
-
-  invalidateByTag(tag: string, options: Pick<CacheOptions, 'source') = {}): number {
+  invalidateByTag(tag: string, options: Pick<CacheOptions, 'source'> = {}): number {
     const { source = null } = options;
     const keys = this.indexes.byTag.get(tag);
     if (!keys) return 0;
@@ -1145,7 +1144,7 @@ export class Cache {
     this.log("DESTROY", "system", "", "Cache destroyed and saved");
   }
 
-  invalidateScope(scope: string, options: Pick<CacheOptions, 'source') = {}): number {
+  invalidateScope(scope: string, options: Pick<CacheOptions, 'source'> = {}): number {
     const { source = null } = options;
     let cleared = 0;
 

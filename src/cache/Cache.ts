@@ -497,7 +497,7 @@ export class Cache {
     return true;
   }
 
-  delete(key: CacheKey, options: Pick<CacheOptions, 'scope' | 'source') = {}): boolean {
+  delete(key: CacheKey, options: Pick<CacheOptions, 'scope' | 'source'> = {}): boolean {
     const { scope = "userData", source = null } = options;
     const store = this.getStore(scope, source);
 

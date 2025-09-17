@@ -28,7 +28,7 @@ interface MediaTitle {
 }
 
 interface Media {
-  id: number | string;
+  id: number; // Keep as number for compatibility with other renderers
   title: MediaTitle;
   format?: string;
   episodes?: number;
@@ -38,19 +38,25 @@ interface Media {
 }
 
 interface MediaEntry {
-  media?: Media; // Made optional to match TableRenderer
+  media: Media; // Required for compatibility with other renderers
   id?: number;
   title?: MediaTitle;
   status?: string;
   progress?: number;
   score?: number;
   mediaType?: 'ANIME' | 'MANGA';
-  [key: string]: unknown; // Allow additional media properties
+  [key: string]: unknown;
+}
+
+interface MediaStatistics {
+  count: number;
+  meanScore: number;
+  [key: string]: unknown;
 }
 
 interface UserStatistics {
-  anime?: unknown;
-  manga?: unknown;
+  anime?: MediaStatistics;
+  manga?: MediaStatistics;
   [key: string]: unknown;
 }
 
@@ -64,11 +70,7 @@ interface User {
 interface UserStats {
   id: number;
   name: string;
-  statistics?: UserStatistics; // Made optional but typed properly
-  [key: string]: unknown;
-}
-
-interface MediaStatistics {
+  statistics?: UserStatistics;
   [key: string]: unknown;
 }
 
@@ -80,11 +82,7 @@ interface ScoreCount {
 interface YearCount {
   year: number;
   count: number;
-}
-
-interface ScoreFormat {
-  // Define the actual structure based on your needs
-  [key: string]: unknown;
+  releaseYear: number; // Added required property
 }
 
 interface StatsOptions {
@@ -95,14 +93,27 @@ interface StatsOptions {
   [key: string]: unknown;
 }
 
+interface MediaListOptions {
+  scoreFormat?: 'POINT_100' | 'POINT_10_DECIMAL' | 'POINT_10' | 'POINT_5'; // Removed POINT_3
+  [key: string]: unknown;
+}
+
 interface ListOptions {
-  scoreFormat?: 'POINT_100' | 'POINT_10_DECIMAL' | 'POINT_10' | 'POINT_5' | 'POINT_3';
+  scoreFormat?: 'POINT_100' | 'POINT_10_DECIMAL' | 'POINT_10' | 'POINT_5'; // Removed POINT_3
   [key: string]: unknown;
 }
 
 // Obsidian-specific element interface
+interface ObsidianElementAttributes {
+  cls?: string;
+  text?: string;
+  href?: string;
+  target?: string;
+  [key: string]: unknown;
+}
+
 interface ObsidianHTMLElement extends HTMLElement {
-  createEl(tag: string, attr?: Record<string, unknown>, callback?: (el: HTMLElement) => void): HTMLElement;
+  createEl(tag: string, attr?: ObsidianElementAttributes, callback?: (el: HTMLElement) => void): HTMLElement;
   empty?(): void;
 }
 
@@ -144,7 +155,19 @@ export class Render {
   }
 
   renderTableLayout(el: HTMLElement, entries: MediaEntry[], config: RenderConfig): void {
-    return this.tableRenderer.render(el, entries, config);
+    // Convert entries to ensure they have the required media property
+    const validEntries = entries.map(entry => ({
+      ...entry,
+      media: entry.media || {
+        id: entry.id || 0,
+        title: entry.title || { romaji: 'Unknown', english: 'Unknown' },
+        format: 'UNKNOWN',
+        episodes: 0,
+        chapters: 0,
+        genres: []
+      }
+    }));
+    return this.tableRenderer.render(el, validEntries, config);
   }
 
   renderSingleMedia(el: HTMLElement, mediaList: MediaEntry[], config: RenderConfig): void {
@@ -156,11 +179,38 @@ export class Render {
   }
 
   renderMediaListChunked(el: HTMLElement, entries: MediaEntry[], config: RenderConfig, chunkSize: number = 20): HTMLElement {
-    return this.mediaListRenderer.renderChunked(el, entries, config, chunkSize);
+    // Convert entries to ensure they have the required media property
+    const validEntries = entries.map(entry => ({
+      ...entry,
+      media: entry.media || {
+        id: entry.id || 0,
+        title: entry.title || { romaji: 'Unknown', english: 'Unknown' },
+        format: 'UNKNOWN',
+        episodes: 0,
+        chapters: 0,
+        genres: []
+      }
+    }));
+    return this.mediaListRenderer.renderChunked(el, validEntries, config, chunkSize);
   }
 
   createMediaCard(data: Media | MediaEntry, config: RenderConfig, options: Record<string, unknown> = {}): HTMLElement {
-    return this.cardRenderer.createMediaCard(data, config, options);
+    // Ensure data has the right structure
+    let mediaData: Media;
+    if ('media' in data && data.media) {
+      mediaData = data.media;
+    } else {
+      // Convert MediaEntry or unknown structure to Media
+      mediaData = {
+        id: (data as any).id || 0,
+        title: (data as any).title || { romaji: 'Unknown', english: 'Unknown' },
+        format: (data as any).format || 'UNKNOWN',
+        episodes: (data as any).episodes || 0,
+        chapters: (data as any).chapters || 0,
+        genres: (data as any).genres || []
+      };
+    }
+    return this.cardRenderer.createMediaCard(mediaData, config, options);
   }
 
   // ========== SKELETON CREATION METHODS - UNCHANGED ==========
@@ -200,11 +250,23 @@ export class Render {
   }
 
   handleStatusClick(e: MouseEvent, entry: MediaEntry, badge: HTMLElement, config: RenderConfig = {}): void {
-    return this.cardRenderer.handleStatusClick(e as MouseEvent, entry, badge, config);
+    // Ensure entry has the required structure for CardRenderer
+    const validEntry = {
+      ...entry,
+      media: entry.media || {
+        id: entry.id || 0,
+        title: entry.title || { romaji: 'Unknown', english: 'Unknown' },
+        format: 'UNKNOWN',
+        episodes: 0,
+        chapters: 0,
+        genres: []
+      }
+    };
+    return this.cardRenderer.handleStatusClick(e, validEntry, badge, config);
   }
 
-  handleAddClick(e: MouseEvent, media: MediaEntry, config: RenderConfig): Promise<void> {
-    return this.cardRenderer.handleAddClick(e as MouseEvent, media, config);
+  handleAddClick(e: MouseEvent, media: MediaEntry, config: RenderConfig, element?: HTMLElement, callback?: () => void): Promise<void> {
+    return this.cardRenderer.handleAddClick(e, media, config, element, callback);
   }
 
   // ========== UTILITY METHODS - UNCHANGED ==========
@@ -265,7 +327,10 @@ export class Render {
     // Convert UserStats to User for compatibility
     const userCompat: User = {
       ...user,
-      statistics: user.statistics ?? { anime: undefined, manga: undefined }
+      statistics: {
+        anime: user.statistics?.anime as MediaStatistics || { count: 0, meanScore: 0 },
+        manga: user.statistics?.manga as MediaStatistics || { count: 0, meanScore: 0 }
+      }
     };
     return this.statsRenderer.renderHeader(fragment, userCompat);
   }
@@ -274,24 +339,45 @@ export class Render {
     // Convert UserStats to User for compatibility
     const userCompat: User = {
       ...user,
-      statistics: user.statistics ?? { anime: undefined, manga: undefined }
+      statistics: {
+        anime: user.statistics?.anime as MediaStatistics || { count: 0, meanScore: 0 },
+        manga: user.statistics?.manga as MediaStatistics || { count: 0, meanScore: 0 }
+      }
     };
     return this.statsRenderer.renderOverview(fragment, userCompat, options);
   }
 
-  renderMediaTypeCard(container: HTMLElement, type: 'ANIME' | 'MANGA', stats: MediaStatistics, listOptions: ListOptions): void {
-    return this.statsRenderer.renderMediaTypeCard(container, type, stats as MediaStatistics, listOptions);
+  renderMediaTypeCard(container: HTMLElement, type: 'ANIME' | 'MANGA', stats: unknown, listOptions: ListOptions): void {
+    const validStats: MediaStatistics = {
+      count: (stats as any)?.count || 0,
+      meanScore: (stats as any)?.meanScore || 0,
+      ...(stats as any)
+    };
+    return this.statsRenderer.renderMediaTypeCard(container, type, validStats, listOptions as MediaListOptions);
   }
 
-  renderComparisonCard(container: HTMLElement, animeStats: MediaStatistics, mangaStats: MediaStatistics): void {
-    return this.statsRenderer.renderComparisonCard(container, animeStats as MediaStatistics, mangaStats as MediaStatistics);
+  renderComparisonCard(container: HTMLElement, animeStats: unknown, mangaStats: unknown): void {
+    const validAnimeStats: MediaStatistics = {
+      count: (animeStats as any)?.count || 0,
+      meanScore: (animeStats as any)?.meanScore || 0,
+      ...(animeStats as any)
+    };
+    const validMangaStats: MediaStatistics = {
+      count: (mangaStats as any)?.count || 0,
+      meanScore: (mangaStats as any)?.meanScore || 0,
+      ...(mangaStats as any)
+    };
+    return this.statsRenderer.renderComparisonCard(container, validAnimeStats, validMangaStats);
   }
 
   renderStatsBreakdowns(fragment: DocumentFragment, user: UserStats, mediaType: 'ANIME' | 'MANGA'): void {
     // Convert UserStats to User for compatibility
     const userCompat: User = {
       ...user,
-      statistics: user.statistics ?? { anime: undefined, manga: undefined }
+      statistics: {
+        anime: user.statistics?.anime as MediaStatistics || { count: 0, meanScore: 0 },
+        manga: user.statistics?.manga as MediaStatistics || { count: 0, meanScore: 0 }
+      }
     };
     return this.statsRenderer.renderBreakdowns(fragment, userCompat, mediaType);
   }
@@ -300,7 +386,10 @@ export class Render {
     // Convert UserStats to User for compatibility
     const userCompat: User = {
       ...user,
-      statistics: user.statistics ?? { anime: undefined, manga: undefined }
+      statistics: {
+        anime: user.statistics?.anime as MediaStatistics || { count: 0, meanScore: 0 },
+        manga: user.statistics?.manga as MediaStatistics || { count: 0, meanScore: 0 }
+      }
     };
     return this.statsRenderer.renderInsights(fragment, userCompat, mediaType);
   }
@@ -309,7 +398,10 @@ export class Render {
     // Convert UserStats to User for compatibility
     const userCompat: User = {
       ...user,
-      statistics: user.statistics ?? { anime: undefined, manga: undefined }
+      statistics: {
+        anime: user.statistics?.anime as MediaStatistics || { count: 0, meanScore: 0 },
+        manga: user.statistics?.manga as MediaStatistics || { count: 0, meanScore: 0 }
+      }
     };
     return this.statsRenderer.renderFavorites(fragment, userCompat, mediaType);
   }
@@ -318,27 +410,43 @@ export class Render {
     return this.statsRenderer.renderBreakdownChart(container, title, data, keyField, options);
   }
 
-  renderScoreDistribution(container: HTMLElement, scores: ScoreCount[], listOptions: ListOptions): void {
-    return this.statsRenderer.renderScoreDistribution(container, scores as ScoreCount[], listOptions);
+  renderScoreDistribution(container: HTMLElement, scores: unknown[], listOptions: ListOptions): void {
+    const validScores: ScoreCount[] = (scores as any[]).map(score => ({
+      score: score?.score || 0,
+      count: score?.count || 0
+    }));
+    return this.statsRenderer.renderScoreDistribution(container, validScores, listOptions as MediaListOptions);
   }
 
-  renderYearlyActivity(container: HTMLElement, yearData: YearCount[]): void {
-    return this.statsRenderer.renderYearlyActivity(container, yearData as YearCount[]);
+  renderYearlyActivity(container: HTMLElement, yearData: unknown): void {
+    const validYearData: YearCount[] = Array.isArray(yearData) 
+      ? (yearData as any[]).map(item => ({
+          year: item?.year || 0,
+          count: item?.count || 0,
+          releaseYear: item?.releaseYear || item?.year || 0
+        }))
+      : [];
+    return this.statsRenderer.renderYearlyActivity(container, validYearData);
   }
 
-  addSecondaryMetric(container: ObsidianHTMLElement, label: string, value: string | number): void {
-    return DOMHelper.addSecondaryMetric(container, label, value);
+  addSecondaryMetric(container: HTMLElement, label: string, value: string | number): void {
+    return DOMHelper.addSecondaryMetric(container as ObsidianHTMLElement, label, value);
   }
 
-  formatScore(score: number, scoreFormat: 'POINT_100' | 'POINT_10' | 'POINT_5' | 'POINT_3' = 'POINT_10'): string {
-    return this.formatter.formatScore(score, scoreFormat as ScoreFormat);
+  formatScore(score: number, scoreFormat: 'POINT_100' | 'POINT_10' | 'POINT_5' = 'POINT_10'): string {
+    return this.formatter.formatScore(score, scoreFormat as unknown as any);
   }
 
   formatWatchTime(minutes: number): string {
     return this.formatter.formatWatchTime(minutes);
   }
 
-  generateInsights(stats: MediaStatistics, type: 'ANIME' | 'MANGA', user: UserStats): unknown {
-    return this.statsRenderer.generateInsights(stats as MediaStatistics, type, user);
+  generateInsights(stats: unknown, type: 'ANIME' | 'MANGA', user: UserStats): unknown {
+    const validStats: MediaStatistics = {
+      count: (stats as any)?.count || 0,
+      meanScore: (stats as any)?.meanScore || 0,
+      ...(stats as any)
+    };
+    return this.statsRenderer.generateInsights(validStats, type, user);
   }
 }

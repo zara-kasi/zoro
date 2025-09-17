@@ -15,7 +15,7 @@ interface Media {
 }
 
 interface MediaEntry {
-  media: Media;
+  media?: Media; // Made optional
   status: string;
   progress?: number;
   score?: number;
@@ -43,11 +43,16 @@ interface ParentRenderer {
   formatter: unknown; // TODO: type based on actual formatter interface
 }
 
+interface UserStats {
+  // TODO: Define UserStats interface based on actual structure
+}
+
 export class TableRenderer {
   private parent: ParentRenderer;
   private plugin: ParentRenderer['plugin'];
-  private apiHelper: unknown; // TODO: type based on actual apiHelper interface
-  private formatter: unknown; // TODO: type based on actual formatter interface
+  private apiHelper: ParentRenderer['apiHelper']; // Fixed type annotation
+  private formatter: ParentRenderer['formatter']; // Fixed type annotation
+  private statsRenderer: unknown; // Added for generateInsights method
 
   constructor(parentRenderer: ParentRenderer) {
     this.parent = parentRenderer;
@@ -72,21 +77,21 @@ export class TableRenderer {
     const fragment = document.createDocumentFragment();
     
     entries.forEach(entry => {
-      const m = entry.media;
+      const m = entry.media; // Now potentially undefined
       const tr = fragment.createEl('tr');
       
       tr.createEl('td', null, td =>
         td.createEl('a', {
-          text: m.title.english || m.title.romaji || 'Untitled', // Added fallback for type safety
-          href: config.source === 'mal' 
+          text: m?.title.english || m?.title.romaji || 'Untitled', // Safe access with optional chaining
+          href: m ? (config.source === 'mal' 
             ? this.plugin.getMALUrl(m.id, config.mediaType)
-            : this.plugin.getAniListUrl(m.id, config.mediaType),
+            : this.plugin.getAniListUrl(m.id, config.mediaType)) : '#',
           cls: 'zoro-title-link',
           target: '_blank'
         })
       );
       
-      tr.createEl('td', { text: m.format || '-' });
+      tr.createEl('td', { text: m?.format || '-' });
       
       tr.createEl('td', null, td => {
         const s = td.createEl('span', {
@@ -112,7 +117,7 @@ export class TableRenderer {
       
       if (this.plugin.settings.showProgress) {
         tr.createEl('td', {
-          text: `${entry.progress ?? 0}/${m.episodes ?? m.chapters ?? '?'}`
+          text: `${entry.progress ?? 0}/${m?.episodes ?? m?.chapters ?? '?'}`
         });
       }
       
@@ -122,11 +127,23 @@ export class TableRenderer {
       
       if (this.plugin.settings.showGenres) {
         tr.createEl('td', {
-          text: (m.genres || []).slice(0, 3).join(', ') || '-'
+          text: (m?.genres || []).slice(0, 3).join(', ') || '-'
         });
       }
     });
     
     tbody.appendChild(fragment);
+  }
+
+  formatScore(score: number, scoreFormat: 'POINT_100' | 'POINT_1...AL' | 'POINT_10' | 'POINT_5' | 'POINT_3' = 'POINT_10'): string {
+    return this.formatter.formatScore(score, scoreFormat);
+  }
+
+  formatWatchTime(minutes: number): string {
+    return this.formatter.formatWatchTime(minutes);
+  }
+
+  generateInsights(stats: unknown, type: 'ANIME' | 'MANGA', user: UserStats): unknown {
+    return this.statsRenderer.generateInsights(stats, type, user);
   }
 }

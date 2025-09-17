@@ -11,7 +11,7 @@ import { DOMHelper } from '../helpers/DOMHelper';
 
 // Core interfaces
 interface RenderConfig {
-  source?: string;
+  source?: 'anilist' | 'mal';
   mediaType?: 'ANIME' | 'MANGA';
   status?: string;
   format?: string;
@@ -145,19 +145,45 @@ interface ObsidianHTMLElement extends HTMLElement {
   empty?(): void;
 }
 
-// ParentRenderer interface that this class must implement
+// Unified ParentRenderer interface that satisfies all renderers
 interface ParentRenderer {
   plugin: Plugin & {
     settings: {
+      // Common settings for all renderers
       showProgress: boolean;
       showRatings: boolean;
       showGenres: boolean;
+      showCoverImages: boolean;
+      hideUrlsInTitles: boolean;
       malAccessToken?: string;
       accessToken?: string;
+      gridColumns?: string | number;
+      simklUserInfo?: {
+        account?: {
+          id: string;
+        };
+      };
     };
+    // Methods required by various renderers
     getMALUrl(id: number | string, mediaType: string): string;
     getAniListUrl(id: number | string, mediaType: string): string;
     handleEditClick(event: MouseEvent, entry: MediaEntry, element: HTMLElement, config: RenderConfig): void;
+    renderError(el: HTMLElement, message: string): void;
+    // Connected notes functionality
+    connectedNotes: {
+      openSidePanelWithContext(context: {
+        media: Media;
+        entry: MediaEntry;
+        source: string;
+        mediaType: string;
+      }): Promise<void>;
+      createConnectedNotesButton(media: Media, entry: MediaEntry, config: RenderConfig): HTMLElement;
+      [key: string]: unknown;
+    };
+    // Cache functionality
+    cache: {
+      [key: string]: unknown;
+    };
   };
   apiHelper: APISourceHelper;
   formatter: FormatterHelper;
@@ -169,12 +195,34 @@ export class Render implements ParentRenderer {
       showProgress: boolean;
       showRatings: boolean;
       showGenres: boolean;
+      showCoverImages: boolean;
+      hideUrlsInTitles: boolean;
       malAccessToken?: string;
       accessToken?: string;
+      gridColumns?: string | number;
+      simklUserInfo?: {
+        account?: {
+          id: string;
+        };
+      };
     };
     getMALUrl(id: number | string, mediaType: string): string;
     getAniListUrl(id: number | string, mediaType: string): string;
     handleEditClick(event: MouseEvent, entry: MediaEntry, element: HTMLElement, config: RenderConfig): void;
+    renderError(el: HTMLElement, message: string): void;
+    connectedNotes: {
+      openSidePanelWithContext(context: {
+        media: Media;
+        entry: MediaEntry;
+        source: string;
+        mediaType: string;
+      }): Promise<void>;
+      createConnectedNotesButton(media: Media, entry: MediaEntry, config: RenderConfig): HTMLElement;
+      [key: string]: unknown;
+    };
+    cache: {
+      [key: string]: unknown;
+    };
   };
   public apiHelper: APISourceHelper;
   public formatter: FormatterHelper;
@@ -185,7 +233,39 @@ export class Render implements ParentRenderer {
   private statsRenderer: StatsRenderer;
 
   constructor(plugin: Plugin) {
-    this.plugin = plugin as any; // Cast to match ParentRenderer interface
+    // Create a proxy plugin that implements all required methods with fallbacks
+    this.plugin = new Proxy(plugin as any, {
+      get(target, prop) {
+        if (prop === 'settings') {
+          return {
+            showProgress: target.settings?.showProgress ?? true,
+            showRatings: target.settings?.showRatings ?? true,
+            showGenres: target.settings?.showGenres ?? true,
+            showCoverImages: target.settings?.showCoverImages ?? true,
+            hideUrlsInTitles: target.settings?.hideUrlsInTitles ?? false,
+            malAccessToken: target.settings?.malAccessToken,
+            accessToken: target.settings?.accessToken,
+            gridColumns: target.settings?.gridColumns ?? 3,
+            simklUserInfo: target.settings?.simklUserInfo
+          };
+        }
+        if (prop === 'renderError') {
+          return target.renderError || ((el: HTMLElement, message: string) => {
+            el.innerHTML = `<div class="zoro-error">${message}</div>`;
+          });
+        }
+        if (prop === 'connectedNotes') {
+          return target.connectedNotes || {
+            openSidePanelWithContext: async () => {},
+            createConnectedNotesButton: () => document.createElement('div')
+          };
+        }
+        if (prop === 'cache') {
+          return target.cache || {};
+        }
+        return target[prop];
+      }
+    });
     
     // Initialize utility helpers
     this.apiHelper = new APISourceHelper(plugin);
@@ -239,18 +319,29 @@ export class Render implements ParentRenderer {
       },
       status: entry.status || 'UNKNOWN'
     }));
-    return this.tableRenderer.render(el, validEntries, config);
+    
+    // Ensure config has proper source type
+    const validConfig: RenderConfig = {
+      ...config,
+      source: (config.source === 'anilist' || config.source === 'mal') ? config.source : 'anilist'
+    };
+    
+    return this.tableRenderer.render(el, validEntries, validConfig);
   }
 
   renderSingleMedia(el: HTMLElement, mediaList: MediaEntry[], config: RenderConfig): void {
-    // Convert MediaEntry[] to MediaListItem
-    const mediaListItem: MediaListItem = {
-      id: mediaList[0]?.id || 0,
-      title: mediaList[0]?.title || mediaList[0]?.media?.title || { romaji: 'Unknown' },
-      status: mediaList[0]?.status || 'UNKNOWN',
-      progress: mediaList[0]?.progress,
-      score: mediaList[0]?.score
-    };
+    // Convert MediaEntry[] to MediaListItem - create a proxy that matches both interfaces
+    const mediaListItem = new Proxy(mediaList[0] || {}, {
+      get(target, prop) {
+        if (prop === 'id') return target.id || 0;
+        if (prop === 'title') return target.title || target.media?.title || { romaji: 'Unknown' };
+        if (prop === 'status') return target.status || 'UNKNOWN';
+        if (prop === 'progress') return target.progress;
+        if (prop === 'score') return target.score;
+        return target[prop];
+      }
+    }) as MediaListItem;
+    
     return this.mediaListRenderer.renderSingle(el, mediaListItem, config);
   }
 
@@ -284,8 +375,12 @@ export class Render implements ParentRenderer {
     // Ensure data has the right structure
     let mediaData: Media;
     if ('media' in data && data.media) {
-      mediaData = data.media;
-    } else if ('title' in data && data.title) {
+      mediaData = {
+        id: data.media.id,
+        title: data.media.title,
+        ...data.media
+      };
+    } else if ('title' in data && data.title && 'id' in data && data.id) {
       // Data is already Media type
       mediaData = data as Media;
     } else {
@@ -357,7 +452,8 @@ export class Render implements ParentRenderer {
       chapters: media.media.chapters,
       genres: media.media.genres
     };
-    return this.cardRenderer.handleAddClick(e, mediaData, config, element, callback);
+    // CardRenderer expects (e, media, entry, config, element)
+    return this.cardRenderer.handleAddClick(e, mediaData, media, config, element);
   }
 
   // ========== UTILITY METHODS ==========

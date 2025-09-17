@@ -18,7 +18,7 @@ interface RenderConfig {
   limit?: number;
   sort?: string;
   search?: string;
-  [key: string]: unknown; // Allow additional config properties
+  [key: string]: unknown;
 }
 
 interface MediaTitle {
@@ -28,7 +28,7 @@ interface MediaTitle {
 }
 
 interface Media {
-  id: number; // Keep as number for compatibility with other renderers
+  id: number;
   title: MediaTitle;
   format?: string;
   episodes?: number;
@@ -38,13 +38,36 @@ interface Media {
 }
 
 interface MediaEntry {
-  media: Media; // Required for compatibility with other renderers
-  id?: number;
+  media: Media;
+  id: number;
   title?: MediaTitle;
+  status: string;
+  progress?: number;
+  score?: number;
+  mediaType?: 'ANIME' | 'MANGA';
+  [key: string]: unknown;
+}
+
+interface MediaItem {
+  id: number;
+  title: MediaTitle;
+  format?: string;
+  episodes?: number;
+  chapters?: number;
+  genres?: string[];
   status?: string;
   progress?: number;
   score?: number;
   mediaType?: 'ANIME' | 'MANGA';
+  [key: string]: unknown;
+}
+
+interface MediaListItem {
+  id: number;
+  title: MediaTitle;
+  status: string;
+  progress?: number;
+  score?: number;
   [key: string]: unknown;
 }
 
@@ -55,8 +78,8 @@ interface MediaStatistics {
 }
 
 interface UserStatistics {
-  anime?: MediaStatistics;
-  manga?: MediaStatistics;
+  anime: MediaStatistics;
+  manga: MediaStatistics;
   [key: string]: unknown;
 }
 
@@ -82,34 +105,39 @@ interface ScoreCount {
 interface YearCount {
   year: number;
   count: number;
-  releaseYear: number; // Added required property
+  releaseYear: number;
 }
 
 interface StatsOptions {
   showInsights?: boolean;
   showBreakdowns?: boolean;
   showFavorites?: boolean;
+  showComparisons?: boolean;
   mediaType?: 'ANIME' | 'MANGA';
   [key: string]: unknown;
 }
 
+interface OverviewOptions {
+  showComparisons: boolean;
+  [key: string]: unknown;
+}
+
 interface MediaListOptions {
-  scoreFormat?: 'POINT_100' | 'POINT_10_DECIMAL' | 'POINT_10' | 'POINT_5'; // Removed POINT_3
+  scoreFormat?: 'POINT_100' | 'POINT_10_DECIMAL' | 'POINT_10' | 'POINT_5';
   [key: string]: unknown;
 }
 
 interface ListOptions {
-  scoreFormat?: 'POINT_100' | 'POINT_10_DECIMAL' | 'POINT_10' | 'POINT_5'; // Removed POINT_3
+  scoreFormat?: 'POINT_100' | 'POINT_10_DECIMAL' | 'POINT_10' | 'POINT_5';
   [key: string]: unknown;
 }
 
-// Obsidian-specific element interface
 interface ObsidianElementAttributes {
   cls?: string;
   text?: string;
   href?: string;
   target?: string;
-  [key: string]: unknown;
+  [key: string]: string | number | boolean | undefined;
 }
 
 interface ObsidianHTMLElement extends HTMLElement {
@@ -117,10 +145,39 @@ interface ObsidianHTMLElement extends HTMLElement {
   empty?(): void;
 }
 
-export class Render {
-  private plugin: Plugin;
-  private apiHelper: APISourceHelper;
-  private formatter: FormatterHelper;
+// ParentRenderer interface that this class must implement
+interface ParentRenderer {
+  plugin: Plugin & {
+    settings: {
+      showProgress: boolean;
+      showRatings: boolean;
+      showGenres: boolean;
+      malAccessToken?: string;
+      accessToken?: string;
+    };
+    getMALUrl(id: number | string, mediaType: string): string;
+    getAniListUrl(id: number | string, mediaType: string): string;
+    handleEditClick(event: MouseEvent, entry: MediaEntry, element: HTMLElement, config: RenderConfig): void;
+  };
+  apiHelper: APISourceHelper;
+  formatter: FormatterHelper;
+}
+
+export class Render implements ParentRenderer {
+  public plugin: Plugin & {
+    settings: {
+      showProgress: boolean;
+      showRatings: boolean;
+      showGenres: boolean;
+      malAccessToken?: string;
+      accessToken?: string;
+    };
+    getMALUrl(id: number | string, mediaType: string): string;
+    getAniListUrl(id: number | string, mediaType: string): string;
+    handleEditClick(event: MouseEvent, entry: MediaEntry, element: HTMLElement, config: RenderConfig): void;
+  };
+  public apiHelper: APISourceHelper;
+  public formatter: FormatterHelper;
   private cardRenderer: CardRenderer;
   private searchRenderer: SearchRenderer;
   private tableRenderer: TableRenderer;
@@ -128,7 +185,7 @@ export class Render {
   private statsRenderer: StatsRenderer;
 
   constructor(plugin: Plugin) {
-    this.plugin = plugin;
+    this.plugin = plugin as any; // Cast to match ParentRenderer interface
     
     // Initialize utility helpers
     this.apiHelper = new APISourceHelper(plugin);
@@ -147,51 +204,80 @@ export class Render {
   }
 
   renderMediaList(el: HTMLElement, entries: MediaEntry[], config: RenderConfig): void {
-    return this.mediaListRenderer.render(el, entries, config);
+    // Convert entries to ensure they match expected interface
+    const validEntries = entries.map(entry => ({
+      ...entry,
+      status: entry.status || 'UNKNOWN'
+    }));
+    return this.mediaListRenderer.render(el, validEntries, config);
   }
 
   renderSearchResults(el: HTMLElement, media: MediaEntry[], config: RenderConfig): void {
-    return this.searchRenderer.renderSearchResults(el, media, config);
+    // Convert MediaEntry[] to MediaItem[]
+    const mediaItems: MediaItem[] = media.map(entry => ({
+      id: entry.id || entry.media.id,
+      title: entry.title || entry.media.title,
+      format: entry.media.format,
+      episodes: entry.media.episodes,
+      chapters: entry.media.chapters,
+      genres: entry.media.genres,
+      status: entry.status,
+      progress: entry.progress,
+      score: entry.score,
+      mediaType: entry.mediaType
+    }));
+    return this.searchRenderer.renderSearchResults(el, mediaItems, config);
   }
 
   renderTableLayout(el: HTMLElement, entries: MediaEntry[], config: RenderConfig): void {
-    // Convert entries to ensure they have the required media property
+    // Convert entries to ensure they have the required properties
     const validEntries = entries.map(entry => ({
       ...entry,
       media: entry.media || {
         id: entry.id || 0,
-        title: entry.title || { romaji: 'Unknown', english: 'Unknown' },
-        format: 'UNKNOWN',
-        episodes: 0,
-        chapters: 0,
-        genres: []
-      }
+        title: entry.title || { romaji: 'Unknown', english: 'Unknown' }
+      },
+      status: entry.status || 'UNKNOWN'
     }));
     return this.tableRenderer.render(el, validEntries, config);
   }
 
   renderSingleMedia(el: HTMLElement, mediaList: MediaEntry[], config: RenderConfig): void {
-    return this.mediaListRenderer.renderSingle(el, mediaList, config);
+    // Convert MediaEntry[] to MediaListItem
+    const mediaListItem: MediaListItem = {
+      id: mediaList[0]?.id || 0,
+      title: mediaList[0]?.title || mediaList[0]?.media?.title || { romaji: 'Unknown' },
+      status: mediaList[0]?.status || 'UNKNOWN',
+      progress: mediaList[0]?.progress,
+      score: mediaList[0]?.score
+    };
+    return this.mediaListRenderer.renderSingle(el, mediaListItem, config);
   }
 
   renderUserStats(el: HTMLElement, user: UserStats, options: StatsOptions = {}): void {
-    return this.statsRenderer.render(el, user, options);
+    // Convert UserStats to User
+    const userCompat: User = {
+      ...user,
+      statistics: user.statistics || {
+        anime: { count: 0, meanScore: 0 },
+        manga: { count: 0, meanScore: 0 }
+      }
+    };
+    return this.statsRenderer.render(el, userCompat, options);
   }
 
   renderMediaListChunked(el: HTMLElement, entries: MediaEntry[], config: RenderConfig, chunkSize: number = 20): HTMLElement {
-    // Convert entries to ensure they have the required media property
+    // Convert entries to ensure they have the required properties
     const validEntries = entries.map(entry => ({
       ...entry,
       media: entry.media || {
         id: entry.id || 0,
-        title: entry.title || { romaji: 'Unknown', english: 'Unknown' },
-        format: 'UNKNOWN',
-        episodes: 0,
-        chapters: 0,
-        genres: []
-      }
+        title: entry.title || { romaji: 'Unknown', english: 'Unknown' }
+      },
+      status: entry.status || 'UNKNOWN'
     }));
-    return this.mediaListRenderer.renderChunked(el, validEntries, config, chunkSize);
+    this.mediaListRenderer.renderChunked(el, validEntries, config, chunkSize);
+    return el; // Return the element since the method expects HTMLElement
   }
 
   createMediaCard(data: Media | MediaEntry, config: RenderConfig, options: Record<string, unknown> = {}): HTMLElement {
@@ -199,21 +285,20 @@ export class Render {
     let mediaData: Media;
     if ('media' in data && data.media) {
       mediaData = data.media;
+    } else if ('title' in data && data.title) {
+      // Data is already Media type
+      mediaData = data as Media;
     } else {
-      // Convert MediaEntry or unknown structure to Media
+      // Create fallback Media object
       mediaData = {
         id: (data as any).id || 0,
-        title: (data as any).title || { romaji: 'Unknown', english: 'Unknown' },
-        format: (data as any).format || 'UNKNOWN',
-        episodes: (data as any).episodes || 0,
-        chapters: (data as any).chapters || 0,
-        genres: (data as any).genres || []
+        title: (data as any).title || { romaji: 'Unknown', english: 'Unknown' }
       };
     }
     return this.cardRenderer.createMediaCard(mediaData, config, options);
   }
 
-  // ========== SKELETON CREATION METHODS - UNCHANGED ==========
+  // ========== SKELETON CREATION METHODS ==========
   
   createListSkeleton(count: number = 6): DocumentFragment {
     return DOMHelper.createListSkeleton(count);
@@ -227,7 +312,7 @@ export class Render {
     return DOMHelper.createSearchSkeleton();
   }
 
-  // ========== EVENT HANDLING METHODS - UNCHANGED ==========
+  // ========== EVENT HANDLING METHODS ==========
   
   attachEventListeners(card: HTMLElement, entry: MediaEntry, media: MediaEntry, config: RenderConfig): void {
     const statusBadge = card.querySelector('.clickable-status[data-entry-id]') as HTMLElement;
@@ -250,48 +335,47 @@ export class Render {
   }
 
   handleStatusClick(e: MouseEvent, entry: MediaEntry, badge: HTMLElement, config: RenderConfig = {}): void {
-    // Ensure entry has the required structure for CardRenderer
+    // Ensure entry has the required structure
     const validEntry = {
       ...entry,
       media: entry.media || {
         id: entry.id || 0,
-        title: entry.title || { romaji: 'Unknown', english: 'Unknown' },
-        format: 'UNKNOWN',
-        episodes: 0,
-        chapters: 0,
-        genres: []
-      }
+        title: entry.title || { romaji: 'Unknown', english: 'Unknown' }
+      },
+      status: entry.status || 'UNKNOWN'
     };
     return this.cardRenderer.handleStatusClick(e, validEntry, badge, config);
   }
 
   handleAddClick(e: MouseEvent, media: MediaEntry, config: RenderConfig, element?: HTMLElement, callback?: () => void): Promise<void> {
-    return this.cardRenderer.handleAddClick(e, media, config, element, callback);
+    // Convert MediaEntry to Media for CardRenderer
+    const mediaData: Media = {
+      id: media.id || media.media.id,
+      title: media.title || media.media.title,
+      format: media.media.format,
+      episodes: media.media.episodes,
+      chapters: media.media.chapters,
+      genres: media.media.genres
+    };
+    return this.cardRenderer.handleAddClick(e, mediaData, config, element, callback);
   }
 
-  // ========== UTILITY METHODS - UNCHANGED ==========
+  // ========== UTILITY METHODS ==========
   
   clear(el: HTMLElement & { empty?: () => void }): void { 
     el.empty?.(); 
   }
 
-  // Method to refresh active views (used by card renderer)
   refreshActiveViews(): void {
-    // This method should trigger refresh of any active views
-    // Implementation depends on your plugin's architecture
     if (this.plugin && 'refreshActiveViews' in this.plugin && typeof (this.plugin as any).refreshActiveViews === 'function') {
       (this.plugin as any).refreshActiveViews();
     }
   }
 
-  // ========== MISSING UTILITY METHODS FROM ORIGINAL ==========
-  
-  // URL generation methods that might be called from outside
   getAniListUrl(id: number, mediaType: 'ANIME' | 'MANGA'): string {
     if (this.plugin && 'getAniListUrl' in this.plugin && typeof (this.plugin as any).getAniListUrl === 'function') {
       return (this.plugin as any).getAniListUrl(id, mediaType);
     }
-    // TODO: confirm plugin method signature
     return '';
   }
 
@@ -299,7 +383,6 @@ export class Render {
     if (this.plugin && 'getMALUrl' in this.plugin && typeof (this.plugin as any).getMALUrl === 'function') {
       return (this.plugin as any).getMALUrl(id, mediaType);
     }
-    // TODO: confirm plugin method signature
     return '';
   }
 
@@ -307,7 +390,6 @@ export class Render {
     return this.apiHelper.getSourceSpecificUrl(id, mediaType, source) ?? '';
   }
 
-  // Error rendering (might be called from outside)
   renderError(el: HTMLElement | { innerHTML?: string; createDiv?: (options: { cls: string }) => HTMLElement }, message: string): void {
     if ('innerHTML' in el && el.innerHTML !== undefined) {
       el.innerHTML = DOMHelper.createErrorMessage(message);
@@ -317,14 +399,13 @@ export class Render {
     }
   }
 
-  // ========== STATS RENDERING HELPER METHODS - DELEGATED ==========
+  // ========== STATS RENDERING HELPER METHODS ==========
   
   renderStatsError(el: HTMLElement, message: string): void {
     return this.statsRenderer.renderError(el, message);
   }
 
   renderStatsHeader(fragment: DocumentFragment, user: UserStats): void {
-    // Convert UserStats to User for compatibility
     const userCompat: User = {
       ...user,
       statistics: {
@@ -336,7 +417,6 @@ export class Render {
   }
 
   renderStatsOverview(fragment: DocumentFragment, user: UserStats, options: StatsOptions): void {
-    // Convert UserStats to User for compatibility
     const userCompat: User = {
       ...user,
       statistics: {
@@ -344,7 +424,11 @@ export class Render {
         manga: user.statistics?.manga as MediaStatistics || { count: 0, meanScore: 0 }
       }
     };
-    return this.statsRenderer.renderOverview(fragment, userCompat, options);
+    const overviewOptions: OverviewOptions = {
+      showComparisons: options.showComparisons ?? true,
+      ...options
+    };
+    return this.statsRenderer.renderOverview(fragment, userCompat, overviewOptions);
   }
 
   renderMediaTypeCard(container: HTMLElement, type: 'ANIME' | 'MANGA', stats: unknown, listOptions: ListOptions): void {
@@ -371,7 +455,6 @@ export class Render {
   }
 
   renderStatsBreakdowns(fragment: DocumentFragment, user: UserStats, mediaType: 'ANIME' | 'MANGA'): void {
-    // Convert UserStats to User for compatibility
     const userCompat: User = {
       ...user,
       statistics: {
@@ -383,7 +466,6 @@ export class Render {
   }
 
   renderStatsInsights(fragment: DocumentFragment, user: UserStats, mediaType: 'ANIME' | 'MANGA'): void {
-    // Convert UserStats to User for compatibility
     const userCompat: User = {
       ...user,
       statistics: {
@@ -395,7 +477,6 @@ export class Render {
   }
 
   renderStatsFavorites(fragment: DocumentFragment, user: UserStats, mediaType: 'ANIME' | 'MANGA'): void {
-    // Convert UserStats to User for compatibility
     const userCompat: User = {
       ...user,
       statistics: {
@@ -430,7 +511,7 @@ export class Render {
   }
 
   addSecondaryMetric(container: HTMLElement, label: string, value: string | number): void {
-    return DOMHelper.addSecondaryMetric(container as ObsidianHTMLElement, label, value);
+    return DOMHelper.addSecondaryMetric(container, label, value);
   }
 
   formatScore(score: number, scoreFormat: 'POINT_100' | 'POINT_10' | 'POINT_5' = 'POINT_10'): string {
@@ -447,6 +528,13 @@ export class Render {
       meanScore: (stats as any)?.meanScore || 0,
       ...(stats as any)
     };
-    return this.statsRenderer.generateInsights(validStats, type, user);
+    const userCompat: User = {
+      ...user,
+      statistics: {
+        anime: user.statistics?.anime as MediaStatistics || { count: 0, meanScore: 0 },
+        manga: user.statistics?.manga as MediaStatistics || { count: 0, meanScore: 0 }
+      }
+    };
+    return this.statsRenderer.generateInsights(validStats, type, userCompat);
   }
 }

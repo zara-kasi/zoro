@@ -1,10 +1,11 @@
 import type { App, Plugin } from 'obsidian';
-import { PluginSettingTab, Setting, Notice, setIcon } from 'obsidian';
+import { PluginSettingTab, Setting, Notice, setIcon, ButtonComponent, TextComponent, DropdownComponent, ToggleComponent } from 'obsidian';
 import { AuthModal } from '../auth/AuthModal';
 import { GRID_COLUMN_OPTIONS, GRID_COLUMN_LABELS } from '../core/constants';
 
 // Type definitions for plugin components
 interface ZoroPlugin extends Plugin {
+  app: App; // Add explicit app property
   settings: ZoroSettings;
   auth: AuthService;
   malAuth: AuthService;
@@ -110,24 +111,34 @@ interface CustomExternalURLService {
   extractDomainName(url: string): string;
 }
 
-// Button type from Obsidian Setting API
-interface SettingButton {
-  setButtonText(text: string): SettingButton;
-  setCta(): SettingButton;
-  removeCta(): SettingButton;
-  setWarning(): SettingButton;
-  setDisabled(disabled: boolean): SettingButton;
-  onClick(callback: () => void | Promise<void>): SettingButton;
+// Extended Setting interface to include descEl property
+interface ExtendedSetting extends Setting {
+  descEl: HTMLElement;
+}
+
+// Extended ButtonComponent interface for methods that may not be in the official types
+interface ExtendedButtonComponent extends ButtonComponent {
+  setCta?(): this;
+  removeCta?(): this;
+  setWarning?(): this;
+  setClass?(cls: string): this;
+}
+
+// Extended TextComponent interface for setPlaceholder method
+interface ExtendedTextComponent extends TextComponent {
+  setPlaceholder?(placeholder: string): this;
 }
 
 export class ZoroSettingTab extends PluginSettingTab {
+  app: App; // Explicit app property declaration
   private plugin: ZoroPlugin;
-  private authButton?: SettingButton;
-  private malAuthButton?: SettingButton;
-  private simklAuthButton?: SettingButton;
+  private authButton?: ExtendedButtonComponent;
+  private malAuthButton?: ExtendedButtonComponent;
+  private simklAuthButton?: ExtendedButtonComponent;
 
   constructor(app: App, plugin: ZoroPlugin) {
     super(app, plugin);
+    this.app = app;
     this.plugin = plugin;
   }
 
@@ -163,7 +174,7 @@ export class ZoroSettingTab extends PluginSettingTab {
     // AniList Authentication
     const authSetting = new Setting(Account)
       .setName('✳️ AniList')
-      .setDesc('Connect your AniList account to manage your anime and manga lists.');
+      .setDesc('Connect your AniList account to manage your anime and manga lists.') as ExtendedSetting;
 
     const authDescEl = authSetting.descEl;
     authDescEl.createEl('br');
@@ -175,8 +186,8 @@ export class ZoroSettingTab extends PluginSettingTab {
     authLinkEl.setAttr('rel', 'noopener noreferrer');
     authLinkEl.style.textDecoration = 'none';
 
-    authSetting.addButton(button => {
-      this.authButton = button;
+    authSetting.addButton((button: ButtonComponent) => {
+      this.authButton = button as ExtendedButtonComponent;
       this.updateAuthButton();
       button.onClick(async () => {
         await this.handleAuthButtonClick();
@@ -186,7 +197,7 @@ export class ZoroSettingTab extends PluginSettingTab {
     // MyAnimeList Authentication
     const malAuthSetting = new Setting(Account)
       .setName('🗾 MyAnimeList')
-      .setDesc('Connect your MAL account to manage your anime and manga lists');
+      .setDesc('Connect your MAL account to manage your anime and manga lists') as ExtendedSetting;
 
     const descEl = malAuthSetting.descEl;
     descEl.createEl('br');
@@ -198,8 +209,8 @@ export class ZoroSettingTab extends PluginSettingTab {
     linkEl.setAttr('rel', 'noopener noreferrer');
     linkEl.style.textDecoration = 'none';
 
-    malAuthSetting.addButton(btn => {
-      this.malAuthButton = btn;
+    malAuthSetting.addButton((btn: ButtonComponent) => {
+      this.malAuthButton = btn as ExtendedButtonComponent;
       this.updateMALAuthButton();
       btn.onClick(async () => {
         await this.handleMALAuthButtonClick();
@@ -209,7 +220,7 @@ export class ZoroSettingTab extends PluginSettingTab {
     // SIMKL Authentication
     const simklAuthSetting = new Setting(Account)
       .setName('🎬 SIMKL')
-      .setDesc('Connect your SIMKL account to manage your anime, movies, and TV shows.');
+      .setDesc('Connect your SIMKL account to manage your anime, movies, and TV shows.') as ExtendedSetting;
 
     const simklDescEl = simklAuthSetting.descEl;
     simklDescEl.createEl('br');
@@ -221,8 +232,8 @@ export class ZoroSettingTab extends PluginSettingTab {
     simklLinkEl.setAttr('rel', 'noopener noreferrer');
     simklLinkEl.style.textDecoration = 'none';
 
-    simklAuthSetting.addButton(btn => {
-      this.simklAuthButton = btn;
+    simklAuthSetting.addButton((btn: ButtonComponent) => {
+      this.simklAuthButton = btn as ExtendedButtonComponent;
       this.updateSimklAuthButton();
       btn.onClick(async () => {
         await this.handleSimklAuthButtonClick();
@@ -233,7 +244,7 @@ export class ZoroSettingTab extends PluginSettingTab {
     new Setting(Setup)
       .setName('⚡ Sample Folder')
       .setDesc('Builds a complete Zoro folder structure with notes, no manual setup needed. (Recommended)')
-      .addButton(button =>
+      .addButton((button: ButtonComponent) =>
         button
           .setButtonText('Create')
           .onClick(async () => {
@@ -250,12 +261,12 @@ export class ZoroSettingTab extends PluginSettingTab {
         "Movies & TV — Always SIMKL\n" +
         "Recommended: AniList"
       )
-      .addDropdown(dropdown => dropdown
+      .addDropdown((dropdown: DropdownComponent) => dropdown
         .addOption('anilist', 'AniList')
         .addOption('mal', 'MyAnimeList')
         .addOption('simkl', 'SIMKL')
         .setValue(this.plugin.settings.defaultApiSource)
-        .onChange(async (value) => {
+        .onChange(async (value: string) => {
           this.plugin.settings.defaultApiSource = value;
           this.plugin.settings.defaultApiUserOverride = true;
           await this.plugin.saveSettings();
@@ -265,28 +276,33 @@ export class ZoroSettingTab extends PluginSettingTab {
     new Setting(Note)
       .setName('🗂️ Note path')
       .setDesc('Folder path where new connected notes will be created')
-      .addText(text => text
-        .setPlaceholder('folder/subfolder')
-        .setValue(this.plugin.settings.notePath || '')
-        .onChange(async (value) => {
-          let cleanPath = value.trim();
-          if (cleanPath.startsWith('/')) {
-            cleanPath = cleanPath.substring(1);
-          }
-          if (cleanPath.endsWith('/')) {
-            cleanPath = cleanPath.substring(0, cleanPath.length - 1);
-          }
+      .addText((text: TextComponent) => {
+        const extendedText = text as ExtendedTextComponent;
+        if (extendedText.setPlaceholder) {
+          extendedText.setPlaceholder('folder/subfolder');
+        }
+        return text
+          .setValue(this.plugin.settings.notePath || '')
+          .onChange(async (value: string) => {
+            let cleanPath = value.trim();
+            if (cleanPath.startsWith('/')) {
+              cleanPath = cleanPath.substring(1);
+            }
+            if (cleanPath.endsWith('/')) {
+              cleanPath = cleanPath.substring(0, cleanPath.length - 1);
+            }
 
-          this.plugin.settings.notePath = cleanPath;
-          await this.plugin.saveSettings();
-        }));
+            this.plugin.settings.notePath = cleanPath;
+            await this.plugin.saveSettings();
+          });
+      });
 
     new Setting(Note)
       .setName('🎴 Media block')
       .setDesc('Auto-insert a code block to show cover, rating, and details in new notes')
-      .addToggle(toggle => toggle
+      .addToggle((toggle: ToggleComponent) => toggle
         .setValue(this.plugin.settings.insertCodeBlockOnNote)
-        .onChange(async (value) => {
+        .onChange(async (value: boolean) => {
           this.plugin.settings.insertCodeBlockOnNote = value;
           await this.plugin.saveSettings();
         }));
@@ -312,26 +328,31 @@ export class ZoroSettingTab extends PluginSettingTab {
       new Setting(Note)
         .setName(name)
         .setDesc(`Frontmatter property for ${key}`)
-        .addText(text => text
-          .setPlaceholder(placeholder)
-          .setValue(this.plugin.settings?.customPropertyNames?.[key] ?? '')
-          .onChange(async (value) => {
-            this.plugin.settings = this.plugin.settings || {};
-            this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
-            this.plugin.settings.customPropertyNames[key] = (typeof value === 'string' ? value.trim() : '');
-            await this.plugin.saveSettings();
-          }));
+        .addText((text: TextComponent) => {
+          const extendedText = text as ExtendedTextComponent;
+          if (extendedText.setPlaceholder) {
+            extendedText.setPlaceholder(placeholder);
+          }
+          return text
+            .setValue(this.plugin.settings?.customPropertyNames?.[key] ?? '')
+            .onChange(async (value: string) => {
+              this.plugin.settings = this.plugin.settings || {};
+              this.plugin.settings.customPropertyNames = this.plugin.settings.customPropertyNames || {};
+              this.plugin.settings.customPropertyNames[key] = value.trim();
+              await this.plugin.saveSettings();
+            });
+        });
     });
 
     // Display Section
     new Setting(Display)
       .setName('🧊 Layout')
       .setDesc('Choose the default layout for media lists')
-      .addDropdown(dropdown => dropdown
+      .addDropdown((dropdown: DropdownComponent) => dropdown
         .addOption('card', 'Card Layout')
         .addOption('table', 'Table Layout')
         .setValue(this.plugin.settings.defaultLayout)
-        .onChange(async (value) => {
+        .onChange(async (value: string) => {
           this.plugin.settings.defaultLayout = value;
           await this.plugin.saveSettings();
         }));
@@ -339,7 +360,7 @@ export class ZoroSettingTab extends PluginSettingTab {
     new Setting(Display)
       .setName('🔲 Grid Columns')
       .setDesc('Choose grid layout: Default uses responsive columns, or force a specific number of columns')
-      .addDropdown(dropdown => {
+      .addDropdown((dropdown: DropdownComponent) => {
         // Add all options to the dropdown
         Object.entries(GRID_COLUMN_LABELS).forEach(([value, label]) => {
           dropdown.addOption(value, label);
@@ -354,7 +375,7 @@ export class ZoroSettingTab extends PluginSettingTab {
           dropdown.setValue(currentValue || GRID_COLUMN_OPTIONS.DEFAULT);
         }
 
-        dropdown.onChange(async (value) => {
+        dropdown.onChange(async (value: string) => {
           this.plugin.settings.gridColumns = value;
           await this.plugin.saveSettings();
           this.updateGridColumns(value);
@@ -365,20 +386,25 @@ export class ZoroSettingTab extends PluginSettingTab {
     new Setting(More)
       .setName('🆔 Public profile')
       .setDesc("View your AniList profile and stats — no login needed.")
-      .addText(text => text
-        .setPlaceholder('AniList username')
-        .setValue(this.plugin.settings.defaultUsername)
-        .onChange(async (value) => {
-          this.plugin.settings.defaultUsername = value.trim();
-          await this.plugin.saveSettings();
-        }));
+      .addText((text: TextComponent) => {
+        const extendedText = text as ExtendedTextComponent;
+        if (extendedText.setPlaceholder) {
+          extendedText.setPlaceholder('AniList username');
+        }
+        return text
+          .setValue(this.plugin.settings.defaultUsername)
+          .onChange(async (value: string) => {
+            this.plugin.settings.defaultUsername = value.trim();
+            await this.plugin.saveSettings();
+          });
+      });
 
     new Setting(More)
       .setName('⏳ Loading Icon')
       .setDesc('Show loading animation during API requests')
-      .addToggle(toggle => toggle
+      .addToggle((toggle: ToggleComponent) => toggle
         .setValue(this.plugin.settings.showLoadingIcon)
-        .onChange(async (value) => {
+        .onChange(async (value: boolean) => {
           this.plugin.settings.showLoadingIcon = value;
           await this.plugin.saveSettings();
         }));
@@ -386,9 +412,9 @@ export class ZoroSettingTab extends PluginSettingTab {
     new Setting(More)
       .setName('🔗 Plain Titles')
       .setDesc('Show titles as plain text instead of clickable links.')
-      .addToggle(toggle => toggle
+      .addToggle((toggle: ToggleComponent) => toggle
         .setValue(this.plugin.settings.hideUrlsInTitles)
-        .onChange(async (value) => {
+        .onChange(async (value: boolean) => {
           this.plugin.settings.hideUrlsInTitles = value;
           await this.plugin.saveSettings();
         }));
@@ -396,9 +422,9 @@ export class ZoroSettingTab extends PluginSettingTab {
     new Setting(More)
       .setName('🌆 Cover')
       .setDesc('Display cover images for anime/manga')
-      .addToggle(toggle => toggle
+      .addToggle((toggle: ToggleComponent) => toggle
         .setValue(this.plugin.settings.showCoverImages)
-        .onChange(async (value) => {
+        .onChange(async (value: boolean) => {
           this.plugin.settings.showCoverImages = value;
           await this.plugin.saveSettings();
         }));
@@ -406,9 +432,9 @@ export class ZoroSettingTab extends PluginSettingTab {
     new Setting(More)
       .setName('⭐ Ratings')
       .setDesc('Display user ratings/scores')
-      .addToggle(toggle => toggle
+      .addToggle((toggle: ToggleComponent) => toggle
         .setValue(this.plugin.settings.showRatings)
-        .onChange(async (value) => {
+        .onChange(async (value: boolean) => {
           this.plugin.settings.showRatings = value;
           await this.plugin.saveSettings();
         }));
@@ -416,9 +442,9 @@ export class ZoroSettingTab extends PluginSettingTab {
     new Setting(More)
       .setName('📈 Progress')
       .setDesc('Display progress information')
-      .addToggle(toggle => toggle
+      .addToggle((toggle: ToggleComponent) => toggle
         .setValue(this.plugin.settings.showProgress)
-        .onChange(async (value) => {
+        .onChange(async (value: boolean) => {
           this.plugin.settings.showProgress = value;
           await this.plugin.saveSettings();
         }));
@@ -426,9 +452,9 @@ export class ZoroSettingTab extends PluginSettingTab {
     new Setting(More)
       .setName('🎭 Genres')
       .setDesc('Display genre tags')
-      .addToggle(toggle => toggle
+      .addToggle((toggle: ToggleComponent) => toggle
         .setValue(this.plugin.settings.showGenres)
-        .onChange(async (value) => {
+        .onChange(async (value: boolean) => {
           this.plugin.settings.showGenres = value;
           await this.plugin.saveSettings();
         }));
@@ -436,9 +462,9 @@ export class ZoroSettingTab extends PluginSettingTab {
     new Setting(More)
       .setName('🧮 Score Scale')
       .setDesc('Ensures all ratings use the 0–10 point scale.')
-      .addToggle(toggle => toggle
+      .addToggle((toggle: ToggleComponent) => toggle
         .setValue(this.plugin.settings.forceScoreFormat)
-        .onChange(async (value) => {
+        .onChange(async (value: boolean) => {
           this.plugin.settings.forceScoreFormat = value;
           await this.plugin.saveSettings();
           if (value && this.plugin.auth.isLoggedIn) {
@@ -456,7 +482,7 @@ export class ZoroSettingTab extends PluginSettingTab {
     new Setting(Cache)
       .setName('📊 Cache Stats')
       .setDesc('Show live cache usage and hit-rate in a pop-up.')
-      .addButton(btn => btn
+      .addButton((btn: ButtonComponent) => btn
         .setButtonText('Show Stats')
         .onClick(() => {
           const s = this.plugin.cache.getStats();
@@ -471,14 +497,17 @@ export class ZoroSettingTab extends PluginSettingTab {
     new Setting(Cache)
       .setName('🧹 Clear Cache')
       .setDesc('Delete all cached data (user, media, search results).')
-      .addButton(btn => btn
-        .setButtonText('Clear All Cache')
-        .setWarning()
-        .onClick(async () => {
+      .addButton((btn: ButtonComponent) => {
+        const extendedBtn = btn as ExtendedButtonComponent;
+        btn.setButtonText('Clear All Cache');
+        if (extendedBtn.setWarning) {
+          extendedBtn.setWarning();
+        }
+        btn.onClick(async () => {
           const cleared = await this.plugin.cache.clearAll();
           new Notice(`✅ Cache cleared (${cleared} entries)`, 3000);
-        })
-      );
+        });
+      });
 
     // About Section
     new Setting(About)
@@ -494,20 +523,22 @@ export class ZoroSettingTab extends PluginSettingTab {
     new Setting(About)
       .setName('GitHub')
       .setDesc('Get more info or report an issue.')
-      .addButton(button =>
-        button
-          .setClass('mod-cta')
-          .setButtonText('Open GitHub')
-          .onClick(() => {
-            window.open('https://github.com/zara-kasi/zoro', '_blank');
-          })
-      );
+      .addButton((button: ButtonComponent) => {
+        const extendedButton = button as ExtendedButtonComponent;
+        button.setButtonText('Open GitHub');
+        if (extendedButton.setClass) {
+          extendedButton.setClass('mod-cta');
+        }
+        button.onClick(() => {
+          window.open('https://github.com/zara-kasi/zoro', '_blank');
+        });
+      });
   }
 
   private renderShortcutSection(container: HTMLElement): void {
     const shortcutSetting = new Setting(container)
       .setName(' Open on site')
-      .setDesc('Adds a customizable external-link button to the More Details panel that opens a site-specific search for the current title.');
+      .setDesc('Adds a customizable external-link button to the More Details panel that opens a site-specific search for the current title.') as ExtendedSetting;
 
     // Add the documentation link after the description
     const shortcutDescEl = shortcutSetting.descEl;
@@ -520,13 +551,17 @@ export class ZoroSettingTab extends PluginSettingTab {
     shortcutLinkEl.setAttr('rel', 'noopener noreferrer');
     shortcutLinkEl.style.textDecoration = 'none';
 
-    shortcutSetting.addButton(button => button
-      .setButtonText('Add Anime URL')
-      .setClass('mod-cta')
-      .onClick(async () => {
+    shortcutSetting.addButton((button: ButtonComponent) => {
+      const extendedButton = button as ExtendedButtonComponent;
+      button.setButtonText('Add Anime URL');
+      if (extendedButton.setClass) {
+        extendedButton.setClass('mod-cta');
+      }
+      button.onClick(async () => {
         await this.plugin.moreDetailsPanel.customExternalURL.addUrl('ANIME');
         this.refreshCustomUrlSettings();
-      }));
+      });
+    });
 
     // Create container for anime URLs
     const animeUrlContainer = container.createDiv('custom-url-container');
@@ -534,13 +569,17 @@ export class ZoroSettingTab extends PluginSettingTab {
     this.renderCustomUrls(animeUrlContainer, 'ANIME');
 
     new Setting(container)
-      .addButton(button => button
-        .setButtonText('Add Manga URL')
-        .setClass('mod-cta')
-        .onClick(async () => {
+      .addButton((button: ButtonComponent) => {
+        const extendedButton = button as ExtendedButtonComponent;
+        button.setButtonText('Add Manga URL');
+        if (extendedButton.setClass) {
+          extendedButton.setClass('mod-cta');
+        }
+        button.onClick(async () => {
           await this.plugin.moreDetailsPanel.customExternalURL.addUrl('MANGA');
           this.refreshCustomUrlSettings();
-        }));
+        });
+      });
 
     // Create container for manga URLs
     const mangaUrlContainer = container.createDiv('custom-url-container');
@@ -548,13 +587,17 @@ export class ZoroSettingTab extends PluginSettingTab {
     this.renderCustomUrls(mangaUrlContainer, 'MANGA');
 
     new Setting(container)
-      .addButton(button => button
-        .setButtonText('Add Movie/TV URL')
-        .setClass('mod-cta')
-        .onClick(async () => {
+      .addButton((button: ButtonComponent) => {
+        const extendedButton = button as ExtendedButtonComponent;
+        button.setButtonText('Add Movie/TV URL');
+        if (extendedButton.setClass) {
+          extendedButton.setClass('mod-cta');
+        }
+        button.onClick(async () => {
           await this.plugin.moreDetailsPanel.customExternalURL.addUrl('MOVIE_TV');
           this.refreshCustomUrlSettings();
-        }));
+        });
+      });
 
     // Create container for movie/TV URLs
     const movieTvUrlContainer = container.createDiv('custom-url-container');
@@ -564,9 +607,9 @@ export class ZoroSettingTab extends PluginSettingTab {
     new Setting(container)
       .setName('Auto-Format')
       .setDesc('Automatically format URLs to search format. When disabled, URLs will be used exactly as entered.')
-      .addToggle(toggle => toggle
+      .addToggle((toggle: ToggleComponent) => toggle
         .setValue(this.plugin.settings.autoFormatSearchUrls)
-        .onChange(async (value) => {
+        .onChange(async (value: boolean) => {
           this.plugin.settings.autoFormatSearchUrls = value;
           await this.plugin.saveSettings();
         }));
@@ -576,18 +619,21 @@ export class ZoroSettingTab extends PluginSettingTab {
     const exportSetting = new Setting(container)
       .setName('📥 Export your data')
       .setDesc("Everything you've watched, rated, and maybe ghosted — neatly exported into a CSV & standard export format from AniList, MAL and Simkl.")
-      .addButton(btn => btn
-        .setButtonText('AniList')
-        .setClass('mod-cta')
-        .onClick(async () => {
+      .addButton((btn: ButtonComponent) => {
+        const extendedBtn = btn as ExtendedButtonComponent;
+        btn.setButtonText('AniList');
+        if (extendedBtn.setClass) {
+          extendedBtn.setClass('mod-cta');
+        }
+        btn.onClick(async () => {
           try {
             await this.plugin.export.exportUnifiedListsToCSV();
           } catch (err: unknown) {
             const message = err instanceof Error ? err.message : 'Unknown error';
             new Notice(`❌ Export failed: ${message}`, 6000);
           }
-        })
-      );
+        });
+      }) as ExtendedSetting;
 
     const exportDescEl = exportSetting.descEl;
     exportDescEl.createEl('br');
@@ -600,24 +646,30 @@ export class ZoroSettingTab extends PluginSettingTab {
     exportLinkEl.style.textDecoration = 'none';
 
     new Setting(container)
-      .addButton(btn => btn
-        .setButtonText('MAL')
-        .setClass('mod-cta')
-        .onClick(async () => {
+      .addButton((btn: ButtonComponent) => {
+        const extendedBtn = btn as ExtendedButtonComponent;
+        btn.setButtonText('MAL');
+        if (extendedBtn.setClass) {
+          extendedBtn.setClass('mod-cta');
+        }
+        btn.onClick(async () => {
           try {
             await this.plugin.export.exportMALListsToCSV();
           } catch (err: unknown) {
             const message = err instanceof Error ? err.message : 'Unknown error';
             new Notice(`❌ MAL export failed: ${message}`, 6000);
           }
-        })
-      );
+        });
+      });
 
     new Setting(container)
-      .addButton(btn => btn
-        .setButtonText('SIMKL')
-        .setClass('mod-cta')
-        .onClick(async () => {
+      .addButton((btn: ButtonComponent) => {
+        const extendedBtn = btn as ExtendedButtonComponent;
+        btn.setButtonText('SIMKL');
+        if (extendedBtn.setClass) {
+          extendedBtn.setClass('mod-cta');
+        }
+        btn.onClick(async () => {
           if (!this.plugin.simklAuth.isLoggedIn) {
             new Notice('❌ Please authenticate with SIMKL first.', 4000);
             return;
@@ -635,8 +687,8 @@ export class ZoroSettingTab extends PluginSettingTab {
             btn.setDisabled(false);
             btn.setButtonText('SIMKL');
           }
-        })
-      );
+        });
+      });
   }
 
   private updateAuthButton(): void {
@@ -644,23 +696,24 @@ export class ZoroSettingTab extends PluginSettingTab {
     const { settings } = this.plugin;
     if (!settings.clientId) {
       this.authButton.setButtonText('Enter Client ID');
-      this.authButton.removeCta();
+      if (this.authButton.removeCta) this.authButton.removeCta();
     } else if (!settings.clientSecret) {
       this.authButton.setButtonText('Enter Client Secret');
-      this.authButton.removeCta();
+      if (this.authButton.removeCta) this.authButton.removeCta();
     } else if (!settings.accessToken) {
       this.authButton.setButtonText('Authenticate Now');
-      this.authButton.setCta();
+      if (this.authButton.setCta) this.authButton.setCta();
     } else {
       this.authButton.setButtonText('Sign Out');
-      this.authButton.setWarning().removeCta();
+      if (this.authButton.setWarning) this.authButton.setWarning();
+      if (this.authButton.removeCta) this.authButton.removeCta();
     }
   }
 
   private async handleAuthButtonClick(): Promise<void> {
     const { settings } = this.plugin;
     if (!settings.clientId) {
-      const modal = AuthModal.clientId(this.app, async (clientId) => {
+      const modal = AuthModal.clientId(this.app, async (clientId: string) => {
         if (clientId?.trim()) {
           settings.clientId = clientId.trim();
           await this.plugin.saveSettings();
@@ -669,7 +722,7 @@ export class ZoroSettingTab extends PluginSettingTab {
       });
       modal.open();
     } else if (!settings.clientSecret) {
-      const modal = AuthModal.clientSecret(this.app, async (clientSecret) => {
+      const modal = AuthModal.clientSecret(this.app, async (clientSecret: string) => {
         if (clientSecret?.trim()) {
           settings.clientSecret = clientSecret.trim();
           await this.plugin.saveSettings();
@@ -693,23 +746,24 @@ export class ZoroSettingTab extends PluginSettingTab {
     const { settings } = this.plugin;
     if (!settings.malClientId) {
       this.malAuthButton.setButtonText('Enter Client ID');
-      this.malAuthButton.removeCta();
+      if (this.malAuthButton.removeCta) this.malAuthButton.removeCta();
     } else if (!settings.malClientSecret) {
       this.malAuthButton.setButtonText('Enter Client Secret');
-      this.malAuthButton.removeCta();
+      if (this.malAuthButton.removeCta) this.malAuthButton.removeCta();
     } else if (!settings.malAccessToken) {
       this.malAuthButton.setButtonText('Authenticate Now');
-      this.malAuthButton.setCta();
+      if (this.malAuthButton.setCta) this.malAuthButton.setCta();
     } else {
       this.malAuthButton.setButtonText('Sign Out');
-      this.malAuthButton.setWarning().removeCta();
+      if (this.malAuthButton.setWarning) this.malAuthButton.setWarning();
+      if (this.malAuthButton.removeCta) this.malAuthButton.removeCta();
     }
   }
 
   private async handleMALAuthButtonClick(): Promise<void> {
     const { settings } = this.plugin;
     if (!settings.malClientId) {
-      const modal = AuthModal.clientId(this.app, async (clientId) => {
+      const modal = AuthModal.clientId(this.app, async (clientId: string) => {
         if (clientId?.trim()) {
           settings.malClientId = clientId.trim();
           await this.plugin.saveSettings();
@@ -718,7 +772,7 @@ export class ZoroSettingTab extends PluginSettingTab {
       });
       modal.open();
     } else if (!settings.malClientSecret) {
-      const modal = AuthModal.clientSecret(this.app, async (clientSecret) => {
+      const modal = AuthModal.clientSecret(this.app, async (clientSecret: string) => {
         if (clientSecret?.trim()) {
           settings.malClientSecret = clientSecret.trim();
           await this.plugin.saveSettings();
@@ -742,23 +796,24 @@ export class ZoroSettingTab extends PluginSettingTab {
     const { settings } = this.plugin;
     if (!settings.simklClientId) {
       this.simklAuthButton.setButtonText('Enter Client ID');
-      this.simklAuthButton.removeCta();
+      if (this.simklAuthButton.removeCta) this.simklAuthButton.removeCta();
     } else if (!settings.simklClientSecret) {
       this.simklAuthButton.setButtonText('Enter Client Secret');
-      this.simklAuthButton.removeCta();
+      if (this.simklAuthButton.removeCta) this.simklAuthButton.removeCta();
     } else if (!settings.simklAccessToken) {
       this.simklAuthButton.setButtonText('Authenticate Now');
-      this.simklAuthButton.setCta();
+      if (this.simklAuthButton.setCta) this.simklAuthButton.setCta();
     } else {
       this.simklAuthButton.setButtonText('Sign Out');
-      this.simklAuthButton.setWarning().removeCta();
+      if (this.simklAuthButton.setWarning) this.simklAuthButton.setWarning();
+      if (this.simklAuthButton.removeCta) this.simklAuthButton.removeCta();
     }
   }
 
   private async handleSimklAuthButtonClick(): Promise<void> {
     const { settings } = this.plugin;
     if (!settings.simklClientId) {
-      const modal = AuthModal.clientId(this.app, async (clientId) => {
+      const modal = AuthModal.clientId(this.app, async (clientId: string) => {
         if (clientId?.trim()) {
           settings.simklClientId = clientId.trim();
           await this.plugin.saveSettings();
@@ -767,7 +822,7 @@ export class ZoroSettingTab extends PluginSettingTab {
       });
       modal.open();
     } else if (!settings.simklClientSecret) {
-      const modal = AuthModal.clientSecret(this.app, async (clientSecret) => {
+      const modal = AuthModal.clientSecret(this.app, async (clientSecret: string) => {
         if (clientSecret?.trim()) {
           settings.simklClientSecret = clientSecret.trim();
           await this.plugin.saveSettings();
@@ -846,7 +901,7 @@ export class ZoroSettingTab extends PluginSettingTab {
       cls: 'url-remove-button-inside'
     });
     
-    input.addEventListener('input', async (e) => {
+    input.addEventListener('input', async (e: Event) => {
       const target = e.target as HTMLInputElement;
       const newValue = target.value;
       await this.plugin.moreDetailsPanel.customExternalURL.updateUrl(mediaType, index, newValue);

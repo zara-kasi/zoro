@@ -137,7 +137,12 @@ interface SafeHTMLElement extends HTMLElement {
   empty(): void;
 }
 
-export class ZoroSettingTab extends PluginSettingTab {
+// Extended PluginSettingTab interface to expose app property
+interface ExtendedPluginSettingTab extends PluginSettingTab {
+  app: App;
+}
+
+export class ZoroSettingTab extends PluginSettingTab implements ExtendedPluginSettingTab {
   app: App; // Explicit app property declaration
   private plugin: ZoroPlugin;
   private authButton?: ExtendedButtonComponent;

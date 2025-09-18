@@ -878,7 +878,9 @@ export class ZoroSettingTab extends PluginSettingTab {
   }
 
   private renderCustomUrls(container: SafeHTMLElement, mediaType: string): void {
-    container.empty();
+    if (container && container.empty) {
+      container.empty();
+    }
     const urls = this.plugin.settings.customSearchUrls?.[mediaType] || [];
     urls.forEach((url, index) => {
       this.createUrlSetting(container, mediaType, url, index);

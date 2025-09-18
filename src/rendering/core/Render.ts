@@ -4,7 +4,6 @@ import { APISourceHelper } from '../helpers/APISourceHelper';
 import { FormatterHelper } from '../helpers/FormatterHelper';
 import { CardRenderer } from '../renderers/CardRenderer';
 import { SearchRenderer } from '../renderers/SearchRenderer';
-import { TableRenderer } from '../renderers/TableRenderer';
 import { MediaListRenderer } from '../renderers/MediaListRenderer';
 import { StatsRenderer } from '../renderers/StatsRenderer';
 import { DOMHelper } from '../helpers/DOMHelper';

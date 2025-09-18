@@ -132,7 +132,14 @@ interface ExtendedTextComponent extends TextComponent {
 
 // Extended HTMLElement interfaces for type safety
 interface SafeHTMLElement extends HTMLElement {
-  createDiv(options?: string | { cls?: string; attr?: Record<string, string> }): HTMLDivElement;
+  createDiv(options?: { cls?: string; attr?: Record<string, string> }): HTMLDivElement;
+  createEl<K extends keyof HTMLElementTagNameMap>(tagName: K, options?: { cls?: string; attr?: Record<string, string>; text?: string }): HTMLElementTagNameMap[K];
+  empty(): void;
+}
+
+// Extended HTMLDivElement interface
+interface SafeHTMLDivElement extends HTMLDivElement {
+  createDiv(options?: { cls?: string; attr?: Record<string, string> }): HTMLDivElement;
   createEl<K extends keyof HTMLElementTagNameMap>(tagName: K, options?: { cls?: string; attr?: Record<string, string>; text?: string }): HTMLElementTagNameMap[K];
   empty(): void;
 }
@@ -893,10 +900,8 @@ export class ZoroSettingTab extends PluginSettingTab implements ExtendedPluginSe
   }
 
   private createUrlSetting(container: SafeHTMLElement, mediaType: string, url: string, index: number): void {
-    const urlDiv = container.createDiv({ cls: 'url-setting-item' });
-    const safeUrlDiv = urlDiv as SafeHTMLElement;
-    const inputContainer = safeUrlDiv.createDiv({ cls: 'url-input-container' });
-    const safeInputContainer = inputContainer as SafeHTMLElement;
+    const urlDiv = container.createDiv({ cls: 'url-setting-item' }) as SafeHTMLDivElement;
+    const inputContainer = urlDiv.createDiv({ cls: 'url-input-container' }) as SafeHTMLDivElement;
     let displayValue = url;
     let placeholder = 'https://example.com/search?q=';
     
@@ -912,7 +917,7 @@ export class ZoroSettingTab extends PluginSettingTab implements ExtendedPluginSe
       }
     }
     
-    const input = safeInputContainer.createEl('input', {
+    const input = inputContainer.createEl('input', {
       attr: {
         type: 'text',
         placeholder: placeholder,
@@ -921,7 +926,7 @@ export class ZoroSettingTab extends PluginSettingTab implements ExtendedPluginSe
       cls: 'custom-url-input'
     });
     
-    const removeBtn = safeInputContainer.createEl('button', {
+    const removeBtn = inputContainer.createEl('button', {
       text: '×',
       cls: 'url-remove-button-inside'
     });
@@ -955,7 +960,7 @@ export class ZoroSettingTab extends PluginSettingTab implements ExtendedPluginSe
     });
     
     if (url && url.trim()) {
-      const preview = safeUrlDiv.createDiv({ cls: 'url-preview' });
+      const preview = urlDiv.createDiv({ cls: 'url-preview' });
       const domainName = this.plugin.moreDetailsPanel.customExternalURL.extractDomainName(url);
       preview.textContent = `Preview: ${domainName}`;
     }

@@ -56,7 +56,7 @@ interface MediaEntry {
   media: Media;
   status: string;
   progress?: number;
-  score?: number;
+  score?: number | null;
   id?: number | null;
   _zoroMeta?: ZoroMeta;
 }
@@ -194,7 +194,9 @@ export class CardRenderer {
     // Add heart for favorites
     const heart = document.createElement('span');
     heart.className = 'zoro-heart';
-    heart.createEl('span', { text: '❤️' });
+    const heartSpan = document.createElement('span');
+    heartSpan.textContent = '❤️';
+    heart.appendChild(heartSpan);
     if (!media.isFavourite) heart.style.display = 'none';
     card.appendChild(heart);
     
@@ -211,7 +213,7 @@ export class CardRenderer {
     img.className = 'media-cover pressable-cover';
     img.loading = 'lazy';
 
-    let pressTimer: NodeJS.Timeout | null = null;
+    let pressTimer: number | null = null;
     let isPressed = false;
     const pressHoldDuration = 400;
     
@@ -221,7 +223,7 @@ export class CardRenderer {
       isPressed = true;
       img.classList.add('pressed');
       
-      pressTimer = setTimeout(() => {
+      pressTimer = window.setTimeout(() => {
         if (isPressed) {
           (async () => {
             try {
@@ -241,7 +243,7 @@ export class CardRenderer {
 
     const clearPressState = () => {
       if (pressTimer) {
-        clearTimeout(pressTimer);
+        window.clearTimeout(pressTimer);
         pressTimer = null;
       }
       img.classList.remove('pressed');
@@ -271,7 +273,7 @@ export class CardRenderer {
       isPressed = true;
       img.classList.add('pressed');
       
-      pressTimer = setTimeout(() => {
+      pressTimer = window.setTimeout(() => {
         if (isPressed) {
           e.preventDefault();
           (async () => {
@@ -292,7 +294,7 @@ export class CardRenderer {
 
     const clearTouchState = () => {
       if (pressTimer) {
-        clearTimeout(pressTimer);
+        window.clearTimeout(pressTimer);
         pressTimer = null;
       }
       img.classList.remove('pressed');
@@ -446,7 +448,9 @@ export class CardRenderer {
   createCreateNoteButton(media: Media, entry: MediaEntry, config: RenderConfig): HTMLElement {
     const createBtn = document.createElement('span');
     createBtn.className = 'zoro-note-obsidian';
-    createBtn.createEl('span', { text: '📝' });
+    const noteSpan = document.createElement('span');
+    noteSpan.textContent = '📝';
+    createBtn.appendChild(noteSpan);
     createBtn.title = 'Create connected note';
     
     createBtn.onclick = async (e: MouseEvent) => {
@@ -562,7 +566,9 @@ export class CardRenderer {
     const statusText = this.formatter.getStatusText(entry.status);
     
     statusBadge.className = `status-badge status-${statusClass} clickable-status`;
-    statusBadge.createEl('span', { text: '☑️' });
+    const badgeSpan = document.createElement('span');
+    badgeSpan.textContent = '☑️';
+    statusBadge.appendChild(badgeSpan);
     statusBadge.onclick = (e: MouseEvent) => this.handleStatusClick(e, entry, statusBadge, config);
     
     return statusBadge;
@@ -581,7 +587,9 @@ export class CardRenderer {
   createAddButton(media: Media, entry: MediaEntry, config: RenderConfig): HTMLElement {
     const addBtn = document.createElement('span');
     addBtn.classList.add('zoro-add-button-cover');
-    addBtn.createEl('span', { text: '🔖' });
+    const addSpan = document.createElement('span');
+    addSpan.textContent = '🔖';
+    addBtn.appendChild(addSpan);
     addBtn.dataset.loading = 'false';
     addBtn.onclick = (e: MouseEvent) => this.handleAddClick(e, media, entry, config, addBtn);
     
@@ -679,10 +687,10 @@ export class CardRenderer {
         const frag = mapper.parseToFragment('📑');
         if (frag) {
           addBtn.appendChild(frag);
-        } else if (typeof (addBtn as any).createEl === 'function') {
-          (addBtn as any).createEl('span', { text: '📑' });
         } else {
-          addBtn.textContent = '📑';
+          const span = document.createElement('span');
+          span.textContent = '📑';
+          addBtn.appendChild(span);
         }
       } else if (typeof setIcon === 'function') {
         const span = document.createElement('span');

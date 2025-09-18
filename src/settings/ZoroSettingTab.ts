@@ -122,6 +122,7 @@ interface ExtendedButtonComponent extends ButtonComponent {
   removeCta?(): this;
   setWarning?(): this;
   setClass?(cls: string): this;
+  setDisabled?(disabled: boolean): this;
 }
 
 // Extended TextComponent interface for setPlaceholder method
@@ -564,7 +565,7 @@ export class ZoroSettingTab extends PluginSettingTab {
     });
 
     // Create container for anime URLs
-    const animeUrlContainer = container.createDiv('custom-url-container');
+    const animeUrlContainer = container.createDiv({ cls: 'custom-url-container' });
     animeUrlContainer.setAttribute('data-media-type', 'ANIME');
     this.renderCustomUrls(animeUrlContainer, 'ANIME');
 
@@ -582,7 +583,7 @@ export class ZoroSettingTab extends PluginSettingTab {
       });
 
     // Create container for manga URLs
-    const mangaUrlContainer = container.createDiv('custom-url-container');
+    const mangaUrlContainer = container.createDiv({ cls: 'custom-url-container' });
     mangaUrlContainer.setAttribute('data-media-type', 'MANGA');
     this.renderCustomUrls(mangaUrlContainer, 'MANGA');
 
@@ -600,7 +601,7 @@ export class ZoroSettingTab extends PluginSettingTab {
       });
 
     // Create container for movie/TV URLs
-    const movieTvUrlContainer = container.createDiv('custom-url-container');
+    const movieTvUrlContainer = container.createDiv({ cls: 'custom-url-container' });
     movieTvUrlContainer.setAttribute('data-media-type', 'MOVIE_TV');
     this.renderCustomUrls(movieTvUrlContainer, 'MOVIE_TV');
 
@@ -675,7 +676,9 @@ export class ZoroSettingTab extends PluginSettingTab {
             return;
           }
 
-          btn.setDisabled(true);
+          if (extendedBtn.setDisabled) {
+            extendedBtn.setDisabled(true);
+          }
           btn.setButtonText('Exporting...');
 
           try {
@@ -684,7 +687,9 @@ export class ZoroSettingTab extends PluginSettingTab {
             const message = err instanceof Error ? err.message : 'Unknown error';
             new Notice(`❌ SIMKL export failed: ${message}`, 6000);
           } finally {
-            btn.setDisabled(false);
+            if (extendedBtn.setDisabled) {
+              extendedBtn.setDisabled(false);
+            }
             btn.setButtonText('SIMKL');
           }
         });
@@ -872,8 +877,8 @@ export class ZoroSettingTab extends PluginSettingTab {
   }
 
   private createUrlSetting(container: HTMLElement, mediaType: string, url: string, index: number): void {
-    const urlDiv = container.createDiv('url-setting-item');
-    const inputContainer = urlDiv.createDiv('url-input-container');
+    const urlDiv = container.createDiv({ cls: 'url-setting-item' });
+    const inputContainer = urlDiv.createDiv({ cls: 'url-input-container' });
     let displayValue = url;
     let placeholder = 'https://example.com/search?q=';
     
@@ -930,20 +935,20 @@ export class ZoroSettingTab extends PluginSettingTab {
     });
     
     if (url && url.trim()) {
-      const preview = urlDiv.createDiv('url-preview');
+      const preview = urlDiv.createDiv({ cls: 'url-preview' });
       const domainName = this.plugin.moreDetailsPanel.customExternalURL.extractDomainName(url);
       preview.textContent = `Preview: ${domainName}`;
     }
   }
 
   private refreshCustomUrlSettings(): void {
-    const animeContainer = this.containerEl.querySelector('[data-media-type="ANIME"]') as HTMLElement;
+    const animeContainer = this.containerEl.querySelector('[data-media-type="ANIME"]') as HTMLElement | null;
     if (animeContainer) this.renderCustomUrls(animeContainer, 'ANIME');
     
-    const mangaContainer = this.containerEl.querySelector('[data-media-type="MANGA"]') as HTMLElement;
+    const mangaContainer = this.containerEl.querySelector('[data-media-type="MANGA"]') as HTMLElement | null;
     if (mangaContainer) this.renderCustomUrls(mangaContainer, 'MANGA');
     
-    const movieTvContainer = this.containerEl.querySelector('[data-media-type="MOVIE_TV"]') as HTMLElement;
+    const movieTvContainer = this.containerEl.querySelector('[data-media-type="MOVIE_TV"]') as HTMLElement | null;
     if (movieTvContainer) this.renderCustomUrls(movieTvContainer, 'MOVIE_TV');
   }
 }

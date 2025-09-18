@@ -130,6 +130,13 @@ interface ExtendedTextComponent extends TextComponent {
   setPlaceholder?(placeholder: string): this;
 }
 
+// Extended HTMLElement interfaces for type safety
+interface SafeHTMLElement extends HTMLElement {
+  createDiv(options?: string | { cls?: string; attr?: Record<string, string> }): HTMLDivElement;
+  createEl<K extends keyof HTMLElementTagNameMap>(tagName: K, options?: { cls?: string; attr?: Record<string, string>; text?: string }): HTMLElementTagNameMap[K];
+  empty(): void;
+}
+
 export class ZoroSettingTab extends PluginSettingTab {
   app: App; // Explicit app property declaration
   private plugin: ZoroPlugin;
@@ -145,14 +152,15 @@ export class ZoroSettingTab extends PluginSettingTab {
 
   display(): void {
     const { containerEl } = this;
-    containerEl.empty();
+    const safeContainerEl = containerEl as SafeHTMLElement;
+    safeContainerEl.empty();
 
     const section = (title: string, startOpen: boolean = false): HTMLElement => {
-      const head = containerEl.createEl('h2', { text: title });
+      const head = safeContainerEl.createEl('h2', { text: title });
       head.style.cursor = 'pointer';
       head.style.userSelect = 'none';
       head.style.margin = '1.2em 0 0.4em 0';
-      const body = containerEl.createDiv();
+      const body = safeContainerEl.createDiv() as SafeHTMLElement;
       body.style.marginLeft = '1em';
       body.style.display = startOpen ? 'block' : 'none';
       head.addEventListener('click', () => {
@@ -565,7 +573,8 @@ export class ZoroSettingTab extends PluginSettingTab {
     });
 
     // Create container for anime URLs
-    const animeUrlContainer = container.createDiv({ cls: 'custom-url-container' });
+    const safeContainer = container as SafeHTMLElement;
+    const animeUrlContainer = safeContainer.createDiv({ cls: 'custom-url-container' }) as SafeHTMLElement;
     animeUrlContainer.setAttribute('data-media-type', 'ANIME');
     this.renderCustomUrls(animeUrlContainer, 'ANIME');
 
@@ -583,7 +592,7 @@ export class ZoroSettingTab extends PluginSettingTab {
       });
 
     // Create container for manga URLs
-    const mangaUrlContainer = container.createDiv({ cls: 'custom-url-container' });
+    const mangaUrlContainer = safeContainer.createDiv({ cls: 'custom-url-container' }) as SafeHTMLElement;
     mangaUrlContainer.setAttribute('data-media-type', 'MANGA');
     this.renderCustomUrls(mangaUrlContainer, 'MANGA');
 
@@ -601,7 +610,7 @@ export class ZoroSettingTab extends PluginSettingTab {
       });
 
     // Create container for movie/TV URLs
-    const movieTvUrlContainer = container.createDiv({ cls: 'custom-url-container' });
+    const movieTvUrlContainer = safeContainer.createDiv({ cls: 'custom-url-container' }) as SafeHTMLElement;
     movieTvUrlContainer.setAttribute('data-media-type', 'MOVIE_TV');
     this.renderCustomUrls(movieTvUrlContainer, 'MOVIE_TV');
 
@@ -868,7 +877,7 @@ export class ZoroSettingTab extends PluginSettingTab {
     });
   }
 
-  private renderCustomUrls(container: HTMLElement, mediaType: string): void {
+  private renderCustomUrls(container: SafeHTMLElement, mediaType: string): void {
     container.empty();
     const urls = this.plugin.settings.customSearchUrls?.[mediaType] || [];
     urls.forEach((url, index) => {
@@ -876,9 +885,11 @@ export class ZoroSettingTab extends PluginSettingTab {
     });
   }
 
-  private createUrlSetting(container: HTMLElement, mediaType: string, url: string, index: number): void {
+  private createUrlSetting(container: SafeHTMLElement, mediaType: string, url: string, index: number): void {
     const urlDiv = container.createDiv({ cls: 'url-setting-item' });
-    const inputContainer = urlDiv.createDiv({ cls: 'url-input-container' });
+    const safeUrlDiv = urlDiv as SafeHTMLElement;
+    const inputContainer = safeUrlDiv.createDiv({ cls: 'url-input-container' });
+    const safeInputContainer = inputContainer as SafeHTMLElement;
     let displayValue = url;
     let placeholder = 'https://example.com/search?q=';
     
@@ -894,14 +905,16 @@ export class ZoroSettingTab extends PluginSettingTab {
       }
     }
     
-    const input = inputContainer.createEl('input', {
-      type: 'text',
-      placeholder: placeholder,
-      value: displayValue,
+    const input = safeInputContainer.createEl('input', {
+      attr: {
+        type: 'text',
+        placeholder: placeholder,
+        value: displayValue
+      },
       cls: 'custom-url-input'
     });
     
-    const removeBtn = inputContainer.createEl('button', {
+    const removeBtn = safeInputContainer.createEl('button', {
       text: '×',
       cls: 'url-remove-button-inside'
     });
@@ -935,20 +948,21 @@ export class ZoroSettingTab extends PluginSettingTab {
     });
     
     if (url && url.trim()) {
-      const preview = urlDiv.createDiv({ cls: 'url-preview' });
+      const preview = safeUrlDiv.createDiv({ cls: 'url-preview' });
       const domainName = this.plugin.moreDetailsPanel.customExternalURL.extractDomainName(url);
       preview.textContent = `Preview: ${domainName}`;
     }
   }
 
   private refreshCustomUrlSettings(): void {
-    const animeContainer = this.containerEl.querySelector('[data-media-type="ANIME"]') as HTMLElement | null;
+    const safeContainerEl = this.containerEl as SafeHTMLElement;
+    const animeContainer = safeContainerEl.querySelector('[data-media-type="ANIME"]') as SafeHTMLElement | null;
     if (animeContainer) this.renderCustomUrls(animeContainer, 'ANIME');
     
-    const mangaContainer = this.containerEl.querySelector('[data-media-type="MANGA"]') as HTMLElement | null;
+    const mangaContainer = safeContainerEl.querySelector('[data-media-type="MANGA"]') as SafeHTMLElement | null;
     if (mangaContainer) this.renderCustomUrls(mangaContainer, 'MANGA');
     
-    const movieTvContainer = this.containerEl.querySelector('[data-media-type="MOVIE_TV"]') as HTMLElement | null;
+    const movieTvContainer = safeContainerEl.querySelector('[data-media-type="MOVIE_TV"]') as SafeHTMLElement | null;
     if (movieTvContainer) this.renderCustomUrls(movieTvContainer, 'MOVIE_TV');
   }
 }

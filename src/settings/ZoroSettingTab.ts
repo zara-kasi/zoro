@@ -3,9 +3,26 @@ import { PluginSettingTab, Setting, Notice, setIcon, ButtonComponent, TextCompon
 import { AuthModal } from '../auth/AuthModal';
 import { GRID_COLUMN_OPTIONS, GRID_COLUMN_LABELS } from '../core/constants';
 
+// Obsidian's HTMLElement extensions
+declare global {
+  interface HTMLElement {
+    createDiv(options?: { cls?: string; attr?: Record<string, string> }): HTMLDivElement;
+    createEl<K extends keyof HTMLElementTagNameMap>(
+      tagName: K, 
+      options?: { cls?: string; attr?: Record<string, string>; text?: string }
+    ): HTMLElementTagNameMap[K];
+    empty(): void;
+    addClass(cls: string): void;
+    removeClass(cls: string): void;
+    toggleClass(cls: string, force?: boolean): void;
+    setAttr(attr: string, value: string): void;
+    getAttr(attr: string): string | null;
+  }
+}
+
 // Type definitions for plugin components
 interface ZoroPlugin extends Plugin {
-  app: App; // Add explicit app property
+  app: App;
   settings: ZoroSettings;
   auth: AuthService;
   malAuth: AuthService;
@@ -130,27 +147,7 @@ interface ExtendedTextComponent extends TextComponent {
   setPlaceholder?(placeholder: string): this;
 }
 
-// Extended HTMLElement interfaces for type safety
-interface SafeHTMLElement extends HTMLElement {
-  createDiv(options?: { cls?: string; attr?: Record<string, string> }): HTMLDivElement;
-  createEl<K extends keyof HTMLElementTagNameMap>(tagName: K, options?: { cls?: string; attr?: Record<string, string>; text?: string }): HTMLElementTagNameMap[K];
-  empty(): void;
-}
-
-// Extended HTMLDivElement interface
-interface SafeHTMLDivElement extends HTMLDivElement {
-  createDiv(options?: { cls?: string; attr?: Record<string, string> }): HTMLDivElement;
-  createEl<K extends keyof HTMLElementTagNameMap>(tagName: K, options?: { cls?: string; attr?: Record<string, string>; text?: string }): HTMLElementTagNameMap[K];
-  empty(): void;
-}
-
-// Extended PluginSettingTab interface to expose app property
-interface ExtendedPluginSettingTab extends PluginSettingTab {
-  app: App;
-}
-
-export class ZoroSettingTab extends PluginSettingTab implements ExtendedPluginSettingTab {
-  app: App; // Explicit app property declaration
+export class ZoroSettingTab extends PluginSettingTab {
   private plugin: ZoroPlugin;
   private authButton?: ExtendedButtonComponent;
   private malAuthButton?: ExtendedButtonComponent;
@@ -158,21 +155,19 @@ export class ZoroSettingTab extends PluginSettingTab implements ExtendedPluginSe
 
   constructor(app: App, plugin: ZoroPlugin) {
     super(app, plugin);
-    this.app = app;
     this.plugin = plugin;
   }
 
   display(): void {
     const { containerEl } = this;
-    const safeContainerEl = containerEl as SafeHTMLElement;
-    safeContainerEl.empty();
+    containerEl.empty();
 
     const section = (title: string, startOpen: boolean = false): HTMLElement => {
-      const head = safeContainerEl.createEl('h2', { text: title });
+      const head = containerEl.createEl('h2', { text: title });
       head.style.cursor = 'pointer';
       head.style.userSelect = 'none';
       head.style.margin = '1.2em 0 0.4em 0';
-      const body = safeContainerEl.createDiv() as SafeHTMLElement;
+      const body = containerEl.createDiv();
       body.style.marginLeft = '1em';
       body.style.display = startOpen ? 'block' : 'none';
       head.addEventListener('click', () => {
@@ -585,9 +580,8 @@ export class ZoroSettingTab extends PluginSettingTab implements ExtendedPluginSe
     });
 
     // Create container for anime URLs
-    const safeContainer = container as SafeHTMLElement;
-    const animeUrlContainer = safeContainer.createDiv({ cls: 'custom-url-container' }) as SafeHTMLElement;
-    animeUrlContainer.setAttribute('data-media-type', 'ANIME');
+    const animeUrlContainer = container.createDiv({ cls: 'custom-url-container' });
+    animeUrlContainer.setAttr('data-media-type', 'ANIME');
     this.renderCustomUrls(animeUrlContainer, 'ANIME');
 
     new Setting(container)
@@ -604,8 +598,8 @@ export class ZoroSettingTab extends PluginSettingTab implements ExtendedPluginSe
       });
 
     // Create container for manga URLs
-    const mangaUrlContainer = safeContainer.createDiv({ cls: 'custom-url-container' }) as SafeHTMLElement;
-    mangaUrlContainer.setAttribute('data-media-type', 'MANGA');
+    const mangaUrlContainer = container.createDiv({ cls: 'custom-url-container' });
+    mangaUrlContainer.setAttr('data-media-type', 'MANGA');
     this.renderCustomUrls(mangaUrlContainer, 'MANGA');
 
     new Setting(container)
@@ -622,8 +616,8 @@ export class ZoroSettingTab extends PluginSettingTab implements ExtendedPluginSe
       });
 
     // Create container for movie/TV URLs
-    const movieTvUrlContainer = safeContainer.createDiv({ cls: 'custom-url-container' }) as SafeHTMLElement;
-    movieTvUrlContainer.setAttribute('data-media-type', 'MOVIE_TV');
+    const movieTvUrlContainer = container.createDiv({ cls: 'custom-url-container' });
+    movieTvUrlContainer.setAttr('data-media-type', 'MOVIE_TV');
     this.renderCustomUrls(movieTvUrlContainer, 'MOVIE_TV');
 
     new Setting(container)
@@ -889,19 +883,17 @@ export class ZoroSettingTab extends PluginSettingTab implements ExtendedPluginSe
     });
   }
 
-  private renderCustomUrls(container: SafeHTMLElement, mediaType: string): void {
-    if (container && container.empty) {
-      container.empty();
-    }
+  private renderCustomUrls(container: HTMLElement, mediaType: string): void {
+    container.empty();
     const urls = this.plugin.settings.customSearchUrls?.[mediaType] || [];
     urls.forEach((url, index) => {
       this.createUrlSetting(container, mediaType, url, index);
     });
   }
 
-  private createUrlSetting(container: SafeHTMLElement, mediaType: string, url: string, index: number): void {
-    const urlDiv = container.createDiv({ cls: 'url-setting-item' }) as SafeHTMLDivElement;
-    const inputContainer = urlDiv.createDiv({ cls: 'url-input-container' }) as SafeHTMLDivElement;
+  private createUrlSetting(container: HTMLElement, mediaType: string, url: string, index: number): void {
+    const urlDiv = container.createDiv({ cls: 'url-setting-item' });
+    const inputContainer = urlDiv.createDiv({ cls: 'url-input-container' });
     let displayValue = url;
     let placeholder = 'https://example.com/search?q=';
     
@@ -967,14 +959,13 @@ export class ZoroSettingTab extends PluginSettingTab implements ExtendedPluginSe
   }
 
   private refreshCustomUrlSettings(): void {
-    const safeContainerEl = this.containerEl as SafeHTMLElement;
-    const animeContainer = safeContainerEl.querySelector('[data-media-type="ANIME"]') as SafeHTMLElement | null;
+    const animeContainer = this.containerEl.querySelector('[data-media-type="ANIME"]') as HTMLElement | null;
     if (animeContainer) this.renderCustomUrls(animeContainer, 'ANIME');
     
-    const mangaContainer = safeContainerEl.querySelector('[data-media-type="MANGA"]') as SafeHTMLElement | null;
+    const mangaContainer = this.containerEl.querySelector('[data-media-type="MANGA"]') as HTMLElement | null;
     if (mangaContainer) this.renderCustomUrls(mangaContainer, 'MANGA');
     
-    const movieTvContainer = safeContainerEl.querySelector('[data-media-type="MOVIE_TV"]') as SafeHTMLElement | null;
+    const movieTvContainer = this.containerEl.querySelector('[data-media-type="MOVIE_TV"]') as HTMLElement | null;
     if (movieTvContainer) this.renderCustomUrls(movieTvContainer, 'MOVIE_TV');
   }
 }

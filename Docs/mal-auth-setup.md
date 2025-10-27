@@ -13,8 +13,8 @@ Watch a short tutorial here:
 2. Click **Create App**.  
 3. Fill in these fields:  
    - **App Name**: `Zoro`  
-   - **App Type**: `Web`  
-   - **Redirect URI**: `obsidian://zoro-auth/mal`  
+   - **Redirect URI**: `obsidian://zoro-auth/mal` 
+   - **Homepage URL**: `https://myanimelist.net`   
    - **Description**: `Obsidian plugin for managing anime, manga, tv show and movie lists`  
    - **Company Name**: `Zoro`  
 4. Click **Save**.  

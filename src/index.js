@@ -146,7 +146,8 @@ class ZoroPlugin extends Plugin {
 		}
 
 		this.registerMarkdownCodeBlockProcessor('zoro', this.processor.processZoroCodeBlock.bind(this.processor));
-		this.addSettingTab(new ZoroSettingTab(this.app, this));
+  this.settingsTab = new ZoroSettingTab(this.app, this);
+  this.addSettingTab(this.settingsTab);
 		
   	
 // Register separate URI handlers for OAuth redirects

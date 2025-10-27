@@ -78,14 +78,14 @@ class MALAuthentication {
   // Generate and store PKCE parameters
   this.verifier = this.makeVerifier();
   const challenge = this.makeChallenge(this.verifier);
-  const state = this.generateState() + '_mal'; // Add _mal marker
+  const state = this.generateState();  // Removed '_mal' marker - no longer needed
 
   this.authState = state;
 
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: this.plugin.settings.malClientId,
-    redirect_uri: 'obsidian://zoro-auth/',
+    redirect_uri: 'obsidian://zoro-auth/mal/',  // Changed from 'obsidian://zoro-auth/'
     code_challenge: challenge,
     code_challenge_method: 'plain',
     state: state
@@ -139,7 +139,8 @@ class MALAuthentication {
   }
 }
 
-  async exchangeCodeForToken(code) {
+  
+async exchangeCodeForToken(code) {
   if (!code || code.length < 10) {
     throw new Error('Invalid authorization code');
   }
@@ -151,8 +152,9 @@ class MALAuthentication {
     code: code,
     code_verifier: this.verifier,
     grant_type: 'authorization_code',
-    redirect_uri: 'obsidian://zoro-auth/'
+    redirect_uri: 'obsidian://zoro-auth/mal/'  // Changed from 'obsidian://zoro-auth/'
   });
+
 
   if (this.plugin.settings.malClientSecret && this.plugin.settings.malClientSecret.trim()) {
     body.append('client_secret', this.plugin.settings.malClientSecret.trim());

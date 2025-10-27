@@ -1,16 +1,16 @@
 import { Notice, requestUrl } from 'obsidian';
-import { SimklPinModal } from './SimklPinModal.js';
-
 
 class SimklAuthentication {
   constructor(plugin) {
     this.plugin = plugin;
-    this.pollInterval = null;
+    this.authState = null; // Store state for CSRF protection
   }
 
-  static SIMKL_PIN_URL = 'https://api.simkl.com/oauth/pin';
-  static SIMKL_PIN_CHECK_URL = 'https://api.simkl.com/oauth/pin/';
+  // Constants
+  static SIMKL_AUTH_URL = 'https://simkl.com/oauth/authorize';
+  static SIMKL_TOKEN_URL = 'https://api.simkl.com/oauth/token';
   static SIMKL_USER_URL = 'https://api.simkl.com/users/settings';
+  static REDIRECT_URI = 'obsidian://zoro-auth/simkl';
 
   get isLoggedIn() {
     return Boolean(this.plugin.settings.simklAccessToken);
@@ -18,6 +18,24 @@ class SimklAuthentication {
 
   get hasRequiredCredentials() {
     return Boolean(this.plugin.settings.simklClientId && this.plugin.settings.simklClientSecret);
+  }
+
+  // Generate random state for CSRF protection
+  generateState() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      try {
+        return crypto.randomUUID();
+      } catch (e) {
+        console.warn('[SIMKL Auth] crypto.randomUUID failed, using fallback', e);
+      }
+    }
+    
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let result = '';
+    for (let i = 0; i < 32; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    return result;
   }
 
   async loginWithFlow() {
@@ -37,155 +55,210 @@ class SimklAuthentication {
     }
 
     try {
-      // Step 1: Request device code
-      const pinUrl = `${SimklAuthentication.SIMKL_PIN_URL}?client_id=${encodeURIComponent(this.plugin.settings.simklClientId)}&redirect_uri=${encodeURIComponent('urn:ietf:wg:oauth:2.0:oob')}`;
-      
-      const deviceResponse = await requestUrl({
-        url: pinUrl,
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'simkl-api-key': this.plugin.settings.simklClientId
-        },
-        throw: false
+      // Generate state parameter for CSRF protection
+      const state = this.generateState();
+      this.authState = state;
+
+      // Build authorization URL
+      const params = new URLSearchParams({
+        response_type: 'code',
+        client_id: this.plugin.settings.simklClientId,
+        redirect_uri: SimklAuthentication.REDIRECT_URI,
+        state: state
       });
 
-      if (deviceResponse.status < 200 || deviceResponse.status >= 300) {
-        throw new Error(`PIN request failed: HTTP ${deviceResponse.status}`);
-      }
+      const authUrl = `${SimklAuthentication.SIMKL_AUTH_URL}?${params.toString()}`;
 
-      const deviceData = deviceResponse.json;
+      new Notice('🔐 Opening SIMKL login page…', 3000);
       
-      if (!deviceData.user_code) {
-        throw new Error('Invalid response: missing user_code');
-      }
-
-      // Step 2: Open browser to PIN page
-      new Notice('🔐 Opening SIMKL PIN page…', 3000);
-      const pinPageUrl = deviceData.verification_url || 'https://simkl.com/pin';
-      
+      // Open in external browser
       if (window.require) {
         const { shell } = window.require('electron');
-        await shell.openExternal(pinPageUrl);
+        await shell.openExternal(authUrl);
       } else {
-        window.open(pinPageUrl, '_blank');
+        window.open(authUrl, '_blank');
       }
 
-      /** Step 3: Show PIN in modal and start polling
-      const modal = new SimklPinModal(this.plugin.app, deviceData, async () => {
-        // User clicked cancel
-        this.stopPolling();
-      });
-      modal.open();
-     */
-     
-      // Start polling for authentication
-      this.startPolling(deviceData);
-
     } catch (error) {
-      console.error('SIMKL authentication failed:', error);
-      new Notice(`❌ Authentication failed: ${error.message}`, 8000);
+      console.error('[SIMKL Auth] Failed to start auth flow:', error);
+      new Notice(`❌ Authentication failed: ${error.message}`, 5000);
     }
   }
 
-  async startPolling(deviceData) {
-    const { user_code, interval = 5, expires_in = 900 } = deviceData;
-    const maxAttempts = Math.floor(expires_in / interval);
-    let attempts = 0;
-
-    const poll = async () => {
-      attempts++;
+  async handleOAuthRedirect(params) {
+    try {
+      console.log('[SIMKL Auth] Received OAuth redirect:', params);
       
-      if (attempts > maxAttempts) {
-        this.stopPolling();
-        new Notice('❌ Authentication timeout. Please try again.', 8000);
+      const { code, state } = this.extractOAuthParams(params);
+      
+      // Validate state to prevent CSRF
+      if (!this.authState || state !== this.authState) {
+        throw new Error('State mismatch - possible CSRF attack');
+      }
+      
+      if (!code) {
+        const error = params.error || 'Unknown error';
+        const errorDesc = params.error_description || 'No authorization code received';
+        console.error('[SIMKL Auth] OAuth error:', { error, errorDesc });
+        new Notice(`❌ SIMKL Authentication failed: ${errorDesc}`, 5000);
         return;
       }
 
-      try {
-        const pollUrl = `${SimklAuthentication.SIMKL_PIN_CHECK_URL}${encodeURIComponent(user_code)}?client_id=${encodeURIComponent(this.plugin.settings.simklClientId)}`;
-
-        const response = await requestUrl({
-          url: pollUrl,
-          method: 'GET',
-          headers: {
-            'Accept': 'application/json',
-            'simkl-api-key': this.plugin.settings.simklClientId
-          },
-          throw: false
-        });
-
-        const data = response.json || {};
-
-        if (data.access_token) {
-          // Success!
-          this.plugin.settings.simklAccessToken = data.access_token;
-          await this.plugin.saveSettings();
-          
-          // Close modal
-          document.querySelectorAll('.modal-container').forEach(modal => {
-            if (modal.querySelector('.simkl-pin-modal')) {
-              modal.remove();
-            }
-          });
-          
-          this.stopPolling();
-          
-          // Fetch user info
-          try {
-            await this.fetchUserInfo();
-          } catch (userError) {
-            console.log('[SIMKL-AUTH] Failed to fetch user info but auth succeeded', userError);
-            new Notice('✅ Complete Authentication', 4000);
-          }
-          if (typeof this.plugin.updateDefaultApiSourceBasedOnAuth === 'function') {
-  await this.plugin.updateDefaultApiSourceBasedOnAuth();
-}
-          return;
-        }
-
-        // Continue polling if no token yet
-        if (response.status === 404 || !data || Object.keys(data).length === 0) {
-          // User hasn't entered code yet, continue polling
-        }
-
-      } catch (error) {
-        console.error('Polling error:', error);
-      }
-    };
-
-    // Start polling
-    this.pollInterval = setInterval(poll, interval * 1000);
-    
-    // Do first poll after interval
-    setTimeout(poll, interval * 1000);
+      await this.exchangeCodeForToken(code);
+      
+    } catch (error) {
+      console.error('[SIMKL Auth] Failed to handle OAuth redirect:', error);
+      new Notice(`❌ SIMKL Authentication failed: ${error.message}`, 5000);
+    }
   }
 
-  stopPolling() {
-    if (this.pollInterval) {
-      clearInterval(this.pollInterval);
-      this.pollInterval = null;
+  extractOAuthParams(params) {
+    let code = null;
+    let state = null;
+    
+    if (params.code) {
+      code = params.code;
+      state = params.state || null;
+    } else if (typeof params === 'string') {
+      const urlParams = new URLSearchParams(params.startsWith('?') ? params.slice(1) : params);
+      code = urlParams.get('code');
+      state = urlParams.get('state');
+    } else if (params.url) {
+      try {
+        const url = new URL(params.url);
+        code = url.searchParams.get('code');
+        state = url.searchParams.get('state');
+      } catch (e) {
+        console.warn('[SIMKL Auth] Failed to parse URL from params:', e);
+      }
     }
+    
+    return { code, state };
+  }
+
+  async exchangeCodeForToken(code) {
+    if (!code || code.length < 10) {
+      throw new Error('Invalid authorization code');
+    }
+
+    new Notice('Exchanging authorization code for tokens…', 2000);
+
+    const body = {
+      code: code,
+      client_id: this.plugin.settings.simklClientId,
+      client_secret: this.plugin.settings.simklClientSecret,
+      redirect_uri: SimklAuthentication.REDIRECT_URI,
+      grant_type: 'authorization_code'
+    };
+
+    try {
+      const res = await this.plugin.requestQueue.add(() =>
+        requestUrl({
+          url: SimklAuthentication.SIMKL_TOKEN_URL,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(body),
+          throw: false
+        })
+      );
+
+      if (res.status < 200 || res.status >= 300) {
+        throw new Error(this.formatTokenError(res));
+      }
+
+      const data = res.json || JSON.parse(res.text);
+
+      if (!data.access_token) {
+        throw new Error('No access token received from SIMKL');
+      }
+
+      // Save tokens
+      this.plugin.settings.simklAccessToken = data.access_token;
+      await this.plugin.saveSettings();
+
+      // Clear temporary state
+      this.authState = null;
+
+      new Notice('✅ Authenticated successfully!', 4000);
+      
+          // Refresh settings UI after Authentication
+    this.plugin.refreshSettingsUI();
+      
+      // Fetch user info
+      try {
+        await this.fetchUserInfo();
+      } catch (userError) {
+        console.warn('[SIMKL Auth] Failed to fetch user info but auth succeeded', userError);
+      }
+      
+      // Update default API source if needed
+      if (typeof this.plugin.updateDefaultApiSourceBasedOnAuth === 'function') {
+        await this.plugin.updateDefaultApiSourceBasedOnAuth();
+      }
+      
+    } catch (err) {
+      new Notice(`❌ SIMKL Auth failed: ${err.message}`, 5000);
+      throw err;
+    }
+  }
+
+  formatTokenError(res) {
+    const errorText = res.text || JSON.stringify(res.json) || 'Unknown error';
+    let errorMsg = `Token exchange failed (HTTP ${res.status})`;
+    
+    try {
+      const errorData = res.json || (res.text ? JSON.parse(res.text) : {});
+      
+      if (errorData.error) {
+        errorMsg += `: ${errorData.error}`;
+        if (errorData.error_description) {
+          errorMsg += ` - ${errorData.error_description}`;
+        }
+      }
+      
+      // Add helpful tips
+      if (errorData.error === 'invalid_client') {
+        errorMsg += '\n\nTip: Check your Client ID and Secret in settings.';
+      } else if (errorData.error === 'invalid_grant') {
+        errorMsg += '\n\nTip: The authorization code may have expired. Please try again.';
+      }
+    } catch (parseError) {
+      errorMsg += `: ${errorText}`;
+    }
+    
+    return errorMsg;
   }
 
   async fetchUserInfo() {
     const headers = this.getAuthHeaders();
     if (!headers) {
-      throw new Error('Not authenticated');
+      throw new Error('Not authenticated with SIMKL');
     }
 
-    const res = await requestUrl({
-      url: SimklAuthentication.SIMKL_USER_URL,
-      method: 'GET',
-      headers,
-      throw: false
-    });
+    const res = await this.plugin.requestQueue.add(() =>
+      requestUrl({
+        url: SimklAuthentication.SIMKL_USER_URL,
+        method: 'GET',
+        headers,
+        throw: false
+      })
+    );
     
     if (res.status < 200 || res.status >= 300) {
-      throw new Error(`Could not fetch user info (HTTP ${res.status})`);
+      throw new Error(`Could not fetch SIMKL user info (HTTP ${res.status})`);
     }
     
-    this.plugin.settings.simklUserInfo = res.json;
+    const fullResponse = res.json || JSON.parse(res.text);
+    
+    // Extract only necessary fields (consistent with MAL format)
+    this.plugin.settings.simklUserInfo = {
+      id: fullResponse.user?.id || fullResponse.account?.id,
+      name: fullResponse.user?.name,
+      picture: fullResponse.user?.avatar || fullResponse.user?.avatar_url
+    };
+    
     await this.plugin.saveSettings();
   }
 
@@ -196,17 +269,25 @@ class SimklAuthentication {
     this.plugin.settings.simklClientSecret = '';
     await this.plugin.saveSettings();
     
-    // Clear any SIMKL-specific cache if you have one
+    // Clear any SIMKL-specific cache
     if (this.plugin.cache) {
       this.plugin.cache.clear('simklData');
+      this.plugin.cache.clear();
     }
     
     new Notice('✅ Logged out from SIMKL & cleared credentials.', 3000);
+    
+        // Refresh settings UI after Authentication
+    this.plugin.refreshSettingsUI();
   }
 
   async ensureValidToken() {
-    if (!this.isLoggedIn) throw new Error('Not authenticated with SIMKL');
-    if (!this.hasRequiredCredentials) throw new Error('Missing SIMKL client credentials');
+    if (!this.isLoggedIn) {
+      throw new Error('Not authenticated with SIMKL');
+    }
+    if (!this.hasRequiredCredentials) {
+      throw new Error('Missing SIMKL client credentials');
+    }
     return true;
   }
   
@@ -217,7 +298,7 @@ class SimklAuthentication {
       await this.fetchUserInfo();
     }
 
-    const name = this.plugin.settings.simklUserInfo?.user?.name;
+    const name = this.plugin.settings.simklUserInfo?.name;
     if (!name) throw new Error('Could not fetch SIMKL username');
     return name;
   }

@@ -1,5 +1,4 @@
 import { Plugin, Notice } from 'obsidian';
-
 import { Cache } from './cache/Cache.js';
 import { RequestQueue } from './api/requests/RequestQueue.js';
 import { AnilistApi } from './api/services/AnilistApi.js';
@@ -147,7 +146,22 @@ class ZoroPlugin extends Plugin {
 		}
 
 		this.registerMarkdownCodeBlockProcessor('zoro', this.processor.processZoroCodeBlock.bind(this.processor));
-		this.addSettingTab(new ZoroSettingTab(this.app, this));
+  this.settingsTab = new ZoroSettingTab(this.app, this);
+  this.addSettingTab(this.settingsTab);
+		
+  	
+// Register separate URI handlers for OAuth redirects
+this.registerObsidianProtocolHandler('zoro-auth/anilist', async (params) => {
+  await this.auth.handleOAuthRedirect(params);
+});
+
+this.registerObsidianProtocolHandler('zoro-auth/mal', async (params) => {
+  await this.malAuth.handleOAuthRedirect(params);
+});
+
+this.registerObsidianProtocolHandler('zoro-auth/simkl', async (params) => {
+  await this.simklAuth.handleOAuthRedirect(params);
+});
 
 		// Register Zoro side panel view
 		this.registerView(ZORO_VIEW_TYPE, (leaf) => new SidePanel(leaf, this));
@@ -226,7 +240,7 @@ class ZoroPlugin extends Plugin {
     showGenres: isBool(s?.showGenres) ? s.showGenres : def.showGenres,
     showLoadingIcon: isBool(s?.showLoadingIcon) ? s.showLoadingIcon : def.showLoadingIcon,
     gridColumns: validateGridColumns(s?.gridColumns), // updated to use new validation
-    theme: isString(s?.theme) ? s.theme : def.theme,
+    
     hideUrlsInTitles: isBool(s?.hideUrlsInTitles) ? s.hideUrlsInTitles : def.hideUrlsInTitles,
     forceScoreFormat: isBool(s?.forceScoreFormat) ? s.forceScoreFormat : def.forceScoreFormat,
     showAvatar: isBool(s?.showAvatar) ? s.showAvatar : def.showAvatar,
@@ -241,7 +255,6 @@ class ZoroPlugin extends Plugin {
     // AniList authentication
     clientId: isString(s?.clientId) ? s.clientId : def.clientId,
     clientSecret: isString(s?.clientSecret) ? s.clientSecret : def.clientSecret,
-    redirectUri: isString(s?.redirectUri) ? s.redirectUri : def.redirectUri,
     accessToken: isString(s?.accessToken) ? s.accessToken : def.accessToken,
     anilistUsername: isString(s?.anilistUsername) ? s.anilistUsername : def.anilistUsername,
   
@@ -266,7 +279,6 @@ class ZoroPlugin extends Plugin {
       MANGA: validateArrayStrings(s?.customSearchUrls?.MANGA),
       MOVIE_TV: validateArrayStrings(s?.customSearchUrls?.MOVIE_TV)
     },
-    tmdbApiKey: isString(s?.tmdbApiKey) ? s.tmdbApiKey : def.tmdbApiKey,
 
     // Custom property names (validated per-key)
     customPropertyNames: validatedCustomPropertyNames
@@ -316,6 +328,12 @@ class ZoroPlugin extends Plugin {
 			await this.updateDefaultApiSourceBasedOnAuth();
 		}
 	}
+	
+	refreshSettingsUI() {
+  if (this.settingsTab) {
+    this.settingsTab.display();
+  }
+}
 
 	addGlobalListener(el, type, fn) {
 		el.addEventListener(type, fn);

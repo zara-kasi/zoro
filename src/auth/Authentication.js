@@ -17,34 +17,67 @@ class Authentication {
     return Boolean(this.plugin.settings.accessToken);
   }
 
-  async loginWithFlow() {
-    if (!this.plugin.settings.clientId) {
-      new Notice('❌ Please enter your Client ID first.', 5000);
+
+async loginWithFlow() {
+  if (!this.plugin.settings.clientId) {
+    new Notice('❌ Please enter your Client ID first.', 5000);
+    return;
+  }
+
+  const { clientId } = this.plugin.settings;
+  const authUrl =
+    `${Authentication.ANILIST_AUTH_URL}?` +
+    new URLSearchParams({
+      client_id:     clientId,
+      redirect_uri:  'obsidian://zoro-auth/anilist',  // Changed from 'obsidian://zoro-auth/'
+      response_type: 'code'
+    }).toString();
+
+  new Notice('🔐 Opening AniList login page…', 3000);
+  if (window.require) {
+    const { shell } = window.require('electron');
+    await shell.openExternal(authUrl);
+  } else {
+    window.open(authUrl, '_blank');
+  }
+}
+
+  async handleOAuthRedirect(params) {
+  try {
+    console.log('[Zoro Auth] Received OAuth redirect:', params);
+    
+    // Extract the authorization code from the URL parameters
+    let code = null;
+    
+    if (params.code) {
+      code = params.code;
+    } else if (typeof params === 'string') {
+      const urlParams = new URLSearchParams(params.startsWith('?') ? params.slice(1) : params);
+      code = urlParams.get('code');
+    } else if (params.url) {
+      try {
+        const url = new URL(params.url);
+        code = url.searchParams.get('code');
+      } catch (e) {
+        console.warn('[Zoro Auth] Failed to parse URL from params:', e);
+      }
+    }
+    
+    if (!code) {
+      const error = params.error || 'Unknown error';
+      const errorDesc = params.error_description || 'No authorization code received';
+      console.error('[Zoro Auth] OAuth error:', { error, errorDesc });
+      new Notice(`❌ Authentication failed: ${errorDesc}`, 5000);
       return;
     }
 
-    const { clientId } = this.plugin.settings;
-    const authUrl =
-      `${Authentication.ANILIST_AUTH_URL}?` +
-      new URLSearchParams({
-        client_id:     clientId,
-        redirect_uri:  Authentication.REDIRECT_URI,
-        response_type: 'code'
-      }).toString();
-
-    new Notice('🔐 Opening AniList login page…', 3000);
-    if (window.require) {
-      const { shell } = window.require('electron');
-      await shell.openExternal(authUrl);
-    } else {
-      window.open(authUrl, '_blank');
-    }
-
-    const modal = AuthModal.aniListPin(this.plugin.app, async (pin) => {
-  await this.exchangePin(pin);
-});
-modal.open();
+    await this.exchangePin(code); // Reuse existing exchange method
+    
+  } catch (error) {
+    console.error('[Zoro Auth] Failed to handle OAuth redirect:', error);
+    new Notice(`❌ Authentication failed: ${error.message}`, 5000);
   }
+}
 
   async logout() {
     this.plugin.settings.accessToken  = '';
@@ -59,6 +92,8 @@ modal.open();
  }
     this.plugin.cache.clear();
     new Notice('✅ Logged out & cleared credentials.', 3000);
+        // Refresh settings UI after Authentication
+    this.plugin.refreshSettingsUI();
   }
 
   async exchangePin(pin) {
@@ -67,7 +102,7 @@ modal.open();
     code:          pin.trim(),
     client_id:     this.plugin.settings.clientId,
     client_secret: this.plugin.settings.clientSecret || '',
-    redirect_uri:  Authentication.REDIRECT_URI
+    redirect_uri:  'obsidian://zoro-auth/anilist'  // Changed from 'obsidian://zoro-auth/'
   });
 
   const headers = {
@@ -111,13 +146,16 @@ modal.open();
       await this.plugin.updateDefaultApiSourceBasedOnAuth();
     }
     new Notice('✅ Authenticated successfully!', 4000);
+    
+    // Refresh settings UI after Authentication
+    this.plugin.refreshSettingsUI();
+    
   } catch (err) {
     new Notice(`❌ Auth failed: ${err.message}`, 5000);
     throw err;
   }
 }
 
-  
 
   async ensureValidToken() {
     if (!this.isLoggedIn) throw new Error('Not authenticated');

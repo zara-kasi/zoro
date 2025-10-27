@@ -34,19 +34,18 @@ class ZoroSettingTab extends PluginSettingTab {
     const Shortcut = section('🚪 Shortcut');
     const Data = section('💾 Data');
     const Cache = section('🔁 Cache');
-    const Exp = section('⚠️ Beta');
     const About = section('ℹ️ About');
 
     
 
     const authSetting = new Setting(Account)
   .setName('✳️ AniList')
-  .setDesc('Connect your AniList account to manage your anime and manga lists. (Recommended)');
+  .setDesc('Connect your AniList account to manage your anime and manga lists.');
 
 const authDescEl = authSetting.descEl;
 authDescEl.createEl('br');
 const authLinkEl = authDescEl.createEl('a', {
-  text: 'Guide 📖',
+  text: 'Learn more',
   href: 'https://github.com/zara-kasi/zoro/blob/main/Docs/anilist-auth-setup.md'
 });
 authLinkEl.setAttr('target', '_blank');
@@ -68,7 +67,7 @@ authSetting.addButton(button => {
 const descEl = malAuthSetting.descEl;
 descEl.createEl('br');
 const linkEl = descEl.createEl('a', {
-  text: 'Guide 📖',
+  text: 'Learn more',
   href: 'https://github.com/zara-kasi/zoro/blob/main/Docs/mal-auth-setup.md'
 });
 linkEl.setAttr('target', '_blank');
@@ -85,12 +84,12 @@ malAuthSetting.addButton(btn => {
    
    const simklAuthSetting = new Setting(Account)
   .setName('🎬 SIMKL')
-  .setDesc('Connect your SIMKL account to manage your anime, movies, and TV shows. (Recommended)');
+  .setDesc('Connect your SIMKL account to manage your anime, movies, and TV shows.');
 
 const simklDescEl = simklAuthSetting.descEl;
 simklDescEl.createEl('br');
 const simklLinkEl = simklDescEl.createEl('a', {
-  text: 'Guide 📖',
+  text: 'Learn more',
   href: 'https://github.com/zara-kasi/zoro/blob/main/Docs/simkl-auth-setup.md'
 });
 simklLinkEl.setAttr('target', '_blank');
@@ -481,7 +480,7 @@ new Setting(Note)
 const shortcutDescEl = shortcutSetting.descEl;
 shortcutDescEl.createEl('br');
 const shortcutLinkEl = shortcutDescEl.createEl('a', {
-  text: 'Guide 📖',
+  text: 'Learn more',
   href: 'https://github.com/zara-kasi/zoro/blob/main/Docs/shortcuts.md'
 });
 shortcutLinkEl.setAttr('target', '_blank');
@@ -557,7 +556,7 @@ new Setting(Shortcut)
 const exportDescEl = exportSetting.descEl;
 exportDescEl.createEl('br');
 const exportLinkEl = exportDescEl.createEl('a', {
-  text: 'Guide 📖',
+  text: 'Learn more',
   href: 'https://github.com/zara-kasi/zoro/blob/main/Docs/export_overview.md'
 });
 exportLinkEl.setAttr('target', '_blank');
@@ -630,103 +629,10 @@ new Setting(Data)
       
         
          
-    /**
-    *new Setting(Exp)
-    .setName('TMDb API Key')
-    .setDesc(
-      createFragment((frag) => {
-        frag.appendText('Your The Movie Database (TMDb) API key for trending movies & TV shows. ');
-        const link = frag.createEl('a', {
-          text: 'Get one free at TMDb',
-          href: 'https://www.themoviedb.org/settings/api'
-        });
-        link.setAttr('target', '_blank');
-        frag.appendText('.');
-      })
-    )
-    .addText(text => text
-      .setPlaceholder('Enter your TMDb API key...')
-      .setValue(this.plugin.settings.tmdbApiKey)
-      .onChange(async (value) => {
-        this.plugin.settings.tmdbApiKey = value.trim();
-        await this.plugin.saveSettings();
-      })
-    );*/
-   
-   /**
-    * new Setting(Theme)
-      .setName('🎨 Apply')
-      .setDesc('Choose from available themes')
-      .addDropdown(async dropdown => {
-        dropdown.addOption('', 'Default');
-        const localThemes = await this.plugin.theme.getAvailableThemes();
-        localThemes.forEach(t => dropdown.addOption(t, t));
-        dropdown.setValue(this.plugin.settings.theme || '');
-        dropdown.onChange(async name => {
-          this.plugin.settings.theme = name;
-          await this.plugin.saveSettings();
-          await this.plugin.theme.applyTheme(name);
-        });
-      });
-
-    new Setting(Theme)
-  .setName('📥 Download')
-  .setDesc('Download themes from GitHub repository')
-  .addDropdown(dropdown => {
-    dropdown.addOption('', 'Select');
-    
-    this.plugin.theme.fetchRemoteThemes().then(remoteThemes => {
-      remoteThemes.forEach(t => dropdown.addOption(t, t));
-    });
-    
-    dropdown.onChange(async name => {
-      if (!name) return;
-      
-      const success = await this.plugin.theme.downloadTheme(name);
-      if (success) {
-        // Auto-apply the downloaded theme
-        this.plugin.settings.theme = name;
-        await this.plugin.saveSettings();
-        await this.plugin.theme.applyTheme(name);
-        
-        // Refresh the Apply dropdown to show the new theme
-        this.display();
-      }
-      dropdown.setValue('');
-    });
-  });
-
-    new Setting(Theme)
-      .setName('🗑 Delete')
-      .setDesc('Remove downloaded themes from local storage')
-      .addDropdown(async dropdown => {
-        dropdown.addOption('', 'Select');
-        const localThemes = await this.plugin.theme.getAvailableThemes();
-        localThemes.forEach(t => dropdown.addOption(t, t));
-        
-        dropdown.onChange(async name => {
-          if (!name) return;
-          
-          const success = await this.plugin.theme.deleteTheme(name);
-          if (success) {
-            // If deleted theme was currently active, remove it
-            if (this.plugin.settings.theme === name) {
-              this.plugin.settings.theme = '';
-              await this.plugin.saveSettings();
-              await this.plugin.theme.applyTheme('');
-            }
-          }
-          dropdown.setValue('');
-        });
-      });
-    */
    
     new Setting(About)
       .setName('Author')
       .setDesc(this.plugin.manifest.author);
-    new Setting(About)
-      .setName('Version')
-      .setDesc(this.plugin.manifest.version);
     new Setting(About)
       .setName('Privacy')
       .setDesc('Zoro only talks to the APIs to fetch & update your media data. Nothing else is sent or shared—your data stays local.');

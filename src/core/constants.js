@@ -38,8 +38,6 @@ const DEFAULT_SETTINGS = {
   showLoadingIcon: true,              
   gridColumns: GRID_COLUMN_OPTIONS.DEFAULT, // use responsive grid
   
-  // Theme stuff
-  theme: '',                          // empty means use default theme
   hideUrlsInTitles: true,            // URLs in titles look ugly
   forceScoreFormat: true,            // makes scores consistent across different sites
   showAvatar: true,                  
@@ -52,7 +50,6 @@ const DEFAULT_SETTINGS = {
   // AniList API stuff - need to register app to get these
   clientId: '',                      
   clientSecret: '',                  
-  redirectUri: 'https://anilist.co/api/v2/oauth/pin', // standard AniList OAuth URL
   accessToken: '',                   // gets filled in after user logs in
   anilistUsername: '',
   
@@ -77,9 +74,6 @@ const DEFAULT_SETTINGS = {
     MANGA: [],                       
     MOVIE_TV: []                     
   },
-  
-  // TMDB for movies and TV shows
-  tmdbApiKey: '',                    // free API key from themoviedb.org
   
   // Let users customize what the properties are called in their notes
   // This is useful if you want "rating" to be called "score" or whatever

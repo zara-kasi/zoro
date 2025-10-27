@@ -45,7 +45,7 @@ class ZoroSettingTab extends PluginSettingTab {
 const authDescEl = authSetting.descEl;
 authDescEl.createEl('br');
 const authLinkEl = authDescEl.createEl('a', {
-  text: 'Learn more 📖',
+  text: 'Learn more',
   href: 'https://github.com/zara-kasi/zoro/blob/main/Docs/anilist-auth-setup.md'
 });
 authLinkEl.setAttr('target', '_blank');
@@ -67,7 +67,7 @@ authSetting.addButton(button => {
 const descEl = malAuthSetting.descEl;
 descEl.createEl('br');
 const linkEl = descEl.createEl('a', {
-  text: 'Learn more 📖',
+  text: 'Learn more',
   href: 'https://github.com/zara-kasi/zoro/blob/main/Docs/mal-auth-setup.md'
 });
 linkEl.setAttr('target', '_blank');
@@ -89,7 +89,7 @@ malAuthSetting.addButton(btn => {
 const simklDescEl = simklAuthSetting.descEl;
 simklDescEl.createEl('br');
 const simklLinkEl = simklDescEl.createEl('a', {
-  text: 'Learn more 📖',
+  text: 'Learn more',
   href: 'https://github.com/zara-kasi/zoro/blob/main/Docs/simkl-auth-setup.md'
 });
 simklLinkEl.setAttr('target', '_blank');
@@ -480,7 +480,7 @@ new Setting(Note)
 const shortcutDescEl = shortcutSetting.descEl;
 shortcutDescEl.createEl('br');
 const shortcutLinkEl = shortcutDescEl.createEl('a', {
-  text: 'Learn more 📖',
+  text: 'Learn more',
   href: 'https://github.com/zara-kasi/zoro/blob/main/Docs/shortcuts.md'
 });
 shortcutLinkEl.setAttr('target', '_blank');
@@ -556,7 +556,7 @@ new Setting(Shortcut)
 const exportDescEl = exportSetting.descEl;
 exportDescEl.createEl('br');
 const exportLinkEl = exportDescEl.createEl('a', {
-  text: 'Learn more 📖',
+  text: 'Learn more',
   href: 'https://github.com/zara-kasi/zoro/blob/main/Docs/export_overview.md'
 });
 exportLinkEl.setAttr('target', '_blank');

@@ -223,6 +223,9 @@ async exchangeCodeForToken(code) {
     // Show success notification
     new Notice('✅ Authenticated successfully!', 4000);
     
+        // Refresh settings UI after Authentication
+    this.plugin.refreshSettingsUI();
+    
     try {
       await this.fetchUserInfo();
     } catch (userError) {

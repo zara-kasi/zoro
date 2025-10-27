@@ -634,9 +634,6 @@ new Setting(Data)
       .setName('Author')
       .setDesc(this.plugin.manifest.author);
     new Setting(About)
-      .setName('Version')
-      .setDesc(this.plugin.manifest.version);
-    new Setting(About)
       .setName('Privacy')
       .setDesc('Zoro only talks to the APIs to fetch & update your media data. Nothing else is sent or shared—your data stays local.');
 

@@ -9,7 +9,7 @@ Watch a short tutorial here:
 
 ## Step 1: Create a MAL App
 
-1. Go to the MAL API Page: [https://myanimelist.net/apiconfig](https://myanimelist.net/apiconfig)  
+1. Go to the MAL API Page: [https://myanimelist.net/apiconfig](https://myanimelist.net/apiconfig/create)  
 2. Click **Create App**.  
 3. Fill in these fields:  
    - **App Name**: `Zoro`  

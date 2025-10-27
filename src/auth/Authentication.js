@@ -92,6 +92,8 @@ async loginWithFlow() {
  }
     this.plugin.cache.clear();
     new Notice('✅ Logged out & cleared credentials.', 3000);
+        // Refresh settings UI after Authentication
+    this.plugin.refreshSettingsUI();
   }
 
   async exchangePin(pin) {

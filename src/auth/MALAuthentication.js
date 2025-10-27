@@ -85,7 +85,7 @@ class MALAuthentication {
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: this.plugin.settings.malClientId,
-    redirect_uri: 'obsidian://zoro-auth/mal/',  // Changed from 'obsidian://zoro-auth/'
+    redirect_uri: 'obsidian://zoro-auth/mal',  // Changed from 'obsidian://zoro-auth/'
     code_challenge: challenge,
     code_challenge_method: 'plain',
     state: state
@@ -152,7 +152,7 @@ async exchangeCodeForToken(code) {
     code: code,
     code_verifier: this.verifier,
     grant_type: 'authorization_code',
-    redirect_uri: 'obsidian://zoro-auth/mal/'  // Changed from 'obsidian://zoro-auth/'
+    redirect_uri: 'obsidian://zoro-auth/mal'  // Changed from 'obsidian://zoro-auth/'
   });
 
 

@@ -327,6 +327,12 @@ this.registerObsidianProtocolHandler('zoro-auth/simkl', async (params) => {
 			await this.updateDefaultApiSourceBasedOnAuth();
 		}
 	}
+	
+	refreshSettingsUI(): void {
+    if (this.settingsTab) {
+      this.settingsTab.display();
+    }
+  }
 
 	addGlobalListener(el, type, fn) {
 		el.addEventListener(type, fn);

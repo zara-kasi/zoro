@@ -1,0 +1,281 @@
+name: Release Obsidian Plugin
+
+on:
+  # Manual trigger with version selection
+  workflow_dispatch:
+    inputs:
+      release_type:
+        description: 'Version bump type'
+        required: true
+        default: 'patch'
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      description:
+        description: 'Release notes (optional)'
+        required: false
+        type: string
+  
+  # Automatic trigger on push to main branch with src/ changes
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/**'
+      - 'manifest.json'
+      - 'package.json'
+
+jobs:
+  # Detect if this is an automatic or manual release
+  detect-trigger:
+    runs-on: ubuntu-latest
+    outputs:
+      is_auto: ${{ steps.check.outputs.is_auto }}
+      should_release: ${{ steps.check.outputs.should_release }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      
+      - name: Check trigger type and changes
+        id: check
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "is_auto=false" >> $GITHUB_OUTPUT
+            echo "should_release=true" >> $GITHUB_OUTPUT
+            echo "📝 Manual release triggered"
+          else
+            echo "is_auto=true" >> $GITHUB_OUTPUT
+            
+            # Check if there are actual code changes (not just version bumps)
+            # Exclude version bump commits made by the bot
+            COMMIT_MSG=$(git log -1 --pretty=%B)
+            
+            if [[ "$COMMIT_MSG" == *"chore: release v"* ]] || [[ "$COMMIT_MSG" == *"[automated]"* ]]; then
+              echo "should_release=false" >> $GITHUB_OUTPUT
+              echo "⏭️ Skipping release - commit is from automated release"
+            else
+              echo "should_release=true" >> $GITHUB_OUTPUT
+              echo "🚀 Auto release triggered by code changes"
+            fi
+          fi
+
+  release:
+    needs: detect-trigger
+    if: needs.detect-trigger.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      # Step 1: Checkout repository
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      # Step 2: Setup Node.js
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+      
+      # Step 3: Calculate new version
+      - name: Calculate new version
+        id: version
+        run: |
+          # Read current version from manifest.json
+          CURRENT_VERSION=$(jq -r '.version' manifest.json)
+          echo "Current version: $CURRENT_VERSION"
+          
+          # Split version into parts
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT_VERSION"
+          
+          # Determine release type
+          if [ "${{ needs.detect-trigger.outputs.is_auto }}" = "true" ]; then
+            # Auto release defaults to patch
+            RELEASE_TYPE="patch"
+            echo "🔧 Auto release - using patch bump"
+          else
+            # Manual release uses selected type
+            RELEASE_TYPE="${{ github.event.inputs.release_type }}"
+            echo "👤 Manual release - using $RELEASE_TYPE bump"
+          fi
+          
+          # Bump version based on type
+          if [ "$RELEASE_TYPE" = "major" ]; then
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+          elif [ "$RELEASE_TYPE" = "minor" ]; then
+            MINOR=$((MINOR + 1))
+            PATCH=0
+          else
+            PATCH=$((PATCH + 1))
+          fi
+          
+          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+          echo "New version: $NEW_VERSION"
+          
+          # Export versions for next steps
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "release_type=$RELEASE_TYPE" >> $GITHUB_OUTPUT
+      
+      # Step 4: Update manifest.json
+      - name: Update manifest.json
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          
+          # Update version in manifest.json
+          jq --arg version "$NEW_VERSION" '.version = $version' manifest.json > manifest.tmp
+          mv manifest.tmp manifest.json
+          
+          echo "✓ Updated manifest.json to version $NEW_VERSION"
+      
+      # Step 5: Update versions.json
+      - name: Update versions.json
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          
+          # Read minAppVersion from manifest.json
+          MIN_APP_VERSION=$(jq -r '.minAppVersion' manifest.json)
+          
+          # Create or update versions.json
+          if [ ! -f versions.json ]; then
+            echo "{}" > versions.json
+          fi
+          
+          # Add new version entry
+          jq --arg version "$NEW_VERSION" --arg minVersion "$MIN_APP_VERSION" \
+            '.[$version] = $minVersion' versions.json > versions.tmp
+          mv versions.tmp versions.json
+          
+          echo "✓ Updated versions.json"
+      
+      # Step 6: Update package.json (if exists)
+      - name: Update package.json
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          
+          if [ -f package.json ]; then
+            jq --arg version "$NEW_VERSION" '.version = $version' package.json > package.tmp
+            mv package.tmp package.json
+            echo "✓ Updated package.json to version $NEW_VERSION"
+          else
+            echo "ℹ️ package.json not found, skipping"
+          fi
+      
+      # Step 7: Build the plugin
+      - name: Install dependencies and build
+        run: |
+          npm install
+          npm run build
+      
+      # Step 8: Generate release notes
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          CURRENT_VERSION="${{ steps.version.outputs.current_version }}"
+          
+          # Create release notes file
+          if [ "${{ needs.detect-trigger.outputs.is_auto }}" = "true" ]; then
+            # Auto release - generate from commits
+            echo "## What's Changed" > release_notes.md
+            echo "" >> release_notes.md
+            
+            # Get commits since last release
+            git log v${CURRENT_VERSION}..HEAD --pretty=format:"- %s (%h)" --no-merges >> release_notes.md || \
+            git log --pretty=format:"- %s (%h)" --no-merges -10 >> release_notes.md
+            
+            echo "" >> release_notes.md
+            echo "" >> release_notes.md
+            echo "_Automated release triggered by code changes_" >> release_notes.md
+          else
+            # Manual release - use provided description or default
+            if [ -n "${{ github.event.inputs.description }}" ]; then
+              echo "${{ github.event.inputs.description }}" > release_notes.md
+            else
+              echo "Release version $NEW_VERSION" > release_notes.md
+            fi
+          fi
+          
+          # Output for later use
+          NOTES=$(cat release_notes.md)
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      # Step 9: Commit version changes
+      - name: Commit version changes
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          
+          # Configure git
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          # Add changed files
+          git add manifest.json versions.json
+          [ -f package.json ] && git add package.json || true
+          
+          # Commit changes
+          git commit -m "chore: release v$NEW_VERSION"
+          
+          echo "✓ Committed version changes"
+      
+      # Step 10: Create and push tag
+      - name: Create and push tag
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          
+          # Create tag WITHOUT 'v' prefix (required by Obsidian)
+          git tag "$NEW_VERSION"
+          
+          # Push commit and tag
+          git push origin HEAD:main
+          git push origin "$NEW_VERSION"
+          
+          echo "✓ Created and pushed tag: $NEW_VERSION"
+      
+      # Step 11: Create GitHub Release
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.new_version }}
+          name: ${{ steps.version.outputs.new_version }}
+          body: ${{ steps.release_notes.outputs.notes }}
+          draft: false
+          prerelease: false
+          files: |
+            main.js
+            manifest.json
+            styles.css
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      # Step 12: Summary
+      - name: Release Summary
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          RELEASE_TYPE="${{ steps.version.outputs.release_type }}"
+          TRIGGER_TYPE="${{ needs.detect-trigger.outputs.is_auto == 'true' && 'Automatic' || 'Manual' }}"
+          
+          echo "### ✅ Release Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Trigger:** $TRIGGER_TYPE" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** $NEW_VERSION" >> $GITHUB_STEP_SUMMARY
+          echo "**Type:** $RELEASE_TYPE" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** \`$NEW_VERSION\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Files released:**" >> $GITHUB_STEP_SUMMARY
+          echo "- main.js" >> $GITHUB_STEP_SUMMARY
+          echo "- manifest.json" >> $GITHUB_STEP_SUMMARY
+          echo "- styles.css" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "🔗 [View Release](https://github.com/${{ github.repository }}/releases/tag/$NEW_VERSION)" >> $GITHUB_STEP_SUMMARY

@@ -146,7 +146,7 @@ async loginWithFlow() {
     new Notice('✅ Authenticated successfully!', 4000);
     
     // Refresh settings UI after Authentication
-    plugin.refreshSettingsUI();
+    this.plugin.refreshSettingsUI();
     
   } catch (err) {
     new Notice(`❌ Auth failed: ${err.message}`, 5000);

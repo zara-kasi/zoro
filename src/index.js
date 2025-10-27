@@ -1,5 +1,4 @@
 import { Plugin, Notice } from 'obsidian';
-
 import { Cache } from './cache/Cache.js';
 import { RequestQueue } from './api/requests/RequestQueue.js';
 import { AnilistApi } from './api/services/AnilistApi.js';
@@ -149,15 +148,14 @@ class ZoroPlugin extends Plugin {
 		this.registerMarkdownCodeBlockProcessor('zoro', this.processor.processZoroCodeBlock.bind(this.processor));
 		this.addSettingTab(new ZoroSettingTab(this.app, this));
 		
-   // Register custom URI handler for OAuth redirect
-this.registerObsidianProtocolHandler("zoro-auth", (params) => {
-  if (params.state && params.state.endsWith('_mal')) {
-    // MAL callback
-    this.malAuth.handleOAuthRedirect(params);
-  } else {
-    // AniList callback
-    this.auth.handleOAuthRedirect(params);
-  }
+  	
+// Register separate URI handlers for OAuth redirects
+this.registerObsidianProtocolHandler('zoro-auth/anilist', async (params) => {
+  await this.auth.handleOAuthRedirect(params);
+});
+
+this.registerObsidianProtocolHandler('zoro-auth/mal', async (params) => {
+  await this.malAuth.handleOAuthRedirect(params);
 });
 
 		// Register Zoro side panel view

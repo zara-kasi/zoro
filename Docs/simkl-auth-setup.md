@@ -13,11 +13,11 @@ Watch a short tutorial here:
 2. Fill in these fields:  
    - **App Name**: `Zoro`  
    - **Description**: `Obsidian plugin for managing anime, manga, tv show and movie lists`  
-   - **Redirect URI**: `urn:ietf:wg:oauth:2.0:oob`  
+   - **Redirect URI**: `obsidian://zoro-auth/simkl`  
 3. Click **Save**.  
 4. Copy your **Client ID** and **Client Secret**.  
 
-> Make sure the Redirect URI is exactly `urn:ietf:wg:oauth:2.0:oob`; authentication will fail otherwise.
+> Make sure the Redirect URI is exactly `obsidian://zoro-auth/simkl`; authentication will fail otherwise.
 
 ---
 
@@ -28,8 +28,6 @@ Watch a short tutorial here:
 3. Click **Enter Client Secret**, paste your **Client Secret**, and confirm.  
 4. Click **Authenticate**.  
 5. You’ll be redirected to Simkl—log in (if needed) and **authorize** the app.  
-6. After a few seconds, you’ll return to Simkl’s site.  
-7. Go back to Obsidian—you’ll see an **Authenticated** notification when successful.  
 
 ---
 

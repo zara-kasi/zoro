@@ -1,32 +1,32 @@
 {
-	"name": "zoro",
-	"version": "1.1.0",
-	"description": "Track anime, manga, movies and TV with AniList, MyAnimeList and Simkl.",
-	"type": "module",
-	"main": "main.js",
-	"scripts": {
-		"dev": "node esbuild.config.mjs",
-		"build": "node esbuild.config.mjs production",
-		"clean": "rm -f main.js main.js.map",
-		"rebuild": "npm run clean && npm run build",
-		"version": "node version-bump.mjs && git add manifest.json versions.json",
-		"lint": "eslint src --ext .js",
-		"lint:fix": "eslint src --ext .js --fix"
-	},
-	"keywords": [
-		"obsidian",
-		"obsidian-plugin",
-		"anime",
-		"manga",
-		"tracking",
-		"anilist",
-		"myanimelist",
-		"simkl"
-	],
-	"author": "Zarakasi",
-	"license": "MIT",
-	"devDependencies": {
-		"esbuild": "^0.23.0",
-		"eslint": "^8.57.0"
-	}
+  "name": "zoro",
+  "version": "1.1.1",
+  "description": "Track anime, manga, movies and TV with AniList, MyAnimeList and Simkl.",
+  "type": "module",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "node esbuild.config.mjs production",
+    "clean": "rm -f main.js main.js.map",
+    "rebuild": "npm run clean && npm run build",
+    "version": "node version-bump.mjs && git add manifest.json versions.json",
+    "lint": "eslint src --ext .js",
+    "lint:fix": "eslint src --ext .js --fix"
+  },
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "anime",
+    "manga",
+    "tracking",
+    "anilist",
+    "myanimelist",
+    "simkl"
+  ],
+  "author": "Zarakasi",
+  "license": "MIT",
+  "devDependencies": {
+    "esbuild": "^0.23.0",
+    "eslint": "^8.57.0"
+  }
 }

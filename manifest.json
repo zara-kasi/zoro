@@ -1,7 +1,7 @@
 {
   "id": "zoro",
   "name": "Zoro",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "minAppVersion": "0.15.0",
   "description": "Track anime, manga, movies and TV with AniList, MyAnimeList and Simkl.",
   "author": "Zarakasi",

@@ -144,6 +144,10 @@ async loginWithFlow() {
       await this.plugin.updateDefaultApiSourceBasedOnAuth();
     }
     new Notice('✅ Authenticated successfully!', 4000);
+    
+    // Refresh settings UI after Authentication
+    plugin.refreshSettingsUI();
+    
   } catch (err) {
     new Notice(`❌ Auth failed: ${err.message}`, 5000);
     throw err;

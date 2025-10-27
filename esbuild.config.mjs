@@ -72,33 +72,3 @@ if (prod) {
 	console.log('👀 Watching for changes...');
 	await context.watch();
 }
-```
-
-### 3. **Add `.gitattributes`**
-
-Create this file for better Git handling:
-```
-* text=auto eol=lf
-*.{cmd,[cC][mM][dD]} text eol=crlf
-*.{bat,[bB][aA][tT]} text eol=crlf
-
-# Archives
-*.7z filter=lfs diff=lfs merge=lfs -text
-*.br filter=lfs diff=lfs merge=lfs -text
-*.gz filter=lfs diff=lfs merge=lfs -text
-*.tar filter=lfs diff=lfs merge=lfs -text
-*.zip filter=lfs diff=lfs merge=lfs -text
-
-# Images
-*.gif filter=lfs diff=lfs merge=lfs -text
-*.ico filter=lfs diff=lfs merge=lfs -text
-*.jpg filter=lfs diff=lfs merge=lfs -text
-*.png filter=lfs diff=lfs merge=lfs -text
-*.psd filter=lfs diff=lfs merge=lfs -text
-*.webp filter=lfs diff=lfs merge=lfs -text
-
-# Fonts
-*.woff2 filter=lfs diff=lfs merge=lfs -text
-
-# Other
-*.exe filter=lfs diff=lfs merge=lfs -text

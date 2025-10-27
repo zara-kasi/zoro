@@ -183,6 +183,9 @@ class SimklAuthentication {
 
       new Notice('✅ Authenticated successfully!', 4000);
       
+          // Refresh settings UI after Authentication
+    this.plugin.refreshSettingsUI();
+      
       // Fetch user info
       try {
         await this.fetchUserInfo();

@@ -335,6 +335,9 @@ async exchangeCodeForToken(code) {
    this.plugin.cache.clear('malData');
    this.plugin.cache.clear();
     new Notice('✅ Logged out from MyAnimeList & cleared credentials.', 3000);
+    
+        // Refresh settings UI after Authentication
+    this.plugin.refreshSettingsUI();
   }
 
   

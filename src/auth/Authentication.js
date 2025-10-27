@@ -17,7 +17,8 @@ class Authentication {
     return Boolean(this.plugin.settings.accessToken);
   }
 
-  async loginWithFlow() {
+
+async loginWithFlow() {
   if (!this.plugin.settings.clientId) {
     new Notice('❌ Please enter your Client ID first.', 5000);
     return;
@@ -28,7 +29,7 @@ class Authentication {
     `${Authentication.ANILIST_AUTH_URL}?` +
     new URLSearchParams({
       client_id:     clientId,
-      redirect_uri:  'obsidian://zoro-auth/',
+      redirect_uri:  'obsidian://zoro-auth/anilist/',  // Changed from 'obsidian://zoro-auth/'
       response_type: 'code'
     }).toString();
 
@@ -39,7 +40,6 @@ class Authentication {
   } else {
     window.open(authUrl, '_blank');
   }
-
 }
 
   async handleOAuthRedirect(params) {
@@ -100,7 +100,7 @@ class Authentication {
     code:          pin.trim(),
     client_id:     this.plugin.settings.clientId,
     client_secret: this.plugin.settings.clientSecret || '',
-    redirect_uri:  'obsidian://zoro-auth/' // Changed from Authentication.REDIRECT_URI
+    redirect_uri:  'obsidian://zoro-auth/anilist/'  // Changed from 'obsidian://zoro-auth/'
   });
 
   const headers = {

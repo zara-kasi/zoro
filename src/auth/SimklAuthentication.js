@@ -276,6 +276,9 @@ class SimklAuthentication {
     }
     
     new Notice('✅ Logged out from SIMKL & cleared credentials.', 3000);
+    
+        // Refresh settings UI after Authentication
+    this.plugin.refreshSettingsUI();
   }
 
   async ensureValidToken() {

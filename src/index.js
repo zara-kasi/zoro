@@ -328,11 +328,11 @@ this.registerObsidianProtocolHandler('zoro-auth/simkl', async (params) => {
 		}
 	}
 	
-	refreshSettingsUI(): void {
-    if (this.settingsTab) {
-      this.settingsTab.display();
-    }
+	refreshSettingsUI() {
+  if (this.settingsTab) {
+    this.settingsTab.display();
   }
+}
 
 	addGlobalListener(el, type, fn) {
 		el.addEventListener(type, fn);

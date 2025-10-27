@@ -14,13 +14,13 @@ Watch a short tutorial here:
 3. Fill in these fields:  
    - **App Name**: `Zoro`  
    - **App Type**: `Web`  
-   - **Redirect URI**: `http://localhost:8080/callback`  
+   - **Redirect URI**: `obsidian://zoro-auth/mal`  
    - **Description**: `Obsidian plugin for managing anime, manga, tv show and movie lists`  
    - **Company Name**: `Zoro`  
 4. Click **Save**.  
 5. Copy your **Client ID** and **Client Secret**.  
 
-> Make sure the Redirect URI is exactly `http://localhost:8080/callback`; authentication will fail otherwise.
+> Make sure the Redirect URI is exactly `obsidian://zoro-auth/mal`; authentication will fail otherwise.
 
 ---
 
@@ -31,11 +31,7 @@ Watch a short tutorial here:
 3. Click **Enter Client Secret**, paste your **Client Secret**, and confirm.  
 4. Click **Authenticate**.  
 5. You’ll be redirected to MAL—log in (if needed) and **authorize** the app.  
-6. MAL will display a URL like:  
-   `http://localhost:8080/callback?code=ABC123`  
-   → Copy the **entire URL**.  
-7. Return to Obsidian and paste the URL into the prompt.  
-8. Wait a moment—you’ll see an **Authenticated** notification when successful.  
+6. Wait a moment—you’ll see an **Authenticated** notification when successful.  
 
 ---
 

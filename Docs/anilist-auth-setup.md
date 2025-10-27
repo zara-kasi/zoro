@@ -20,15 +20,3 @@ Watch a short tutorial here:
 
 ---
 
-## Step 2: Authenticate Zoro with AniList
-
-1. Open **Zoro plugin settings** in Obsidian.  
-2. Click **Enter Client ID**, paste your **Client ID**, and confirm.  
-3. Click **Enter Client Secret**, paste your **Client Secret**, and confirm.  
-4. Click **Authenticate**.  
-5. You’ll be redirected to AniList—log in (if needed) and **authorize** the app.  
-6. Copy the **PIN code** displayed by AniList.  
-7. Return to Obsidian and paste the PIN into the prompt.  
-8. Wait a moment—you’ll see a  **Authenticated** notification when successful.
-
----

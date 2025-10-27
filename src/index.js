@@ -158,6 +158,10 @@ this.registerObsidianProtocolHandler('zoro-auth/mal', async (params) => {
   await this.malAuth.handleOAuthRedirect(params);
 });
 
+this.registerObsidianProtocolHandler('zoro-auth/simkl', async (params) => {
+  await this.simklAuth.handleOAuthRedirect(params);
+});
+
 		// Register Zoro side panel view
 		this.registerView(ZORO_VIEW_TYPE, (leaf) => new SidePanel(leaf, this));
 		this.addCommand({
